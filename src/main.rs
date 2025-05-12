@@ -13,6 +13,7 @@ mod assistant;
 mod config;
 mod context;
 mod key_bindings;
+mod tui;
 mod worker;
 
 pub static TOKIO_RUNTIME: LazyLock<runtime::Runtime> = LazyLock::new(|| {
@@ -85,27 +86,13 @@ fn main() -> SResult<()> {
     let mut key_binding_manager = KeyBindingManager::from(&parsed_config.keys);
 
     let (tx, rx) = unbounded();
-    let local_tx = tx.clone();
+
+    let worker_tx = tx.clone();
     let _worker_handle = std::thread::spawn(move || {
-        worker::execute_worker(local_tx, rx, parsed_config);
+        worker::execute_worker(worker_tx, rx, parsed_config);
     });
 
-    let terminal_tx = tx.clone();
-    std::thread::spawn(move || {
-        let mut buffer = String::new();
-        loop {
-            buffer.clear();
-            if let Ok(_) = std::io::stdin().read_line(&mut buffer) {
-                let input = buffer.trim().to_string();
-                if !input.is_empty() {
-                    if let Err(e) = terminal_tx.send(worker::Event::UserTUIInput(input)) {
-                        error!("Error sending terminal input to worker: {e:?}");
-                    }
-                }
-            }
-        }
-    });
-
+    // Start global shortcut listener
     let callback = move |event: Event| match event.event_type {
         EventType::KeyPress(key) => {
             let actions = key_binding_manager.handle_event(key);
@@ -121,7 +108,6 @@ fn main() -> SResult<()> {
         _ => (),
     };
 
-    // This will block and has to be in the main thread
     if let Err(error) = listen(callback) {
         error!("Error listening for global key events: {:?}", error)
     }

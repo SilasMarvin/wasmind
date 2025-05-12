@@ -41,7 +41,7 @@ impl Action {
 }
 
 pub fn execute_worker(tx: Sender<Event>, rx: Receiver<Event>, config: ParsedConfig) {
-    if let Err(e) = do_execute_worker(tx, rx, config) {
+    if let Err(e) = do_execute_worker(tx.clone(), rx, config) {
         error!("Error executing worker: {e:?}");
     }
 }
@@ -62,6 +62,7 @@ pub fn do_execute_worker(
 
     let mut waiting_for_assistant_response = false;
 
+    // Process events in a loop
     while let Ok(task) = rx.recv() {
         match task {
             Event::UserTUIInput(text) => {
@@ -103,16 +104,10 @@ pub fn do_execute_worker(
                 }
             },
             Event::ChatStreamEvent(event) => match event {
-                genai::chat::ChatStreamEvent::Start => (),
-                genai::chat::ChatStreamEvent::Chunk(stream_chunk) => {
-                    print!("{}", stream_chunk.content)
-                }
-                genai::chat::ChatStreamEvent::ReasoningChunk(stream_chunk) => {
-                    print!("{}", stream_chunk.content)
-                }
-                genai::chat::ChatStreamEvent::End(stream_end) => {
+                ChatStreamEvent::Start => (),
+                ChatStreamEvent::Chunk(_) | ChatStreamEvent::ReasoningChunk(_) => (),
+                ChatStreamEvent::End(_) => {
                     waiting_for_assistant_response = false;
-                    println!("!DONE!")
                 }
             },
         }
