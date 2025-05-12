@@ -6,6 +6,6 @@ system_prompt = "You are a helpful assistant."
 clear_default = false
 
 [key_bindings.bindings]
-"cmd-shift-w" = "CaptureWindow"
-"cmd-shift-y" = "CaptureClipboard"
-"cmd-shift-a" = "Assist"
+"cmd-alt-w" = "CaptureWindow"
+"cmd-alt-y" = "CaptureClipboard"
+"cmd-alt-a" = "Assist"

@@ -69,7 +69,6 @@ pub fn do_execute_worker(
     while let Ok(task) = rx.recv() {
         match task {
             Event::UserTUIInput(text) => {
-                tui::display_user_prompt();
                 parts.push(ContentPart::from_text(text));
                 // This is kind of silly but rust ownership is being annoying
                 tx.send(Event::Action(Action::Assist))
@@ -90,10 +89,10 @@ pub fn do_execute_worker(
                     tui::display_clipboard_excerpt(&text);
                 }
                 Action::Assist => {
-                    eprintln!("GOT ASSIST");
                     if waiting_for_assistant_response {
                         continue;
                     }
+                    tui::display_done_marker();
                     // Excute the assistant
                     chat_request = chat_request
                         .append_message(ChatMessage::user(MessageContent::Parts(parts)));
