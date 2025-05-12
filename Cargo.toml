@@ -19,5 +19,3 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 xcap = "0.5.2"
 futures = "0.3.31"
-crossterm = "0.29.0"
-ratatui = "0.29.0"

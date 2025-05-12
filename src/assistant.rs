@@ -2,6 +2,7 @@ use crossbeam::channel::{Receiver, Sender};
 use futures::StreamExt;
 use genai::{Client, chat::ChatRequest};
 use snafu::ResultExt;
+use tracing::error;
 
 use crate::{GenaiSnafu, SResult, TOKIO_RUNTIME, config::ParsedConfig, worker};
 
@@ -14,7 +15,7 @@ pub enum Task {
 
 pub fn execute_assistant(tx: Sender<worker::Event>, rx: Receiver<Task>, config: ParsedConfig) {
     if let Err(e) = do_execute_assistant(tx, rx, config) {
-        eprintln!("Error while executing assistant: {e:?}");
+        error!("Error while executing assistant: {e:?}");
     }
 }
 
@@ -38,7 +39,7 @@ fn do_execute_assistant(
 
 async fn assist(tx: Sender<worker::Event>, chat_request: ChatRequest, config: ParsedConfig) {
     if let Err(e) = do_assist(tx, chat_request, config).await {
-        eprintln!("Error while executing assistant: {e:?}");
+        error!("Error while executing assistant: {e:?}");
     }
 }
 

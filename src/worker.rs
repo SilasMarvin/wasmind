@@ -10,6 +10,7 @@ use crate::{
     SResult, assistant,
     config::ParsedConfig,
     context::{clipboard::capture_clipboard, screen::capture_screen},
+    tui,
 };
 
 /// All available events the worker can handle
@@ -41,8 +42,9 @@ impl Action {
 }
 
 pub fn execute_worker(tx: Sender<Event>, rx: Receiver<Event>, config: ParsedConfig) {
-    if let Err(e) = do_execute_worker(tx.clone(), rx, config) {
+    if let Err(e) = do_execute_worker(tx, rx, config) {
         error!("Error executing worker: {e:?}");
+        tui::display_error(&format!("Error executing worker: {e:?}"));
     }
 }
 
@@ -55,18 +57,23 @@ pub fn do_execute_worker(
     let mut parts = vec![];
 
     let (assistant_tx, assistant_rx) = unbounded();
+    let local_worker_tx = tx.clone();
     let local_config = config.clone();
     let _assistant_handle = std::thread::spawn(move || {
-        assistant::execute_assistant(tx, assistant_rx, local_config);
+        assistant::execute_assistant(local_worker_tx, assistant_rx, local_config);
     });
 
     let mut waiting_for_assistant_response = false;
 
-    // Process events in a loop
+    tui::display_user_prompt();
     while let Ok(task) = rx.recv() {
         match task {
             Event::UserTUIInput(text) => {
+                tui::display_user_prompt();
                 parts.push(ContentPart::from_text(text));
+                // This is kind of silly but rust ownership is being annoying
+                tx.send(Event::Action(Action::Assist))
+                    .whatever_context("Error sending assist event to worker from worker")?;
             }
             Event::Action(action) => match action {
                 Action::CaptureWindow => {
@@ -74,16 +81,20 @@ pub fn do_execute_worker(
                     let mut buffer = Cursor::new(Vec::new());
                     image.write_to(&mut buffer, ImageFormat::Png).unwrap();
                     let base64 = STANDARD.encode(buffer.into_inner());
-                    parts.push(ContentPart::from_image_base64("image/png", base64));
+                    parts.push(ContentPart::from_image_base64("image/png", base64.clone()));
+                    tui::display_screenshot(&format!("Screenshot_FILLER",));
                 }
                 Action::CaptureClipboard => {
                     let text = capture_clipboard()?;
-                    parts.push(ContentPart::from_text(text));
+                    parts.push(ContentPart::from_text(text.clone()));
+                    tui::display_clipboard_excerpt(&text);
                 }
                 Action::Assist => {
+                    eprintln!("GOT ASSIST");
                     if waiting_for_assistant_response {
                         continue;
                     }
+                    // Excute the assistant
                     chat_request = chat_request
                         .append_message(ChatMessage::user(MessageContent::Parts(parts)));
                     assistant_tx
@@ -91,6 +102,7 @@ pub fn do_execute_worker(
                         .whatever_context("Error sending assist request to the assistant")?;
                     parts = vec![];
                     waiting_for_assistant_response = true;
+                    tui::display_assistant_start();
                 }
                 Action::CancelAssist => {
                     if waiting_for_assistant_response {
@@ -100,14 +112,22 @@ pub fn do_execute_worker(
                                 "Error sending cancel assist request to the assistant",
                             )?;
                         waiting_for_assistant_response = false;
+                        tui::display_user_prompt();
                     }
                 }
             },
             Event::ChatStreamEvent(event) => match event {
                 ChatStreamEvent::Start => (),
-                ChatStreamEvent::Chunk(_) | ChatStreamEvent::ReasoningChunk(_) => (),
+                ChatStreamEvent::Chunk(stream_chunk) => {
+                    tui::display_text(&stream_chunk.content);
+                }
+                ChatStreamEvent::ReasoningChunk(stream_chunk) => {
+                    tui::display_text(&stream_chunk.content);
+                }
                 ChatStreamEvent::End(_) => {
                     waiting_for_assistant_response = false;
+                    tui::display_done_marker();
+                    tui::display_user_prompt();
                 }
             },
         }

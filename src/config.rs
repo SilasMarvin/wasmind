@@ -208,7 +208,6 @@ fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
 
 fn parse_key_combination(input: &str) -> Option<KeyBinding> {
     let parts: Vec<&str> = input.split('-').collect();
-    println!("THE PARTS: {:?}", parts);
     let mut binding = vec![];
 
     for key_str in parts {
