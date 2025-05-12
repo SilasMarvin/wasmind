@@ -1,0 +1,11 @@
+[model]
+name = "gpt-4o"
+system_prompt = "You are a helpful assistant."
+
+[key_bindings]
+clear_default = false
+
+[key_bindings.bindings]
+"cmd-shift-w" = "CaptureWindow"
+"cmd-shift-y" = "CaptureClipboard"
+"cmd-shift-a" = "Assist"
