@@ -1,6 +1,18 @@
 [model]
-name = "gpt-4o"
-system_prompt = "You are a helpful assistant."
+name = "accounts/fireworks/models/qwen3-235b-a22b"
+endpoint = "https://api.fireworks.ai/inference/v1/"
+system_prompt = "You are a helpful assistant with access to a number of tools. Use the tools to answer the user's requests. Do not ask to execute tools simply do what is required to answer the request. Use your best judgement on what tool to use. The user will probably not tell you exactly which one to use. IMPORTANT: /no_think"
+adapater = "OpenAI"
+auth = "FIREWORKS_API_KEY" 
+
+
+[mcp_servers.github]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-github"]
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["@playwright/mcp@latest", "--browser", "brave"]
 
 [key_bindings]
 clear_default = false
@@ -9,3 +21,4 @@ clear_default = false
 "cmd-alt-w" = "CaptureWindow"
 "cmd-alt-y" = "CaptureClipboard"
 "cmd-alt-a" = "Assist"
+"cmd-alt-m" = "ToggleRecordMicrophone"

@@ -1,12 +1,12 @@
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 use genai::{
-    ServiceTarget,
+    ModelIden, ModelName, ServiceTarget,
     resolver::{AuthData, Endpoint, ServiceTargetResolver},
 };
 use rdev::Key;
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
-use std::{collections::HashMap, fs, io, path::PathBuf};
+use std::{collections::HashMap, fs, io, path::PathBuf, sync::Arc};
 use toml::Value;
 
 use crate::worker::Action;
@@ -58,6 +58,8 @@ pub struct Config {
     model: ModelConfig,
     #[serde(default)]
     key_bindings: KeyConfig,
+    #[serde(default)]
+    mcp_servers: HashMap<String, McpServerConfig>,
 }
 
 impl Config {
@@ -95,7 +97,6 @@ impl Config {
 }
 
 /// The key bindings we deserialize directly from toml
-#[allow(dead_code)]
 #[derive(Deserialize, Default, Debug)]
 struct KeyConfig {
     #[serde(default)]
@@ -105,7 +106,6 @@ struct KeyConfig {
 }
 
 /// The model configuration we deserialize directly from toml
-#[allow(dead_code)]
 #[derive(Deserialize, Default, Debug)]
 struct ModelConfig {
     name: String,
@@ -113,6 +113,14 @@ struct ModelConfig {
     endpoint: Option<String>,
     auth: Option<String>,
     chat_config: Option<Value>,
+    adapater: Option<String>,
+}
+
+/// An MCP Config
+#[derive(Deserialize, Default, Debug, Clone)]
+pub struct McpServerConfig {
+    pub command: String,
+    pub args: Vec<String>,
 }
 
 impl TryFrom<Config> for ParsedConfig {
@@ -142,7 +150,13 @@ impl TryFrom<Config> for ParsedConfig {
 
         let model = parse_model_config(value.model);
 
-        Ok(Self { keys, model })
+        let mcp_servers = value.mcp_servers;
+
+        Ok(Self {
+            keys,
+            model,
+            mcp_servers,
+        })
     }
 }
 
@@ -151,6 +165,7 @@ impl TryFrom<Config> for ParsedConfig {
 pub struct ParsedConfig {
     pub keys: ParsedKeyConfig,
     pub model: ParsedModelConfig,
+    pub mcp_servers: HashMap<String, McpServerConfig>,
 }
 
 /// The parsed and verified key bindings
@@ -178,6 +193,16 @@ fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
                 endpoint,
                 auth,
             } = service_target;
+            let model = model_config
+                .adapater
+                .map(|adapter| {
+                    serde_json::from_value(serde_json::json!({
+                        "adapter_kind": adapter,
+                        "model_name": model_config.name,
+                    }))
+                    .unwrap()
+                })
+                .unwrap_or(model);
             let endpoint = model_config
                 .endpoint
                 .map(|endpoint| Endpoint::from_owned(endpoint))
@@ -185,8 +210,8 @@ fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
             let auth = match model_config.auth {
                 None => auth,
                 Some(s) => match std::env::var(&s) {
-                    Ok(value) => AuthData::FromEnv(value),
-                    Err(_) => AuthData::Key(s),
+                    Ok(value) => AuthData::Key(value),
+                    Err(_) => AuthData::FromEnv(s),
                 },
             };
             Ok(ServiceTarget {

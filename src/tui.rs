@@ -5,6 +5,11 @@ pub fn display_user_prompt() {
     io::stdout().flush().unwrap();
 }
 
+pub fn display_user_microphone_input(input: &str) {
+    print!("[translated] {input}");
+    io::stdout().flush().unwrap();
+}
+
 pub fn display_assistant_start() {
     print!("\n(assistant) >>> ");
 }
@@ -30,13 +35,23 @@ pub fn display_clipboard_excerpt(content: &str) {
     }
 }
 
-pub fn display_text(text: &str) {
-    print!("{}", text);
-    io::stdout().flush().unwrap();
+pub fn display_assistant_response(response: &str) {
+    println!("{response}");
+}
+
+pub fn display_assistant_response_part(part: &str) {
+    println!("{}", part);
 }
 
 pub fn display_error(error: &str) {
     eprintln!("\nError: {}", error);
+}
+
+pub fn display_func_calls(func_names: Vec<&str>) {
+    println!("\n***Calling Functions");
+    for call in func_names {
+        println!("Function call: {}", call);
+    }
 }
 
 pub fn display_done_marker() {

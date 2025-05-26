@@ -13,6 +13,8 @@ mod assistant;
 mod config;
 mod context;
 mod key_bindings;
+mod mcp;
+mod tools;
 mod tui;
 mod worker;
 
@@ -61,6 +63,30 @@ pub enum Error {
         message: String,
         #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+
+    #[snafu(display("Error sending MCP task"))]
+    MCPTaskSend {
+        #[snafu(implicit)]
+        location: Location,
+        #[snafu(source)]
+        source: crossbeam::channel::SendError<mcp::Task>,
+    },
+
+    #[snafu(display("Error sending microphone task"))]
+    MicrophoneTaskSend {
+        #[snafu(implicit)]
+        location: Location,
+        #[snafu(source)]
+        source: crossbeam::channel::SendError<context::microphone::Task>,
+    },
+
+    #[snafu(display("Error sending assistant task"))]
+    AssistantTaskSend {
+        #[snafu(implicit)]
+        location: Location,
+        #[snafu(source)]
+        source: crossbeam::channel::SendError<assistant::Task>,
     },
 }
 

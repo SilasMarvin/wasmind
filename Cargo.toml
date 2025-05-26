@@ -3,19 +3,30 @@ name = "copilot"
 version = "0.1.0"
 edition = "2024"
 
+[target.aarch64-apple-darwin]
+rustflags = "-lc++ -l framework=Accelerate"
+
 [dependencies]
 arboard = "3.5.0"
 base64 = "0.22.1"
 crossbeam = "0.8.4"
 etcetera = "0.10.0"
-genai = "0.3.1"
+# genai = "0.3.1"
+genai = { path = "/Users/silasmarvin/github/rust-genai" }
 image = "0.25.6"
 rdev = { version = "0.5.3", features = ["unstable_grab"] }
 serde = { version = "1.0.219", features = ["derive"] }
-tokio = { version = "1.45.0", features = ["rt-multi-thread", "time"] }
+tokio = { version = "1.45.0", features = ["rt-multi-thread", "time", "process"] }
 snafu = "0.8.5"
 toml = "0.8.22"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 xcap = "0.5.2"
 futures = "0.3.31"
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = ["server", "transport-child-process", "client"] }
+serde_json = "1.0.140"
+whisper-rs = { version = "0.14.2", features = ["metal"] }
+cpal = "0.15.3"
+hound = "3.5.1"
+rubato = "0.16.2"
+libc = "0.2"
