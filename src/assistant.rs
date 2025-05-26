@@ -1,5 +1,4 @@
 use crossbeam::channel::{Receiver, Sender};
-use futures::StreamExt;
 use genai::{Client, chat::ChatRequest};
 use snafu::ResultExt;
 use tracing::error;
@@ -52,25 +51,10 @@ async fn do_assist(
         .with_service_target_resolver(config.model.service_target_resolver)
         .build();
 
-    // // Chat streaming does not support tool calling: https://github.com/jeremychone/rust-genai/issues/46
-    // let mut chat_res = client
-    //     .exec_chat_stream(&config.model.name, chat_request, None)
-    //     .await
-    //     .context(GenaiSnafu)?;
-
-    // while let Some(resp) = chat_res.stream.next().await {
-    //     println!("THE RESPONSE: {:?}", resp);
-    //     let resp = resp.context(GenaiSnafu)?;
-    //     tx.send(worker::Event::ChatStreamEvent(resp))
-    //         .whatever_context("Error sending chat stream event")?;
-    // }
-
     let resp = client
         .exec_chat(&config.model.name, chat_request, None)
         .await
         .context(GenaiSnafu)?;
-
-    println!("THE RESPONSE: {:?}", resp);
 
     if let Some(message_content) = resp.content {
         tx.send(worker::Event::ChatResponse(message_content))

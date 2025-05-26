@@ -1,9 +1,7 @@
 use std::collections::HashMap;
-use std::io::{self, Write};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
 use crossbeam::channel::{Receiver, Sender, unbounded};
 use snafu::{ResultExt, Snafu};
@@ -76,7 +74,7 @@ pub fn execute_command_executor(
 fn do_execute_command_executor(
     tx: Sender<worker::Event>,
     rx: Receiver<Task>,
-    config: ParsedConfig,
+    _config: ParsedConfig,
 ) -> CommandExecutorResult<()> {
     // Internal channel for handling command completions
     let (internal_tx, internal_rx) = unbounded::<ExecutorEvent>();
@@ -162,7 +160,7 @@ fn execute_command_with_cancellation(
     println!("  $ {} {}", command, args.join(" "));
 
     // Spawn the command
-    let mut child = Command::new(command)
+    let child = Command::new(command)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

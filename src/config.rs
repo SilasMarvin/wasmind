@@ -1,12 +1,12 @@
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 use genai::{
-    ModelIden, ModelName, ServiceTarget,
+    ServiceTarget,
     resolver::{AuthData, Endpoint, ServiceTargetResolver},
 };
 use rdev::Key;
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
-use std::{collections::HashMap, fs, io, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, fs, io, path::PathBuf};
 use toml::Value;
 
 use crate::worker::Action;

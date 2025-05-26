@@ -1,10 +1,8 @@
 use std::{collections::HashMap, sync::OnceLock};
 
 use crossbeam::channel::{Receiver, Sender};
-use futures::StreamExt;
 use genai::{
-    Client,
-    chat::{ChatRequest, Tool, ToolCall, ToolResponse},
+    chat::{Tool, ToolCall, ToolResponse},
 };
 use rmcp::{
     RoleClient,
@@ -78,8 +76,8 @@ pub enum Task {
     Cancel,
 }
 
-pub fn execute_mcp(tx: Sender<worker::Event>, rx: Receiver<Task>, config: ParsedConfig) {
-    if let Err(e) = do_execute_mcp(tx, rx, config) {
+pub fn execute_mcp(tx: Sender<worker::Event>, rx: Receiver<Task>, _config: ParsedConfig) {
+    if let Err(e) = do_execute_mcp(tx, rx, _config) {
         error!("Error while executing assistant: {e:?}");
     }
 }
@@ -208,9 +206,9 @@ async fn do_execute_tools(
             .into_iter()
             .map(|content| match content.raw {
                 rmcp::model::RawContent::Text(raw_text_content) => raw_text_content.text,
-                rmcp::model::RawContent::Image(raw_image_content) => todo!(),
-                rmcp::model::RawContent::Resource(raw_embedded_resource) => todo!(),
-                rmcp::model::RawContent::Audio(annotated) => todo!(),
+                rmcp::model::RawContent::Image(_raw_image_content) => todo!(),
+                rmcp::model::RawContent::Resource(_raw_embedded_resource) => todo!(),
+                rmcp::model::RawContent::Audio(_annotated) => todo!(),
             })
             .collect::<Vec<String>>()
             .join("\n\n\n\n");

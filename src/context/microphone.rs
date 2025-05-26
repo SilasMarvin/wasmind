@@ -92,7 +92,7 @@ pub fn execute_microphone(tx: Sender<worker::Event>, rx: Receiver<Task>, config:
 fn do_execute_microphone(
     tx: Sender<worker::Event>,
     rx: Receiver<Task>,
-    config: ParsedConfig,
+    _config: ParsedConfig,
 ) -> MResult<()> {
     let recording = Arc::new(AtomicBool::new(false));
 

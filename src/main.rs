@@ -117,22 +117,6 @@ fn main() -> SResult<()> {
         worker::execute_worker(local_tx, rx, parsed_config);
     });
 
-    let terminal_tx = tx.clone();
-    std::thread::spawn(move || {
-        let mut buffer = String::new();
-        loop {
-            buffer.clear();
-            if let Ok(_) = std::io::stdin().read_line(&mut buffer) {
-                let input = buffer.trim().to_string();
-                if !input.is_empty() {
-                    if let Err(e) = terminal_tx.send(worker::Event::UserTUIInput(input)) {
-                        error!("Error sending terminal input to worker: {e:?}");
-                    }
-                }
-            }
-        }
-    });
-
     let callback = move |event: Event| match event.event_type {
         EventType::KeyPress(key) => {
             let actions = key_binding_manager.handle_event(key);

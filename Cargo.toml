@@ -30,3 +30,6 @@ cpal = "0.15.3"
 hound = "3.5.1"
 rubato = "0.16.2"
 libc = "0.2"
+ratatui = "0.28"
+crossterm = "0.28"
+chrono = { version = "0.4", features = ["serde"] }
