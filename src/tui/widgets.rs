@@ -157,6 +157,19 @@ impl EventWidget for TuiEvent {
                 }
                 total_lines.max(1) as u16 + 2 // +2 for borders
             }
+            TuiEvent::CommandPrompt { command, args, .. } => {
+                // Calculate height for command prompt with confirmation text
+                let prompt_text = format!("🔸 $ {} {}\nAllow execution? (y/n)", command, args.join(" "));
+                let mut total_lines = 0;
+                for line in prompt_text.lines() {
+                    if line.is_empty() {
+                        total_lines += 1;
+                    } else {
+                        total_lines += (line.len() + inner_width - 1) / inner_width;
+                    }
+                }
+                total_lines.max(1) as u16 + 2 // +2 for borders
+            }
             TuiEvent::CommandResult { stdout, stderr, .. } => {
                 let mut total_lines = 1; // Exit code line
                 
@@ -206,7 +219,7 @@ impl<'a> UserInputWidget<'a> {
             skip_lines,
             &format!("User [{}]", self.timestamp.format("%H:%M:%S")),
             Style::default().fg(Color::Blue),
-            Style::default().fg(Color::White),
+            Style::default(),
         );
     }
 }
@@ -231,7 +244,7 @@ impl<'a> UserMicrophoneWidget<'a> {
             skip_lines,
             &format!("User (Microphone) [{}]", self.timestamp.format("%H:%M:%S")),
             Style::default().fg(Color::Cyan),
-            Style::default().fg(Color::White),
+            Style::default(),
         );
     }
 }
@@ -256,7 +269,7 @@ impl<'a> AssistantResponseWidget<'a> {
             skip_lines,
             &format!("Assistant [{}]", self.timestamp.format("%H:%M:%S")),
             Style::default().fg(Color::Green),
-            Style::default().fg(Color::White),
+            Style::default(),
         );
     }
 }
@@ -386,7 +399,7 @@ impl<'a> CommandPromptWidget<'a> {
         render_text_with_skip(
             area,
             buf,
-            &format!("🔸 $ {} {}", self.command, self.args.join(" ")),
+            &format!("🔸 $ {} {}\nAllow execution? (y/n)", self.command, self.args.join(" ")),
             skip_lines,
             &format!("Command Prompt [{}]", self.timestamp.format("%H:%M:%S")),
             Style::default().fg(Color::Red),

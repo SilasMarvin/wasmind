@@ -50,13 +50,22 @@ pub enum Task {
     },
 }
 
+/// Result from command execution
+#[derive(Debug)]
+struct CommandOutput {
+    command: String,
+    stdout: String,
+    stderr: String,
+    exit_code: i32,
+}
+
 /// Internal events for the command executor
 #[derive(Debug)]
 enum ExecutorEvent {
     Task(Task),
     CommandFinished {
         tool_call_id: String,
-        result: Result<String, String>,
+        result: Result<CommandOutput, String>,
     },
 }
 
@@ -137,12 +146,26 @@ fn do_execute_command_executor(
                 }
                 
                 // Send result to worker
-                let output = match result {
-                    Ok(output) => output,
-                    Err(e) => format!("Command execution failed: {}", e),
-                };
-                
-                let _ = tx.send(worker::Event::CommandExecutionResult(tool_call_id, output));
+                match result {
+                    Ok(output) => {
+                        let _ = tx.send(worker::Event::CommandExecutionResult {
+                            tool_call_id,
+                            command: output.command,
+                            stdout: output.stdout,
+                            stderr: output.stderr,
+                            exit_code: output.exit_code,
+                        });
+                    }
+                    Err(e) => {
+                        let _ = tx.send(worker::Event::CommandExecutionResult {
+                            tool_call_id,
+                            command: String::new(),
+                            stdout: String::new(),
+                            stderr: format!("Command execution failed: {}", e),
+                            exit_code: -1,
+                        });
+                    }
+                }
             }
         }
     }
@@ -155,10 +178,7 @@ fn execute_command_with_cancellation(
     command: &str,
     args: &[String],
     cancel_rx: Receiver<()>,
-) -> CommandExecutorResult<String> {
-    println!("\n[EXECUTING COMMAND]");
-    println!("  $ {} {}", command, args.join(" "));
-
+) -> CommandExecutorResult<CommandOutput> {
     // Spawn the command
     let child = Command::new(command)
         .args(args)
@@ -200,40 +220,10 @@ fn execute_command_with_cancellation(
     let stdout = String::from_utf8(output.stdout).context(OutputFailedSnafu)?;
     let stderr = String::from_utf8(output.stderr).context(OutputFailedSnafu)?;
 
-    // Display output to user
-    if !stdout.is_empty() {
-        println!("\n[STDOUT]");
-        println!("{}", stdout);
-    }
-
-    if !stderr.is_empty() {
-        println!("\n[STDERR]");
-        println!("{}", stderr);
-    }
-
-    println!(
-        "\n[COMMAND COMPLETED] Exit code: {}",
-        output.status.code().unwrap_or(-1)
-    );
-
-    // Return combined output
-    let mut result = String::new();
-    if !stdout.is_empty() {
-        result.push_str(&stdout);
-    }
-    if !stderr.is_empty() {
-        if !result.is_empty() {
-            result.push_str("\n\nSTDERR:\n");
-        }
-        result.push_str(&stderr);
-    }
-
-    if result.is_empty() {
-        result = format!(
-            "Command completed with exit code: {}",
-            output.status.code().unwrap_or(-1)
-        );
-    }
-
-    Ok(result)
+    Ok(CommandOutput {
+        command: format!("{} {}", command, args.join(" ")),
+        stdout,
+        stderr,
+        exit_code: output.status.code().unwrap_or(-1),
+    })
 }

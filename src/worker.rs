@@ -31,7 +31,13 @@ pub enum Event {
     ChatStreamEvent(ChatStreamEvent),
     ChatResponse(MessageContent),
     MicrophoneResponse(String),
-    CommandExecutionResult(String, String), // tool_call_id, result
+    CommandExecutionResult {
+        tool_call_id: String,
+        command: String,
+        stdout: String,
+        stderr: String,
+        exit_code: i32,
+    },
 }
 
 /// Actions the worker can perform and users can bind keys to
@@ -130,7 +136,7 @@ pub fn do_execute_worker(
 
     // Initial system message
     let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::system(
-        "Welcome to Copilot Assistant! Press Enter to send messages.".to_string()
+        "Welcome to Nelle assistant".to_string()
     )));
     
     while let Ok(task) = rx.recv() {
@@ -139,7 +145,7 @@ pub fn do_execute_worker(
                 // Add internal tools
                 tools.push(Tool {
                     name: "execute_command".to_string(),
-                    description: Some("Execute a command line command with user confirmation. The user will be prompted to approve the command before execution.".to_string()),
+                    description: Some("Execute a command line command with user confirmation. Use this to print the current working directory, run commands like git status, npm install, cargo build, etc. The user will be prompted to approve the command before execution.".to_string()),
                     schema: Some(serde_json::json!({
                         "type": "object",
                         "properties": {
@@ -186,10 +192,13 @@ pub fn do_execute_worker(
                             .whatever_context("Error sending command to executor")?;
                     } else {
                         // User denied
-                        tx.send(Event::CommandExecutionResult(
-                            pending.tool_call_id,
-                            "Command execution denied by user".to_string()
-                        ))
+                        tx.send(Event::CommandExecutionResult {
+                            tool_call_id: pending.tool_call_id,
+                            command: format!("{} {}", pending.command, pending.args.join(" ")),
+                            stdout: String::new(),
+                            stderr: "Command execution denied by user".to_string(),
+                            exit_code: -1,
+                        })
                         .whatever_context("Error sending command denial")?;
                     }
                     let _ = tui_tx.send(tui::Task::ClearInput);
@@ -339,15 +348,32 @@ pub fn do_execute_worker(
                     options: None,
                 });
             }
-            Event::CommandExecutionResult(tool_call_id, result) => {
+            Event::CommandExecutionResult { tool_call_id, command, stdout, stderr, exit_code } => {
                 // Remove from executing list
                 executing_tool_calls.retain(|id| id != &tool_call_id);
                 
                 // Add command result to TUI
-                let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::function_result(
-                    "execute_command".to_string(),
-                    result.clone()
+                let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::command_result(
+                    command.clone(),
+                    stdout.clone(),
+                    stderr.clone(),
+                    exit_code
                 )));
+                
+                // Format the result for the LLM
+                let mut result = String::new();
+                if !stdout.is_empty() {
+                    result.push_str(&stdout);
+                }
+                if !stderr.is_empty() {
+                    if !result.is_empty() {
+                        result.push_str("\n\nSTDERR:\n");
+                    }
+                    result.push_str(&stderr);
+                }
+                if result.is_empty() {
+                    result = format!("Command completed with exit code: {}", exit_code);
+                }
                 
                 // Send the command result as a tool response
                 let tool_response = ToolResponse {

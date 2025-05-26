@@ -1,5 +1,4 @@
 use snafu::Snafu;
-use std::io::{self, Write};
 
 /// Errors while executing commands
 #[derive(Debug, Snafu)]
@@ -38,12 +37,8 @@ pub struct PendingCommand {
 }
 
 /// Displays the command confirmation prompt
-pub fn display_command_prompt(command: &str, args: &[String]) {
-    println!("\n[COMMAND EXECUTION REQUEST]");
-    println!("The assistant wants to execute the following command:");
-    println!("  $ {} {}", command, args.join(" "));
-    println!("Allow execution? (y/n): ");
-    io::stdout().flush().unwrap();
+pub fn display_command_prompt(_command: &str, _args: &[String]) {
+    // Command prompts are now handled by the TUI
 }
 
 

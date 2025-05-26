@@ -154,7 +154,17 @@ fn handle_input(app: Arc<Mutex<App>>, worker_tx: Sender<worker::Event>) {
                             }
                         }
                         KeyCode::Char(c) => {
-                            app.push_char(c);
+                            // Check if we're waiting for confirmation
+                            if app.waiting_for_confirmation {
+                                if c == 'y' || c == 'Y' {
+                                    let _ = worker_tx.send(worker::Event::UserTUIInput("y".to_string()));
+                                } else if c == 'n' || c == 'N' {
+                                    let _ = worker_tx.send(worker::Event::UserTUIInput("n".to_string()));
+                                }
+                                // Don't add the character to input when waiting for confirmation
+                            } else {
+                                app.push_char(c);
+                            }
                         }
                         KeyCode::Backspace => {
                             app.pop_char();
