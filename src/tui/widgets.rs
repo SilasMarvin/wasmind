@@ -563,7 +563,7 @@ impl<'a> SystemWidget<'a> {
         render_text_with_skip(
             area,
             buf,
-            &format!("ℹ️  {}", self.message),
+            self.message,
             skip_lines,
             &format!("System [{}]", self.timestamp.format("%H:%M:%S")),
             Style::default().fg(Color::DarkGray),
