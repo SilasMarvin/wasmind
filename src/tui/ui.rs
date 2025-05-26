@@ -115,7 +115,7 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let style = if app.input.is_empty() && !app.waiting_for_response && !app.waiting_for_confirmation {
         Style::default().fg(Color::DarkGray)
     } else {
-        Style::default().fg(Color::White)
+        Style::default()
     };
 
     let paragraph = Paragraph::new(input_text)
