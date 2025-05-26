@@ -12,7 +12,7 @@ use rmcp::{
 };
 use snafu::{Location, OptionExt, ResultExt, Snafu};
 use tokio::process::Command;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::{
     SResult, TOKIO_RUNTIME,
@@ -112,6 +112,8 @@ async fn do_start_servers(tx: Sender<worker::Event>, config: ParsedConfig) -> MR
     let mut mcp_funcs_to_server = HashMap::new();
     let mut tools = vec![];
     for (name, config) in config.mcp_servers {
+        info!(server = %name, command = %config.command, args = ?config.args, "Starting MCP server");
+        
         let service = ()
             .serve(
                 transport::TokioChildProcess::new(Command::new(&config.command).args(&config.args))
@@ -142,6 +144,8 @@ async fn do_start_servers(tx: Sender<worker::Event>, config: ParsedConfig) -> MR
             mcp_funcs_to_server.insert(tool.name.to_string(), name.clone());
         }
 
+        info!(server = %name, tool_count = %mcp_tools.len(), "MCP server started successfully");
+        
         tools.extend(mcp_tools.into_iter().map(|tool| Tool {
             name: tool.name.to_string(),
             description: tool.description.map(|x| x.to_string()),
@@ -166,7 +170,7 @@ async fn execute_tools(tx: Sender<worker::Event>, tool_calls: Vec<ToolCall>, con
 async fn do_execute_tools(
     tx: Sender<worker::Event>,
     tool_calls: Vec<ToolCall>,
-    config: ParsedConfig,
+    _config: ParsedConfig,
 ) -> MResult<()> {
     let mut tool_responses = vec![];
 
@@ -187,6 +191,14 @@ async fn do_execute_tools(
                 server: server_name.clone(),
             })?;
 
+        let tool_name = tool_call.fn_name.clone();
+        
+        info!(
+            server = %server_name,
+            tool = %tool_name,
+            "Executing MCP tool"
+        );
+        
         let tool_response = server
             .call_tool(CallToolRequestParam {
                 name: tool_call.fn_name.into(),
@@ -196,6 +208,12 @@ async fn do_execute_tools(
             .context(ServiceSnafu {
                 server: server_name,
             })?;
+        
+        info!(
+            server = %server_name,
+            tool = %tool_name,
+            "MCP tool execution completed"
+        );
 
         if tool_response.is_error.is_some_and(|x| x) {
             error!("Error while executing MCP tool call");

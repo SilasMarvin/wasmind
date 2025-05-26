@@ -1,7 +1,7 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -10,11 +10,12 @@ use super::widgets::EventWidget;
 
 /// Main UI drawing function
 pub fn draw(f: &mut Frame, app: &App) {
-    // Create main layout
+    // Create main layout with gap
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(0),    // Chat history
+            Constraint::Length(1), // Gap
             Constraint::Length(3), // Input box
         ])
         .split(f.area());
@@ -22,75 +23,69 @@ pub fn draw(f: &mut Frame, app: &App) {
     // Draw chat history
     draw_chat_history(f, app, chunks[0]);
 
-    // Draw input box
-    draw_input(f, app, chunks[1]);
+    // Draw input box (chunks[1] is the gap)
+    draw_input(f, app, chunks[2]);
 }
 
 fn draw_chat_history(f: &mut Frame, app: &App, area: Rect) {
-    let block = Block::default()
-        .title(" Copilot Assistant ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::White));
-    
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    // Calculate the layout for each event
-    let mut current_y = 0;
+    let inner = area;
     let visible_height = inner.height as usize;
     
+    // Update the visible height in the app if it changed
+    if inner.height != app.visible_height {
+        // We can't modify app here, but we'll handle this in the main loop
+    }
+    
+    // Calculate total content height
+    let _total_height: usize = app.events.iter().map(|e| e.height(inner.width) as usize).sum();
+    
     // Render events from oldest to newest
-    for (_idx, event) in app.events.iter().enumerate() {
-        let event_height = event.height() as usize;
+    let mut current_y = 0;
+    
+    for event in app.events.iter() {
+        let event_height = event.height(inner.width) as usize;
         
-        // Skip events that are scrolled off the top
-        if current_y + event_height < app.scroll_offset {
+        // Skip events that are completely above the visible area
+        if current_y + event_height <= app.scroll_position {
             current_y += event_height;
             continue;
         }
         
-        // Stop rendering if we've filled the visible area
-        if current_y >= app.scroll_offset + visible_height {
+        // Skip events that are completely below the visible area
+        if current_y >= app.scroll_position + visible_height {
             break;
         }
         
-        // Calculate the actual render position
-        let render_y = (current_y - app.scroll_offset) as u16;
-        let render_height = std::cmp::min(
-            event_height as u16,
-            inner.height.saturating_sub(render_y)
-        );
+        // This event is at least partially visible
+        
+        // Calculate how many lines to skip from the top of this event
+        let visible_start = app.scroll_position.saturating_sub(current_y);
+        
+        // Calculate the visible portion of this event
+        let visible_lines = event_height.saturating_sub(visible_start);
+        
+        // Calculate where to render this event in the viewport
+        let adjusted_y = current_y.saturating_sub(app.scroll_position);
+        
+        // Calculate the actual render height (limited by available space)
+        let render_height = visible_lines.min(visible_height.saturating_sub(adjusted_y));
         
         if render_height > 0 {
             let event_area = Rect {
                 x: inner.x,
-                y: inner.y + render_y,
+                y: inner.y + adjusted_y as u16,
                 width: inner.width,
-                height: render_height,
+                height: render_height as u16,
             };
             
-            event.render(event_area, f.buffer_mut());
+            // Render the event with proper line skipping
+            event.render_with_skip(event_area, f.buffer_mut(), visible_start);
         }
         
         current_y += event_height;
     }
 
-    // Draw scrollbar if needed
-    if app.events.len() > 0 {
-        let total_height: usize = app.events.iter().map(|e| e.height() as usize).sum();
-        if total_height > visible_height {
-            let mut scrollbar_state = ScrollbarState::default()
-                .content_length(total_height)
-                .position(app.scroll_offset)
-                .viewport_content_length(visible_height);
-                
-            let scrollbar = Scrollbar::default()
-                .orientation(ScrollbarOrientation::VerticalRight)
-                .style(Style::default().fg(Color::Gray));
-                
-            f.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
-        }
-    }
+    // No scrollbar or indicators - clean minimal UI
 }
 
 fn draw_input(f: &mut Frame, app: &App, area: Rect) {
@@ -128,8 +123,8 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     
     f.render_widget(paragraph, inner);
 
-    // Show cursor position
-    if !app.waiting_for_response {
+    // Show cursor position only when focused on input
+    if !app.waiting_for_response && !app.waiting_for_confirmation {
         f.set_cursor_position((
             inner.x + app.input.len() as u16,
             inner.y,

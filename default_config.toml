@@ -22,3 +22,4 @@ clear_default = false
 "cmd-alt-y" = "CaptureClipboard"
 "cmd-alt-a" = "Assist"
 "cmd-alt-m" = "ToggleRecordMicrophone"
+"ctrl-c" = "Exit"

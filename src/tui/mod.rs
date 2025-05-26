@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use crossbeam::channel::{Receiver, Sender};
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event as CrosstermEvent, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event as CrosstermEvent, KeyCode, MouseEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -99,7 +99,13 @@ fn run_app(
         // Draw UI
         terminal
             .draw(|f| {
-                let app = app.lock().unwrap();
+                let mut app = app.lock().unwrap();
+                // Update visible dimensions if they changed
+                let chat_height = f.area().height.saturating_sub(4); // Account for input box + gap
+                let chat_width = f.area().width;
+                if chat_height != app.visible_height || chat_width != app.visible_width {
+                    app.set_visible_dimensions(chat_width, chat_height);
+                }
                 ui::draw(f, &*app);
             })
             .context(DrawFrameSnafu)?;
@@ -132,31 +138,66 @@ fn run_app(
     Ok(())
 }
 
-/// Handle keyboard input
+/// Handle keyboard and mouse input
 fn handle_input(app: Arc<Mutex<App>>, worker_tx: Sender<worker::Event>) {
     loop {
         if event::poll(Duration::from_millis(100)).unwrap() {
-            if let Ok(CrosstermEvent::Key(key)) = event::read() {
-                let mut app = app.lock().unwrap();
-                match key.code {
-                    KeyCode::Enter => {
-                        let input = app.get_input().to_string();
-                        if !input.is_empty() {
-                            app.clear_input();
-                            let _ = worker_tx.send(worker::Event::UserTUIInput(input));
+            match event::read() {
+                Ok(CrosstermEvent::Key(key)) => {
+                    let mut app = app.lock().unwrap();
+                    match key.code {
+                        KeyCode::Enter => {
+                            let input = app.get_input().to_string();
+                            if !input.is_empty() {
+                                app.clear_input();
+                                let _ = worker_tx.send(worker::Event::UserTUIInput(input));
+                            }
                         }
+                        KeyCode::Char(c) => {
+                            app.push_char(c);
+                        }
+                        KeyCode::Backspace => {
+                            app.pop_char();
+                        }
+                        KeyCode::Esc => {
+                            // Could send cancel event here
+                        }
+                        KeyCode::Up => {
+                            app.scroll_up(1);
+                        }
+                        KeyCode::Down => {
+                            app.scroll_down(1);
+                        }
+                        KeyCode::PageUp => {
+                            let page_size = app.visible_height.saturating_sub(2) as usize;
+                            app.scroll_up(page_size);
+                        }
+                        KeyCode::PageDown => {
+                            let page_size = app.visible_height.saturating_sub(2) as usize;
+                            app.scroll_down(page_size);
+                        }
+                        KeyCode::Home => {
+                            app.scroll_to_top();
+                        }
+                        KeyCode::End => {
+                            app.scroll_to_bottom();
+                        }
+                        _ => {}
                     }
-                    KeyCode::Char(c) => {
-                        app.push_char(c);
-                    }
-                    KeyCode::Backspace => {
-                        app.pop_char();
-                    }
-                    KeyCode::Esc => {
-                        // Could send cancel event here
-                    }
-                    _ => {}
                 }
+                Ok(CrosstermEvent::Mouse(mouse)) => {
+                    let mut app = app.lock().unwrap();
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            app.scroll_up(3);
+                        }
+                        MouseEventKind::ScrollDown => {
+                            app.scroll_down(3);
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
             }
         }
     }

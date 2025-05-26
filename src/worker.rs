@@ -42,6 +42,7 @@ pub enum Action {
     ToggleRecordMicrophone,
     Assist,
     CancelAssist,
+    Exit,
 }
 
 impl Action {
@@ -52,6 +53,7 @@ impl Action {
             "ToggleRecordMicrophone" => Some(Action::ToggleRecordMicrophone),
             "Assist" => Some(Action::Assist),
             "CancelAssist" => Some(Action::CancelAssist),
+            "Exit" => Some(Action::Exit),
             _ => None,
         }
     }
@@ -262,6 +264,10 @@ pub fn do_execute_worker(
                             "Cancelled assistant response".to_string()
                         )));
                     }
+                }
+                Action::Exit => {
+                    let _ = tui_tx.send(tui::Task::Exit);
+                    break;
                 }
             },
             Event::ChatStreamEvent(_event) => unreachable!(),

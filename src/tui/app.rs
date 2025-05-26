@@ -1,4 +1,5 @@
 use super::events::TuiEvent;
+use super::widgets::EventWidget;
 
 /// Main application state
 pub struct App {
@@ -6,8 +7,14 @@ pub struct App {
     pub events: Vec<TuiEvent>,
     /// Current input buffer
     pub input: String,
-    /// Scroll offset for events
-    pub scroll_offset: usize,
+    /// Scroll position (0 = top of content)
+    pub scroll_position: usize,
+    /// Visible height of the chat area
+    pub visible_height: u16,
+    /// Visible width of the chat area
+    pub visible_width: u16,
+    /// Whether we should auto-scroll to bottom on new messages
+    pub auto_scroll: bool,
     /// Whether we're waiting for assistant response
     pub waiting_for_response: bool,
     /// Whether we're waiting for command confirmation
@@ -19,7 +26,10 @@ impl App {
         Self {
             events: Vec::new(),
             input: String::new(),
-            scroll_offset: 0,
+            scroll_position: 0,
+            visible_height: 10,
+            visible_width: 80,
+            auto_scroll: true,
             waiting_for_response: false,
             waiting_for_confirmation: false,
         }
@@ -41,7 +51,9 @@ impl App {
                     }
                 }
                 self.events.push(event);
-                self.scroll_to_bottom();
+                if self.auto_scroll {
+                    self.scroll_to_bottom();
+                }
             }
             // Handle state changes
             TuiEvent::SetWaitingForResponse { waiting } => {
@@ -53,7 +65,9 @@ impl App {
             // All other events
             _ => {
                 self.events.push(event);
-                self.scroll_to_bottom();
+                if self.auto_scroll {
+                    self.scroll_to_bottom();
+                }
             }
         }
     }
@@ -79,17 +93,49 @@ impl App {
     }
 
     pub fn scroll_up(&mut self, amount: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+        // Scrolling up means decreasing position (towards top)
+        self.scroll_position = self.scroll_position.saturating_sub(amount);
+        self.auto_scroll = false; // Disable auto-scroll when user scrolls manually
     }
 
     pub fn scroll_down(&mut self, amount: usize) {
-        self.scroll_offset = (self.scroll_offset + amount).min(
-            self.events.len().saturating_sub(1)
-        );
+        // Scrolling down means increasing position (towards bottom)
+        let total_height: usize = self.events.iter().map(|e| e.height(self.visible_width) as usize).sum();
+        let max_scroll = total_height.saturating_sub(self.visible_height as usize);
+        self.scroll_position = (self.scroll_position + amount).min(max_scroll);
+        
+        // Re-enable auto-scroll if we've scrolled to the bottom
+        if self.scroll_position >= max_scroll {
+            self.auto_scroll = true;
+        }
     }
 
     pub fn scroll_to_bottom(&mut self) {
-        self.scroll_offset = 0;
+        let total_height: usize = self.events.iter().map(|e| e.height(self.visible_width) as usize).sum();
+        self.scroll_position = total_height.saturating_sub(self.visible_height as usize);
+        self.auto_scroll = true;
+    }
+
+    pub fn scroll_to_top(&mut self) {
+        self.scroll_position = 0;
+        self.auto_scroll = false;
+    }
+
+    pub fn set_visible_height(&mut self, height: u16) {
+        self.visible_height = height;
+        // Adjust scroll position if needed
+        if self.auto_scroll {
+            self.scroll_to_bottom();
+        }
+    }
+    
+    pub fn set_visible_dimensions(&mut self, width: u16, height: u16) {
+        self.visible_width = width;
+        self.visible_height = height;
+        // Adjust scroll position if needed
+        if self.auto_scroll {
+            self.scroll_to_bottom();
+        }
     }
 
     pub fn set_waiting_for_response(&mut self, waiting: bool) {
