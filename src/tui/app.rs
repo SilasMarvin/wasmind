@@ -10,7 +10,7 @@ const SPLASH: &str = r#"|WELCOME USER|
 ╚█████╔╝██║  ██║██║ ╚████║███████╗   ██║   
  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝
 
-human x ai ♡
+human x ai <3
 "#;
 
 /// Main application state

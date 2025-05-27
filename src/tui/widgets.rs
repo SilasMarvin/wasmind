@@ -214,7 +214,7 @@ impl EventWidget for TuiEvent {
             TuiEvent::CommandPrompt { command, args, .. } => {
                 // Calculate height for command prompt with confirmation text
                 let prompt_text = format!(
-                    "🔸 $ {} {}\nAllow execution? (y/n)",
+                    "[>] $ {} {}\nAllow execution? (y/n)",
                     command,
                     args.join(" ")
                 );
@@ -285,7 +285,7 @@ impl EventWidget for TuiEvent {
                 let mut total_lines = 4; // Title, separator, empty line before progress, progress
                 for (i, task) in plan.tasks.iter().enumerate() {
                     // Task number + status icon + description
-                    let task_line = format!("{}. ⬜ {}", i + 1, task.description);
+                    let task_line = format!("{}. [ ] {}", i + 1, task.description);
                     total_lines += (task_line.len() + inner_width - 1) / inner_width;
                 }
                 total_lines as u16 + 2 // +2 for borders
@@ -391,7 +391,7 @@ impl<'a> ScreenshotWidget<'a> {
         render_text_with_skip(
             area,
             buf,
-            &format!("📸 {}", self.name),
+            &format!("[o] {}", self.name),
             skip_lines,
             &format!("Screenshot [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Yellow),
@@ -416,7 +416,7 @@ impl<'a> ClipboardWidget<'a> {
         render_text_with_skip(
             area,
             buf,
-            &format!("📋 {}...", self.excerpt),
+            &format!("[=] {}...", self.excerpt),
             skip_lines,
             &format!("Clipboard [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Magenta),
@@ -440,9 +440,9 @@ struct FunctionCallWidget<'a> {
 impl<'a> FunctionCallWidget<'a> {
     fn render_with_skip(&self, area: Rect, buf: &mut Buffer, skip_lines: usize) {
         let text = if let Some(args) = self.args {
-            format!("⚡ {}({})", self.name, args)
+            format!("[!] {}({})", self.name, args)
         } else {
-            format!("⚡ {}()", self.name)
+            format!("[!] {}()", self.name)
         };
 
         render_text_with_skip(
@@ -474,7 +474,7 @@ impl<'a> FunctionResultWidget<'a> {
         render_text_with_skip(
             area,
             buf,
-            &format!("✓ {}: {}", self.name, self.result),
+            &format!("[v] {}: {}", self.name, self.result),
             skip_lines,
             &format!("Function Result [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::DarkGray),
@@ -664,7 +664,7 @@ impl<'a> ErrorWidget<'a> {
         render_text_with_skip(
             area,
             buf,
-            &format!("❌ {}", self.message),
+            &format!("[X] {}", self.message),
             skip_lines,
             &format!("Error [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Red),
@@ -715,17 +715,17 @@ impl<'a> TaskPlanWidget<'a> {
         let mut lines = vec![];
 
         // Title
-        lines.push(format!("📋 {}", self.plan.title));
+        lines.push(format!("[=] {}", self.plan.title));
         lines.push("─".repeat(area.width.saturating_sub(2) as usize));
 
         // Tasks with status indicators
         for (i, task) in self.plan.tasks.iter().enumerate() {
             let (status_icon, _style) = match task.status {
-                crate::worker::TaskStatus::Pending => ("⬜", Style::default().fg(Color::Gray)),
-                crate::worker::TaskStatus::InProgress => ("🟨", Style::default().fg(Color::Yellow)),
-                crate::worker::TaskStatus::Completed => ("✅", Style::default().fg(Color::Green)),
+                crate::worker::TaskStatus::Pending => ("[ ]", Style::default().fg(Color::Gray)),
+                crate::worker::TaskStatus::InProgress => ("[~]", Style::default().fg(Color::Yellow)),
+                crate::worker::TaskStatus::Completed => ("[x]", Style::default().fg(Color::Green)),
                 crate::worker::TaskStatus::Skipped => (
-                    "⏭️",
+                    "[>>]",
                     Style::default()
                         .fg(Color::DarkGray)
                         .add_modifier(Modifier::CROSSED_OUT),
@@ -775,7 +775,7 @@ impl<'a> MicrophoneStartedWidget<'a> {
         render_text_with_skip(
             area,
             buf,
-            "🎤 Listening...",
+            "(o) Listening...",
             skip_lines,
             &format!("Microphone [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
@@ -799,7 +799,7 @@ impl<'a> MicrophoneStoppedWidget<'a> {
         render_text_with_skip(
             area,
             buf,
-            "🎤 Recording stopped",
+            "(.) Recording stopped",
             skip_lines,
             &format!("Microphone [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Gray),
