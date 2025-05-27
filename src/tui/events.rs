@@ -61,6 +61,14 @@ pub enum TuiEvent {
     SetWaitingForConfirmation {
         waiting: bool,
     },
+    TaskPlanCreated {
+        plan: crate::worker::TaskPlan,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    },
+    TaskPlanUpdated {
+        plan: crate::worker::TaskPlan,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    },
 }
 
 impl TuiEvent {
@@ -163,5 +171,19 @@ impl TuiEvent {
 
     pub fn set_waiting_for_confirmation(waiting: bool) -> Self {
         Self::SetWaitingForConfirmation { waiting }
+    }
+    
+    pub fn task_plan_created(plan: crate::worker::TaskPlan) -> Self {
+        Self::TaskPlanCreated {
+            plan,
+            timestamp: chrono::Utc::now(),
+        }
+    }
+    
+    pub fn task_plan_updated(plan: crate::worker::TaskPlan) -> Self {
+        Self::TaskPlanUpdated {
+            plan,
+            timestamp: chrono::Utc::now(),
+        }
     }
 }

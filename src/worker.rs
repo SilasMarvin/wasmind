@@ -15,7 +15,7 @@ use crate::{
     config::ParsedConfig,
     context::{clipboard::capture_clipboard, microphone, screen::capture_screen},
     mcp,
-    tools::{command::PendingCommand, command_executor},
+    tools::{command::PendingCommand, command_executor, planner},
     tui,
 };
 
@@ -30,6 +30,29 @@ const SPLASH: &str = r#"|WELCOME USER|
 
 human x ai ♡
 "#;
+
+/// Task status for the planner
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum TaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Skipped,
+}
+
+/// Individual task in the plan
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Task {
+    pub description: String,
+    pub status: TaskStatus,
+}
+
+/// Task plan managed by the planner tool
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TaskPlan {
+    pub title: String,
+    pub tasks: Vec<Task>,
+}
 
 /// All available events the worker can handle
 #[derive(Debug)]
@@ -113,6 +136,9 @@ pub fn do_execute_worker(
     // Track pending command execution
     let mut pending_command: Option<PendingCommand> = None;
     let mut executing_tool_calls: Vec<String> = Vec::new();
+    
+    // Track current task plan
+    let mut current_task_plan: Option<TaskPlan> = None;
 
     let (assistant_tx, assistant_rx) = unbounded();
     let local_worker_tx = tx.clone();
@@ -176,6 +202,41 @@ pub fn do_execute_worker(
                             }
                         },
                         "required": ["command"]
+                    })),
+                });
+                
+                tools.push(Tool {
+                    name: "planner".to_string(),
+                    description: Some("Create and manage a task plan to break down complex tasks into numbered steps. Use this to organize your work, track progress, and update the plan as you complete tasks.".to_string()),
+                    schema: Some(serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "action": {
+                                "type": "string",
+                                "enum": ["create", "update", "complete", "start", "skip"],
+                                "description": "Action to perform: create (new plan), update (modify task), complete (mark done), start (mark in progress), skip (mark skipped)"
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Title of the task plan (required for create action)"
+                            },
+                            "tasks": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "List of task descriptions (required for create action)"
+                            },
+                            "task_number": {
+                                "type": "number",
+                                "description": "Task number to update (1-based, required for update/complete/start/skip actions)"
+                            },
+                            "new_description": {
+                                "type": "string",
+                                "description": "New description for the task (optional, for update action)"
+                            }
+                        },
+                        "required": ["action"]
                     })),
                 });
 
@@ -361,7 +422,7 @@ pub fn do_execute_worker(
 
                         // Handle internal tools
                         if !internal_tools.is_empty() {
-                            handle_internal_tools(internal_tools, &mut pending_command, &tui_tx);
+                            handle_internal_tools(internal_tools, &mut pending_command, &mut current_task_plan, &tui_tx, &tx);
                         }
 
                         // Send remaining tools to MCP
@@ -430,18 +491,21 @@ pub fn do_execute_worker(
 
 /// Check if a tool is an internal tool
 fn is_internal_tool(tool_name: &str) -> bool {
-    matches!(tool_name, "execute_command")
+    matches!(tool_name, "execute_command" | "planner")
 }
 
 /// Handle internal tool calls
 fn handle_internal_tools(
     tool_calls: Vec<ToolCall>,
     pending_command: &mut Option<PendingCommand>,
+    current_task_plan: &mut Option<TaskPlan>,
     tui_tx: &Sender<tui::Task>,
+    worker_tx: &Sender<Event>,
 ) {
     for tool_call in tool_calls {
         match tool_call.fn_name.as_str() {
             "execute_command" => handle_execute_command(tool_call, pending_command, tui_tx),
+            "planner" => planner::handle_planner(tool_call, current_task_plan, tui_tx, worker_tx),
             _ => {
                 // For unknown tools, we should send an error response
                 // but since we're not sending responses anymore, we'll just log it

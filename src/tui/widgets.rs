@@ -165,6 +165,9 @@ impl EventWidget for TuiEvent {
             TuiEvent::SystemMessage { message, timestamp } => {
                 SystemWidget { message, timestamp }.render_with_skip(area, buf, skip_lines);
             }
+            TuiEvent::TaskPlanCreated { plan, timestamp } | TuiEvent::TaskPlanUpdated { plan, timestamp } => {
+                TaskPlanWidget { plan, timestamp }.render_with_skip(area, buf, skip_lines);
+            }
             TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => {
                 // These are state changes, not rendered
             }
@@ -260,6 +263,16 @@ impl EventWidget for TuiEvent {
                     }
                 }
                 total_lines.max(1) as u16 + 2 // +2 for borders
+            }
+            TuiEvent::TaskPlanCreated { plan, .. } | TuiEvent::TaskPlanUpdated { plan, .. } => {
+                // Title + separator + tasks + progress
+                let mut total_lines = 3; // Title, separator, progress
+                for task in &plan.tasks {
+                    // Task number + status + description
+                    let task_line = format!("{}. {}", 1, task.description);
+                    total_lines += (task_line.len() + inner_width - 1) / inner_width;
+                }
+                total_lines as u16 + 2 // +2 for borders
             }
             TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => {
                 0
@@ -665,6 +678,57 @@ impl<'a> SystemWidget<'a> {
 }
 
 impl<'a> Widget for SystemWidget<'a> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        self.render_with_skip(area, buf, 0);
+    }
+}
+
+struct TaskPlanWidget<'a> {
+    plan: &'a crate::worker::TaskPlan,
+    timestamp: &'a chrono::DateTime<chrono::Utc>,
+}
+
+impl<'a> TaskPlanWidget<'a> {
+    fn render_with_skip(&self, area: Rect, buf: &mut Buffer, skip_lines: usize) {
+        // Build the task plan display
+        let mut lines = vec![];
+        
+        // Title
+        lines.push(format!("📋 {}", self.plan.title));
+        lines.push("─".repeat(area.width.saturating_sub(2) as usize));
+        
+        // Tasks with status indicators
+        for (i, task) in self.plan.tasks.iter().enumerate() {
+            let (status_icon, _style) = match task.status {
+                crate::worker::TaskStatus::Pending => ("⬜", Style::default().fg(Color::Gray)),
+                crate::worker::TaskStatus::InProgress => ("🟨", Style::default().fg(Color::Yellow)),
+                crate::worker::TaskStatus::Completed => ("✅", Style::default().fg(Color::Green)),
+                crate::worker::TaskStatus::Skipped => ("⏭️", Style::default().fg(Color::DarkGray).add_modifier(Modifier::CROSSED_OUT)),
+            };
+            
+            lines.push(format!("{}. {} {}", i + 1, status_icon, task.description));
+        }
+        
+        // Progress
+        let completed = self.plan.tasks.iter().filter(|t| matches!(t.status, crate::worker::TaskStatus::Completed)).count();
+        let total = self.plan.tasks.len();
+        lines.push(format!("\nProgress: {}/{} tasks completed", completed, total));
+        
+        let text = lines.join("\n");
+        
+        render_text_with_skip(
+            area,
+            buf,
+            &text,
+            skip_lines,
+            &format!("Task Plan [{}]", self.timestamp.format("%H:%M:%S")),
+            Style::default().fg(Color::Cyan),
+            Style::default(),
+        );
+    }
+}
+
+impl<'a> Widget for TaskPlanWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.render_with_skip(area, buf, 0);
     }
