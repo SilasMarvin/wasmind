@@ -7,7 +7,6 @@ use rdev::Key;
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
 use std::{collections::HashMap, fs, io, path::PathBuf};
-use toml::Value;
 
 use crate::worker::Action;
 
@@ -112,7 +111,6 @@ struct ModelConfig {
     system_prompt: Option<String>,
     endpoint: Option<String>,
     auth: Option<String>,
-    chat_config: Option<Value>,
     adapater: Option<String>,
 }
 

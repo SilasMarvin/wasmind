@@ -25,11 +25,6 @@ pub enum CommandExecutorError {
         source: std::string::FromUtf8Error,
     },
 
-    #[snafu(display("Failed to send event to worker"))]
-    SendEvent {
-        #[snafu(source)]
-        source: crossbeam::channel::SendError<worker::Event>,
-    },
 
     #[snafu(display("Command was cancelled"))]
     Cancelled,

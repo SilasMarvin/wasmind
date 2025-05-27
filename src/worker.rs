@@ -1,7 +1,7 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use crossbeam::channel::{Receiver, Sender, unbounded};
 use genai::chat::{
-    ChatMessage, ChatRequest, ChatRole, ChatStreamEvent, ContentPart, MessageContent, Tool,
+    ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool,
     ToolCall, ToolResponse,
 };
 use image::ImageFormat;
@@ -18,18 +18,6 @@ use crate::{
     tools::{command::PendingCommand, command_executor, planner},
     tui,
 };
-
-const SPLASH: &str = r#"|WELCOME USER|                                                                           
-
-     ██╗ █████╗ ███╗   ██╗███████╗██╗   ██╗
-     ██║██╔══██╗████╗  ██║██╔════╝╚██╗ ██╔╝
-     ██║███████║██╔██╗ ██║█████╗   ╚████╔╝ 
-██   ██║██╔══██║██║╚██╗██║██╔══╝    ╚██╔╝  
-╚█████╔╝██║  ██║██║ ╚████║███████╗   ██║   
- ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝
-
-human x ai ♡
-"#;
 
 /// Task status for the planner
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -61,7 +49,6 @@ pub enum Event {
     MCPToolsInit(Vec<Tool>),
     MCPToolsResponse(Vec<ToolResponse>),
     Action(Action),
-    ChatStreamEvent(ChatStreamEvent),
     ChatResponse(MessageContent),
     MicrophoneResponse(String),
     CommandExecutionResult {
@@ -173,11 +160,6 @@ pub fn do_execute_worker(
     });
 
     let mut waiting_for_assistant_response = false;
-
-    // Initial system message
-    let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::system(
-        SPLASH.to_string(),
-    )));
 
     while let Ok(task) = rx.recv() {
         match task {
@@ -363,7 +345,6 @@ pub fn do_execute_worker(
                     break;
                 }
             },
-            Event::ChatStreamEvent(_event) => unreachable!(),
             Event::MCPToolsResponse(call_tool_results) => {
                 chat_request = chat_request.append_message(ChatMessage {
                     role: ChatRole::Tool,

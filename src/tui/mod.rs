@@ -9,7 +9,6 @@ use std::thread;
 use std::time::Duration;
 
 use crossbeam::channel::{Receiver, Sender};
-use crossbeam::select;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event as CrosstermEvent, KeyCode, MouseEventKind},
     execute,
@@ -34,8 +33,6 @@ pub enum TuiError {
     #[snafu(display("Failed to draw frame"))]
     DrawFrame { source: io::Error },
 
-    #[snafu(display("Failed to handle event"))]
-    EventHandle { source: io::Error },
 }
 
 type TuiResult<T> = Result<T, TuiError>;
@@ -44,7 +41,6 @@ type TuiResult<T> = Result<T, TuiError>;
 #[derive(Debug, Clone)]
 pub enum Task {
     AddEvent(TuiEvent),
-    UpdateInput(String),
     ClearInput,
     Exit,
 }
@@ -123,16 +119,6 @@ fn run_app(
                             Task::AddEvent(event) => {
                                 app.add_event(event);
                                 drop(app); // Release lock before drawing
-                                terminal
-                                    .draw(|f| {
-                                        let app = app_ref.lock().unwrap();
-                                        ui::draw(f, &*app);
-                                    })
-                                    .context(DrawFrameSnafu)?;
-                            }
-                            Task::UpdateInput(input) => {
-                                app.set_input(input);
-                                drop(app);
                                 terminal
                                     .draw(|f| {
                                         let app = app_ref.lock().unwrap();

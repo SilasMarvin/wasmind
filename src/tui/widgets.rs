@@ -151,14 +151,13 @@ impl EventWidget for TuiEvent {
                 .render_with_skip(area, buf, skip_lines);
             }
             TuiEvent::CommandResult {
-                command,
                 stdout,
                 stderr,
                 exit_code,
                 timestamp,
+                ..
             } => {
                 CommandResultWidget {
-                    command,
                     stdout,
                     stderr,
                     exit_code,
@@ -508,7 +507,6 @@ impl<'a> Widget for CommandPromptWidget<'a> {
 }
 
 struct CommandResultWidget<'a> {
-    command: &'a str,
     stdout: &'a str,
     stderr: &'a str,
     exit_code: &'a i32,

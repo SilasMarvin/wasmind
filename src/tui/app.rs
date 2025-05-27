@@ -1,6 +1,18 @@
 use super::events::TuiEvent;
 use super::widgets::EventWidget;
 
+const SPLASH: &str = r#"|WELCOME USER|                                                                           
+
+     ██╗ █████╗ ███╗   ██╗███████╗██╗   ██╗
+     ██║██╔══██╗████╗  ██║██╔════╝╚██╗ ██╔╝
+     ██║███████║██╔██╗ ██║█████╗   ╚████╔╝ 
+██   ██║██╔══██║██║╚██╗██║██╔══╝    ╚██╔╝  
+╚█████╔╝██║  ██║██║ ╚████║███████╗   ██║   
+ ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝
+
+human x ai ♡
+"#;
+
 /// Main application state
 pub struct App {
     /// All events to display
@@ -27,7 +39,7 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
-        Self {
+        let mut app = Self {
             events: Vec::new(),
             input: String::new(),
             scroll_position: 0,
@@ -38,7 +50,12 @@ impl App {
             waiting_for_confirmation: false,
             total_height_cache: 0,
             cache_dirty: true,
-        }
+        };
+        
+        // Add splash message as the first event
+        app.add_event(TuiEvent::system(SPLASH.to_string()));
+        
+        app
     }
 
     pub fn add_event(&mut self, event: TuiEvent) {
@@ -81,9 +98,6 @@ impl App {
         }
     }
 
-    pub fn set_input(&mut self, input: String) {
-        self.input = input;
-    }
 
     pub fn get_input(&self) -> &str {
         &self.input
@@ -130,13 +144,6 @@ impl App {
         self.auto_scroll = false;
     }
 
-    pub fn set_visible_height(&mut self, height: u16) {
-        self.visible_height = height;
-        // Adjust scroll position if needed
-        if self.auto_scroll {
-            self.scroll_to_bottom();
-        }
-    }
     
     pub fn set_visible_dimensions(&mut self, width: u16, height: u16) {
         if self.visible_width != width {
@@ -150,13 +157,6 @@ impl App {
         }
     }
 
-    pub fn set_waiting_for_response(&mut self, waiting: bool) {
-        self.waiting_for_response = waiting;
-    }
-
-    pub fn set_waiting_for_confirmation(&mut self, waiting: bool) {
-        self.waiting_for_confirmation = waiting;
-    }
     
     fn get_total_height(&mut self) -> usize {
         if self.cache_dirty {
