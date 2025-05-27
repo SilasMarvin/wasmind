@@ -175,23 +175,33 @@ impl EventWidget for TuiEvent {
                 
                 if !stdout.is_empty() {
                     total_lines += 1; // STDOUT: header
-                    for line in stdout.lines() {
+                    let stdout_lines: Vec<&str> = stdout.lines().collect();
+                    let displayed_lines = stdout_lines.len().min(4);
+                    for line in stdout_lines.iter().take(displayed_lines) {
                         if line.is_empty() {
                             total_lines += 1;
                         } else {
                             total_lines += (line.len() + inner_width - 1) / inner_width;
                         }
                     }
+                    if stdout_lines.len() > 4 {
+                        total_lines += 1; // For the "... (X more lines)" message
+                    }
                 }
                 
                 if !stderr.is_empty() {
                     total_lines += 1; // STDERR: header
-                    for line in stderr.lines() {
+                    let stderr_lines: Vec<&str> = stderr.lines().collect();
+                    let displayed_lines = stderr_lines.len().min(4);
+                    for line in stderr_lines.iter().take(displayed_lines) {
                         if line.is_empty() {
                             total_lines += 1;
                         } else {
                             total_lines += (line.len() + inner_width - 1) / inner_width;
                         }
+                    }
+                    if stderr_lines.len() > 4 {
+                        total_lines += 1; // For the "... (X more lines)" message
                     }
                 }
                 
@@ -430,15 +440,33 @@ impl<'a> CommandResultWidget<'a> {
 
         if !self.stdout.is_empty() {
             all_lines.push("STDOUT:".to_string());
-            for line in self.stdout.lines() {
-                all_lines.push(line.to_string());
+            let stdout_lines: Vec<&str> = self.stdout.lines().collect();
+            if stdout_lines.len() <= 4 {
+                for line in stdout_lines {
+                    all_lines.push(line.to_string());
+                }
+            } else {
+                // Show first 4 lines and add "..."
+                for line in stdout_lines.iter().take(4) {
+                    all_lines.push(line.to_string());
+                }
+                all_lines.push(format!("... ({} more lines)", stdout_lines.len() - 4));
             }
         }
 
         if !self.stderr.is_empty() {
             all_lines.push("STDERR:".to_string());
-            for line in self.stderr.lines() {
-                all_lines.push(line.to_string());
+            let stderr_lines: Vec<&str> = self.stderr.lines().collect();
+            if stderr_lines.len() <= 4 {
+                for line in stderr_lines {
+                    all_lines.push(line.to_string());
+                }
+            } else {
+                // Show first 4 lines and add "..."
+                for line in stderr_lines.iter().take(4) {
+                    all_lines.push(line.to_string());
+                }
+                all_lines.push(format!("... ({} more lines)", stderr_lines.len() - 4));
             }
         }
 

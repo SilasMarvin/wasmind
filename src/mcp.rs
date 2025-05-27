@@ -114,9 +114,14 @@ async fn do_start_servers(tx: Sender<worker::Event>, config: ParsedConfig) -> MR
     for (name, config) in config.mcp_servers {
         info!(server = %name, command = %config.command, args = ?config.args, "Starting MCP server");
         
+        let mut cmd = Command::new(&config.command);
+        cmd.args(&config.args);
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+        
         let service = ()
             .serve(
-                transport::TokioChildProcess::new(Command::new(&config.command).args(&config.args))
+                transport::TokioChildProcess::new(&mut cmd)
                     .with_context(|_| StartMCPSnafu {
                         server: name.clone(),
                         command: config.command.clone(),
