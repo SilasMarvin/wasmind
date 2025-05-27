@@ -6,7 +6,7 @@ use genai::{
 use rdev::Key;
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
-use std::{collections::HashMap, fs, io, path::PathBuf};
+use std::{collections::{HashMap, HashSet}, fs, io, path::PathBuf};
 
 use crate::worker::Action;
 
@@ -59,39 +59,73 @@ pub struct Config {
     key_bindings: KeyConfig,
     #[serde(default)]
     mcp_servers: HashMap<String, McpServerConfig>,
+    #[serde(default)]
+    whitelisted_commands: Vec<String>,
 }
 
 impl Config {
     pub fn new() -> Result<Self, ConfigError> {
         let config_file_path = get_config_file_path();
+        tracing::debug!("Looking for config file at: {:?}", config_file_path);
         let user_config: Option<Config> = if fs::exists(&config_file_path)? {
+            tracing::debug!("Found user config file");
             let contents = fs::read_to_string(&config_file_path)?;
             Some(toml::from_str(&contents).context(TomlDeserializeSnafu)?)
         } else {
+            tracing::debug!("No user config file found, using defaults");
             None
         };
 
         if let Some(mut user_config) = user_config {
+            // Always load default config to get whitelisted commands
+            let mut default = Config::default()?;
+            
             if user_config.key_bindings.clear_defaults {
+                // Even with clear_defaults, use default whitelisted commands if user hasn't specified any
+                if user_config.whitelisted_commands.is_empty() {
+                    user_config.whitelisted_commands = default.whitelisted_commands;
+                }
                 Ok(user_config)
             } else {
-                let mut default = Config::default()?;
+                // Merge key bindings
                 default
                     .key_bindings
                     .bindings
                     .extend(user_config.key_bindings.bindings);
                 user_config.key_bindings.bindings = default.key_bindings.bindings;
+                
+                // Merge whitelisted commands if user config doesn't have any
+                // or extend the default list with user's additional commands
+                if user_config.whitelisted_commands.is_empty() {
+                    user_config.whitelisted_commands = default.whitelisted_commands;
+                } else {
+                    // Prepend default whitelisted commands to user's list
+                    let mut merged_whitelist = default.whitelisted_commands;
+                    merged_whitelist.extend(user_config.whitelisted_commands);
+                    // Remove duplicates while preserving order
+                    let mut seen = std::collections::HashSet::new();
+                    user_config.whitelisted_commands = merged_whitelist
+                        .into_iter()
+                        .filter(|cmd| seen.insert(cmd.clone()))
+                        .collect();
+                }
 
+                tracing::debug!("Final whitelisted commands: {:?}", user_config.whitelisted_commands);
                 Ok(user_config)
             }
         } else {
-            Config::default()
+            let config = Config::default()?;
+            tracing::debug!("Using default config, whitelisted commands: {:?}", config.whitelisted_commands);
+            Ok(config)
         }
     }
 
     pub fn default() -> Result<Self, ConfigError> {
         let default_contents = include_str!("../default_config.toml");
-        toml::from_str(default_contents).context(TomlDeserializeSnafu)
+        tracing::debug!("Default config contents:\n{}", default_contents);
+        let config: Config = toml::from_str(default_contents).context(TomlDeserializeSnafu)?;
+        tracing::debug!("Parsed default config - whitelisted_commands: {:?}", config.whitelisted_commands);
+        Ok(config)
     }
 }
 
@@ -149,11 +183,16 @@ impl TryFrom<Config> for ParsedConfig {
         let model = parse_model_config(value.model);
 
         let mcp_servers = value.mcp_servers;
+        
+        let whitelisted_commands = value.whitelisted_commands;
+        
+        tracing::debug!("Loaded whitelisted commands: {:?}", whitelisted_commands);
 
         Ok(Self {
             keys,
             model,
             mcp_servers,
+            whitelisted_commands,
         })
     }
 }
@@ -164,6 +203,7 @@ pub struct ParsedConfig {
     pub keys: ParsedKeyConfig,
     pub model: ParsedModelConfig,
     pub mcp_servers: HashMap<String, McpServerConfig>,
+    pub whitelisted_commands: Vec<String>,
 }
 
 /// The parsed and verified key bindings

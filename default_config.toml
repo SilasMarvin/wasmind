@@ -1,10 +1,38 @@
+# Commands that can be executed without user confirmation
+# Common safe commands are whitelisted by default
+whitelisted_commands = [
+    "ls",
+    "pwd",
+    "echo",
+    "cat",
+    "grep",
+    "rg",
+    "find",
+    "git",
+    "cargo",
+    "npm",
+    "node",
+    "python",
+    "pip",
+    "which",
+    "date",
+    "whoami",
+    "uname",
+    "head",
+    "tail",
+    "wc",
+    "sort",
+    "uniq",
+    "diff",
+    "tree"
+]
+
 [model]
 name = "accounts/fireworks/models/qwen3-235b-a22b"
 endpoint = "https://api.fireworks.ai/inference/v1/"
 system_prompt = "You are a helpful assistant with access to a number of tools. Use the tools to answer the user's requests. Do not ask to execute tools simply do what is required to answer the request. Use your best judgement on what tool to use. The user will probably not tell you exactly which one to use. When given a complex task that requires multiple steps, use the planner tool to break it down into numbered tasks and track your progress as you complete each step. IMPORTANT: /no_think"
 adapater = "OpenAI"
-auth = "FIREWORKS_API_KEY" 
-
+auth = "FIREWORKS_API_KEY"
 
 [mcp_servers.github]
 command = "npx"
@@ -15,7 +43,7 @@ command = "npx"
 args = ["@playwright/mcp@latest", "--browser", "brave"]
 
 [key_bindings]
-clear_default = false
+clear_defaults = false
 
 [key_bindings.bindings]
 "cmd-alt-w" = "CaptureWindow"

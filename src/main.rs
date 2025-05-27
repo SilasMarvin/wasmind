@@ -97,8 +97,15 @@ pub type SResult<T> = Result<T, Error>;
 fn init_logger() {
     let builder = FmtSubscriber::builder().with_env_filter(EnvFilter::from_env("FILLER_NAME"));
 
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open("log.txt")
+        .expect("Unable to open log file");
+
     builder
-        .with_writer(std::io::stderr)
+        .with_writer(file)
         .without_time()
         .with_ansi(false)
         .init()

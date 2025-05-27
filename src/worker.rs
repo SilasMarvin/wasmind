@@ -407,7 +407,7 @@ pub fn do_execute_worker(
 
                         // Handle internal tools
                         if !internal_tools.is_empty() {
-                            handle_internal_tools(internal_tools, &mut pending_command, &mut current_task_plan, &tui_tx, &tx);
+                            handle_internal_tools(internal_tools, &mut pending_command, &mut current_task_plan, &tui_tx, &tx, &config, &command_executor_tx, &mut executing_tool_calls);
                         }
 
                         // Send remaining tools to MCP
@@ -486,10 +486,13 @@ fn handle_internal_tools(
     current_task_plan: &mut Option<TaskPlan>,
     tui_tx: &Sender<tui::Task>,
     worker_tx: &Sender<Event>,
+    config: &ParsedConfig,
+    command_executor_tx: &Sender<command_executor::Task>,
+    executing_tool_calls: &mut Vec<String>,
 ) {
     for tool_call in tool_calls {
         match tool_call.fn_name.as_str() {
-            "execute_command" => handle_execute_command(tool_call, pending_command, tui_tx),
+            "execute_command" => handle_execute_command(tool_call, pending_command, tui_tx, config, command_executor_tx, worker_tx, executing_tool_calls),
             "planner" => planner::handle_planner(tool_call, current_task_plan, tui_tx, worker_tx),
             _ => {
                 // For unknown tools, we should send an error response
@@ -505,6 +508,10 @@ fn handle_execute_command(
     tool_call: ToolCall,
     pending_command: &mut Option<PendingCommand>,
     tui_tx: &Sender<tui::Task>,
+    config: &ParsedConfig,
+    command_executor_tx: &Sender<command_executor::Task>,
+    worker_tx: &Sender<Event>,
+    executing_tool_calls: &mut Vec<String>,
 ) {
     // Parse the arguments
     let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
@@ -532,19 +539,57 @@ fn handle_execute_command(
         _ => Vec::new(),
     };
 
-    // Display the confirmation prompt
-    let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::command_prompt(
-        command.to_string(),
-        args_array.clone(),
-    )));
-    let _ = tui_tx.send(tui::Task::AddEvent(
-        tui::events::TuiEvent::set_waiting_for_confirmation(true),
-    ));
-
-    // Store the pending command
-    *pending_command = Some(PendingCommand {
-        command: command.to_string(),
-        args: args_array,
-        tool_call_id: tool_call.call_id,
+    // Check if command is whitelisted
+    tracing::debug!("Checking if command '{}' is whitelisted", command);
+    tracing::debug!("Whitelisted commands: {:?}", config.whitelisted_commands);
+    
+    // Check for exact match or if command starts with a whitelisted command
+    // This handles cases like "git status" where "git" is whitelisted
+    let is_whitelisted = config.whitelisted_commands.iter().any(|wc| {
+        // Exact match
+        if wc == command {
+            return true;
+        }
+        // Check if the command is a path that ends with the whitelisted command
+        // e.g., "/usr/bin/pwd" matches "pwd"
+        if command.split('/').last() == Some(wc) {
+            return true;
+        }
+        false
     });
+    
+    if is_whitelisted {
+        // Command is whitelisted, execute without prompting
+        tracing::debug!("Command '{}' is whitelisted, executing without prompt", command);
+        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::system(
+            format!("Executing whitelisted command: {} {}", command, args_array.join(" "))
+        )));
+        
+        // Track executing command
+        executing_tool_calls.push(tool_call.call_id.clone());
+        
+        // Send command directly to executor
+        let _ = command_executor_tx.send(command_executor::Task::Execute {
+            command: command.to_string(),
+            args: args_array,
+            tool_call_id: tool_call.call_id,
+        });
+    } else {
+        // Command not whitelisted, prompt for confirmation
+        tracing::debug!("Command '{}' is NOT whitelisted, prompting for confirmation", command);
+        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::command_prompt(
+            command.to_string(),
+            args_array.clone(),
+        )));
+        let _ = tui_tx.send(tui::Task::AddEvent(
+            tui::events::TuiEvent::set_waiting_for_confirmation(true),
+        ));
+
+        // Store the pending command
+        *pending_command = Some(PendingCommand {
+            command: command.to_string(),
+            args: args_array,
+            tool_call_id: tool_call.call_id,
+        });
+    }
 }
