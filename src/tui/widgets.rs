@@ -5,6 +5,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget, Wrap},
 };
+use chrono::Local;
 
 use super::events::TuiEvent;
 
@@ -317,7 +318,7 @@ impl<'a> UserInputWidget<'a> {
             buf,
             self.text,
             skip_lines,
-            &format!("User [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("User [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Blue),
             Style::default(),
         );
@@ -342,7 +343,7 @@ impl<'a> UserMicrophoneWidget<'a> {
             buf,
             self.text,
             skip_lines,
-            &format!("User (Microphone) [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("User (Microphone) [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Cyan),
             Style::default(),
         );
@@ -367,7 +368,7 @@ impl<'a> AssistantResponseWidget<'a> {
             buf,
             self.text,
             skip_lines,
-            &format!("Assistant [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("Assistant [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Green),
             Style::default(),
         );
@@ -392,7 +393,7 @@ impl<'a> ScreenshotWidget<'a> {
             buf,
             &format!("📸 {}", self.name),
             skip_lines,
-            &format!("Screenshot [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("Screenshot [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Yellow),
             Style::default().fg(Color::Yellow),
         );
@@ -417,7 +418,7 @@ impl<'a> ClipboardWidget<'a> {
             buf,
             &format!("📋 {}...", self.excerpt),
             skip_lines,
-            &format!("Clipboard [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("Clipboard [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Magenta),
             Style::default().fg(Color::Magenta),
         );
@@ -449,7 +450,7 @@ impl<'a> FunctionCallWidget<'a> {
             buf,
             &text,
             skip_lines,
-            &format!("Function Call [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("Function Call [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::LightBlue),
             Style::default().fg(Color::LightBlue),
         );
@@ -475,7 +476,7 @@ impl<'a> FunctionResultWidget<'a> {
             buf,
             &format!("✓ {}: {}", self.name, self.result),
             skip_lines,
-            &format!("Function Result [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("Function Result [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::DarkGray),
             Style::default().fg(Color::Gray),
         );
@@ -505,7 +506,7 @@ impl<'a> CommandPromptWidget<'a> {
                 self.args.join(" ")
             ),
             skip_lines,
-            &format!("Command Prompt [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("Command Prompt [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Red),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         );
@@ -585,7 +586,7 @@ impl<'a> CommandResultWidget<'a> {
             Block::default()
                 .title(format!(
                     "Command Result [{}]",
-                    self.timestamp.format("%H:%M:%S")
+                    self.timestamp.with_timezone(&Local).format("%H:%M:%S")
                 ))
                 .borders(borders)
                 .border_style(Style::default().fg(Color::Gray))
@@ -665,7 +666,7 @@ impl<'a> ErrorWidget<'a> {
             buf,
             &format!("❌ {}", self.message),
             skip_lines,
-            &format!("Error [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("Error [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Red),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         );
@@ -690,7 +691,7 @@ impl<'a> SystemWidget<'a> {
             buf,
             self.message,
             skip_lines,
-            &format!("System [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("System [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::DarkGray),
             Style::default().fg(Color::DarkGray),
         );
@@ -752,7 +753,7 @@ impl<'a> TaskPlanWidget<'a> {
             buf,
             &text,
             skip_lines,
-            &format!("Task Plan [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("Task Plan [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Cyan),
             Style::default(),
         );
@@ -776,7 +777,7 @@ impl<'a> MicrophoneStartedWidget<'a> {
             buf,
             "🎤 Listening...",
             skip_lines,
-            &format!("Microphone [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("Microphone [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             Style::default().fg(Color::Red),
         );
@@ -800,7 +801,7 @@ impl<'a> MicrophoneStoppedWidget<'a> {
             buf,
             "🎤 Recording stopped",
             skip_lines,
-            &format!("Microphone [{}]", self.timestamp.format("%H:%M:%S")),
+            &format!("Microphone [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
             Style::default().fg(Color::Gray),
             Style::default().fg(Color::Gray),
         );
