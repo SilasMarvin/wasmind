@@ -160,6 +160,7 @@ pub fn do_execute_worker(
     });
 
     let mut waiting_for_assistant_response = false;
+    let mut microphone_recording = false;
 
     while let Ok(task) = rx.recv() {
         match task {
@@ -225,8 +226,10 @@ pub fn do_execute_worker(
                 chat_request = chat_request.with_tools(tools);
             }
             Event::MicrophoneResponse(text) => {
+                microphone_recording = false;
                 parts.push(ContentPart::from_text(text.clone()));
                 // Add to TUI
+                let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::microphone_stopped()));
                 let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::user_microphone(
                     text,
                 )));
@@ -280,9 +283,10 @@ pub fn do_execute_worker(
                     microphone_tx
                         .send(microphone::Task::ToggleRecord)
                         .context(MicrophoneTaskSendSnafu)?;
-                    let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::system(
-                        "Microphone recording toggled".to_string(),
-                    )));
+                    microphone_recording = !microphone_recording;
+                    if microphone_recording {
+                        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::microphone_started()));
+                    }
                 }
                 Action::CaptureWindow => {
                     let image = capture_screen()?;

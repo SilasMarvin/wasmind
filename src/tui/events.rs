@@ -55,6 +55,12 @@ pub enum TuiEvent {
         message: String,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
+    MicrophoneStarted {
+        timestamp: chrono::DateTime<chrono::Utc>,
+    },
+    MicrophoneStopped {
+        timestamp: chrono::DateTime<chrono::Utc>,
+    },
     SetWaitingForResponse {
         waiting: bool,
     },
@@ -176,6 +182,18 @@ impl TuiEvent {
     pub fn task_plan_updated(plan: crate::worker::TaskPlan) -> Self {
         Self::TaskPlanUpdated {
             plan,
+            timestamp: chrono::Utc::now(),
+        }
+    }
+
+    pub fn microphone_started() -> Self {
+        Self::MicrophoneStarted {
+            timestamp: chrono::Utc::now(),
+        }
+    }
+
+    pub fn microphone_stopped() -> Self {
+        Self::MicrophoneStopped {
             timestamp: chrono::Utc::now(),
         }
     }

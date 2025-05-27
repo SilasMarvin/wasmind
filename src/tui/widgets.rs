@@ -175,6 +175,12 @@ impl EventWidget for TuiEvent {
             | TuiEvent::TaskPlanUpdated { plan, timestamp } => {
                 TaskPlanWidget { plan, timestamp }.render_with_skip(area, buf, skip_lines);
             }
+            TuiEvent::MicrophoneStarted { timestamp } => {
+                MicrophoneStartedWidget { timestamp }.render_with_skip(area, buf, skip_lines);
+            }
+            TuiEvent::MicrophoneStopped { timestamp } => {
+                MicrophoneStoppedWidget { timestamp }.render_with_skip(area, buf, skip_lines);
+            }
             TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => {
                 // These are state changes, not rendered
             }
@@ -282,6 +288,12 @@ impl EventWidget for TuiEvent {
                     total_lines += (task_line.len() + inner_width - 1) / inner_width;
                 }
                 total_lines as u16 + 2 // +2 for borders
+            }
+            TuiEvent::MicrophoneStarted { .. } => {
+                3 // Simple message with borders
+            }
+            TuiEvent::MicrophoneStopped { .. } => {
+                3 // Simple message with borders
             }
             TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => {
                 0
@@ -748,6 +760,54 @@ impl<'a> TaskPlanWidget<'a> {
 }
 
 impl<'a> Widget for TaskPlanWidget<'a> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        self.render_with_skip(area, buf, 0);
+    }
+}
+
+struct MicrophoneStartedWidget<'a> {
+    timestamp: &'a chrono::DateTime<chrono::Utc>,
+}
+
+impl<'a> MicrophoneStartedWidget<'a> {
+    fn render_with_skip(&self, area: Rect, buf: &mut Buffer, skip_lines: usize) {
+        render_text_with_skip(
+            area,
+            buf,
+            "🎤 Listening...",
+            skip_lines,
+            &format!("Microphone [{}]", self.timestamp.format("%H:%M:%S")),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Red),
+        );
+    }
+}
+
+impl<'a> Widget for MicrophoneStartedWidget<'a> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        self.render_with_skip(area, buf, 0);
+    }
+}
+
+struct MicrophoneStoppedWidget<'a> {
+    timestamp: &'a chrono::DateTime<chrono::Utc>,
+}
+
+impl<'a> MicrophoneStoppedWidget<'a> {
+    fn render_with_skip(&self, area: Rect, buf: &mut Buffer, skip_lines: usize) {
+        render_text_with_skip(
+            area,
+            buf,
+            "🎤 Recording stopped",
+            skip_lines,
+            &format!("Microphone [{}]", self.timestamp.format("%H:%M:%S")),
+            Style::default().fg(Color::Gray),
+            Style::default().fg(Color::Gray),
+        );
+    }
+}
+
+impl<'a> Widget for MicrophoneStoppedWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.render_with_skip(area, buf, 0);
     }
