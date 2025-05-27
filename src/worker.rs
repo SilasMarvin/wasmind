@@ -2,7 +2,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use crossbeam::channel::{Receiver, Sender, unbounded};
 use genai::chat::{
     ChatMessage, ChatRequest, ChatRole, ChatStreamEvent, ContentPart, MessageContent, Tool,
-    ToolResponse, ToolCall,
+    ToolCall, ToolResponse,
 };
 use image::ImageFormat;
 use serde_json;
@@ -14,12 +14,22 @@ use crate::{
     AssistantTaskSendSnafu, MCPTaskSendSnafu, MicrophoneTaskSendSnafu, SResult, assistant,
     config::ParsedConfig,
     context::{clipboard::capture_clipboard, microphone, screen::capture_screen},
-    mcp, tui,
-    tools::{
-        command::PendingCommand,
-        command_executor,
-    },
+    mcp,
+    tools::{command::PendingCommand, command_executor},
+    tui,
 };
+
+const SPLASH: &str = r#"|WELCOME USER|                                                                           
+
+     ██╗ █████╗ ███╗   ██╗███████╗██╗   ██╗
+     ██║██╔══██╗████╗  ██║██╔════╝╚██╗ ██╔╝
+     ██║███████║██╔██╗ ██║█████╗   ╚████╔╝ 
+██   ██║██╔══██║██║╚██╗██║██╔══╝    ╚██╔╝  
+╚█████╔╝██║  ██║██║ ╚████║███████╗   ██║   
+ ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝
+
+human x ai ♡
+"#;
 
 /// All available events the worker can handle
 #[derive(Debug)]
@@ -70,7 +80,7 @@ pub fn execute_worker(tx: Sender<Event>, rx: Receiver<Event>, config: ParsedConf
     let (tui_tx, tui_rx) = unbounded();
     let worker_tx_clone = tx.clone();
     let config_clone = config.clone();
-    
+
     let tui_handle = std::thread::spawn(move || {
         if let Err(e) = tui::execute_tui(worker_tx_clone, tui_rx, config_clone) {
             error!("Error executing TUI: {e:?}");
@@ -79,14 +89,14 @@ pub fn execute_worker(tx: Sender<Event>, rx: Receiver<Event>, config: ParsedConf
 
     if let Err(e) = do_execute_worker(tx, rx, config, tui_tx.clone()) {
         error!("Error executing worker: {e:?}");
-        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::error(
-            format!("Error executing worker: {e:?}")
-        )));
+        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::error(format!(
+            "Error executing worker: {e:?}"
+        ))));
     }
-    
+
     // Signal TUI to exit
     let _ = tui_tx.send(tui::Task::Exit);
-    
+
     // Wait for TUI to finish
     let _ = tui_handle.join();
 }
@@ -99,7 +109,7 @@ pub fn do_execute_worker(
 ) -> SResult<()> {
     let mut chat_request = ChatRequest::default().with_system(&config.model.system_prompt);
     let mut parts = vec![];
-    
+
     // Track pending command execution
     let mut pending_command: Option<PendingCommand> = None;
     let mut executing_tool_calls: Vec<String> = Vec::new();
@@ -129,16 +139,20 @@ pub fn do_execute_worker(
     let local_command_executor_tx = tx.clone();
     let local_config = config.clone();
     let _command_executor_handle = std::thread::spawn(move || {
-        command_executor::execute_command_executor(local_command_executor_tx, command_executor_rx, local_config);
+        command_executor::execute_command_executor(
+            local_command_executor_tx,
+            command_executor_rx,
+            local_config,
+        );
     });
 
     let mut waiting_for_assistant_response = false;
 
     // Initial system message
     let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::system(
-        "Welcome to Nelle assistant".to_string()
+        SPLASH.to_string(),
     )));
-    
+
     while let Ok(task) = rx.recv() {
         match task {
             Event::MCPToolsInit(mut tools) => {
@@ -164,13 +178,15 @@ pub fn do_execute_worker(
                         "required": ["command"]
                     })),
                 });
-                
+
                 chat_request = chat_request.with_tools(tools);
             }
             Event::MicrophoneResponse(text) => {
                 parts.push(ContentPart::from_text(text.clone()));
                 // Add to TUI
-                let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::user_microphone(text)));
+                let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::user_microphone(
+                    text,
+                )));
                 // This is kind of silly but rust ownership is being annoying
                 tx.send(Event::Action(Action::Assist))
                     .whatever_context("Error sending assist event to worker from worker")?;
@@ -202,10 +218,12 @@ pub fn do_execute_worker(
                         .whatever_context("Error sending command denial")?;
                     }
                     let _ = tui_tx.send(tui::Task::ClearInput);
-                    let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::set_waiting_for_confirmation(false)));
+                    let _ = tui_tx.send(tui::Task::AddEvent(
+                        tui::events::TuiEvent::set_waiting_for_confirmation(false),
+                    ));
                     continue; // Don't process this as regular input
                 }
-                
+
                 parts.push(ContentPart::from_text(text.clone()));
                 // Add to TUI
                 let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::user_input(text)));
@@ -220,7 +238,7 @@ pub fn do_execute_worker(
                         .send(microphone::Task::ToggleRecord)
                         .context(MicrophoneTaskSendSnafu)?;
                     let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::system(
-                        "Microphone recording toggled".to_string()
+                        "Microphone recording toggled".to_string(),
                     )));
                 }
                 Action::CaptureWindow => {
@@ -230,13 +248,14 @@ pub fn do_execute_worker(
                     let base64 = STANDARD.encode(buffer.into_inner());
                     parts.push(ContentPart::from_image_base64("image/png", base64.clone()));
                     let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::screenshot(
-                        "Screenshot captured".to_string()
+                        "Screenshot captured".to_string(),
                     )));
                 }
                 Action::CaptureClipboard => {
                     let text = capture_clipboard()?;
                     parts.push(ContentPart::from_text(text.clone()));
-                    let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::clipboard(text)));
+                    let _ =
+                        tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::clipboard(text)));
                 }
                 Action::Assist => {
                     if waiting_for_assistant_response {
@@ -249,7 +268,9 @@ pub fn do_execute_worker(
                         .context(AssistantTaskSendSnafu)?;
                     parts = vec![];
                     waiting_for_assistant_response = true;
-                    let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::set_waiting_for_response(true)));
+                    let _ = tui_tx.send(tui::Task::AddEvent(
+                        tui::events::TuiEvent::set_waiting_for_response(true),
+                    ));
                 }
                 Action::CancelAssist => {
                     if waiting_for_assistant_response {
@@ -257,20 +278,22 @@ pub fn do_execute_worker(
                             .send(assistant::Task::Cancel)
                             .context(AssistantTaskSendSnafu)?;
                         waiting_for_assistant_response = false;
-                        
+
                         // Cancel any executing commands
                         for tool_call_id in executing_tool_calls.drain(..) {
                             command_executor_tx
                                 .send(command_executor::Task::Cancel { tool_call_id })
                                 .whatever_context("Error sending cancel to command executor")?;
                         }
-                        
+
                         // Clear any pending command
                         pending_command = None;
-                        
-                        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::set_waiting_for_response(false)));
+
+                        let _ = tui_tx.send(tui::Task::AddEvent(
+                            tui::events::TuiEvent::set_waiting_for_response(false),
+                        ));
                         let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::system(
-                            "Cancelled assistant response".to_string()
+                            "Cancelled assistant response".to_string(),
                         )));
                     }
                 }
@@ -293,15 +316,21 @@ pub fn do_execute_worker(
             Event::ChatResponse(message_content) => {
                 match message_content.clone() {
                     MessageContent::Text(text) => {
-                        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::assistant_response(text, false)));
+                        let _ = tui_tx.send(tui::Task::AddEvent(
+                            tui::events::TuiEvent::assistant_response(text, false),
+                        ));
                         waiting_for_assistant_response = false;
-                        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::set_waiting_for_response(false)));
+                        let _ = tui_tx.send(tui::Task::AddEvent(
+                            tui::events::TuiEvent::set_waiting_for_response(false),
+                        ));
                     }
                     MessageContent::Parts(content_parts) => {
                         for part in content_parts {
                             match part {
                                 ContentPart::Text(text) => {
-                                    let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::assistant_response(text, false)));
+                                    let _ = tui_tx.send(tui::Task::AddEvent(
+                                        tui::events::TuiEvent::assistant_response(text, false),
+                                    ));
                                 }
                                 ContentPart::Image {
                                     content_type: _,
@@ -310,27 +339,31 @@ pub fn do_execute_worker(
                             }
                         }
                         waiting_for_assistant_response = false;
-                        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::set_waiting_for_response(false)));
+                        let _ = tui_tx.send(tui::Task::AddEvent(
+                            tui::events::TuiEvent::set_waiting_for_response(false),
+                        ));
                     }
                     MessageContent::ToolCalls(tool_calls) => {
                         // Display function calls
                         for call in &tool_calls {
-                            let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::function_call(
-                                call.fn_name.clone(),
-                                Some(call.fn_arguments.to_string())
-                            )));
+                            let _ = tui_tx.send(tui::Task::AddEvent(
+                                tui::events::TuiEvent::function_call(
+                                    call.fn_name.clone(),
+                                    Some(call.fn_arguments.to_string()),
+                                ),
+                            ));
                         }
-                        
+
                         // Separate internal tools from MCP tools
                         let (internal_tools, mcp_tools): (Vec<_>, Vec<_>) = tool_calls
                             .into_iter()
                             .partition(|tool_call| is_internal_tool(&tool_call.fn_name));
-                        
+
                         // Handle internal tools
                         if !internal_tools.is_empty() {
                             handle_internal_tools(internal_tools, &mut pending_command, &tui_tx);
                         }
-                        
+
                         // Send remaining tools to MCP
                         if !mcp_tools.is_empty() {
                             mcp_tx
@@ -348,18 +381,24 @@ pub fn do_execute_worker(
                     options: None,
                 });
             }
-            Event::CommandExecutionResult { tool_call_id, command, stdout, stderr, exit_code } => {
+            Event::CommandExecutionResult {
+                tool_call_id,
+                command,
+                stdout,
+                stderr,
+                exit_code,
+            } => {
                 // Remove from executing list
                 executing_tool_calls.retain(|id| id != &tool_call_id);
-                
+
                 // Add command result to TUI
                 let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::command_result(
                     command.clone(),
                     stdout.clone(),
                     stderr.clone(),
-                    exit_code
+                    exit_code,
                 )));
-                
+
                 // Format the result for the LLM
                 let mut result = String::new();
                 if !stdout.is_empty() {
@@ -374,7 +413,7 @@ pub fn do_execute_worker(
                 if result.is_empty() {
                     result = format!("Command completed with exit code: {}", exit_code);
                 }
-                
+
                 // Send the command result as a tool response
                 let tool_response = ToolResponse {
                     call_id: tool_call_id,
@@ -395,7 +434,11 @@ fn is_internal_tool(tool_name: &str) -> bool {
 }
 
 /// Handle internal tool calls
-fn handle_internal_tools(tool_calls: Vec<ToolCall>, pending_command: &mut Option<PendingCommand>, tui_tx: &Sender<tui::Task>) {
+fn handle_internal_tools(
+    tool_calls: Vec<ToolCall>,
+    pending_command: &mut Option<PendingCommand>,
+    tui_tx: &Sender<tui::Task>,
+) {
     for tool_call in tool_calls {
         match tool_call.fn_name.as_str() {
             "execute_command" => handle_execute_command(tool_call, pending_command, tui_tx),
@@ -403,13 +446,17 @@ fn handle_internal_tools(tool_calls: Vec<ToolCall>, pending_command: &mut Option
                 // For unknown tools, we should send an error response
                 // but since we're not sending responses anymore, we'll just log it
                 error!("Unknown internal tool: {}", tool_call.fn_name);
-            },
+            }
         }
     }
 }
 
 /// Handle the execute_command tool
-fn handle_execute_command(tool_call: ToolCall, pending_command: &mut Option<PendingCommand>, tui_tx: &Sender<tui::Task>) {
+fn handle_execute_command(
+    tool_call: ToolCall,
+    pending_command: &mut Option<PendingCommand>,
+    tui_tx: &Sender<tui::Task>,
+) {
     // Parse the arguments
     let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
         Ok(args) => args,
@@ -418,7 +465,7 @@ fn handle_execute_command(tool_call: ToolCall, pending_command: &mut Option<Pend
             return;
         }
     };
-    
+
     // Extract command and arguments
     let command = match args.get("command").and_then(|v| v.as_str()) {
         Some(cmd) => cmd,
@@ -427,23 +474,24 @@ fn handle_execute_command(tool_call: ToolCall, pending_command: &mut Option<Pend
             return;
         }
     };
-    
+
     let args_array = match args.get("args") {
-        Some(serde_json::Value::Array(arr)) => {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<String>>()
-        }
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect::<Vec<String>>(),
         _ => Vec::new(),
     };
-    
+
     // Display the confirmation prompt
     let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::command_prompt(
         command.to_string(),
-        args_array.clone()
+        args_array.clone(),
     )));
-    let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::set_waiting_for_confirmation(true)));
-    
+    let _ = tui_tx.send(tui::Task::AddEvent(
+        tui::events::TuiEvent::set_waiting_for_confirmation(true),
+    ));
+
     // Store the pending command
     *pending_command = Some(PendingCommand {
         command: command.to_string(),

@@ -19,6 +19,10 @@ pub struct App {
     pub waiting_for_response: bool,
     /// Whether we're waiting for command confirmation
     pub waiting_for_confirmation: bool,
+    /// Cached total height to avoid recalculation
+    total_height_cache: usize,
+    /// Whether the cache needs to be invalidated
+    cache_dirty: bool,
 }
 
 impl App {
@@ -32,6 +36,8 @@ impl App {
             auto_scroll: true,
             waiting_for_response: false,
             waiting_for_confirmation: false,
+            total_height_cache: 0,
+            cache_dirty: true,
         }
     }
 
@@ -45,12 +51,14 @@ impl App {
                         if let TuiEvent::AssistantResponse { text: existing_text, is_partial: existing_partial, .. } = e {
                             if *existing_partial {
                                 *existing_text = text.clone();
+                                self.cache_dirty = true;
                                 return;
                             }
                         }
                     }
                 }
                 self.events.push(event);
+                self.cache_dirty = true;
                 if self.auto_scroll {
                     self.scroll_to_bottom();
                 }
@@ -65,6 +73,7 @@ impl App {
             // All other events
             _ => {
                 self.events.push(event);
+                self.cache_dirty = true;
                 if self.auto_scroll {
                     self.scroll_to_bottom();
                 }
@@ -100,7 +109,7 @@ impl App {
 
     pub fn scroll_down(&mut self, amount: usize) {
         // Scrolling down means increasing position (towards bottom)
-        let total_height: usize = self.events.iter().map(|e| e.height(self.visible_width) as usize).sum();
+        let total_height = self.get_total_height();
         let max_scroll = total_height.saturating_sub(self.visible_height as usize);
         self.scroll_position = (self.scroll_position + amount).min(max_scroll);
         
@@ -111,7 +120,7 @@ impl App {
     }
 
     pub fn scroll_to_bottom(&mut self) {
-        let total_height: usize = self.events.iter().map(|e| e.height(self.visible_width) as usize).sum();
+        let total_height = self.get_total_height();
         self.scroll_position = total_height.saturating_sub(self.visible_height as usize);
         self.auto_scroll = true;
     }
@@ -130,6 +139,9 @@ impl App {
     }
     
     pub fn set_visible_dimensions(&mut self, width: u16, height: u16) {
+        if self.visible_width != width {
+            self.cache_dirty = true;
+        }
         self.visible_width = width;
         self.visible_height = height;
         // Adjust scroll position if needed
@@ -144,5 +156,13 @@ impl App {
 
     pub fn set_waiting_for_confirmation(&mut self, waiting: bool) {
         self.waiting_for_confirmation = waiting;
+    }
+    
+    fn get_total_height(&mut self) -> usize {
+        if self.cache_dirty {
+            self.total_height_cache = self.events.iter().map(|e| e.height(self.visible_width) as usize).sum();
+            self.cache_dirty = false;
+        }
+        self.total_height_cache
     }
 }

@@ -19,10 +19,10 @@ fn render_text_with_skip(
     text_style: Style,
 ) {
     let lines: Vec<&str> = text.lines().collect();
-    
+
     // Calculate total widget height including borders
     let total_height = lines.len() + 2; // +2 for top and bottom borders
-    
+
     // Determine border type based on skip_lines and available space
     let borders = if skip_lines == 0 {
         if area.height >= total_height as u16 {
@@ -37,26 +37,24 @@ fn render_text_with_skip(
             Borders::LEFT | Borders::RIGHT // Both top and bottom cut off
         }
     };
-    
+
     let block = if skip_lines == 0 {
         Block::default()
             .title(title)
             .borders(borders)
             .border_style(border_style)
     } else {
-        Block::default()
-            .borders(borders)
-            .border_style(border_style)
+        Block::default().borders(borders).border_style(border_style)
     };
-    
+
     let inner = block.inner(area);
     block.render(area, buf);
-    
+
     // Calculate how many content lines to skip
     // In your giggle example, visible_start is how many lines to skip from the TEXT content
     // skip_lines here represents lines to skip from the ENTIRE widget including borders
     // So we need to convert widget line skipping to content line skipping
-    
+
     let content_skip = if skip_lines <= 1 {
         // skip_lines 0 = show full widget, skip_lines 1 = skip just the top border
         0
@@ -64,7 +62,7 @@ fn render_text_with_skip(
         // skip_lines > 1 means we're skipping border + some content
         skip_lines - 1 // Subtract 1 for the top border
     };
-    
+
     // Skip content lines and take what fits
     let visible_lines: Vec<&str> = lines
         .iter()
@@ -72,11 +70,11 @@ fn render_text_with_skip(
         .take(inner.height as usize)
         .copied()
         .collect();
-    
+
     if !visible_lines.is_empty() {
         let paragraph = Paragraph::new(visible_lines.join("\n"))
             .style(text_style)
-            .wrap(Wrap { trim: true });
+            .wrap(Wrap { trim: false });
         paragraph.render(inner, buf);
     }
 }
@@ -85,14 +83,9 @@ fn render_text_with_skip(
 pub trait EventWidget {
     fn render_with_skip(&self, area: Rect, buf: &mut Buffer, skip_lines: usize);
     fn height(&self, width: u16) -> u16;
-    
-    fn render(&self, area: Rect, buf: &mut Buffer) {
-        self.render_with_skip(area, buf, 0);
-    }
 }
 
 impl EventWidget for TuiEvent {
-    
     fn render_with_skip(&self, area: Rect, buf: &mut Buffer, skip_lines: usize) {
         match self {
             TuiEvent::UserInput { text, timestamp } => {
@@ -101,26 +94,70 @@ impl EventWidget for TuiEvent {
             TuiEvent::UserMicrophoneInput { text, timestamp } => {
                 UserMicrophoneWidget { text, timestamp }.render_with_skip(area, buf, skip_lines);
             }
-            TuiEvent::AssistantResponse { text, timestamp, .. } => {
+            TuiEvent::AssistantResponse {
+                text, timestamp, ..
+            } => {
                 AssistantResponseWidget { text, timestamp }.render_with_skip(area, buf, skip_lines);
             }
             TuiEvent::Screenshot { name, timestamp } => {
                 ScreenshotWidget { name, timestamp }.render_with_skip(area, buf, skip_lines);
             }
-            TuiEvent::ClipboardCapture { excerpt, timestamp, .. } => {
+            TuiEvent::ClipboardCapture {
+                excerpt, timestamp, ..
+            } => {
                 ClipboardWidget { excerpt, timestamp }.render_with_skip(area, buf, skip_lines);
             }
-            TuiEvent::FunctionCall { name, args, timestamp } => {
-                FunctionCallWidget { name, args, timestamp }.render_with_skip(area, buf, skip_lines);
+            TuiEvent::FunctionCall {
+                name,
+                args,
+                timestamp,
+            } => {
+                FunctionCallWidget {
+                    name,
+                    args,
+                    timestamp,
+                }
+                .render_with_skip(area, buf, skip_lines);
             }
-            TuiEvent::FunctionResult { name, result, timestamp } => {
-                FunctionResultWidget { name, result, timestamp }.render_with_skip(area, buf, skip_lines);
+            TuiEvent::FunctionResult {
+                name,
+                result,
+                timestamp,
+            } => {
+                FunctionResultWidget {
+                    name,
+                    result,
+                    timestamp,
+                }
+                .render_with_skip(area, buf, skip_lines);
             }
-            TuiEvent::CommandPrompt { command, args, timestamp } => {
-                CommandPromptWidget { command, args, timestamp }.render_with_skip(area, buf, skip_lines);
+            TuiEvent::CommandPrompt {
+                command,
+                args,
+                timestamp,
+            } => {
+                CommandPromptWidget {
+                    command,
+                    args,
+                    timestamp,
+                }
+                .render_with_skip(area, buf, skip_lines);
             }
-            TuiEvent::CommandResult { command, stdout, stderr, exit_code, timestamp } => {
-                CommandResultWidget { command, stdout, stderr, exit_code, timestamp }.render_with_skip(area, buf, skip_lines);
+            TuiEvent::CommandResult {
+                command,
+                stdout,
+                stderr,
+                exit_code,
+                timestamp,
+            } => {
+                CommandResultWidget {
+                    command,
+                    stdout,
+                    stderr,
+                    exit_code,
+                    timestamp,
+                }
+                .render_with_skip(area, buf, skip_lines);
             }
             TuiEvent::Error { message, timestamp } => {
                 ErrorWidget { message, timestamp }.render_with_skip(area, buf, skip_lines);
@@ -140,9 +177,9 @@ impl EventWidget for TuiEvent {
         if inner_width == 0 {
             return 3; // Minimum height with borders
         }
-        
+
         match self {
-            TuiEvent::UserInput { text, .. } 
+            TuiEvent::UserInput { text, .. }
             | TuiEvent::UserMicrophoneInput { text, .. }
             | TuiEvent::AssistantResponse { text, .. } => {
                 // Calculate wrapped lines
@@ -159,7 +196,11 @@ impl EventWidget for TuiEvent {
             }
             TuiEvent::CommandPrompt { command, args, .. } => {
                 // Calculate height for command prompt with confirmation text
-                let prompt_text = format!("🔸 $ {} {}\nAllow execution? (y/n)", command, args.join(" "));
+                let prompt_text = format!(
+                    "🔸 $ {} {}\nAllow execution? (y/n)",
+                    command,
+                    args.join(" ")
+                );
                 let mut total_lines = 0;
                 for line in prompt_text.lines() {
                     if line.is_empty() {
@@ -172,7 +213,7 @@ impl EventWidget for TuiEvent {
             }
             TuiEvent::CommandResult { stdout, stderr, .. } => {
                 let mut total_lines = 1; // Exit code line
-                
+
                 if !stdout.is_empty() {
                     total_lines += 1; // STDOUT: header
                     let stdout_lines: Vec<&str> = stdout.lines().collect();
@@ -188,7 +229,7 @@ impl EventWidget for TuiEvent {
                         total_lines += 1; // For the "... (X more lines)" message
                     }
                 }
-                
+
                 if !stderr.is_empty() {
                     total_lines += 1; // STDERR: header
                     let stderr_lines: Vec<&str> = stderr.lines().collect();
@@ -204,10 +245,25 @@ impl EventWidget for TuiEvent {
                         total_lines += 1; // For the "... (X more lines)" message
                     }
                 }
-                
+
                 total_lines as u16 + 2 // +2 for borders
             }
-            TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => 0,
+            TuiEvent::SystemMessage { message, .. } => {
+                // Calculate wrapped lines for system messages
+                let mut total_lines = 0;
+                for line in message.lines() {
+                    if line.is_empty() {
+                        total_lines += 1;
+                    } else {
+                        // Simple wrap calculation - divide line length by width
+                        total_lines += (line.len() + inner_width - 1) / inner_width;
+                    }
+                }
+                total_lines.max(1) as u16 + 2 // +2 for borders
+            }
+            TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => {
+                0
+            }
             _ => 3, // Default height for simple widgets
         }
     }
@@ -353,7 +409,7 @@ impl<'a> FunctionCallWidget<'a> {
         } else {
             format!("⚡ {}()", self.name)
         };
-        
+
         render_text_with_skip(
             area,
             buf,
@@ -409,7 +465,11 @@ impl<'a> CommandPromptWidget<'a> {
         render_text_with_skip(
             area,
             buf,
-            &format!("🔸 $ {} {}\nAllow execution? (y/n)", self.command, self.args.join(" ")),
+            &format!(
+                "🔸 $ {} {}\nAllow execution? (y/n)",
+                self.command,
+                self.args.join(" ")
+            ),
             skip_lines,
             &format!("Command Prompt [{}]", self.timestamp.format("%H:%M:%S")),
             Style::default().fg(Color::Red),
@@ -487,10 +547,13 @@ impl<'a> CommandResultWidget<'a> {
                 Borders::LEFT | Borders::RIGHT // Both top and bottom cut off
             }
         };
-        
+
         let block = if skip_lines == 0 {
             Block::default()
-                .title(format!("Command Result [{}]", self.timestamp.format("%H:%M:%S")))
+                .title(format!(
+                    "Command Result [{}]",
+                    self.timestamp.format("%H:%M:%S")
+                ))
                 .borders(borders)
                 .border_style(Style::default().fg(Color::Gray))
         } else {
@@ -503,11 +566,7 @@ impl<'a> CommandResultWidget<'a> {
         block.render(area, buf);
 
         // Calculate how many content lines to skip
-        let content_skip = if skip_lines <= 1 {
-            0
-        } else {
-            skip_lines - 1
-        };
+        let content_skip = if skip_lines <= 1 { 0 } else { skip_lines - 1 };
 
         // Skip content lines and take what fits, then rebuild styled lines
         let visible_lines: Vec<String> = all_lines
@@ -535,16 +594,21 @@ impl<'a> CommandResultWidget<'a> {
                         ),
                     ]));
                 } else if line == "STDOUT:" {
-                    styled_lines.push(Line::from(Span::styled(line, Style::default().fg(Color::Green))));
+                    styled_lines.push(Line::from(Span::styled(
+                        line,
+                        Style::default().fg(Color::Green),
+                    )));
                 } else if line == "STDERR:" {
-                    styled_lines.push(Line::from(Span::styled(line, Style::default().fg(Color::Red))));
+                    styled_lines.push(Line::from(Span::styled(
+                        line,
+                        Style::default().fg(Color::Red),
+                    )));
                 } else {
                     styled_lines.push(Line::from(Span::raw(line)));
                 }
             }
 
-            let paragraph = Paragraph::new(styled_lines)
-                .wrap(Wrap { trim: true });
+            let paragraph = Paragraph::new(styled_lines).wrap(Wrap { trim: true });
             paragraph.render(inner, buf);
         }
     }
@@ -595,7 +659,7 @@ impl<'a> SystemWidget<'a> {
             skip_lines,
             &format!("System [{}]", self.timestamp.format("%H:%M:%S")),
             Style::default().fg(Color::DarkGray),
-            Style::default().fg(Color::Gray),
+            Style::default().fg(Color::DarkGray),
         );
     }
 }

@@ -9,6 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 use crossbeam::channel::{Receiver, Sender};
+use crossbeam::select;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event as CrosstermEvent, KeyCode, MouseEventKind},
     execute,
@@ -91,46 +92,85 @@ fn run_app(
     // Spawn input handler thread
     let app_clone = app.clone();
     let worker_tx_clone = worker_tx.clone();
+    let (redraw_tx, redraw_rx) = crossbeam::channel::unbounded();
+    let redraw_tx_clone = redraw_tx.clone();
     thread::spawn(move || {
-        handle_input(app_clone, worker_tx_clone);
+        handle_input(app_clone, worker_tx_clone, redraw_tx_clone);
     });
 
-    loop {
-        // Draw UI
-        terminal
-            .draw(|f| {
-                let mut app = app.lock().unwrap();
-                // Update visible dimensions if they changed
-                let chat_height = f.area().height.saturating_sub(4); // Account for input box + gap
-                let chat_width = f.area().width;
-                if chat_height != app.visible_height || chat_width != app.visible_width {
-                    app.set_visible_dimensions(chat_width, chat_height);
-                }
-                ui::draw(f, &*app);
-            })
-            .context(DrawFrameSnafu)?;
+    // Initial draw
+    terminal
+        .draw(|f| {
+            let mut app = app.lock().unwrap();
+            let chat_height = f.area().height.saturating_sub(4);
+            let chat_width = f.area().width;
+            if chat_height != app.visible_height || chat_width != app.visible_width {
+                app.set_visible_dimensions(chat_width, chat_height);
+            }
+            ui::draw(f, &*app);
+        })
+        .context(DrawFrameSnafu)?;
 
-        // Handle TUI tasks with timeout
-        match tui_rx.recv_timeout(Duration::from_millis(50)) {
-            Ok(task) => {
-                let mut app = app.lock().unwrap();
+    let app_ref = app.clone();
+    loop {
+        // Use select! to handle multiple channels
+        crossbeam::select! {
+            recv(tui_rx) -> task => {
                 match task {
-                    Task::AddEvent(event) => {
-                        app.add_event(event);
+                    Ok(task) => {
+                        let mut app = app_ref.lock().unwrap();
+                        match task {
+                            Task::AddEvent(event) => {
+                                app.add_event(event);
+                                drop(app); // Release lock before drawing
+                                terminal
+                                    .draw(|f| {
+                                        let app = app_ref.lock().unwrap();
+                                        ui::draw(f, &*app);
+                                    })
+                                    .context(DrawFrameSnafu)?;
+                            }
+                            Task::UpdateInput(input) => {
+                                app.set_input(input);
+                                drop(app);
+                                terminal
+                                    .draw(|f| {
+                                        let app = app_ref.lock().unwrap();
+                                        ui::draw(f, &*app);
+                                    })
+                                    .context(DrawFrameSnafu)?;
+                            }
+                            Task::ClearInput => {
+                                app.clear_input();
+                                drop(app);
+                                terminal
+                                    .draw(|f| {
+                                        let app = app_ref.lock().unwrap();
+                                        ui::draw(f, &*app);
+                                    })
+                                    .context(DrawFrameSnafu)?;
+                            }
+                            Task::Exit => {
+                                break;
+                            }
+                        }
                     }
-                    Task::UpdateInput(input) => {
-                        app.set_input(input);
-                    }
-                    Task::ClearInput => {
-                        app.clear_input();
-                    }
-                    Task::Exit => {
-                        break;
-                    }
+                    Err(_) => break,
                 }
             }
-            Err(_) => {
-                // Timeout is fine, just continue
+            recv(redraw_rx) -> _ => {
+                // Redraw requested from input handler
+                terminal
+                    .draw(|f| {
+                        let mut app = app_ref.lock().unwrap();
+                        let chat_height = f.area().height.saturating_sub(4);
+                        let chat_width = f.area().width;
+                        if chat_height != app.visible_height || chat_width != app.visible_width {
+                            app.set_visible_dimensions(chat_width, chat_height);
+                        }
+                        ui::draw(f, &*app);
+                    })
+                    .context(DrawFrameSnafu)?;
             }
         }
     }
@@ -139,9 +179,9 @@ fn run_app(
 }
 
 /// Handle keyboard and mouse input
-fn handle_input(app: Arc<Mutex<App>>, worker_tx: Sender<worker::Event>) {
+fn handle_input(app: Arc<Mutex<App>>, worker_tx: Sender<worker::Event>, redraw_tx: Sender<()>) {
     loop {
-        if event::poll(Duration::from_millis(100)).unwrap() {
+        if event::poll(Duration::from_millis(16)).unwrap() {  // ~60fps
             match event::read() {
                 Ok(CrosstermEvent::Key(key)) => {
                     let mut app = app.lock().unwrap();
@@ -164,33 +204,49 @@ fn handle_input(app: Arc<Mutex<App>>, worker_tx: Sender<worker::Event>) {
                                 // Don't add the character to input when waiting for confirmation
                             } else {
                                 app.push_char(c);
+                                drop(app);
+                                let _ = redraw_tx.send(());
                             }
                         }
                         KeyCode::Backspace => {
                             app.pop_char();
+                            drop(app);
+                            let _ = redraw_tx.send(());
                         }
                         KeyCode::Esc => {
                             // Could send cancel event here
                         }
                         KeyCode::Up => {
                             app.scroll_up(1);
+                            drop(app);
+                            let _ = redraw_tx.send(());
                         }
                         KeyCode::Down => {
                             app.scroll_down(1);
+                            drop(app);
+                            let _ = redraw_tx.send(());
                         }
                         KeyCode::PageUp => {
                             let page_size = app.visible_height.saturating_sub(2) as usize;
                             app.scroll_up(page_size);
+                            drop(app);
+                            let _ = redraw_tx.send(());
                         }
                         KeyCode::PageDown => {
                             let page_size = app.visible_height.saturating_sub(2) as usize;
                             app.scroll_down(page_size);
+                            drop(app);
+                            let _ = redraw_tx.send(());
                         }
                         KeyCode::Home => {
                             app.scroll_to_top();
+                            drop(app);
+                            let _ = redraw_tx.send(());
                         }
                         KeyCode::End => {
                             app.scroll_to_bottom();
+                            drop(app);
+                            let _ = redraw_tx.send(());
                         }
                         _ => {}
                     }
@@ -200,9 +256,13 @@ fn handle_input(app: Arc<Mutex<App>>, worker_tx: Sender<worker::Event>) {
                     match mouse.kind {
                         MouseEventKind::ScrollUp => {
                             app.scroll_up(3);
+                            drop(app);
+                            let _ = redraw_tx.send(());
                         }
                         MouseEventKind::ScrollDown => {
                             app.scroll_down(3);
+                            drop(app);
+                            let _ = redraw_tx.send(());
                         }
                         _ => {}
                     }
