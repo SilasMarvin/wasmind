@@ -71,11 +71,22 @@ fn draw_chat_history(f: &mut Frame, app: &App, area: Rect) {
         let render_height = visible_lines.min(visible_height.saturating_sub(adjusted_y));
         
         if render_height > 0 {
+            // The widget should only be given the height it actually needs,
+            // not all the remaining space in the viewport
+            let widget_height = if visible_start > 0 {
+                // Widget is partially scrolled, give it only the visible portion
+                render_height as u16
+            } else {
+                // Widget starts at or below viewport top, give it its full height
+                // but limited by remaining viewport space
+                (event_height as u16).min(render_height as u16)
+            };
+            
             let event_area = Rect {
                 x: inner.x,
                 y: inner.y + adjusted_y as u16,
                 width: inner.width,
-                height: render_height as u16,
+                height: widget_height,
             };
             
             // Render the event with proper line skipping

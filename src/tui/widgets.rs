@@ -20,6 +20,12 @@ fn render_text_with_skip(
 ) {
     let lines: Vec<&str> = text.lines().collect();
 
+    // Trim trailing empty lines
+    let mut lines = lines;
+    while lines.last() == Some(&"") {
+        lines.pop();
+    }
+
     // Calculate total widget height including borders
     let total_height = lines.len() + 2; // +2 for top and bottom borders
 
@@ -64,10 +70,11 @@ fn render_text_with_skip(
     };
 
     // Skip content lines and take what fits
+    // Only take as many lines as we have, not the full inner height
     let visible_lines: Vec<&str> = lines
         .iter()
         .skip(content_skip)
-        .take(inner.height as usize)
+        .take((inner.height as usize).min(lines.len().saturating_sub(content_skip)))
         .copied()
         .collect();
 
@@ -165,7 +172,8 @@ impl EventWidget for TuiEvent {
             TuiEvent::SystemMessage { message, timestamp } => {
                 SystemWidget { message, timestamp }.render_with_skip(area, buf, skip_lines);
             }
-            TuiEvent::TaskPlanCreated { plan, timestamp } | TuiEvent::TaskPlanUpdated { plan, timestamp } => {
+            TuiEvent::TaskPlanCreated { plan, timestamp }
+            | TuiEvent::TaskPlanUpdated { plan, timestamp } => {
                 TaskPlanWidget { plan, timestamp }.render_with_skip(area, buf, skip_lines);
             }
             TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => {
@@ -253,23 +261,25 @@ impl EventWidget for TuiEvent {
             }
             TuiEvent::SystemMessage { message, .. } => {
                 // Calculate wrapped lines for system messages
+                let lines: Vec<&str> = message.lines().collect();
+
                 let mut total_lines = 0;
-                for line in message.lines() {
+                for line in lines {
                     if line.is_empty() {
                         total_lines += 1;
                     } else {
                         // Simple wrap calculation - divide line length by width
-                        total_lines += (line.len() + inner_width - 1) / inner_width;
+                        total_lines += (line.chars().count() + inner_width - 1) / inner_width;
                     }
                 }
                 total_lines.max(1) as u16 + 2 // +2 for borders
             }
             TuiEvent::TaskPlanCreated { plan, .. } | TuiEvent::TaskPlanUpdated { plan, .. } => {
-                // Title + separator + tasks + progress
-                let mut total_lines = 3; // Title, separator, progress
-                for task in &plan.tasks {
-                    // Task number + status + description
-                    let task_line = format!("{}. {}", 1, task.description);
+                // Title + separator line + tasks + empty line + progress line
+                let mut total_lines = 4; // Title, separator, empty line before progress, progress
+                for (i, task) in plan.tasks.iter().enumerate() {
+                    // Task number + status icon + description
+                    let task_line = format!("{}. ⬜ {}", i + 1, task.description);
                     total_lines += (task_line.len() + inner_width - 1) / inner_width;
                 }
                 total_lines as u16 + 2 // +2 for borders
@@ -692,30 +702,41 @@ impl<'a> TaskPlanWidget<'a> {
     fn render_with_skip(&self, area: Rect, buf: &mut Buffer, skip_lines: usize) {
         // Build the task plan display
         let mut lines = vec![];
-        
+
         // Title
         lines.push(format!("📋 {}", self.plan.title));
         lines.push("─".repeat(area.width.saturating_sub(2) as usize));
-        
+
         // Tasks with status indicators
         for (i, task) in self.plan.tasks.iter().enumerate() {
             let (status_icon, _style) = match task.status {
                 crate::worker::TaskStatus::Pending => ("⬜", Style::default().fg(Color::Gray)),
                 crate::worker::TaskStatus::InProgress => ("🟨", Style::default().fg(Color::Yellow)),
                 crate::worker::TaskStatus::Completed => ("✅", Style::default().fg(Color::Green)),
-                crate::worker::TaskStatus::Skipped => ("⏭️", Style::default().fg(Color::DarkGray).add_modifier(Modifier::CROSSED_OUT)),
+                crate::worker::TaskStatus::Skipped => (
+                    "⏭️",
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::CROSSED_OUT),
+                ),
             };
-            
+
             lines.push(format!("{}. {} {}", i + 1, status_icon, task.description));
         }
-        
+
         // Progress
-        let completed = self.plan.tasks.iter().filter(|t| matches!(t.status, crate::worker::TaskStatus::Completed)).count();
+        let completed = self
+            .plan
+            .tasks
+            .iter()
+            .filter(|t| matches!(t.status, crate::worker::TaskStatus::Completed))
+            .count();
         let total = self.plan.tasks.len();
-        lines.push(format!("\nProgress: {}/{} tasks completed", completed, total));
-        
+        lines.push(String::new()); // Empty line before progress
+        lines.push(format!("Progress: {}/{} tasks completed", completed, total));
+
         let text = lines.join("\n");
-        
+
         render_text_with_skip(
             area,
             buf,
