@@ -127,6 +127,7 @@ pub fn do_execute_worker(
 
     let mut waiting_for_assistant_response = false;
     let mut microphone_recording = false;
+    let mut tool_call_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     while let Ok(task) = rx.recv() {
         match task {
@@ -272,6 +273,21 @@ pub fn do_execute_worker(
                 }
             },
             Event::MCPToolsResponse(call_tool_results) => {
+                // Display function results
+                for tool_response in &call_tool_results {
+                    // Look up and remove the function name from our mapping
+                    let function_name = tool_call_map
+                        .remove(&tool_response.call_id)
+                        .unwrap_or_else(|| "Tool".to_string());
+                    
+                    let _ = tui_tx.send(tui::Task::AddEvent(
+                        tui::events::TuiEvent::function_result(
+                            function_name,
+                            tool_response.content.clone(),
+                        ),
+                    ));
+                }
+                
                 chat_request = chat_request.append_message(ChatMessage {
                     role: ChatRole::Tool,
                     content: MessageContent::ToolResponses(call_tool_results),
@@ -312,7 +328,7 @@ pub fn do_execute_worker(
                         ));
                     }
                     MessageContent::ToolCalls(tool_calls) => {
-                        // Display function calls
+                        // Display function calls and track call IDs
                         for call in &tool_calls {
                             let _ = tui_tx.send(tui::Task::AddEvent(
                                 tui::events::TuiEvent::function_call(
@@ -320,6 +336,8 @@ pub fn do_execute_worker(
                                     Some(call.fn_arguments.to_string()),
                                 ),
                             ));
+                            // Store the mapping of call_id to function name
+                            tool_call_map.insert(call.call_id.clone(), call.fn_name.clone());
                         }
 
                         // Separate internal tools from MCP tools

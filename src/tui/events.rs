@@ -131,6 +131,14 @@ impl TuiEvent {
         }
     }
 
+    pub fn function_result(name: String, result: String) -> Self {
+        Self::FunctionResult {
+            name,
+            result,
+            timestamp: chrono::Utc::now(),
+        }
+    }
+
 
     pub fn command_prompt(command: String, args: Vec<String>) -> Self {
         Self::CommandPrompt {
