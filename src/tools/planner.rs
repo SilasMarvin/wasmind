@@ -2,10 +2,83 @@ use serde_json;
 use genai::chat::ToolResponse;
 use crossbeam::channel::Sender;
 use tracing::error;
+use serde_json::{json, Value};
 
-use crate::{worker::{Event, TaskPlan, Task, TaskStatus}, tui};
+use crate::{worker::Event, tui};
 
-/// Handle the planner tool call
+/// Task status for the planner
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum TaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Skipped,
+}
+
+/// Individual task in the plan
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Task {
+    pub description: String,
+    pub status: TaskStatus,
+}
+
+/// Task plan managed by the planner tool
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TaskPlan {
+    pub title: String,
+    pub tasks: Vec<Task>,
+}
+
+pub struct Planner {}
+
+impl Planner {
+    pub fn new() -> Self {
+        Planner {}
+    }
+}
+
+impl crate::tools::InternalTool for Planner {
+    fn name(&self) -> &'static str {
+        "planner"
+    }
+    
+    fn description(&self) -> &'static str {
+        "Creates and manages a task plan with numbered steps. Actions: create (with title and tasks array), update (task_number and new_description), complete/start/skip (task_number)"
+    }
+    
+    fn input_schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["create", "update", "complete", "start", "skip"],
+                    "description": "The action to perform on the task plan"
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Title of the task plan (required for 'create' action)"
+                },
+                "tasks": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Array of task descriptions (required for 'create' action)"
+                },
+                "task_number": {
+                    "type": "integer",
+                    "description": "The task number to update (1-based, required for update/complete/start/skip actions)"
+                },
+                "new_description": {
+                    "type": "string",
+                    "description": "New description for the task (required for 'update' action)"
+                }
+            },
+            "required": ["action"]
+        })
+    }
+}
+
+/// Handle the planner tool call (legacy function for worker.rs)
 pub fn handle_planner(
     tool_call: genai::chat::ToolCall,
     current_task_plan: &mut Option<TaskPlan>,

@@ -6,7 +6,7 @@ use genai::{
 use rdev::Key;
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
-use std::{collections::{HashMap, HashSet}, fs, io, path::PathBuf};
+use std::{collections::HashMap, fs, io, path::PathBuf};
 
 use crate::worker::Action;
 
@@ -79,7 +79,7 @@ impl Config {
         if let Some(mut user_config) = user_config {
             // Always load default config to get whitelisted commands
             let mut default = Config::default()?;
-            
+
             if user_config.key_bindings.clear_defaults {
                 // Even with clear_defaults, use default whitelisted commands if user hasn't specified any
                 if user_config.whitelisted_commands.is_empty() {
@@ -93,7 +93,7 @@ impl Config {
                     .bindings
                     .extend(user_config.key_bindings.bindings);
                 user_config.key_bindings.bindings = default.key_bindings.bindings;
-                
+
                 // Merge whitelisted commands if user config doesn't have any
                 // or extend the default list with user's additional commands
                 if user_config.whitelisted_commands.is_empty() {
@@ -110,12 +110,18 @@ impl Config {
                         .collect();
                 }
 
-                tracing::debug!("Final whitelisted commands: {:?}", user_config.whitelisted_commands);
+                tracing::debug!(
+                    "Final whitelisted commands: {:?}",
+                    user_config.whitelisted_commands
+                );
                 Ok(user_config)
             }
         } else {
             let config = Config::default()?;
-            tracing::debug!("Using default config, whitelisted commands: {:?}", config.whitelisted_commands);
+            tracing::debug!(
+                "Using default config, whitelisted commands: {:?}",
+                config.whitelisted_commands
+            );
             Ok(config)
         }
     }
@@ -124,7 +130,10 @@ impl Config {
         let default_contents = include_str!("../default_config.toml");
         tracing::debug!("Default config contents:\n{}", default_contents);
         let config: Config = toml::from_str(default_contents).context(TomlDeserializeSnafu)?;
-        tracing::debug!("Parsed default config - whitelisted_commands: {:?}", config.whitelisted_commands);
+        tracing::debug!(
+            "Parsed default config - whitelisted_commands: {:?}",
+            config.whitelisted_commands
+        );
         Ok(config)
     }
 }
@@ -183,9 +192,9 @@ impl TryFrom<Config> for ParsedConfig {
         let model = parse_model_config(value.model);
 
         let mcp_servers = value.mcp_servers;
-        
+
         let whitelisted_commands = value.whitelisted_commands;
-        
+
         tracing::debug!("Loaded whitelisted commands: {:?}", whitelisted_commands);
 
         Ok(Self {

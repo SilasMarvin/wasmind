@@ -5,7 +5,6 @@ use genai::chat::{
     ToolCall, ToolResponse,
 };
 use image::ImageFormat;
-use serde_json;
 use snafu::ResultExt;
 use std::io::Cursor;
 use tracing::error;
@@ -15,32 +14,10 @@ use crate::{
     config::ParsedConfig,
     context::{clipboard::capture_clipboard, microphone, screen::capture_screen},
     mcp,
-    tools::{command::PendingCommand, command_executor, planner},
+    tools::{command::{PendingCommand, handle_execute_command, Task as CommandTask, execute_command_executor}, planner::{TaskPlan, handle_planner}},
     tui,
 };
 
-/// Task status for the planner
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum TaskStatus {
-    Pending,
-    InProgress,
-    Completed,
-    Skipped,
-}
-
-/// Individual task in the plan
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Task {
-    pub description: String,
-    pub status: TaskStatus,
-}
-
-/// Task plan managed by the planner tool
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct TaskPlan {
-    pub title: String,
-    pub tasks: Vec<Task>,
-}
 
 /// All available events the worker can handle
 #[derive(Debug)]
@@ -152,7 +129,7 @@ pub fn do_execute_worker(
     let local_command_executor_tx = tx.clone();
     let local_config = config.clone();
     let _command_executor_handle = std::thread::spawn(move || {
-        command_executor::execute_command_executor(
+        execute_command_executor(
             local_command_executor_tx,
             command_executor_rx,
             local_config,
@@ -164,66 +141,15 @@ pub fn do_execute_worker(
 
     while let Ok(task) = rx.recv() {
         match task {
-            Event::MCPToolsInit(mut tools) => {
-                // Add internal tools
-                tools.push(Tool {
-                    name: "execute_command".to_string(),
-                    description: Some("Execute a command line command with user confirmation. Use this to print the current working directory, run commands like git status, npm install, cargo build, etc. The user will be prompted to approve the command before execution.".to_string()),
-                    schema: Some(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "command": {
-                                "type": "string",
-                                "description": "The command to execute (e.g., 'ls', 'git', 'npm')"
-                            },
-                            "args": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string"
-                                },
-                                "description": "Array of arguments to pass to the command"
-                            }
-                        },
-                        "required": ["command"]
-                    })),
-                });
+            Event::MCPToolsInit(mut mcp_tools) => {
+                // Get internal tools and convert to MCP tool format
+                let internal_tools = crate::tools::get_all_tools();
+                let internal_mcp_tools = crate::tools::tools_to_mcp(internal_tools);
                 
-                tools.push(Tool {
-                    name: "planner".to_string(),
-                    description: Some("Create and manage a task plan to break down complex tasks into numbered steps. Use this to organize your work, track progress, and update the plan as you complete tasks.".to_string()),
-                    schema: Some(serde_json::json!({
-                        "type": "object",
-                        "properties": {
-                            "action": {
-                                "type": "string",
-                                "enum": ["create", "update", "complete", "start", "skip"],
-                                "description": "Action to perform: create (new plan), update (modify task), complete (mark done), start (mark in progress), skip (mark skipped)"
-                            },
-                            "title": {
-                                "type": "string",
-                                "description": "Title of the task plan (required for create action)"
-                            },
-                            "tasks": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string"
-                                },
-                                "description": "List of task descriptions (required for create action)"
-                            },
-                            "task_number": {
-                                "type": "number",
-                                "description": "Task number to update (1-based, required for update/complete/start/skip actions)"
-                            },
-                            "new_description": {
-                                "type": "string",
-                                "description": "New description for the task (optional, for update action)"
-                            }
-                        },
-                        "required": ["action"]
-                    })),
-                });
+                // Add internal tools to MCP tools
+                mcp_tools.extend(internal_mcp_tools);
 
-                chat_request = chat_request.with_tools(tools);
+                chat_request = chat_request.with_tools(mcp_tools);
             }
             Event::MicrophoneResponse(text) => {
                 microphone_recording = false;
@@ -246,7 +172,7 @@ pub fn do_execute_worker(
                         executing_tool_calls.push(pending.tool_call_id.clone());
                         // Send command to executor
                         command_executor_tx
-                            .send(command_executor::Task::Execute {
+                            .send(CommandTask::Execute {
                                 command: pending.command,
                                 args: pending.args,
                                 tool_call_id: pending.tool_call_id,
@@ -329,7 +255,7 @@ pub fn do_execute_worker(
                         // Cancel any executing commands
                         for tool_call_id in executing_tool_calls.drain(..) {
                             command_executor_tx
-                                .send(command_executor::Task::Cancel { tool_call_id })
+                                .send(CommandTask::Cancel { tool_call_id })
                                 .whatever_context("Error sending cancel to command executor")?;
                         }
 
@@ -487,13 +413,13 @@ fn handle_internal_tools(
     tui_tx: &Sender<tui::Task>,
     worker_tx: &Sender<Event>,
     config: &ParsedConfig,
-    command_executor_tx: &Sender<command_executor::Task>,
+    command_executor_tx: &Sender<CommandTask>,
     executing_tool_calls: &mut Vec<String>,
 ) {
     for tool_call in tool_calls {
         match tool_call.fn_name.as_str() {
             "execute_command" => handle_execute_command(tool_call, pending_command, tui_tx, config, command_executor_tx, worker_tx, executing_tool_calls),
-            "planner" => planner::handle_planner(tool_call, current_task_plan, tui_tx, worker_tx),
+            "planner" => handle_planner(tool_call, current_task_plan, tui_tx, worker_tx),
             _ => {
                 // For unknown tools, we should send an error response
                 // but since we're not sending responses anymore, we'll just log it
@@ -503,93 +429,3 @@ fn handle_internal_tools(
     }
 }
 
-/// Handle the execute_command tool
-fn handle_execute_command(
-    tool_call: ToolCall,
-    pending_command: &mut Option<PendingCommand>,
-    tui_tx: &Sender<tui::Task>,
-    config: &ParsedConfig,
-    command_executor_tx: &Sender<command_executor::Task>,
-    worker_tx: &Sender<Event>,
-    executing_tool_calls: &mut Vec<String>,
-) {
-    // Parse the arguments
-    let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
-        Ok(args) => args,
-        Err(e) => {
-            error!("Failed to parse command arguments: {}", e);
-            return;
-        }
-    };
-
-    // Extract command and arguments
-    let command = match args.get("command").and_then(|v| v.as_str()) {
-        Some(cmd) => cmd,
-        None => {
-            error!("Missing 'command' field in arguments");
-            return;
-        }
-    };
-
-    let args_array = match args.get("args") {
-        Some(serde_json::Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect::<Vec<String>>(),
-        _ => Vec::new(),
-    };
-
-    // Check if command is whitelisted
-    tracing::debug!("Checking if command '{}' is whitelisted", command);
-    tracing::debug!("Whitelisted commands: {:?}", config.whitelisted_commands);
-    
-    // Check for exact match or if command starts with a whitelisted command
-    // This handles cases like "git status" where "git" is whitelisted
-    let is_whitelisted = config.whitelisted_commands.iter().any(|wc| {
-        // Exact match
-        if wc == command {
-            return true;
-        }
-        // Check if the command is a path that ends with the whitelisted command
-        // e.g., "/usr/bin/pwd" matches "pwd"
-        if command.split('/').last() == Some(wc) {
-            return true;
-        }
-        false
-    });
-    
-    if is_whitelisted {
-        // Command is whitelisted, execute without prompting
-        tracing::debug!("Command '{}' is whitelisted, executing without prompt", command);
-        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::system(
-            format!("Executing whitelisted command: {} {}", command, args_array.join(" "))
-        )));
-        
-        // Track executing command
-        executing_tool_calls.push(tool_call.call_id.clone());
-        
-        // Send command directly to executor
-        let _ = command_executor_tx.send(command_executor::Task::Execute {
-            command: command.to_string(),
-            args: args_array,
-            tool_call_id: tool_call.call_id,
-        });
-    } else {
-        // Command not whitelisted, prompt for confirmation
-        tracing::debug!("Command '{}' is NOT whitelisted, prompting for confirmation", command);
-        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::command_prompt(
-            command.to_string(),
-            args_array.clone(),
-        )));
-        let _ = tui_tx.send(tui::Task::AddEvent(
-            tui::events::TuiEvent::set_waiting_for_confirmation(true),
-        ));
-
-        // Store the pending command
-        *pending_command = Some(PendingCommand {
-            command: command.to_string(),
-            args: args_array,
-            tool_call_id: tool_call.call_id,
-        });
-    }
-}

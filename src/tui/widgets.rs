@@ -705,7 +705,7 @@ impl<'a> Widget for SystemWidget<'a> {
 }
 
 struct TaskPlanWidget<'a> {
-    plan: &'a crate::worker::TaskPlan,
+    plan: &'a crate::tools::planner::TaskPlan,
     timestamp: &'a chrono::DateTime<chrono::Utc>,
 }
 
@@ -721,10 +721,10 @@ impl<'a> TaskPlanWidget<'a> {
         // Tasks with status indicators
         for (i, task) in self.plan.tasks.iter().enumerate() {
             let (status_icon, _style) = match task.status {
-                crate::worker::TaskStatus::Pending => ("[ ]", Style::default().fg(Color::Gray)),
-                crate::worker::TaskStatus::InProgress => ("[~]", Style::default().fg(Color::Yellow)),
-                crate::worker::TaskStatus::Completed => ("[x]", Style::default().fg(Color::Green)),
-                crate::worker::TaskStatus::Skipped => (
+                crate::tools::planner::TaskStatus::Pending => ("[ ]", Style::default().fg(Color::Gray)),
+                crate::tools::planner::TaskStatus::InProgress => ("[~]", Style::default().fg(Color::Yellow)),
+                crate::tools::planner::TaskStatus::Completed => ("[x]", Style::default().fg(Color::Green)),
+                crate::tools::planner::TaskStatus::Skipped => (
                     "[>>]",
                     Style::default()
                         .fg(Color::DarkGray)
@@ -740,7 +740,7 @@ impl<'a> TaskPlanWidget<'a> {
             .plan
             .tasks
             .iter()
-            .filter(|t| matches!(t.status, crate::worker::TaskStatus::Completed))
+            .filter(|t| matches!(t.status, crate::tools::planner::TaskStatus::Completed))
             .count();
         let total = self.plan.tasks.len();
         lines.push(String::new()); // Empty line before progress
