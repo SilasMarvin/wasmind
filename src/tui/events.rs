@@ -1,5 +1,16 @@
 use serde::{Deserialize, Serialize};
 
+use crate::worker::FunctionExecutionStage;
+
+/// A complete function execution with all its stages
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionExecution {
+    pub call_id: String,
+    pub name: String,
+    pub stages: Vec<(chrono::DateTime<chrono::Utc>, FunctionExecutionStage)>,
+    pub start_time: chrono::DateTime<chrono::Utc>,
+}
+
 /// Events that can be displayed in the TUI
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TuiEvent {
@@ -75,6 +86,9 @@ pub enum TuiEvent {
         plan: crate::tools::planner::TaskPlan,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
+    FunctionExecutionUpdate {
+        execution: FunctionExecution,
+    },
 }
 
 impl TuiEvent {
@@ -139,7 +153,6 @@ impl TuiEvent {
         }
     }
 
-
     pub fn command_prompt(command: String, args: Vec<String>) -> Self {
         Self::CommandPrompt {
             command,
@@ -179,14 +192,14 @@ impl TuiEvent {
     pub fn set_waiting_for_confirmation(waiting: bool) -> Self {
         Self::SetWaitingForConfirmation { waiting }
     }
-    
+
     pub fn task_plan_created(plan: crate::tools::planner::TaskPlan) -> Self {
         Self::TaskPlanCreated {
             plan,
             timestamp: chrono::Utc::now(),
         }
     }
-    
+
     pub fn task_plan_updated(plan: crate::tools::planner::TaskPlan) -> Self {
         Self::TaskPlanUpdated {
             plan,
@@ -205,4 +218,9 @@ impl TuiEvent {
             timestamp: chrono::Utc::now(),
         }
     }
+
+    pub fn function_execution_update(execution: FunctionExecution) -> Self {
+        Self::FunctionExecutionUpdate { execution }
+    }
 }
+

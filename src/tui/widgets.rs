@@ -1,3 +1,4 @@
+use chrono::Local;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -5,9 +6,10 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget, Wrap},
 };
-use chrono::Local;
 
-use super::events::TuiEvent;
+use crate::worker::FunctionExecutionStage;
+
+use super::events::{FunctionExecution, TuiEvent};
 
 // Helper function to skip lines from text and render with appropriate borders
 fn render_text_with_skip(
@@ -185,6 +187,9 @@ impl EventWidget for TuiEvent {
             TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => {
                 // These are state changes, not rendered
             }
+            TuiEvent::FunctionExecutionUpdate { execution } => {
+                FunctionExecutionWidget { execution }.render_with_skip(area, buf, skip_lines);
+            }
         }
     }
 
@@ -299,6 +304,39 @@ impl EventWidget for TuiEvent {
             TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => {
                 0
             }
+            TuiEvent::FunctionExecutionUpdate { execution } => {
+                // Calculate height based on stages
+                let mut lines = 2; // Name line + separator
+
+                // Check if we have a CommandResult stage (to avoid counting duplicate completion info)
+                let has_command_result = execution.stages.iter().any(|(_, stage)| {
+                    matches!(stage, FunctionExecutionStage::CommandResult { .. })
+                });
+
+                for (_, stage) in &execution.stages {
+                    match stage {
+                        FunctionExecutionStage::CommandResult { stdout, stderr, .. } => {
+                            lines += 1; // Base line for command result
+                            if !stdout.is_empty() {
+                                lines += 1;
+                            }
+                            if !stderr.is_empty() {
+                                lines += 1;
+                            }
+                        }
+                        FunctionExecutionStage::Completed { .. } => {
+                            // Only count this if we don't have a CommandResult
+                            if !has_command_result {
+                                lines += 1;
+                            }
+                        }
+                        _ => {
+                            lines += 1; // All other stages take one line
+                        }
+                    }
+                }
+                lines as u16 + 2 // +2 for borders
+            }
             _ => 3, // Default height for simple widgets
         }
     }
@@ -318,7 +356,10 @@ impl<'a> UserInputWidget<'a> {
             buf,
             self.text,
             skip_lines,
-            &format!("User [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "User [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::Blue),
             Style::default(),
         );
@@ -343,7 +384,10 @@ impl<'a> UserMicrophoneWidget<'a> {
             buf,
             self.text,
             skip_lines,
-            &format!("User (Microphone) [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "User (Microphone) [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::Cyan),
             Style::default(),
         );
@@ -368,7 +412,10 @@ impl<'a> AssistantResponseWidget<'a> {
             buf,
             self.text,
             skip_lines,
-            &format!("Assistant [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "Assistant [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::Green),
             Style::default(),
         );
@@ -393,7 +440,10 @@ impl<'a> ScreenshotWidget<'a> {
             buf,
             &format!("[o] {}", self.name),
             skip_lines,
-            &format!("Screenshot [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "Screenshot [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::Yellow),
             Style::default().fg(Color::Yellow),
         );
@@ -418,7 +468,10 @@ impl<'a> ClipboardWidget<'a> {
             buf,
             &format!("[=] {}...", self.excerpt),
             skip_lines,
-            &format!("Clipboard [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "Clipboard [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::Magenta),
             Style::default().fg(Color::Magenta),
         );
@@ -450,7 +503,10 @@ impl<'a> FunctionCallWidget<'a> {
             buf,
             &text,
             skip_lines,
-            &format!("Function Call [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "Function Call [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::LightBlue),
             Style::default().fg(Color::LightBlue),
         );
@@ -476,7 +532,10 @@ impl<'a> FunctionResultWidget<'a> {
             buf,
             &format!("[v] {}: {}", self.name, self.result),
             skip_lines,
-            &format!("Function Result [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "Function Result [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::DarkGray),
             Style::default().fg(Color::Gray),
         );
@@ -501,12 +560,15 @@ impl<'a> CommandPromptWidget<'a> {
             area,
             buf,
             &format!(
-                "🔸 $ {} {}\nAllow execution? (y/n)",
+                "[>] $ {} {}\nAllow execution? (y/n)",
                 self.command,
                 self.args.join(" ")
             ),
             skip_lines,
-            &format!("Command Prompt [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "Command Prompt [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::Red),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         );
@@ -666,7 +728,10 @@ impl<'a> ErrorWidget<'a> {
             buf,
             &format!("[X] {}", self.message),
             skip_lines,
-            &format!("Error [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "Error [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::Red),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         );
@@ -691,7 +756,10 @@ impl<'a> SystemWidget<'a> {
             buf,
             self.message,
             skip_lines,
-            &format!("System [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "System [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::DarkGray),
             Style::default().fg(Color::DarkGray),
         );
@@ -741,7 +809,10 @@ impl<'a> TaskPlanWidget<'a> {
             buf,
             &text,
             skip_lines,
-            &format!("Task Plan [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "Task Plan [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::Cyan),
             Style::default(),
         );
@@ -765,7 +836,10 @@ impl<'a> MicrophoneStartedWidget<'a> {
             buf,
             "(o) Listening...",
             skip_lines,
-            &format!("Microphone [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "Microphone [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             Style::default().fg(Color::Red),
         );
@@ -789,7 +863,10 @@ impl<'a> MicrophoneStoppedWidget<'a> {
             buf,
             "(.) Recording stopped",
             skip_lines,
-            &format!("Microphone [{}]", self.timestamp.with_timezone(&Local).format("%H:%M:%S")),
+            &format!(
+                "Microphone [{}]",
+                self.timestamp.with_timezone(&Local).format("%H:%M:%S")
+            ),
             Style::default().fg(Color::Gray),
             Style::default().fg(Color::Gray),
         );
@@ -797,6 +874,133 @@ impl<'a> MicrophoneStoppedWidget<'a> {
 }
 
 impl<'a> Widget for MicrophoneStoppedWidget<'a> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        self.render_with_skip(area, buf, 0);
+    }
+}
+
+struct FunctionExecutionWidget<'a> {
+    execution: &'a FunctionExecution,
+}
+
+impl<'a> FunctionExecutionWidget<'a> {
+    fn render_with_skip(&self, area: Rect, buf: &mut Buffer, skip_lines: usize) {
+        // Build the content lines
+        let mut lines = vec![];
+
+        // Function name with call ID
+        lines.push(format!(
+            "[>] {} [{}]",
+            self.execution.name,
+            &self.execution.call_id[..8]
+        ));
+        lines.push("─".repeat(area.width.saturating_sub(2) as usize));
+
+        // Check if we have a CommandResult stage (to avoid duplicate completion info)
+        let has_command_result = self
+            .execution
+            .stages
+            .iter()
+            .any(|(_, stage)| matches!(stage, FunctionExecutionStage::CommandResult { .. }));
+
+        // Render each stage
+        for (timestamp, stage) in &self.execution.stages {
+            let time_str = timestamp.with_timezone(&Local).format("%H:%M:%S");
+            match stage {
+                FunctionExecutionStage::Called { args } => {
+                    if let Some(args) = args {
+                        lines.push(format!("  --> [{}] Called with args: {}", time_str, args));
+                    } else {
+                        lines.push(format!("  --> [{}] Called", time_str));
+                    }
+                }
+                FunctionExecutionStage::CommandPrompt { command, args } => {
+                    lines.push(format!(
+                        "  [?] [{}] Awaiting approval: {} {}",
+                        time_str,
+                        command,
+                        args.join(" ")
+                    ));
+                }
+                FunctionExecutionStage::CommandExecuting { command } => {
+                    lines.push(format!("  ... [{}] Executing: {}", time_str, command));
+                }
+                FunctionExecutionStage::CommandResult {
+                    stdout,
+                    stderr,
+                    exit_code,
+                } => {
+                    lines.push(format!(
+                        "  [=] [{}] Command completed (exit: {})",
+                        time_str, exit_code
+                    ));
+                    if !stdout.is_empty() {
+                        lines.push(format!(
+                            "      Output: {}",
+                            stdout.lines().next().unwrap_or("")
+                        ));
+                    }
+                    if !stderr.is_empty() {
+                        lines.push(format!(
+                            "      Error: {}",
+                            stderr.lines().next().unwrap_or("")
+                        ));
+                    }
+                }
+                FunctionExecutionStage::InternalLog { message } => {
+                    lines.push(format!("  [i] [{}] {}", time_str, message));
+                }
+                FunctionExecutionStage::Completed { result } => {
+                    // Skip the Completed stage if we already showed CommandResult
+                    if !has_command_result {
+                        lines.push(format!(
+                            "  [v] [{}] Completed: {}",
+                            time_str,
+                            result.lines().next().unwrap_or(result)
+                        ));
+                    }
+                }
+                FunctionExecutionStage::Failed { error } => {
+                    lines.push(format!("  [X] [{}] Failed: {}", time_str, error));
+                }
+            }
+        }
+
+        let text = lines.join("\n");
+
+        // Determine if this function is complete
+        let is_complete = self.execution.stages.iter().any(|(_, stage)| {
+            matches!(
+                stage,
+                FunctionExecutionStage::Completed { .. } | FunctionExecutionStage::Failed { .. }
+            )
+        });
+
+        let border_color = if is_complete {
+            Color::DarkGray
+        } else {
+            Color::Yellow
+        };
+
+        render_text_with_skip(
+            area,
+            buf,
+            &text,
+            skip_lines,
+            &format!(
+                "Function Execution [{}]",
+                self.execution
+                    .start_time
+                    .with_timezone(&Local)
+                    .format("%H:%M:%S")
+            ),
+            Style::default().fg(border_color),
+            Style::default(),
+        );
+    }
+}
+
+impl<'a> Widget for FunctionExecutionWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.render_with_skip(area, buf, 0);
     }

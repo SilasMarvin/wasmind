@@ -1,5 +1,6 @@
-use super::events::TuiEvent;
+use super::events::{TuiEvent, FunctionExecution};
 use super::widgets::EventWidget;
+use std::collections::HashMap;
 
 const SPLASH: &str = r#"|WELCOME USER|                                                                           
 
@@ -35,6 +36,8 @@ pub struct App {
     total_height_cache: usize,
     /// Whether the cache needs to be invalidated
     cache_dirty: bool,
+    /// Track ongoing function executions by call_id
+    pub function_executions: HashMap<String, FunctionExecution>,
 }
 
 impl App {
@@ -50,6 +53,7 @@ impl App {
             waiting_for_confirmation: false,
             total_height_cache: 0,
             cache_dirty: true,
+            function_executions: HashMap::new(),
         };
         
         // Add splash message as the first event
@@ -86,6 +90,27 @@ impl App {
             }
             TuiEvent::SetWaitingForConfirmation { waiting } => {
                 self.waiting_for_confirmation = *waiting;
+            }
+            // Handle function execution updates
+            TuiEvent::FunctionExecutionUpdate { execution } => {
+                // Store the execution in our map
+                self.function_executions.insert(execution.call_id.clone(), execution.clone());
+                
+                // Remove old FunctionExecutionUpdate events for this call_id
+                self.events.retain(|e| {
+                    if let TuiEvent::FunctionExecutionUpdate { execution: ex } = e {
+                        ex.call_id != execution.call_id
+                    } else {
+                        true
+                    }
+                });
+                
+                // Add the updated event
+                self.events.push(event);
+                self.cache_dirty = true;
+                if self.auto_scroll {
+                    self.scroll_to_bottom();
+                }
             }
             // All other events
             _ => {

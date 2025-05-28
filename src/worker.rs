@@ -4,7 +4,8 @@ use genai::chat::{
     ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool, ToolResponse,
 };
 use image::ImageFormat;
-use snafu::ResultExt;
+use serde::{Deserialize, Serialize};
+use snafu::{OptionExt, ResultExt};
 use std::io::Cursor;
 use tracing::error;
 
@@ -16,8 +17,37 @@ use crate::{
     system_state::SystemState,
     template::ToolInfo,
     tools::InternalToolHandler,
-    tui,
+    tui::{self, events::FunctionExecution},
 };
+
+/// Represents different stages of a function execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum FunctionExecutionStage {
+    Called {
+        args: Option<String>,
+    },
+    CommandPrompt {
+        command: String,
+        args: Vec<String>,
+    },
+    CommandExecuting {
+        command: String,
+    },
+    CommandResult {
+        stdout: String,
+        stderr: String,
+        exit_code: i32,
+    },
+    InternalLog {
+        message: String,
+    },
+    Completed {
+        result: String,
+    },
+    Failed {
+        error: String,
+    },
+}
 
 /// All available events the worker can handle
 #[derive(Debug)]
@@ -34,6 +64,11 @@ pub enum Event {
         stdout: String,
         stderr: String,
         exit_code: i32,
+    },
+    // Used for both Commands and MCP
+    FunctionExecutionStageUpdate {
+        call_id: String,
+        stage: FunctionExecutionStage,
     },
 }
 
@@ -127,7 +162,8 @@ pub fn do_execute_worker(
 
     let mut waiting_for_assistant_response = false;
     let mut microphone_recording = false;
-    let mut tool_call_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut function_executions: std::collections::HashMap<String, FunctionExecution> =
+        std::collections::HashMap::new();
 
     while let Ok(task) = rx.recv() {
         match task {
@@ -273,21 +309,24 @@ pub fn do_execute_worker(
                 }
             },
             Event::MCPToolsResponse(call_tool_results) => {
-                // Display function results
+                // Update function executions with results
                 for tool_response in &call_tool_results {
-                    // Look up and remove the function name from our mapping
-                    let function_name = tool_call_map
+                    let mut execution = function_executions
                         .remove(&tool_response.call_id)
-                        .unwrap_or_else(|| "Tool".to_string());
-                    
+                        .whatever_context("Failed to find function for call_id")?;
+                    // Add the completion stage
+                    execution.stages.push((
+                        chrono::Utc::now(),
+                        FunctionExecutionStage::Completed {
+                            result: tool_response.content.clone(),
+                        },
+                    ));
+                    // Send the updated execution to TUI
                     let _ = tui_tx.send(tui::Task::AddEvent(
-                        tui::events::TuiEvent::function_result(
-                            function_name,
-                            tool_response.content.clone(),
-                        ),
+                        tui::events::TuiEvent::function_execution_update(execution),
                     ));
                 }
-                
+
                 chat_request = chat_request.append_message(ChatMessage {
                     role: ChatRole::Tool,
                     content: MessageContent::ToolResponses(call_tool_results),
@@ -328,16 +367,30 @@ pub fn do_execute_worker(
                         ));
                     }
                     MessageContent::ToolCalls(tool_calls) => {
-                        // Display function calls and track call IDs
+                        // Create function executions for each tool call
                         for call in &tool_calls {
-                            let _ = tui_tx.send(tui::Task::AddEvent(
-                                tui::events::TuiEvent::function_call(
-                                    call.fn_name.clone(),
-                                    Some(call.fn_arguments.to_string()),
-                                ),
+                            let mut execution = FunctionExecution {
+                                call_id: call.call_id.clone(),
+                                name: call.fn_name.clone(),
+                                stages: vec![],
+                                start_time: chrono::Utc::now(),
+                            };
+
+                            // Add the initial "Called" stage
+                            execution.stages.push((
+                                chrono::Utc::now(),
+                                FunctionExecutionStage::Called {
+                                    args: Some(call.fn_arguments.to_string()),
+                                },
                             ));
-                            // Store the mapping of call_id to function name
-                            tool_call_map.insert(call.call_id.clone(), call.fn_name.clone());
+
+                            // Store the execution
+                            function_executions.insert(call.call_id.clone(), execution.clone());
+
+                            // Send the initial update to TUI
+                            let _ = tui_tx.send(tui::Task::AddEvent(
+                                tui::events::TuiEvent::function_execution_update(execution),
+                            ));
                         }
 
                         // Separate internal tools from MCP tools
@@ -404,20 +457,27 @@ pub fn do_execute_worker(
             }
             Event::CommandExecutionResult {
                 tool_call_id,
-                command,
+                command: _command,
                 stdout,
                 stderr,
                 exit_code,
             } => {
-                // The Command tool now manages its own executing commands internally
+                // Update function execution with command result stage
+                if let Some(execution) = function_executions.get_mut(&tool_call_id) {
+                    execution.stages.push((
+                        chrono::Utc::now(),
+                        FunctionExecutionStage::CommandResult {
+                            stdout: stdout.clone(),
+                            stderr: stderr.clone(),
+                            exit_code,
+                        },
+                    ));
 
-                // Add command result to TUI
-                let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::command_result(
-                    command.clone(),
-                    stdout.clone(),
-                    stderr.clone(),
-                    exit_code,
-                )));
+                    // Send the updated execution to TUI
+                    let _ = tui_tx.send(tui::Task::AddEvent(
+                        tui::events::TuiEvent::function_execution_update(execution.clone()),
+                    ));
+                }
 
                 // Format the result for the LLM
                 let mut result = String::new();
@@ -441,6 +501,17 @@ pub fn do_execute_worker(
                 };
                 tx.send(Event::MCPToolsResponse(vec![tool_response]))
                     .whatever_context("Error sending command execution result")?;
+            }
+            Event::FunctionExecutionStageUpdate { call_id, stage } => {
+                // Update the function execution with the new stage
+                if let Some(mut execution) = function_executions.get_mut(&call_id) {
+                    execution.stages.push((chrono::Utc::now(), stage));
+
+                    // Send the updated execution to TUI
+                    let _ = tui_tx.send(tui::Task::AddEvent(
+                        tui::events::TuiEvent::function_execution_update(execution.clone()),
+                    ));
+                }
             }
         }
     }
