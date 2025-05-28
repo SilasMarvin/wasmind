@@ -718,21 +718,9 @@ impl<'a> TaskPlanWidget<'a> {
         lines.push(format!("[=] {}", self.plan.title));
         lines.push("─".repeat(area.width.saturating_sub(2) as usize));
 
-        // Tasks with status indicators
+        // Tasks with status indicators using Display trait
         for (i, task) in self.plan.tasks.iter().enumerate() {
-            let (status_icon, _style) = match task.status {
-                crate::tools::planner::TaskStatus::Pending => ("[ ]", Style::default().fg(Color::Gray)),
-                crate::tools::planner::TaskStatus::InProgress => ("[~]", Style::default().fg(Color::Yellow)),
-                crate::tools::planner::TaskStatus::Completed => ("[x]", Style::default().fg(Color::Green)),
-                crate::tools::planner::TaskStatus::Skipped => (
-                    "[>>]",
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::CROSSED_OUT),
-                ),
-            };
-
-            lines.push(format!("{}. {} {}", i + 1, status_icon, task.description));
+            lines.push(format!("{}. {} {}", i + 1, task.status, task.description));
         }
 
         // Progress

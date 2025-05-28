@@ -2,6 +2,7 @@ use snafu::{ResultExt, Snafu};
 
 pub const TOOL_NAME: &str = "read_file";
 pub const TOOL_DESCRIPTION: &str = "Read file contents";
+pub const MAX_FILE_SIZE_BYTES: u64 = 1024 * 1024; // 1MB limit
 pub const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
@@ -36,6 +37,9 @@ pub enum FileCacheError {
 
     #[snafu(display("File '{}' should be in cache but was not found. This indicates an internal logic error.", path.display()))]
     CacheMissInternal { path: PathBuf },
+
+    #[snafu(display("File '{}' is too large ({} bytes). Maximum file size is {} bytes.", path.display(), actual_size, max_size))]
+    FileTooLarge { path: PathBuf, actual_size: u64, max_size: u64 },
 }
 
 pub type Result<T, E = FileCacheError> = std::result::Result<T, E>;
@@ -68,6 +72,17 @@ impl FileReader {
         let metadata = fs::metadata(path_ref).context(ReadMetadataSnafu {
             path: path_ref.to_path_buf(),
         })?;
+        
+        // Check file size before reading
+        let file_size = metadata.len();
+        if file_size > MAX_FILE_SIZE_BYTES {
+            return Err(FileCacheError::FileTooLarge {
+                path: path_ref.to_path_buf(),
+                actual_size: file_size,
+                max_size: MAX_FILE_SIZE_BYTES,
+            });
+        }
+        
         let last_modified_at_read = metadata.modified().context(GetModifiedTimeSnafu {
             path: path_ref.to_path_buf(),
         })?;
@@ -494,5 +509,24 @@ mod tests {
         reader.clear_cache();
         assert!(reader.list_cached_paths().is_empty());
         Ok(())
+    }
+
+    #[test]
+    fn test_file_size_limit() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let temp_file = create_temp_file(&temp_dir, "large_file.txt", "x");
+        
+        // Create a file that's too large
+        let large_content = "x".repeat((MAX_FILE_SIZE_BYTES + 1) as usize);
+        fs::write(&temp_file, &large_content).expect("Failed to write large file");
+        
+        let mut file_reader = FileReader::new();
+        let result = file_reader.read_and_cache_file(&temp_file);
+        
+        // Should return an error about file being too large
+        assert!(result.is_err());
+        let error_message = result.unwrap_err().to_string();
+        assert!(error_message.contains("too large"));
+        assert!(error_message.contains(&MAX_FILE_SIZE_BYTES.to_string()));
     }
 }

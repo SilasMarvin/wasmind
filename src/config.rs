@@ -126,6 +126,19 @@ impl Config {
         }
     }
 
+    pub fn from_file(path: &str) -> Result<Self, ConfigError> {
+        let contents = fs::read_to_string(path)?;
+        let mut config: Config = toml::from_str(&contents).context(TomlDeserializeSnafu)?;
+        
+        // Merge with default whitelisted commands if none specified
+        if config.whitelisted_commands.is_empty() {
+            let default = Config::default()?;
+            config.whitelisted_commands = default.whitelisted_commands;
+        }
+        
+        Ok(config)
+    }
+
     pub fn default() -> Result<Self, ConfigError> {
         let default_contents = include_str!("../default_config.toml");
         tracing::debug!("Default config contents:\n{}", default_contents);

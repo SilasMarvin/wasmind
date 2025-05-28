@@ -8,7 +8,7 @@ use genai::chat::{ToolCall, ToolResponse};
 use serde_json::Value;
 use tracing::error;
 
-use crate::{config::ParsedConfig, tui, worker::Event};
+use crate::{config::ParsedConfig, system_state::SystemState, tui, worker::Event};
 
 /// Handler for all internal tools
 pub struct InternalToolHandler {
@@ -77,8 +77,8 @@ impl InternalToolHandler {
         }
     }
 
-    /// Handle a batch of tool calls
-    pub fn handle_tool_calls(&mut self, tool_calls: Vec<ToolCall>) -> Vec<ToolResponse> {
+    /// Handle a batch of tool calls and update system state
+    pub fn handle_tool_calls(&mut self, tool_calls: Vec<ToolCall>, system_state: &mut SystemState) -> Vec<ToolResponse> {
         let mut responses = Vec::new();
 
         for tool_call in tool_calls {
@@ -98,7 +98,18 @@ impl InternalToolHandler {
                 }
                 planner::TOOL_NAME => {
                     match self.planner.handle_call(tool_call.clone(), &self.tui_tx) {
-                        Ok(Some(response)) => response,
+                        Ok(Some(_response)) => {
+                            // Update system state with the current plan (no conversion needed)
+                            if let Some(plan) = self.planner.get_current_plan() {
+                                system_state.update_plan(plan.clone());
+                            }
+                            
+                            // Return success message instead of full plan content
+                            ToolResponse {
+                                call_id: tool_call.call_id,
+                                content: "Plan updated successfully. Check the system context for current plan details.".to_string(),
+                            }
+                        },
                         Ok(None) => continue,
                         Err(e) => {
                             error!("Error handling planner tool call: {}", e);
@@ -125,9 +136,19 @@ impl InternalToolHandler {
                     };
                     
                     match self.file_reader.get_or_read_file_content(path) {
-                        Ok(content) => ToolResponse {
-                            call_id: tool_call.call_id,
-                            content: content.clone(),
+                        Ok(content) => {
+                            // Update system state with the file content
+                            let path_buf = std::path::PathBuf::from(path);
+                            if let Ok(metadata) = std::fs::metadata(&path_buf) {
+                                if let Ok(modified) = metadata.modified() {
+                                    system_state.update_file(path_buf.clone(), content.clone(), modified);
+                                }
+                            }
+                            
+                            ToolResponse {
+                                call_id: tool_call.call_id,
+                                content: format!("Successfully read file: {} ({} lines)", path, content.lines().count()),
+                            }
                         },
                         Err(e) => ToolResponse {
                             call_id: tool_call.call_id,
@@ -153,9 +174,21 @@ impl InternalToolHandler {
                     match edit_file::FileEditor::parse_action_from_args(args) {
                         Ok(action) => {
                             match self.file_editor.edit_file(path, action, &mut self.file_reader) {
-                                Ok(message) => ToolResponse {
-                                    call_id: tool_call.call_id,
-                                    content: message,
+                                Ok(message) => {
+                                    // Update system state with the new file content
+                                    let path_buf = std::path::PathBuf::from(path);
+                                    if let Ok(new_content) = self.file_reader.get_or_read_file_content(path) {
+                                        if let Ok(metadata) = std::fs::metadata(&path_buf) {
+                                            if let Ok(modified) = metadata.modified() {
+                                                system_state.update_file(path_buf, new_content.clone(), modified);
+                                            }
+                                        }
+                                    }
+                                    
+                                    ToolResponse {
+                                        call_id: tool_call.call_id,
+                                        content: message,
+                                    }
                                 },
                                 Err(e) => ToolResponse {
                                     call_id: tool_call.call_id,
@@ -185,7 +218,7 @@ impl InternalToolHandler {
     }
 
     /// Get the current task plan from the planner (if any)
-    pub fn get_current_task_plan(&self) -> Option<planner::TaskPlan> {
+    pub fn get_current_task_plan(&self) -> Option<crate::tools::planner::TaskPlan> {
         self.planner.get_current_plan().cloned()
     }
 

@@ -1,8 +1,54 @@
 use genai::chat::{ToolCall, ToolResponse};
 use crossbeam::channel::Sender;
 use serde_json::Value;
+use std::fmt;
 
 use crate::tui;
+
+/// Task status for the planner
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum TaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Skipped,
+}
+
+impl fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let icon = match self {
+            TaskStatus::Pending => "[ ]",
+            TaskStatus::InProgress => "[~]",
+            TaskStatus::Completed => "[x]",
+            TaskStatus::Skipped => "[>>]",
+        };
+        write!(f, "{}", icon)
+    }
+}
+
+/// Individual task in the plan
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Task {
+    pub description: String,
+    pub status: TaskStatus,
+}
+
+/// Task plan managed by the planner tool
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TaskPlan {
+    pub title: String,
+    pub tasks: Vec<Task>,
+}
+
+impl fmt::Display for TaskPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "## Current Task Plan: {}", self.title)?;
+        for (i, task) in self.tasks.iter().enumerate() {
+            writeln!(f, "{}. {} {}", i + 1, task.status, task.description)?;
+        }
+        Ok(())
+    }
+}
 
 pub const TOOL_NAME: &str = "planner";
 pub const TOOL_DESCRIPTION: &str = "Creates and manages a task plan with numbered steps. Actions: create (with title and tasks array), update (task_number and new_description), complete/start/skip (task_number)";
@@ -35,28 +81,6 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
     "required": ["action"]
 }"#;
 
-/// Task status for the planner
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum TaskStatus {
-    Pending,
-    InProgress,
-    Completed,
-    Skipped,
-}
-
-/// Individual task in the plan
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Task {
-    pub description: String,
-    pub status: TaskStatus,
-}
-
-/// Task plan managed by the planner tool
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct TaskPlan {
-    pub title: String,
-    pub tasks: Vec<Task>,
-}
 
 pub struct Planner {
     current_task_plan: Option<TaskPlan>,

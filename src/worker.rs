@@ -1,8 +1,7 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use crossbeam::channel::{Receiver, Sender, unbounded};
 use genai::chat::{
-    ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool,
-    ToolResponse,
+    ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool, ToolResponse,
 };
 use image::ImageFormat;
 use snafu::ResultExt;
@@ -14,10 +13,11 @@ use crate::{
     config::ParsedConfig,
     context::{clipboard::capture_clipboard, microphone, screen::capture_screen},
     mcp,
+    system_state::SystemState,
+    template::ToolInfo,
     tools::InternalToolHandler,
     tui,
 };
-
 
 /// All available events the worker can handle
 #[derive(Debug)]
@@ -94,9 +94,13 @@ pub fn do_execute_worker(
     config: ParsedConfig,
     tui_tx: Sender<tui::Task>,
 ) -> SResult<()> {
-    let mut chat_request = ChatRequest::default().with_system(&config.model.system_prompt);
+    // We'll initialize the system prompt later when we have all tools available
+    let mut chat_request = ChatRequest::default();
     let mut parts = vec![];
-    
+
+    // Create the system state for tracking files and plans
+    let mut system_state = SystemState::new();
+
     // Create the internal tool handler
     let mut tool_handler = InternalToolHandler::new(tx.clone(), tui_tx.clone(), config.clone());
 
@@ -121,7 +125,6 @@ pub fn do_execute_worker(
         microphone::execute_microphone(local_microphone_tx, microphone_rx, local_config);
     });
 
-
     let mut waiting_for_assistant_response = false;
     let mut microphone_recording = false;
 
@@ -130,7 +133,9 @@ pub fn do_execute_worker(
             Event::MCPToolsInit(mut tools) => {
                 // Add internal tools to the list so the assistant knows about them
                 for tool_name in tool_handler.get_tool_names() {
-                    if let Some((name, description, schema)) = tool_handler.get_tool_info(&tool_name) {
+                    if let Some((name, description, schema)) =
+                        tool_handler.get_tool_info(&tool_name)
+                    {
                         tools.push(Tool {
                             name: name.to_string(),
                             description: Some(description.to_string()),
@@ -138,14 +143,38 @@ pub fn do_execute_worker(
                         });
                     }
                 }
-                
+
+                // Now render the system prompt with all available tools
+                // Build tool infos
+                let tool_infos: Vec<ToolInfo> = tools
+                    .iter()
+                    .filter_map(|tool| {
+                        tool.description.as_ref().map(|desc| ToolInfo {
+                            name: tool.name.clone(),
+                            description: desc.clone(),
+                        })
+                    })
+                    .collect();
+
+                let rendered_prompt = system_state
+                    .render_system_prompt(
+                        &config.model.system_prompt,
+                        &tool_infos,
+                        config.whitelisted_commands.clone(),
+                    )
+                    .whatever_context("Failed to render system prompt template")?;
+                chat_request = chat_request.with_system(&rendered_prompt);
+                system_state.reset_modified();
+
                 chat_request = chat_request.with_tools(tools);
             }
             Event::MicrophoneResponse(text) => {
                 microphone_recording = false;
                 parts.push(ContentPart::from_text(text.clone()));
                 // Add to TUI
-                let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::microphone_stopped()));
+                let _ = tui_tx.send(tui::Task::AddEvent(
+                    tui::events::TuiEvent::microphone_stopped(),
+                ));
                 let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::user_microphone(
                     text,
                 )));
@@ -166,7 +195,7 @@ pub fn do_execute_worker(
                         error!("Error handling user input in tools: {}", e);
                     }
                 }
-                
+
                 // Process as chat input
                 parts.push(ContentPart::from_text(text.clone()));
                 // Add to TUI
@@ -183,7 +212,9 @@ pub fn do_execute_worker(
                         .context(MicrophoneTaskSendSnafu)?;
                     microphone_recording = !microphone_recording;
                     if microphone_recording {
-                        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::microphone_started()));
+                        let _ = tui_tx.send(tui::Task::AddEvent(
+                            tui::events::TuiEvent::microphone_started(),
+                        ));
                     }
                 }
                 Action::CaptureWindow => {
@@ -292,16 +323,47 @@ pub fn do_execute_worker(
                         }
 
                         // Separate internal tools from MCP tools
-                        let (internal_tools, mcp_tools): (Vec<_>, Vec<_>) = tool_calls
-                            .into_iter()
-                            .partition(|tool_call| tool_handler.is_internal_tool(&tool_call.fn_name));
+                        let (internal_tools, mcp_tools): (Vec<_>, Vec<_>) =
+                            tool_calls.into_iter().partition(|tool_call| {
+                                tool_handler.is_internal_tool(&tool_call.fn_name)
+                            });
 
                         // Handle internal tools
                         if !internal_tools.is_empty() {
-                            let responses = tool_handler.handle_tool_calls(internal_tools);
+                            let responses =
+                                tool_handler.handle_tool_calls(internal_tools, &mut system_state);
                             if !responses.is_empty() {
                                 tx.send(Event::MCPToolsResponse(responses))
                                     .whatever_context("Error sending tool responses")?;
+                            }
+
+                            // Re-render system prompt if state changed
+                            if system_state.is_modified() {
+                                let tool_infos: Vec<ToolInfo> = chat_request
+                                    .tools
+                                    .as_ref()
+                                    .map_or(&vec![], |v| v)
+                                    .iter()
+                                    .filter_map(|tool| {
+                                        tool.description.as_ref().map(|desc| ToolInfo {
+                                            name: tool.name.clone(),
+                                            description: desc.clone(),
+                                        })
+                                    })
+                                    .collect();
+
+                                let rendered = system_state
+                                    .render_system_prompt(
+                                        &config.model.system_prompt,
+                                        &tool_infos,
+                                        config.whitelisted_commands.clone(),
+                                    )
+                                    .whatever_context(
+                                        "Failed to re-render system prompt template",
+                                    )?;
+
+                                chat_request = chat_request.with_system(&rendered);
+                                system_state.reset_modified();
                             }
                         }
 

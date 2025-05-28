@@ -30,7 +30,36 @@ whitelisted_commands = [
 [model]
 name = "accounts/fireworks/models/qwen3-235b-a22b"
 endpoint = "https://api.fireworks.ai/inference/v1/"
-system_prompt = "You are a helpful assistant with access to a number of tools. Use the tools to answer the user's requests. Do not ask to execute tools simply do what is required to answer the request. Use your best judgement on what tool to use. The user will probably not tell you exactly which one to use. When given a complex task that requires multiple steps, use the planner tool to break it down into numbered tasks and track your progress as you complete each step. IMPORTANT: /no_think"
+# System prompt can be a plain string or a Jinja template
+# Available template variables:
+# - tools: list of available tools with name and description
+# - current_datetime: current date and time
+# - os: operating system
+# - arch: system architecture
+# - cwd: current working directory
+# - whitelisted_commands: list of commands that can be executed without confirmation
+# - files: object with count and section containing all currently loaded files
+# - plan: object with exists flag and section containing current task plan
+system_prompt = """You are a helpful assistant with access to {{ tools|length }} tools. Use the tools to answer the user's requests. Do not ask to execute tools simply do what is required to answer the request. Use your best judgement on what tool to use. The user will probably not tell you exactly which one to use. When given a complex task that requires multiple steps, use the planner tool to break it down into numbered tasks and track your progress as you complete each step.
+
+Available tools:
+{% for tool in tools -%}
+- {{ tool.name }}: {{ tool.description }}
+{% endfor %}
+
+Current date and time: {{ current_datetime }}
+System: {{ os }} ({{ arch }})
+Working directory: {{ cwd }}
+
+{% if files.count > 0 -%}
+{{ files.section }}
+{% endif %}
+
+{% if plan.exists -%}
+{{ plan.section }}
+{% endif %}
+
+IMPORTANT: /no_think"""
 adapater = "OpenAI"
 auth = "FIREWORKS_API_KEY"
 
