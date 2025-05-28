@@ -21,6 +21,9 @@ use crate::{
 };
 
 /// Represents different stages of a function execution
+/// These are different stages of execution that we effectively show to the user
+/// Tools in general should use Completed when done
+/// Shell Commands use the CommandResult
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FunctionExecutionStage {
     Called {
@@ -463,21 +466,22 @@ pub fn do_execute_worker(
                 exit_code,
             } => {
                 // Update function execution with command result stage
-                if let Some(execution) = function_executions.get_mut(&tool_call_id) {
-                    execution.stages.push((
-                        chrono::Utc::now(),
-                        FunctionExecutionStage::CommandResult {
-                            stdout: stdout.clone(),
-                            stderr: stderr.clone(),
-                            exit_code,
-                        },
-                    ));
+                let execution = function_executions
+                    .get_mut(&tool_call_id)
+                    .whatever_context("Failed to find function for call_id")?;
+                execution.stages.push((
+                    chrono::Utc::now(),
+                    FunctionExecutionStage::CommandResult {
+                        stdout: stdout.clone(),
+                        stderr: stderr.clone(),
+                        exit_code,
+                    },
+                ));
 
-                    // Send the updated execution to TUI
-                    let _ = tui_tx.send(tui::Task::AddEvent(
-                        tui::events::TuiEvent::function_execution_update(execution.clone()),
-                    ));
-                }
+                // Send the updated execution to TUI
+                let _ = tui_tx.send(tui::Task::AddEvent(
+                    tui::events::TuiEvent::function_execution_update(execution.clone()),
+                ));
 
                 // Format the result for the LLM
                 let mut result = String::new();
@@ -504,14 +508,14 @@ pub fn do_execute_worker(
             }
             Event::FunctionExecutionStageUpdate { call_id, stage } => {
                 // Update the function execution with the new stage
-                if let Some(mut execution) = function_executions.get_mut(&call_id) {
-                    execution.stages.push((chrono::Utc::now(), stage));
-
-                    // Send the updated execution to TUI
-                    let _ = tui_tx.send(tui::Task::AddEvent(
-                        tui::events::TuiEvent::function_execution_update(execution.clone()),
-                    ));
-                }
+                let execution = function_executions
+                    .get_mut(&call_id)
+                    .whatever_context("Failed to find function for call_id")?;
+                execution.stages.push((chrono::Utc::now(), stage));
+                // Send the updated execution to TUI
+                let _ = tui_tx.send(tui::Task::AddEvent(
+                    tui::events::TuiEvent::function_execution_update(execution.clone()),
+                ));
             }
         }
     }
