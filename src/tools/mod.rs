@@ -1,4 +1,5 @@
 pub mod command;
+pub mod edit_file;
 pub mod file_reader;
 pub mod planner;
 
@@ -14,6 +15,7 @@ pub struct InternalToolHandler {
     command: command::Command,
     planner: planner::Planner,
     file_reader: file_reader::FileReader,
+    file_editor: edit_file::FileEditor,
     worker_tx: Sender<Event>,
     tui_tx: Sender<tui::Task>,
     config: ParsedConfig,
@@ -26,6 +28,7 @@ impl InternalToolHandler {
             command: command::Command::new(worker_tx.clone(), config.clone()),
             planner: planner::Planner::new(),
             file_reader: file_reader::FileReader::new(),
+            file_editor: edit_file::FileEditor::new(),
             worker_tx,
             tui_tx,
             config,
@@ -34,7 +37,7 @@ impl InternalToolHandler {
 
     /// Check if a tool name is an internal tool
     pub fn is_internal_tool(&self, tool_name: &str) -> bool {
-        matches!(tool_name, command::TOOL_NAME | planner::TOOL_NAME | file_reader::TOOL_NAME)
+        matches!(tool_name, command::TOOL_NAME | planner::TOOL_NAME | file_reader::TOOL_NAME | edit_file::TOOL_NAME)
     }
 
     /// Get the list of all internal tool names
@@ -43,6 +46,7 @@ impl InternalToolHandler {
             command::TOOL_NAME.to_string(),
             planner::TOOL_NAME.to_string(),
             file_reader::TOOL_NAME.to_string(),
+            edit_file::TOOL_NAME.to_string(),
         ]
     }
     
@@ -63,6 +67,11 @@ impl InternalToolHandler {
                 file_reader::TOOL_NAME,
                 file_reader::TOOL_DESCRIPTION,
                 serde_json::from_str(file_reader::TOOL_INPUT_SCHEMA).unwrap()
+            )),
+            edit_file::TOOL_NAME => Some((
+                edit_file::TOOL_NAME,
+                edit_file::TOOL_DESCRIPTION,
+                serde_json::from_str(edit_file::TOOL_INPUT_SCHEMA).unwrap()
             )),
             _ => None,
         }
@@ -123,6 +132,40 @@ impl InternalToolHandler {
                         Err(e) => ToolResponse {
                             call_id: tool_call.call_id,
                             content: format!("Error reading file: {}", e),
+                        }
+                    }
+                }
+                edit_file::TOOL_NAME => {
+                    // Handle file editor tool call
+                    let args = &tool_call.fn_arguments;
+                    
+                    let path = match args.get("path").and_then(|p| p.as_str()) {
+                        Some(p) => p,
+                        None => {
+                            responses.push(ToolResponse {
+                                call_id: tool_call.call_id,
+                                content: "Error: 'path' parameter is required".to_string(),
+                            });
+                            continue;
+                        }
+                    };
+                    
+                    match edit_file::FileEditor::parse_action_from_args(args) {
+                        Ok(action) => {
+                            match self.file_editor.edit_file(path, action, &mut self.file_reader) {
+                                Ok(message) => ToolResponse {
+                                    call_id: tool_call.call_id,
+                                    content: message,
+                                },
+                                Err(e) => ToolResponse {
+                                    call_id: tool_call.call_id,
+                                    content: format!("Error editing file: {}", e),
+                                }
+                            }
+                        }
+                        Err(e) => ToolResponse {
+                            call_id: tool_call.call_id,
+                            content: format!("Error parsing edit action: {}", e),
                         }
                     }
                 }
