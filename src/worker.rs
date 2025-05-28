@@ -2,7 +2,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use crossbeam::channel::{Receiver, Sender, unbounded};
 use genai::chat::{
     ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool,
-    ToolCall, ToolResponse,
+    ToolResponse,
 };
 use image::ImageFormat;
 use snafu::ResultExt;
@@ -14,7 +14,7 @@ use crate::{
     config::ParsedConfig,
     context::{clipboard::capture_clipboard, microphone, screen::capture_screen},
     mcp,
-    tools::{command::{PendingCommand, handle_execute_command, Task as CommandTask, execute_command_executor}, planner::{TaskPlan, handle_planner}},
+    tools::InternalToolHandler,
     tui,
 };
 
@@ -96,13 +96,9 @@ pub fn do_execute_worker(
 ) -> SResult<()> {
     let mut chat_request = ChatRequest::default().with_system(&config.model.system_prompt);
     let mut parts = vec![];
-
-    // Track pending command execution
-    let mut pending_command: Option<PendingCommand> = None;
-    let mut executing_tool_calls: Vec<String> = Vec::new();
     
-    // Track current task plan
-    let mut current_task_plan: Option<TaskPlan> = None;
+    // Create the internal tool handler
+    let mut tool_handler = InternalToolHandler::new(tx.clone(), tui_tx.clone(), config.clone());
 
     let (assistant_tx, assistant_rx) = unbounded();
     let local_worker_tx = tx.clone();
@@ -125,31 +121,25 @@ pub fn do_execute_worker(
         microphone::execute_microphone(local_microphone_tx, microphone_rx, local_config);
     });
 
-    let (command_executor_tx, command_executor_rx) = unbounded();
-    let local_command_executor_tx = tx.clone();
-    let local_config = config.clone();
-    let _command_executor_handle = std::thread::spawn(move || {
-        execute_command_executor(
-            local_command_executor_tx,
-            command_executor_rx,
-            local_config,
-        );
-    });
 
     let mut waiting_for_assistant_response = false;
     let mut microphone_recording = false;
 
     while let Ok(task) = rx.recv() {
         match task {
-            Event::MCPToolsInit(mut mcp_tools) => {
-                // Get internal tools and convert to MCP tool format
-                let internal_tools = crate::tools::get_all_tools();
-                let internal_mcp_tools = crate::tools::tools_to_mcp(internal_tools);
+            Event::MCPToolsInit(mut tools) => {
+                // Add internal tools to the list so the assistant knows about them
+                for tool_name in tool_handler.get_tool_names() {
+                    if let Some((name, description, schema)) = tool_handler.get_tool_info(&tool_name) {
+                        tools.push(Tool {
+                            name: name.to_string(),
+                            description: Some(description.to_string()),
+                            schema: Some(schema),
+                        });
+                    }
+                }
                 
-                // Add internal tools to MCP tools
-                mcp_tools.extend(internal_mcp_tools);
-
-                chat_request = chat_request.with_tools(mcp_tools);
+                chat_request = chat_request.with_tools(tools);
             }
             Event::MicrophoneResponse(text) => {
                 microphone_recording = false;
@@ -164,38 +154,20 @@ pub fn do_execute_worker(
                     .whatever_context("Error sending assist event to worker from worker")?;
             }
             Event::UserTUIInput(text) => {
-                // Check if we're waiting for command confirmation
-                if let Some(pending) = pending_command.take() {
-                    let response = text.trim().to_lowercase();
-                    if response == "y" || response == "yes" {
-                        // Track executing command
-                        executing_tool_calls.push(pending.tool_call_id.clone());
-                        // Send command to executor
-                        command_executor_tx
-                            .send(CommandTask::Execute {
-                                command: pending.command,
-                                args: pending.args,
-                                tool_call_id: pending.tool_call_id,
-                            })
-                            .whatever_context("Error sending command to executor")?;
-                    } else {
-                        // User denied
-                        tx.send(Event::CommandExecutionResult {
-                            tool_call_id: pending.tool_call_id,
-                            command: format!("{} {}", pending.command, pending.args.join(" ")),
-                            stdout: String::new(),
-                            stderr: "Command execution denied by user".to_string(),
-                            exit_code: -1,
-                        })
-                        .whatever_context("Error sending command denial")?;
+                // Let the tool handler process user input first
+                match tool_handler.handle_user_input(&text) {
+                    Ok(consumed) => {
+                        if consumed {
+                            // Input was consumed by a tool, don't process as chat
+                            continue;
+                        }
                     }
-                    let _ = tui_tx.send(tui::Task::ClearInput);
-                    let _ = tui_tx.send(tui::Task::AddEvent(
-                        tui::events::TuiEvent::set_waiting_for_confirmation(false),
-                    ));
-                    continue; // Don't process this as regular input
+                    Err(e) => {
+                        error!("Error handling user input in tools: {}", e);
+                    }
                 }
-
+                
+                // Process as chat input
                 parts.push(ContentPart::from_text(text.clone()));
                 // Add to TUI
                 let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::user_input(text)));
@@ -252,15 +224,8 @@ pub fn do_execute_worker(
                             .context(AssistantTaskSendSnafu)?;
                         waiting_for_assistant_response = false;
 
-                        // Cancel any executing commands
-                        for tool_call_id in executing_tool_calls.drain(..) {
-                            command_executor_tx
-                                .send(CommandTask::Cancel { tool_call_id })
-                                .whatever_context("Error sending cancel to command executor")?;
-                        }
-
-                        // Clear any pending command
-                        pending_command = None;
+                        // Cancel any pending tool operations
+                        tool_handler.cancel_pending_operations();
 
                         let _ = tui_tx.send(tui::Task::AddEvent(
                             tui::events::TuiEvent::set_waiting_for_response(false),
@@ -329,11 +294,15 @@ pub fn do_execute_worker(
                         // Separate internal tools from MCP tools
                         let (internal_tools, mcp_tools): (Vec<_>, Vec<_>) = tool_calls
                             .into_iter()
-                            .partition(|tool_call| is_internal_tool(&tool_call.fn_name));
+                            .partition(|tool_call| tool_handler.is_internal_tool(&tool_call.fn_name));
 
                         // Handle internal tools
                         if !internal_tools.is_empty() {
-                            handle_internal_tools(internal_tools, &mut pending_command, &mut current_task_plan, &tui_tx, &tx, &config, &command_executor_tx, &mut executing_tool_calls);
+                            let responses = tool_handler.handle_tool_calls(internal_tools);
+                            if !responses.is_empty() {
+                                tx.send(Event::MCPToolsResponse(responses))
+                                    .whatever_context("Error sending tool responses")?;
+                            }
                         }
 
                         // Send remaining tools to MCP
@@ -360,8 +329,7 @@ pub fn do_execute_worker(
                 stderr,
                 exit_code,
             } => {
-                // Remove from executing list
-                executing_tool_calls.retain(|id| id != &tool_call_id);
+                // The Command tool now manages its own executing commands internally
 
                 // Add command result to TUI
                 let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::command_result(
@@ -399,33 +367,3 @@ pub fn do_execute_worker(
 
     Ok(())
 }
-
-/// Check if a tool is an internal tool
-fn is_internal_tool(tool_name: &str) -> bool {
-    matches!(tool_name, "execute_command" | "planner")
-}
-
-/// Handle internal tool calls
-fn handle_internal_tools(
-    tool_calls: Vec<ToolCall>,
-    pending_command: &mut Option<PendingCommand>,
-    current_task_plan: &mut Option<TaskPlan>,
-    tui_tx: &Sender<tui::Task>,
-    worker_tx: &Sender<Event>,
-    config: &ParsedConfig,
-    command_executor_tx: &Sender<CommandTask>,
-    executing_tool_calls: &mut Vec<String>,
-) {
-    for tool_call in tool_calls {
-        match tool_call.fn_name.as_str() {
-            "execute_command" => handle_execute_command(tool_call, pending_command, tui_tx, config, command_executor_tx, worker_tx, executing_tool_calls),
-            "planner" => handle_planner(tool_call, current_task_plan, tui_tx, worker_tx),
-            _ => {
-                // For unknown tools, we should send an error response
-                // but since we're not sending responses anymore, we'll just log it
-                error!("Unknown internal tool: {}", tool_call.fn_name);
-            }
-        }
-    }
-}
-

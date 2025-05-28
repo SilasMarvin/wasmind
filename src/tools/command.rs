@@ -4,12 +4,30 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crossbeam::channel::{Receiver, Sender, unbounded};
-use genai::chat::ToolCall;
-use serde_json::{json, Value};
+use genai::chat::{ToolCall, ToolResponse};
+use serde_json::Value;
 use snafu::{ResultExt, Snafu};
 use tracing::{debug, error};
 
 use crate::{config::ParsedConfig, tui, worker::Event};
+
+pub const TOOL_NAME: &str = "execute_command";
+pub const TOOL_DESCRIPTION: &str = "Execute a shell command with specified arguments. E.G. pwd, git, ls, etc...";
+pub const TOOL_INPUT_SCHEMA: &str = r#"{
+    "type": "object",
+    "properties": {
+        "command": {
+            "type": "string",
+            "description": "The shell command to execute"
+        },
+        "args": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Arguments to pass to the shell command"
+        }
+    },
+    "required": ["command"]
+}"#;
 
 /// Errors while executing commands
 #[derive(Debug, Snafu)]
@@ -41,9 +59,9 @@ pub struct PendingCommand {
     pub tool_call_id: String,
 }
 
-/// Tasks the command executor can receive from the worker
+/// Tasks the command executor can receive
 #[derive(Debug, Clone)]
-pub enum Task {
+enum Task {
     Execute {
         command: String,
         args: Vec<String>,
@@ -73,149 +91,173 @@ enum ExecutorEvent {
     },
 }
 
-pub struct Command {}
+pub struct Command {
+    executor_tx: Sender<Task>,
+    config: ParsedConfig,
+    pending_command: Option<PendingCommand>,
+    executing_tool_calls: Vec<String>,
+}
 
 impl Command {
-    pub fn new() -> Self {
-        Command {}
+    pub fn new(worker_tx: Sender<Event>, config: ParsedConfig) -> Self {
+        let (executor_tx, executor_rx) = unbounded();
+        
+        // Start the executor thread
+        thread::spawn(move || {
+            execute_command_executor(worker_tx, executor_rx);
+        });
+        
+        Self {
+            executor_tx,
+            config,
+            pending_command: None,
+            executing_tool_calls: Vec::new(),
+        }
     }
-}
 
-impl crate::tools::InternalTool for Command {
-    fn name(&self) -> &'static str {
-        "execute_command"
+    pub fn has_pending_command(&self) -> bool {
+        self.pending_command.is_some()
     }
-
-    fn description(&self) -> &'static str {
-        "Execute a shell command with specified arguments. E.G. pwd, git, ls, etc..."
-    }
-
-    fn input_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "The shell command to execute"
-                },
-                "args": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "Arguments to pass to the shell command"
+    
+    pub fn handle_user_confirmation(&mut self, input: &str) -> Option<(String, Vec<String>, String, bool)> {
+        if let Some(pending) = self.pending_command.take() {
+            let response = input.trim().to_lowercase();
+            if response == "y" || response == "yes" {
+                // Track executing command
+                self.executing_tool_calls.push(pending.tool_call_id.clone());
+                
+                // Send command to executor
+                if let Err(e) = self.executor_tx.send(Task::Execute {
+                    command: pending.command.clone(),
+                    args: pending.args.clone(),
+                    tool_call_id: pending.tool_call_id.clone(),
+                }) {
+                    error!("Failed to send command to executor: {}", e);
                 }
-            },
-            "required": ["command"]
-        })
+                None
+            } else {
+                // User denied - return info for denial response
+                Some((pending.command, pending.args, pending.tool_call_id, false))
+            }
+        } else {
+            None
+        }
     }
-}
-
-
-/// Handle the execute_command tool (legacy function for worker.rs)
-pub fn handle_execute_command(
-    tool_call: ToolCall,
-    pending_command: &mut Option<PendingCommand>,
-    tui_tx: &Sender<tui::Task>,
-    config: &ParsedConfig,
-    command_executor_tx: &Sender<Task>,
-    _worker_tx: &Sender<Event>,
-    executing_tool_calls: &mut Vec<String>,
-) {
-    // Parse the arguments
-    let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
-        Ok(args) => args,
-        Err(e) => {
-            error!("Failed to parse command arguments: {}", e);
-            return;
+    
+    pub fn cancel_pending_operations(&mut self) {
+        // Cancel any executing commands
+        for tool_call_id in self.executing_tool_calls.drain(..) {
+            let _ = self.executor_tx.send(Task::Cancel { tool_call_id });
         }
-    };
+        
+        // Clear any pending command
+        self.pending_command = None;
+    }
+    
+    pub fn name(&self) -> &'static str {
+        TOOL_NAME
+    }
 
-    // Extract command and arguments
-    let command = match args.get("command").and_then(|v| v.as_str()) {
-        Some(cmd) => cmd,
-        None => {
-            error!("Missing 'command' field in arguments");
-            return;
-        }
-    };
+    pub fn description(&self) -> &'static str {
+        TOOL_DESCRIPTION
+    }
 
-    let args_array = match args.get("args") {
-        Some(serde_json::Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect::<Vec<String>>(),
-        _ => Vec::new(),
-    };
+    pub fn input_schema(&self) -> Value {
+        serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()
+    }
+    
+    pub fn handle_call(
+        &mut self,
+        tool_call: ToolCall,
+        tui_tx: &Sender<tui::Task>,
+    ) -> Result<Option<ToolResponse>, String> {
+        // Parse the arguments
+        let args = serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments)
+            .map_err(|e| format!("Failed to parse command arguments: {}", e))?;
 
-    // Check if command is whitelisted
-    debug!("Checking if command '{}' is whitelisted", command);
-    debug!("Whitelisted commands: {:?}", config.whitelisted_commands);
+        // Extract command and arguments
+        let command = args.get("command")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "Missing 'command' field in arguments".to_string())?;
 
-    // Check for exact match or if command starts with a whitelisted command
-    // This handles cases like "git status" where "git" is whitelisted
-    let is_whitelisted = config.whitelisted_commands.iter().any(|wc| {
-        // Exact match
-        if wc == command {
-            return true;
-        }
-        // Check if the command is a path that ends with the whitelisted command
-        // e.g., "/usr/bin/pwd" matches "pwd"
-        if command.split('/').last() == Some(wc) {
-            return true;
-        }
-        false
-    });
+        let args_array = match args.get("args") {
+            Some(serde_json::Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<String>>(),
+            _ => Vec::new(),
+        };
 
-    if is_whitelisted {
-        // Command is whitelisted, execute without prompting
-        debug!(
-            "Command '{}' is whitelisted, executing without prompt",
-            command
-        );
-        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::system(format!(
-            "Executing whitelisted command: {} {}",
-            command,
-            args_array.join(" ")
-        ))));
+        // Check if command is whitelisted
+        debug!("Checking if command '{}' is whitelisted", command);
+        debug!("Whitelisted commands: {:?}", self.config.whitelisted_commands);
 
-        // Track executing command
-        executing_tool_calls.push(tool_call.call_id.clone());
-
-        // Send command directly to executor
-        let _ = command_executor_tx.send(Task::Execute {
-            command: command.to_string(),
-            args: args_array,
-            tool_call_id: tool_call.call_id,
+        let is_whitelisted = self.config.whitelisted_commands.iter().any(|wc| {
+            // Exact match
+            if wc == command {
+                return true;
+            }
+            // Check if the command is a path that ends with the whitelisted command
+            // e.g., "/usr/bin/pwd" matches "pwd"
+            if command.split('/').last() == Some(wc) {
+                return true;
+            }
+            false
         });
-    } else {
-        // Command not whitelisted, prompt for confirmation
-        debug!(
-            "Command '{}' is NOT whitelisted, prompting for confirmation",
-            command
-        );
-        let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::command_prompt(
-            command.to_string(),
-            args_array.clone(),
-        )));
-        let _ = tui_tx.send(tui::Task::AddEvent(
-            tui::events::TuiEvent::set_waiting_for_confirmation(true),
-        ));
 
-        // Store the pending command
-        *pending_command = Some(PendingCommand {
-            command: command.to_string(),
-            args: args_array,
-            tool_call_id: tool_call.call_id,
-        });
+        if is_whitelisted {
+            // Command is whitelisted, execute without prompting
+            debug!("Command '{}' is whitelisted, executing without prompt", command);
+            
+            let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::system(format!(
+                "Executing whitelisted command: {} {}",
+                command,
+                args_array.join(" ")
+            ))));
+
+            // Track executing command
+            self.executing_tool_calls.push(tool_call.call_id.clone());
+
+            // Send command directly to executor
+            self.executor_tx.send(Task::Execute {
+                command: command.to_string(),
+                args: args_array,
+                tool_call_id: tool_call.call_id,
+            }).map_err(|e| format!("Failed to send command to executor: {}", e))?;
+            
+            // No immediate response needed - results come through events
+            Ok(None)
+        } else {
+            // Command not whitelisted, prompt for confirmation
+            debug!("Command '{}' is NOT whitelisted, prompting for confirmation", command);
+            
+            let _ = tui_tx.send(tui::Task::AddEvent(tui::events::TuiEvent::command_prompt(
+                command.to_string(),
+                args_array.clone(),
+            )));
+            let _ = tui_tx.send(tui::Task::AddEvent(
+                tui::events::TuiEvent::set_waiting_for_confirmation(true),
+            ));
+
+            // Store the pending command
+            self.pending_command = Some(PendingCommand {
+                command: command.to_string(),
+                args: args_array,
+                tool_call_id: tool_call.call_id,
+            });
+            
+            // No immediate response - waiting for user confirmation
+            Ok(None)
+        }
     }
 }
 
 /// Executes the command executor thread
-pub fn execute_command_executor(
+fn execute_command_executor(
     tx: Sender<Event>, 
     rx: Receiver<Task>,
-    config: ParsedConfig
 ) {
-    if let Err(e) = do_execute_command_executor(tx, rx, config) {
+    if let Err(e) = do_execute_command_executor(tx, rx) {
         error!("Error while executing command executor: {e:?}");
     }
 }
@@ -223,7 +265,6 @@ pub fn execute_command_executor(
 fn do_execute_command_executor(
     tx: Sender<Event>,
     rx: Receiver<Task>,
-    _config: ParsedConfig,
 ) -> CommandExecutorResult<()> {
     // Internal channel for handling command completions
     let (internal_tx, internal_rx) = unbounded::<ExecutorEvent>();
@@ -289,7 +330,7 @@ fn do_execute_command_executor(
                 match result {
                     Ok(output) => {
                         let _ = tx.send(Event::CommandExecutionResult {
-                            tool_call_id,
+                            tool_call_id: tool_call_id.clone(),
                             command: output.command,
                             stdout: output.stdout,
                             stderr: output.stderr,
@@ -298,7 +339,7 @@ fn do_execute_command_executor(
                     }
                     Err(e) => {
                         let _ = tx.send(Event::CommandExecutionResult {
-                            tool_call_id,
+                            tool_call_id: tool_call_id.clone(),
                             command: String::new(),
                             stdout: String::new(),
                             stderr: format!("Command execution failed: {}", e),

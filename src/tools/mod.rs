@@ -1,29 +1,181 @@
 pub mod command;
+pub mod file_reader;
 pub mod planner;
 
-use genai::chat::Tool;
+use crossbeam::channel::Sender;
+use genai::chat::{ToolCall, ToolResponse};
 use serde_json::Value;
+use tracing::error;
 
-pub trait InternalTool: Send + Sync {
-    fn name(&self) -> &'static str;
-    fn description(&self) -> &'static str;
-    fn input_schema(&self) -> Value;
+use crate::{config::ParsedConfig, tui, worker::Event};
+
+/// Handler for all internal tools
+pub struct InternalToolHandler {
+    command: command::Command,
+    planner: planner::Planner,
+    file_reader: file_reader::FileReader,
+    worker_tx: Sender<Event>,
+    tui_tx: Sender<tui::Task>,
+    config: ParsedConfig,
 }
 
-pub fn get_all_tools() -> Vec<Box<dyn InternalTool>> {
-    vec![
-        Box::new(command::Command::new()),
-        Box::new(planner::Planner::new()),
-    ]
+impl InternalToolHandler {
+    /// Create a new internal tool handler
+    pub fn new(worker_tx: Sender<Event>, tui_tx: Sender<tui::Task>, config: ParsedConfig) -> Self {
+        Self {
+            command: command::Command::new(worker_tx.clone(), config.clone()),
+            planner: planner::Planner::new(),
+            file_reader: file_reader::FileReader::new(),
+            worker_tx,
+            tui_tx,
+            config,
+        }
+    }
+
+    /// Check if a tool name is an internal tool
+    pub fn is_internal_tool(&self, tool_name: &str) -> bool {
+        matches!(tool_name, command::TOOL_NAME | planner::TOOL_NAME | file_reader::TOOL_NAME)
+    }
+
+    /// Get the list of all internal tool names
+    pub fn get_tool_names(&self) -> Vec<String> {
+        vec![
+            command::TOOL_NAME.to_string(),
+            planner::TOOL_NAME.to_string(),
+            file_reader::TOOL_NAME.to_string(),
+        ]
+    }
+    
+    /// Get tool info by name (name, description, schema)
+    pub fn get_tool_info(&self, name: &str) -> Option<(&'static str, &'static str, Value)> {
+        match name {
+            command::TOOL_NAME => Some((
+                command::TOOL_NAME,
+                command::TOOL_DESCRIPTION,
+                serde_json::from_str(command::TOOL_INPUT_SCHEMA).unwrap()
+            )),
+            planner::TOOL_NAME => Some((
+                planner::TOOL_NAME,
+                planner::TOOL_DESCRIPTION,
+                serde_json::from_str(planner::TOOL_INPUT_SCHEMA).unwrap()
+            )),
+            file_reader::TOOL_NAME => Some((
+                file_reader::TOOL_NAME,
+                file_reader::TOOL_DESCRIPTION,
+                serde_json::from_str(file_reader::TOOL_INPUT_SCHEMA).unwrap()
+            )),
+            _ => None,
+        }
+    }
+
+    /// Handle a batch of tool calls
+    pub fn handle_tool_calls(&mut self, tool_calls: Vec<ToolCall>) -> Vec<ToolResponse> {
+        let mut responses = Vec::new();
+
+        for tool_call in tool_calls {
+            let response = match tool_call.fn_name.as_str() {
+                command::TOOL_NAME => {
+                    match self.command.handle_call(tool_call.clone(), &self.tui_tx) {
+                        Ok(Some(response)) => response,
+                        Ok(None) => continue, // Tool handled the call but doesn't need to send a response
+                        Err(e) => {
+                            error!("Error handling command tool call: {}", e);
+                            ToolResponse {
+                                call_id: tool_call.call_id,
+                                content: format!("Error: {}", e),
+                            }
+                        }
+                    }
+                }
+                planner::TOOL_NAME => {
+                    match self.planner.handle_call(tool_call.clone(), &self.tui_tx) {
+                        Ok(Some(response)) => response,
+                        Ok(None) => continue,
+                        Err(e) => {
+                            error!("Error handling planner tool call: {}", e);
+                            ToolResponse {
+                                call_id: tool_call.call_id,
+                                content: format!("Error: {}", e),
+                            }
+                        }
+                    }
+                }
+                file_reader::TOOL_NAME => {
+                    // Handle file reader tool call
+                    let args = &tool_call.fn_arguments;
+                    
+                    let path = match args.get("path").and_then(|p| p.as_str()) {
+                        Some(p) => p,
+                        None => {
+                            responses.push(ToolResponse {
+                                call_id: tool_call.call_id,
+                                content: "Error: 'path' parameter is required".to_string(),
+                            });
+                            continue;
+                        }
+                    };
+                    
+                    match self.file_reader.get_or_read_file_content(path) {
+                        Ok(content) => ToolResponse {
+                            call_id: tool_call.call_id,
+                            content: content.clone(),
+                        },
+                        Err(e) => ToolResponse {
+                            call_id: tool_call.call_id,
+                            content: format!("Error reading file: {}", e),
+                        }
+                    }
+                }
+                _ => {
+                    error!("Unknown internal tool: {}", tool_call.fn_name);
+                    ToolResponse {
+                        call_id: tool_call.call_id,
+                        content: format!("Unknown internal tool: {}", tool_call.fn_name),
+                    }
+                }
+            };
+
+            responses.push(response);
+        }
+
+        responses
+    }
+
+    /// Get the current task plan from the planner (if any)
+    pub fn get_current_task_plan(&self) -> Option<planner::TaskPlan> {
+        self.planner.get_current_plan().cloned()
+    }
+
+    /// Handle user input that might affect tools (e.g., command confirmation)
+    /// Returns true if the input was consumed by a tool
+    pub fn handle_user_input(&mut self, input: &str) -> Result<bool, String> {
+        // The command tool will handle its own pending commands
+        if self.command.has_pending_command() {
+            if let Some((command, args, tool_call_id, _)) = self.command.handle_user_confirmation(input) {
+                // User denied - send denial response
+                let _ = self.worker_tx.send(Event::CommandExecutionResult {
+                    tool_call_id,
+                    command: format!("{} {}", command, args.join(" ")),
+                    stdout: String::new(),
+                    stderr: "Command execution denied by user".to_string(),
+                    exit_code: -1,
+                });
+            }
+
+            // Send UI updates
+            let _ = self.tui_tx.send(tui::Task::ClearInput);
+            let _ = self.tui_tx.send(tui::Task::AddEvent(
+                tui::events::TuiEvent::set_waiting_for_confirmation(false),
+            ));
+
+            return Ok(true); // Input was consumed
+        }
+        Ok(false) // Input was not consumed
+    }
+
+    /// Cancel any pending operations
+    pub fn cancel_pending_operations(&mut self) {
+        self.command.cancel_pending_operations();
+    }
 }
 
-pub fn tools_to_mcp(tools: Vec<Box<dyn InternalTool>>) -> Vec<Tool> {
-    tools
-        .into_iter()
-        .map(|tool| Tool {
-            name: tool.name().to_string(),
-            description: Some(tool.description().to_string()),
-            schema: Some(tool.input_schema()),
-        })
-        .collect()
-}
