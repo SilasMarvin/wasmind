@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-use crate::worker::FunctionExecutionStage;
+use crate::tools::ToolType;
 
 /// A complete function execution with all its stages
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionExecution {
     pub call_id: String,
     pub name: String,
-    pub stages: Vec<(chrono::DateTime<chrono::Utc>, FunctionExecutionStage)>,
+    pub tool_type: ToolType,
     pub start_time: chrono::DateTime<chrono::Utc>,
 }
 

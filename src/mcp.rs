@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::OnceLock};
 
 use crossbeam::channel::{Receiver, Sender};
 use genai::{
-    chat::{Tool, ToolCall, ToolResponse},
+    chat::{Tool, ToolCall},
 };
 use rmcp::{
     RoleClient,
@@ -10,7 +10,7 @@ use rmcp::{
     service::{RunningService, ServiceExt},
     transport::{self},
 };
-use snafu::{Location, OptionExt, ResultExt, Snafu};
+use snafu::{Location, ResultExt, Snafu};
 use tokio::process::Command;
 use tracing::{error, info};
 
@@ -53,14 +53,14 @@ enum MCPError {
     },
 
     #[snafu(display("MCP Function not found: {func_name}"))]
-    FuncNotFound {
+    _FuncNotFound {
         #[snafu(implicit)]
         location: Location,
         func_name: String,
     },
 
     #[snafu(display("MCP Server not found: {server}"))]
-    ServerNotFound {
+    _ServerNotFound {
         #[snafu(implicit)]
         location: Location,
         server: String,
@@ -177,24 +177,46 @@ async fn do_execute_tools(
     tool_calls: Vec<ToolCall>,
     _config: ParsedConfig,
 ) -> MResult<()> {
-    let mut tool_responses = vec![];
-
     for tool_call in tool_calls {
-        let server_name = MCP_FUNCS_TO_SERVER
+        let call_id = tool_call.call_id.clone();
+        
+        let server_name = match MCP_FUNCS_TO_SERVER
             .get()
             .unwrap()
             .get(&tool_call.fn_name)
-            .with_context(|| FuncNotFoundSnafu {
-                func_name: tool_call.fn_name.clone(),
-            })?;
+        {
+            Some(name) => name,
+            None => {
+                // Send failure stage update
+                tx.send(worker::Event::MCPStageUpdate {
+                    call_id,
+                    stage: crate::tools::MCPExecutionStage::Failed {
+                        error: format!("Function not found: {}", tool_call.fn_name),
+                    },
+                })
+                .context(SendEventSnafu)?;
+                continue;
+            }
+        };
 
-        let server = MCP_SERVERS
+        let server = match MCP_SERVERS
             .get()
             .unwrap()
             .get(server_name)
-            .with_context(|| ServerNotFoundSnafu {
-                server: server_name.clone(),
-            })?;
+        {
+            Some(server) => server,
+            None => {
+                // Send failure stage update
+                tx.send(worker::Event::MCPStageUpdate {
+                    call_id,
+                    stage: crate::tools::MCPExecutionStage::Failed {
+                        error: format!("Server not found: {}", server_name),
+                    },
+                })
+                .context(SendEventSnafu)?;
+                continue;
+            }
+        };
 
         let tool_name = tool_call.fn_name.clone();
         
@@ -204,45 +226,57 @@ async fn do_execute_tools(
             "Executing MCP tool"
         );
         
-        let tool_response = server
+        match server
             .call_tool(CallToolRequestParam {
                 name: tool_call.fn_name.into(),
                 arguments: Some(serde_json::from_value(tool_call.fn_arguments).unwrap()),
             })
             .await
-            .context(ServiceSnafu {
-                server: server_name,
-            })?;
-        
-        info!(
-            server = %server_name,
-            tool = %tool_name,
-            "MCP tool execution completed"
-        );
+        {
+            Ok(tool_response) => {
+                info!(
+                    server = %server_name,
+                    tool = %tool_name,
+                    "MCP tool execution completed"
+                );
 
-        if tool_response.is_error.is_some_and(|x| x) {
-            error!("Error while executing MCP tool call");
+                if tool_response.is_error.is_some_and(|x| x) {
+                    error!("Error while executing MCP tool call");
+                }
+
+                let content = tool_response
+                    .content
+                    .into_iter()
+                    .map(|content| match content.raw {
+                        rmcp::model::RawContent::Text(raw_text_content) => raw_text_content.text,
+                        rmcp::model::RawContent::Image(_raw_image_content) => todo!(),
+                        rmcp::model::RawContent::Resource(_raw_embedded_resource) => todo!(),
+                        rmcp::model::RawContent::Audio(_annotated) => todo!(),
+                    })
+                    .collect::<Vec<String>>()
+                    .join("\n\n\n\n");
+
+                // Send completion stage update
+                tx.send(worker::Event::MCPStageUpdate {
+                    call_id,
+                    stage: crate::tools::MCPExecutionStage::Completed {
+                        result: content,
+                    },
+                })
+                .context(SendEventSnafu)?;
+            }
+            Err(e) => {
+                // Send failure stage update
+                tx.send(worker::Event::MCPStageUpdate {
+                    call_id,
+                    stage: crate::tools::MCPExecutionStage::Failed {
+                        error: format!("Failed to execute MCP tool: {}", e),
+                    },
+                })
+                .context(SendEventSnafu)?;
+            }
         }
-
-        let content = tool_response
-            .content
-            .into_iter()
-            .map(|content| match content.raw {
-                rmcp::model::RawContent::Text(raw_text_content) => raw_text_content.text,
-                rmcp::model::RawContent::Image(_raw_image_content) => todo!(),
-                rmcp::model::RawContent::Resource(_raw_embedded_resource) => todo!(),
-                rmcp::model::RawContent::Audio(_annotated) => todo!(),
-            })
-            .collect::<Vec<String>>()
-            .join("\n\n\n\n");
-
-        tool_responses.push(ToolResponse {
-            call_id: tool_call.call_id,
-            content,
-        });
     }
 
-    tx.send(worker::Event::MCPToolsResponse(tool_responses))
-        .context(SendEventSnafu)?;
     Ok(())
 }

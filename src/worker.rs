@@ -4,8 +4,7 @@ use genai::chat::{
     ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool, ToolResponse,
 };
 use image::ImageFormat;
-use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 use std::io::Cursor;
 use tracing::error;
 
@@ -16,62 +15,39 @@ use crate::{
     mcp,
     system_state::SystemState,
     template::ToolInfo,
-    tools::InternalToolHandler,
+    tools::{InternalToolHandler, MCPExecutionStage, CommandExecutionStage, GeneralToolExecutionStage},
     tui::{self, events::FunctionExecution},
 };
 
-/// Represents different stages of a function execution
-/// These are different stages of execution that we effectively show to the user
-/// Tools in general should use Completed when done
-/// Shell Commands use the CommandResult
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum FunctionExecutionStage {
-    Called {
-        args: Option<String>,
-    },
-    CommandPrompt {
-        command: String,
-        args: Vec<String>,
-    },
-    CommandExecuting {
-        command: String,
-    },
-    CommandResult {
-        stdout: String,
-        stderr: String,
-        exit_code: i32,
-    },
-    InternalLog {
-        message: String,
-    },
-    Completed {
-        result: String,
-    },
-    Failed {
-        error: String,
-    },
-}
 
 /// All available events the worker can handle
 #[derive(Debug)]
 pub enum Event {
     UserTUIInput(String),
     MCPToolsInit(Vec<Tool>),
-    MCPToolsResponse(Vec<ToolResponse>),
     Action(Action),
     ChatResponse(MessageContent),
     MicrophoneResponse(String),
-    CommandExecutionResult {
-        tool_call_id: String,
-        command: String,
-        stdout: String,
-        stderr: String,
-        exit_code: i32,
-    },
-    // Used for both Commands and MCP
-    FunctionExecutionStageUpdate {
+    // Specific stage updates for different tool types
+    MCPStageUpdate {
         call_id: String,
-        stage: FunctionExecutionStage,
+        stage: MCPExecutionStage,
+    },
+    CommandStageUpdate {
+        call_id: String,
+        stage: CommandExecutionStage,
+    },
+    FileReaderStageUpdate {
+        call_id: String,
+        stage: GeneralToolExecutionStage,
+    },
+    FileEditorStageUpdate {
+        call_id: String,
+        stage: GeneralToolExecutionStage,
+    },
+    PlannerStageUpdate {
+        call_id: String,
+        stage: GeneralToolExecutionStage,
     },
 }
 
@@ -311,34 +287,6 @@ pub fn do_execute_worker(
                     break;
                 }
             },
-            Event::MCPToolsResponse(call_tool_results) => {
-                // Update function executions with results
-                for tool_response in &call_tool_results {
-                    let mut execution = function_executions
-                        .remove(&tool_response.call_id)
-                        .whatever_context("Failed to find function for call_id")?;
-                    // Add the completion stage
-                    execution.stages.push((
-                        chrono::Utc::now(),
-                        FunctionExecutionStage::Completed {
-                            result: tool_response.content.clone(),
-                        },
-                    ));
-                    // Send the updated execution to TUI
-                    let _ = tui_tx.send(tui::Task::AddEvent(
-                        tui::events::TuiEvent::function_execution_update(execution),
-                    ));
-                }
-
-                chat_request = chat_request.append_message(ChatMessage {
-                    role: ChatRole::Tool,
-                    content: MessageContent::ToolResponses(call_tool_results),
-                    options: None,
-                });
-                assistant_tx
-                    .send(assistant::Task::Assist(chat_request.clone()))
-                    .context(AssistantTaskSendSnafu)?;
-            }
             Event::ChatResponse(message_content) => {
                 match message_content.clone() {
                     MessageContent::Text(text) => {
@@ -372,20 +320,50 @@ pub fn do_execute_worker(
                     MessageContent::ToolCalls(tool_calls) => {
                         // Create function executions for each tool call
                         for call in &tool_calls {
-                            let mut execution = FunctionExecution {
-                                call_id: call.call_id.clone(),
-                                name: call.fn_name.clone(),
-                                stages: vec![],
-                                start_time: chrono::Utc::now(),
+                            // Determine tool type and create appropriate execution
+                            let tool_type = if tool_handler.is_internal_tool(&call.fn_name) {
+                                // Determine specific internal tool type
+                                match call.fn_name.as_str() {
+                                    crate::tools::command::TOOL_NAME => {
+                                        crate::tools::ToolType::Command(vec![CommandExecutionStage::Called {
+                                            args: Some(call.fn_arguments.to_string()),
+                                        }])
+                                    }
+                                    crate::tools::file_reader::TOOL_NAME => {
+                                        crate::tools::ToolType::FileReader(vec![GeneralToolExecutionStage::Called {
+                                            args: Some(call.fn_arguments.to_string()),
+                                        }])
+                                    }
+                                    crate::tools::edit_file::TOOL_NAME => {
+                                        crate::tools::ToolType::FileEditor(vec![GeneralToolExecutionStage::Called {
+                                            args: Some(call.fn_arguments.to_string()),
+                                        }])
+                                    }
+                                    crate::tools::planner::TOOL_NAME => {
+                                        crate::tools::ToolType::Planner(vec![GeneralToolExecutionStage::Called {
+                                            args: Some(call.fn_arguments.to_string()),
+                                        }])
+                                    }
+                                    _ => {
+                                        // Default to MCP if unknown internal tool
+                                        crate::tools::ToolType::MCP(vec![MCPExecutionStage::Called {
+                                            args: Some(call.fn_arguments.to_string()),
+                                        }])
+                                    }
+                                }
+                            } else {
+                                // External MCP tool
+                                crate::tools::ToolType::MCP(vec![MCPExecutionStage::Called {
+                                    args: Some(call.fn_arguments.to_string()),
+                                }])
                             };
 
-                            // Add the initial "Called" stage
-                            execution.stages.push((
-                                chrono::Utc::now(),
-                                FunctionExecutionStage::Called {
-                                    args: Some(call.fn_arguments.to_string()),
-                                },
-                            ));
+                            let execution = FunctionExecution {
+                                call_id: call.call_id.clone(),
+                                name: call.fn_name.clone(),
+                                tool_type,
+                                start_time: chrono::Utc::now(),
+                            };
 
                             // Store the execution
                             function_executions.insert(call.call_id.clone(), execution.clone());
@@ -404,12 +382,8 @@ pub fn do_execute_worker(
 
                         // Handle internal tools
                         if !internal_tools.is_empty() {
-                            let responses =
-                                tool_handler.handle_tool_calls(internal_tools, &mut system_state);
-                            if !responses.is_empty() {
-                                tx.send(Event::MCPToolsResponse(responses))
-                                    .whatever_context("Error sending tool responses")?;
-                            }
+                            // Internal tools will send their own stage updates
+                            tool_handler.handle_tool_calls(internal_tools, &mut system_state);
 
                             // Re-render system prompt if state changed
                             if system_state.is_modified() {
@@ -458,64 +432,260 @@ pub fn do_execute_worker(
                     options: None,
                 });
             }
-            Event::CommandExecutionResult {
-                tool_call_id,
-                command: _command,
-                stdout,
-                stderr,
-                exit_code,
-            } => {
-                // Update function execution with command result stage
-                let execution = function_executions
-                    .get_mut(&tool_call_id)
-                    .whatever_context("Failed to find function for call_id")?;
-                execution.stages.push((
-                    chrono::Utc::now(),
-                    FunctionExecutionStage::CommandResult {
-                        stdout: stdout.clone(),
-                        stderr: stderr.clone(),
-                        exit_code,
-                    },
-                ));
-
-                // Send the updated execution to TUI
-                let _ = tui_tx.send(tui::Task::AddEvent(
-                    tui::events::TuiEvent::function_execution_update(execution.clone()),
-                ));
-
-                // Format the result for the LLM
-                let mut result = String::new();
-                if !stdout.is_empty() {
-                    result.push_str(&stdout);
-                }
-                if !stderr.is_empty() {
-                    if !result.is_empty() {
-                        result.push_str("\n\nSTDERR:\n");
+            Event::MCPStageUpdate { call_id, stage } => {
+                if let Some(execution) = function_executions.get_mut(&call_id) {
+                    match &mut execution.tool_type {
+                        crate::tools::ToolType::MCP(stages) => {
+                            // Check if this is a completion stage
+                            if let MCPExecutionStage::Completed { result } = &stage {
+                                // Send tool response to assistant
+                                let tool_responses = vec![ToolResponse {
+                                    call_id: call_id.clone(),
+                                    content: result.clone(),
+                                }];
+                                
+                                chat_request = chat_request.append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(tool_responses),
+                                    options: None,
+                                });
+                                assistant_tx
+                                    .send(assistant::Task::Assist(chat_request.clone()))
+                                    .context(AssistantTaskSendSnafu)?;
+                            } else if let MCPExecutionStage::Failed { error } = &stage {
+                                // Send failure response to assistant
+                                let tool_responses = vec![ToolResponse {
+                                    call_id: call_id.clone(),
+                                    content: error.clone(),
+                                }];
+                                
+                                chat_request = chat_request.append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(tool_responses),
+                                    options: None,
+                                });
+                                assistant_tx
+                                    .send(assistant::Task::Assist(chat_request.clone()))
+                                    .context(AssistantTaskSendSnafu)?;
+                            }
+                            
+                            stages.push(stage);
+                        }
+                        _ => {
+                            error!("Received MCP stage update for non-MCP tool");
+                        }
                     }
-                    result.push_str(&stderr);
+                    let _ = tui_tx.send(tui::Task::AddEvent(
+                        tui::events::TuiEvent::function_execution_update(execution.clone()),
+                    ));
                 }
-                if result.is_empty() {
-                    result = format!("Command completed with exit code: {}", exit_code);
-                }
-
-                // Send the command result as a tool response
-                let tool_response = ToolResponse {
-                    call_id: tool_call_id,
-                    content: result,
-                };
-                tx.send(Event::MCPToolsResponse(vec![tool_response]))
-                    .whatever_context("Error sending command execution result")?;
             }
-            Event::FunctionExecutionStageUpdate { call_id, stage } => {
-                // Update the function execution with the new stage
-                let execution = function_executions
-                    .get_mut(&call_id)
-                    .whatever_context("Failed to find function for call_id")?;
-                execution.stages.push((chrono::Utc::now(), stage));
-                // Send the updated execution to TUI
-                let _ = tui_tx.send(tui::Task::AddEvent(
-                    tui::events::TuiEvent::function_execution_update(execution.clone()),
-                ));
+            Event::CommandStageUpdate { call_id, stage } => {
+                if let Some(execution) = function_executions.get_mut(&call_id) {
+                    match &mut execution.tool_type {
+                        crate::tools::ToolType::Command(stages) => {
+                            // Check if this is a completion stage
+                            if let CommandExecutionStage::Result { stdout, stderr, exit_code } = &stage {
+                                // Format the result for the LLM
+                                let mut result = String::new();
+                                if !stdout.is_empty() {
+                                    result.push_str(&stdout);
+                                }
+                                if !stderr.is_empty() {
+                                    if !result.is_empty() {
+                                        result.push_str("\n\nSTDERR:\n");
+                                    }
+                                    result.push_str(&stderr);
+                                }
+                                if result.is_empty() {
+                                    result = format!("Command completed with exit code: {}", exit_code);
+                                }
+
+                                // Send tool response to assistant
+                                let tool_responses = vec![ToolResponse {
+                                    call_id: call_id.clone(),
+                                    content: result,
+                                }];
+                                
+                                chat_request = chat_request.append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(tool_responses),
+                                    options: None,
+                                });
+                                assistant_tx
+                                    .send(assistant::Task::Assist(chat_request.clone()))
+                                    .context(AssistantTaskSendSnafu)?;
+                            } else if let CommandExecutionStage::Failed { error } = &stage {
+                                // Send failure response to assistant
+                                let tool_responses = vec![ToolResponse {
+                                    call_id: call_id.clone(),
+                                    content: error.clone(),
+                                }];
+                                
+                                chat_request = chat_request.append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(tool_responses),
+                                    options: None,
+                                });
+                                assistant_tx
+                                    .send(assistant::Task::Assist(chat_request.clone()))
+                                    .context(AssistantTaskSendSnafu)?;
+                            }
+                            
+                            stages.push(stage);
+                        }
+                        _ => {
+                            error!("Received Command stage update for non-Command tool");
+                        }
+                    }
+                    let _ = tui_tx.send(tui::Task::AddEvent(
+                        tui::events::TuiEvent::function_execution_update(execution.clone()),
+                    ));
+                }
+            }
+            Event::FileReaderStageUpdate { call_id, stage } => {
+                if let Some(execution) = function_executions.get_mut(&call_id) {
+                    match &mut execution.tool_type {
+                        crate::tools::ToolType::FileReader(stages) => {
+                            // Check if this is a completion stage
+                            if let GeneralToolExecutionStage::Completed { result } = &stage {
+                                // Send tool response to assistant
+                                let tool_responses = vec![ToolResponse {
+                                    call_id: call_id.clone(),
+                                    content: result.clone(),
+                                }];
+                                
+                                chat_request = chat_request.append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(tool_responses),
+                                    options: None,
+                                });
+                                assistant_tx
+                                    .send(assistant::Task::Assist(chat_request.clone()))
+                                    .context(AssistantTaskSendSnafu)?;
+                            } else if let GeneralToolExecutionStage::Failed { error } = &stage {
+                                // Send failure response to assistant
+                                let tool_responses = vec![ToolResponse {
+                                    call_id: call_id.clone(),
+                                    content: error.clone(),
+                                }];
+                                
+                                chat_request = chat_request.append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(tool_responses),
+                                    options: None,
+                                });
+                                assistant_tx
+                                    .send(assistant::Task::Assist(chat_request.clone()))
+                                    .context(AssistantTaskSendSnafu)?;
+                            }
+                            
+                            stages.push(stage);
+                        }
+                        _ => {
+                            error!("Received FileReader stage update for non-FileReader tool");
+                        }
+                    }
+                    let _ = tui_tx.send(tui::Task::AddEvent(
+                        tui::events::TuiEvent::function_execution_update(execution.clone()),
+                    ));
+                }
+            }
+            Event::FileEditorStageUpdate { call_id, stage } => {
+                if let Some(execution) = function_executions.get_mut(&call_id) {
+                    match &mut execution.tool_type {
+                        crate::tools::ToolType::FileEditor(stages) => {
+                            // Check if this is a completion stage
+                            if let GeneralToolExecutionStage::Completed { result } = &stage {
+                                // Send tool response to assistant
+                                let tool_responses = vec![ToolResponse {
+                                    call_id: call_id.clone(),
+                                    content: result.clone(),
+                                }];
+                                
+                                chat_request = chat_request.append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(tool_responses),
+                                    options: None,
+                                });
+                                assistant_tx
+                                    .send(assistant::Task::Assist(chat_request.clone()))
+                                    .context(AssistantTaskSendSnafu)?;
+                            } else if let GeneralToolExecutionStage::Failed { error } = &stage {
+                                // Send failure response to assistant
+                                let tool_responses = vec![ToolResponse {
+                                    call_id: call_id.clone(),
+                                    content: error.clone(),
+                                }];
+                                
+                                chat_request = chat_request.append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(tool_responses),
+                                    options: None,
+                                });
+                                assistant_tx
+                                    .send(assistant::Task::Assist(chat_request.clone()))
+                                    .context(AssistantTaskSendSnafu)?;
+                            }
+                            
+                            stages.push(stage);
+                        }
+                        _ => {
+                            error!("Received FileEditor stage update for non-FileEditor tool");
+                        }
+                    }
+                    let _ = tui_tx.send(tui::Task::AddEvent(
+                        tui::events::TuiEvent::function_execution_update(execution.clone()),
+                    ));
+                }
+            }
+            Event::PlannerStageUpdate { call_id, stage } => {
+                if let Some(execution) = function_executions.get_mut(&call_id) {
+                    match &mut execution.tool_type {
+                        crate::tools::ToolType::Planner(stages) => {
+                            // Check if this is a completion stage
+                            if let GeneralToolExecutionStage::Completed { result } = &stage {
+                                // Send tool response to assistant
+                                let tool_responses = vec![ToolResponse {
+                                    call_id: call_id.clone(),
+                                    content: result.clone(),
+                                }];
+                                
+                                chat_request = chat_request.append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(tool_responses),
+                                    options: None,
+                                });
+                                assistant_tx
+                                    .send(assistant::Task::Assist(chat_request.clone()))
+                                    .context(AssistantTaskSendSnafu)?;
+                            } else if let GeneralToolExecutionStage::Failed { error } = &stage {
+                                // Send failure response to assistant
+                                let tool_responses = vec![ToolResponse {
+                                    call_id: call_id.clone(),
+                                    content: error.clone(),
+                                }];
+                                
+                                chat_request = chat_request.append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(tool_responses),
+                                    options: None,
+                                });
+                                assistant_tx
+                                    .send(assistant::Task::Assist(chat_request.clone()))
+                                    .context(AssistantTaskSendSnafu)?;
+                            }
+                            
+                            stages.push(stage);
+                        }
+                        _ => {
+                            error!("Received Planner stage update for non-Planner tool");
+                        }
+                    }
+                    let _ = tui_tx.send(tui::Task::AddEvent(
+                        tui::events::TuiEvent::function_execution_update(execution.clone()),
+                    ));
+                }
             }
         }
     }

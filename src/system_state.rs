@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::collections::HashMap;
-use std::fmt;
 use std::path::PathBuf;
 
 use crate::template::{self, TemplateContext, ToolInfo};

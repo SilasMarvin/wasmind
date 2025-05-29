@@ -12,7 +12,8 @@ use tracing::{debug, error};
 use crate::{
     config::ParsedConfig,
     tui,
-    worker::{Event, FunctionExecutionStage},
+    tools::CommandExecutionStage,
+    worker::Event,
 };
 
 pub const TOOL_NAME: &str = "execute_command";
@@ -80,7 +81,7 @@ enum Task {
 /// Result from command execution
 #[derive(Debug)]
 struct CommandOutput {
-    command: String,
+    _command: String,
     stdout: String,
     stderr: String,
     exit_code: i32,
@@ -138,10 +139,10 @@ impl Command {
                 self.executing_tool_calls.push(pending.tool_call_id.clone());
 
                 // Send internal log about user approval
-                let _ = self.worker_tx.send(Event::FunctionExecutionStageUpdate {
+                let _ = self.worker_tx.send(Event::CommandStageUpdate {
                     call_id: pending.tool_call_id.clone(),
-                    stage: FunctionExecutionStage::InternalLog {
-                        message: "User approved command execution".to_string(),
+                    stage: CommandExecutionStage::Executing {
+                        command: format!("{} {}", pending.command, pending.args.join(" ")),
                     },
                 });
 
@@ -236,14 +237,10 @@ impl Command {
             );
 
             // Send internal log stage for whitelisted command
-            let _ = self.worker_tx.send(Event::FunctionExecutionStageUpdate {
+            let _ = self.worker_tx.send(Event::CommandStageUpdate {
                 call_id: tool_call.call_id.clone(),
-                stage: FunctionExecutionStage::InternalLog {
-                    message: format!(
-                        "Executing whitelisted command: {} {}",
-                        command,
-                        args_array.join(" ")
-                    ),
+                stage: CommandExecutionStage::Executing {
+                    command: format!("{} {}", command, args_array.join(" ")),
                 },
             });
 
@@ -269,9 +266,9 @@ impl Command {
             );
 
             // Send command prompt stage update
-            let _ = self.worker_tx.send(Event::FunctionExecutionStageUpdate {
+            let _ = self.worker_tx.send(Event::CommandStageUpdate {
                 call_id: tool_call.call_id.clone(),
-                stage: FunctionExecutionStage::CommandPrompt {
+                stage: CommandExecutionStage::AwaitingApproval {
                     command: command.to_string(),
                     args: args_array.clone(),
                 },
@@ -327,13 +324,7 @@ fn do_execute_command_executor(tx: Sender<Event>, rx: Receiver<Task>) -> Command
                         args,
                         tool_call_id,
                     } => {
-                        // Send executing stage
-                        let _ = tx.send(Event::FunctionExecutionStageUpdate {
-                            call_id: tool_call_id.clone(),
-                            stage: FunctionExecutionStage::CommandExecuting {
-                                command: format!("{} {}", command, args.join(" ")),
-                            },
-                        });
+                        // The executing stage is already sent when command is approved/whitelisted
 
                         let (cancel_tx, cancel_rx) = unbounded::<()>();
 
@@ -378,21 +369,21 @@ fn do_execute_command_executor(tx: Sender<Event>, rx: Receiver<Task>) -> Command
                 // Send result to worker
                 match result {
                     Ok(output) => {
-                        let _ = tx.send(Event::CommandExecutionResult {
-                            tool_call_id: tool_call_id.clone(),
-                            command: output.command,
-                            stdout: output.stdout,
-                            stderr: output.stderr,
-                            exit_code: output.exit_code,
+                        let _ = tx.send(Event::CommandStageUpdate {
+                            call_id: tool_call_id.clone(),
+                            stage: CommandExecutionStage::Result {
+                                stdout: output.stdout,
+                                stderr: output.stderr,
+                                exit_code: output.exit_code,
+                            },
                         });
                     }
                     Err(e) => {
-                        let _ = tx.send(Event::CommandExecutionResult {
-                            tool_call_id: tool_call_id.clone(),
-                            command: String::new(),
-                            stdout: String::new(),
-                            stderr: format!("Command execution failed: {}", e),
-                            exit_code: -1,
+                        let _ = tx.send(Event::CommandStageUpdate {
+                            call_id: tool_call_id.clone(),
+                            stage: CommandExecutionStage::Failed {
+                                error: format!("Command execution failed: {}", e),
+                            },
                         });
                     }
                 }
@@ -453,7 +444,7 @@ fn execute_command_with_cancellation(
     let stderr = String::from_utf8(output.stderr).context(OutputFailedSnafu)?;
 
     Ok(CommandOutput {
-        command: format!("{} {}", command, args.join(" ")),
+        _command: format!("{} {}", command, args.join(" ")),
         stdout,
         stderr,
         exit_code: output.status.code().unwrap_or(-1),

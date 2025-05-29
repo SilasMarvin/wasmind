@@ -7,7 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget, Wrap},
 };
 
-use crate::worker::FunctionExecutionStage;
+use crate::tools::{ToolType, MCPExecutionStage, CommandExecutionStage, GeneralToolExecutionStage};
 
 use super::events::{FunctionExecution, TuiEvent};
 
@@ -305,36 +305,36 @@ impl EventWidget for TuiEvent {
                 0
             }
             TuiEvent::FunctionExecutionUpdate { execution } => {
-                // Calculate height based on stages
+                // Calculate height based on stages in the tool type
                 let mut lines = 2; // Name line + separator
 
-                // Check if we have a CommandResult stage (to avoid counting duplicate completion info)
-                let has_command_result = execution.stages.iter().any(|(_, stage)| {
-                    matches!(stage, FunctionExecutionStage::CommandResult { .. })
-                });
-
-                for (_, stage) in &execution.stages {
-                    match stage {
-                        FunctionExecutionStage::CommandResult { stdout, stderr, .. } => {
-                            lines += 1; // Base line for command result
-                            if !stdout.is_empty() {
-                                lines += 1;
+                match &execution.tool_type {
+                    ToolType::MCP(stages) => {
+                        lines += stages.len(); // Each stage takes one line
+                    }
+                    ToolType::Command(stages) => {
+                        for stage in stages {
+                            match stage {
+                                CommandExecutionStage::Result { stdout, stderr, .. } => {
+                                    lines += 1; // Base line for command result
+                                    if !stdout.is_empty() {
+                                        lines += 1;
+                                    }
+                                    if !stderr.is_empty() {
+                                        lines += 1;
+                                    }
+                                }
+                                _ => {
+                                    lines += 1; // All other stages take one line
+                                }
                             }
-                            if !stderr.is_empty() {
-                                lines += 1;
-                            }
-                        }
-                        FunctionExecutionStage::Completed { .. } => {
-                            // Only count this if we don't have a CommandResult
-                            if !has_command_result {
-                                lines += 1;
-                            }
-                        }
-                        _ => {
-                            lines += 1; // All other stages take one line
                         }
                     }
+                    ToolType::FileReader(stages) | ToolType::FileEditor(stages) | ToolType::Planner(stages) => {
+                        lines += stages.len(); // Each stage takes one line
+                    }
                 }
+                
                 lines as u16 + 2 // +2 for borders
             }
             _ => 3, // Default height for simple widgets
@@ -896,85 +896,106 @@ impl<'a> FunctionExecutionWidget<'a> {
         ));
         lines.push("─".repeat(area.width.saturating_sub(2) as usize));
 
-        // Check if we have a CommandResult stage (to avoid duplicate completion info)
-        let has_command_result = self
-            .execution
-            .stages
-            .iter()
-            .any(|(_, stage)| matches!(stage, FunctionExecutionStage::CommandResult { .. }));
-
-        // Render each stage
-        for (timestamp, stage) in &self.execution.stages {
-            let time_str = timestamp.with_timezone(&Local).format("%H:%M:%S");
-            match stage {
-                FunctionExecutionStage::Called { args } => {
-                    if let Some(args) = args {
-                        lines.push(format!("  --> [{}] Called with args: {}", time_str, args));
-                    } else {
-                        lines.push(format!("  --> [{}] Called", time_str));
+        // Render stages based on tool type
+        match &self.execution.tool_type {
+            ToolType::MCP(stages) => {
+                for stage in stages {
+                    match stage {
+                        MCPExecutionStage::Called { args } => {
+                            if let Some(args) = args {
+                                lines.push(format!("  --> Called with args: {}", args));
+                            } else {
+                                lines.push("  --> Called".to_string());
+                            }
+                        }
+                        MCPExecutionStage::Completed { result } => {
+                            lines.push(format!(
+                                "  [v] Completed: {}",
+                                result.lines().next().unwrap_or(result)
+                            ));
+                        }
+                        MCPExecutionStage::Failed { error } => {
+                            lines.push(format!("  [X] Failed: {}", error));
+                        }
                     }
                 }
-                FunctionExecutionStage::CommandPrompt { command, args } => {
-                    lines.push(format!(
-                        "  [?] [{}] Awaiting approval: {} {}",
-                        time_str,
-                        command,
-                        args.join(" ")
-                    ));
-                }
-                FunctionExecutionStage::CommandExecuting { command } => {
-                    lines.push(format!("  ... [{}] Executing: {}", time_str, command));
-                }
-                FunctionExecutionStage::CommandResult {
-                    stdout,
-                    stderr,
-                    exit_code,
-                } => {
-                    lines.push(format!(
-                        "  [=] [{}] Command completed (exit: {})",
-                        time_str, exit_code
-                    ));
-                    if !stdout.is_empty() {
-                        lines.push(format!(
-                            "      Output: {}",
-                            stdout.lines().next().unwrap_or("")
-                        ));
+            }
+            ToolType::Command(stages) => {
+                for stage in stages {
+                    match stage {
+                        CommandExecutionStage::Called { args } => {
+                            if let Some(args) = args {
+                                lines.push(format!("  --> Called with args: {}", args));
+                            } else {
+                                lines.push("  --> Called".to_string());
+                            }
+                        }
+                        CommandExecutionStage::AwaitingApproval { command, args } => {
+                            lines.push(format!(
+                                "  [?] Awaiting approval: {} {}",
+                                command,
+                                args.join(" ")
+                            ));
+                        }
+                        CommandExecutionStage::Executing { command } => {
+                            lines.push(format!("  ... Executing: {}", command));
+                        }
+                        CommandExecutionStage::Result {
+                            stdout,
+                            stderr,
+                            exit_code,
+                        } => {
+                            lines.push(format!(
+                                "  [=] Command completed (exit: {})",
+                                exit_code
+                            ));
+                            if !stdout.is_empty() {
+                                lines.push(format!(
+                                    "      Output: {}",
+                                    stdout.lines().next().unwrap_or("")
+                                ));
+                            }
+                            if !stderr.is_empty() {
+                                lines.push(format!(
+                                    "      Error: {}",
+                                    stderr.lines().next().unwrap_or("")
+                                ));
+                            }
+                        }
+                        CommandExecutionStage::Failed { error } => {
+                            lines.push(format!("  [X] Failed: {}", error));
+                        }
                     }
-                    if !stderr.is_empty() {
-                        lines.push(format!(
-                            "      Error: {}",
-                            stderr.lines().next().unwrap_or("")
-                        ));
+                }
+            }
+            ToolType::FileReader(stages) | ToolType::FileEditor(stages) | ToolType::Planner(stages) => {
+                for stage in stages {
+                    match stage {
+                        GeneralToolExecutionStage::Called { args } => {
+                            if let Some(args) = args {
+                                lines.push(format!("  --> Called with args: {}", args));
+                            } else {
+                                lines.push("  --> Called".to_string());
+                            }
+                        }
+                        GeneralToolExecutionStage::Completed { result } => {
+                            lines.push(format!(
+                                "  [v] Completed: {}",
+                                result.lines().next().unwrap_or(result)
+                            ));
+                        }
+                        GeneralToolExecutionStage::Failed { error } => {
+                            lines.push(format!("  [X] Failed: {}", error));
+                        }
                     }
-                }
-                FunctionExecutionStage::InternalLog { message } => {
-                    lines.push(format!("  [i] [{}] {}", time_str, message));
-                }
-                FunctionExecutionStage::Completed { result } => {
-                    // Skip the Completed stage if we already showed CommandResult
-                    if !has_command_result {
-                        lines.push(format!(
-                            "  [v] [{}] Completed: {}",
-                            time_str,
-                            result.lines().next().unwrap_or(result)
-                        ));
-                    }
-                }
-                FunctionExecutionStage::Failed { error } => {
-                    lines.push(format!("  [X] [{}] Failed: {}", time_str, error));
                 }
             }
         }
 
         let text = lines.join("\n");
 
-        // Determine if this function is complete
-        let is_complete = self.execution.stages.iter().any(|(_, stage)| {
-            matches!(
-                stage,
-                FunctionExecutionStage::Completed { .. } | FunctionExecutionStage::Failed { .. }
-            )
-        });
+        // Determine if this function is complete using the ToolType method
+        let is_complete = self.execution.tool_type.is_complete();
 
         let border_color = if is_complete {
             Color::DarkGray
