@@ -4,12 +4,12 @@ use genai::chat::{
     ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool, ToolResponse,
 };
 use image::ImageFormat;
-use snafu::ResultExt;
+use snafu::{ResultExt, OptionExt};
 use std::io::Cursor;
 use tracing::error;
 
 use crate::{
-    AssistantTaskSendSnafu, MCPTaskSendSnafu, MicrophoneTaskSendSnafu, SResult, assistant,
+    AssistantTaskSendSnafu, MCPTaskSendSnafu, MicrophoneTaskSendSnafu, ToolExecutionNotFoundSnafu, SResult, assistant,
     config::ParsedConfig,
     context::{clipboard::capture_clipboard, microphone, screen::capture_screen},
     mcp,
@@ -433,57 +433,63 @@ pub fn do_execute_worker(
                 });
             }
             Event::MCPStageUpdate { call_id, stage } => {
-                if let Some(execution) = function_executions.get_mut(&call_id) {
-                    match &mut execution.tool_type {
-                        crate::tools::ToolType::MCP(stages) => {
-                            // Check if this is a completion stage
-                            if let MCPExecutionStage::Completed { result } = &stage {
-                                // Send tool response to assistant
-                                let tool_responses = vec![ToolResponse {
-                                    call_id: call_id.clone(),
-                                    content: result.clone(),
-                                }];
-                                
-                                chat_request = chat_request.append_message(ChatMessage {
-                                    role: ChatRole::Tool,
-                                    content: MessageContent::ToolResponses(tool_responses),
-                                    options: None,
-                                });
-                                assistant_tx
-                                    .send(assistant::Task::Assist(chat_request.clone()))
-                                    .context(AssistantTaskSendSnafu)?;
-                            } else if let MCPExecutionStage::Failed { error } = &stage {
-                                // Send failure response to assistant
-                                let tool_responses = vec![ToolResponse {
-                                    call_id: call_id.clone(),
-                                    content: error.clone(),
-                                }];
-                                
-                                chat_request = chat_request.append_message(ChatMessage {
-                                    role: ChatRole::Tool,
-                                    content: MessageContent::ToolResponses(tool_responses),
-                                    options: None,
-                                });
-                                assistant_tx
-                                    .send(assistant::Task::Assist(chat_request.clone()))
-                                    .context(AssistantTaskSendSnafu)?;
-                            }
+                let execution = function_executions.get_mut(&call_id)
+                    .context(ToolExecutionNotFoundSnafu { call_id: &call_id })?;
+                
+                match &mut execution.tool_type {
+                    crate::tools::ToolType::MCP(stages) => {
+                        // Check if this is a completion stage
+                        if let MCPExecutionStage::Completed { result } = &stage {
+                            // Send tool response to assistant
+                            let tool_responses = vec![ToolResponse {
+                                call_id: call_id.clone(),
+                                content: result.clone(),
+                            }];
                             
-                            stages.push(stage);
+                            chat_request = chat_request.append_message(ChatMessage {
+                                role: ChatRole::Tool,
+                                content: MessageContent::ToolResponses(tool_responses),
+                                options: None,
+                            });
+                            assistant_tx
+                                .send(assistant::Task::Assist(chat_request.clone()))
+                                .context(AssistantTaskSendSnafu)?;
+                        } else if let MCPExecutionStage::Failed { error } = &stage {
+                            // Send failure response to assistant
+                            let tool_responses = vec![ToolResponse {
+                                call_id: call_id.clone(),
+                                content: error.clone(),
+                            }];
+                            
+                            chat_request = chat_request.append_message(ChatMessage {
+                                role: ChatRole::Tool,
+                                content: MessageContent::ToolResponses(tool_responses),
+                                options: None,
+                            });
+                            assistant_tx
+                                .send(assistant::Task::Assist(chat_request.clone()))
+                                .context(AssistantTaskSendSnafu)?;
                         }
-                        _ => {
-                            error!("Received MCP stage update for non-MCP tool");
-                        }
+                        
+                        stages.push(stage);
                     }
-                    let _ = tui_tx.send(tui::Task::AddEvent(
-                        tui::events::TuiEvent::function_execution_update(execution.clone()),
-                    ));
+                    _ => {
+                        return Err(crate::Error::Whatever {
+                            message: format!("Received MCP stage update for non-MCP tool with call_id: {}", call_id),
+                            source: None,
+                        });
+                    }
                 }
+                let _ = tui_tx.send(tui::Task::AddEvent(
+                    tui::events::TuiEvent::function_execution_update(execution.clone()),
+                ));
             }
             Event::CommandStageUpdate { call_id, stage } => {
-                if let Some(execution) = function_executions.get_mut(&call_id) {
-                    match &mut execution.tool_type {
-                        crate::tools::ToolType::Command(stages) => {
+                let execution = function_executions.get_mut(&call_id)
+                    .context(ToolExecutionNotFoundSnafu { call_id: &call_id })?;
+                
+                match &mut execution.tool_type {
+                    crate::tools::ToolType::Command(stages) => {
                             // Check if this is a completion stage
                             if let CommandExecutionStage::Result { stdout, stderr, exit_code } = &stage {
                                 // Format the result for the LLM
@@ -533,20 +539,24 @@ pub fn do_execute_worker(
                             }
                             
                             stages.push(stage);
-                        }
-                        _ => {
-                            error!("Received Command stage update for non-Command tool");
-                        }
                     }
-                    let _ = tui_tx.send(tui::Task::AddEvent(
-                        tui::events::TuiEvent::function_execution_update(execution.clone()),
-                    ));
+                    _ => {
+                        return Err(crate::Error::Whatever {
+                            message: format!("Received Command stage update for non-Command tool with call_id: {}", call_id),
+                            source: None,
+                        });
+                    }
                 }
+                let _ = tui_tx.send(tui::Task::AddEvent(
+                    tui::events::TuiEvent::function_execution_update(execution.clone()),
+                ));
             }
             Event::FileReaderStageUpdate { call_id, stage } => {
-                if let Some(execution) = function_executions.get_mut(&call_id) {
-                    match &mut execution.tool_type {
-                        crate::tools::ToolType::FileReader(stages) => {
+                let execution = function_executions.get_mut(&call_id)
+                    .context(ToolExecutionNotFoundSnafu { call_id: &call_id })?;
+                
+                match &mut execution.tool_type {
+                    crate::tools::ToolType::FileReader(stages) => {
                             // Check if this is a completion stage
                             if let GeneralToolExecutionStage::Completed { result } = &stage {
                                 // Send tool response to assistant
@@ -581,20 +591,24 @@ pub fn do_execute_worker(
                             }
                             
                             stages.push(stage);
-                        }
-                        _ => {
-                            error!("Received FileReader stage update for non-FileReader tool");
-                        }
                     }
-                    let _ = tui_tx.send(tui::Task::AddEvent(
-                        tui::events::TuiEvent::function_execution_update(execution.clone()),
-                    ));
+                    _ => {
+                        return Err(crate::Error::Whatever {
+                            message: format!("Received FileReader stage update for non-FileReader tool with call_id: {}", call_id),
+                            source: None,
+                        });
+                    }
                 }
+                let _ = tui_tx.send(tui::Task::AddEvent(
+                    tui::events::TuiEvent::function_execution_update(execution.clone()),
+                ));
             }
             Event::FileEditorStageUpdate { call_id, stage } => {
-                if let Some(execution) = function_executions.get_mut(&call_id) {
-                    match &mut execution.tool_type {
-                        crate::tools::ToolType::FileEditor(stages) => {
+                let execution = function_executions.get_mut(&call_id)
+                    .context(ToolExecutionNotFoundSnafu { call_id: &call_id })?;
+                
+                match &mut execution.tool_type {
+                    crate::tools::ToolType::FileEditor(stages) => {
                             // Check if this is a completion stage
                             if let GeneralToolExecutionStage::Completed { result } = &stage {
                                 // Send tool response to assistant
@@ -629,20 +643,24 @@ pub fn do_execute_worker(
                             }
                             
                             stages.push(stage);
-                        }
-                        _ => {
-                            error!("Received FileEditor stage update for non-FileEditor tool");
-                        }
                     }
-                    let _ = tui_tx.send(tui::Task::AddEvent(
-                        tui::events::TuiEvent::function_execution_update(execution.clone()),
-                    ));
+                    _ => {
+                        return Err(crate::Error::Whatever {
+                            message: format!("Received FileEditor stage update for non-FileEditor tool with call_id: {}", call_id),
+                            source: None,
+                        });
+                    }
                 }
+                let _ = tui_tx.send(tui::Task::AddEvent(
+                    tui::events::TuiEvent::function_execution_update(execution.clone()),
+                ));
             }
             Event::PlannerStageUpdate { call_id, stage } => {
-                if let Some(execution) = function_executions.get_mut(&call_id) {
-                    match &mut execution.tool_type {
-                        crate::tools::ToolType::Planner(stages) => {
+                let execution = function_executions.get_mut(&call_id)
+                    .context(ToolExecutionNotFoundSnafu { call_id: &call_id })?;
+                
+                match &mut execution.tool_type {
+                    crate::tools::ToolType::Planner(stages) => {
                             // Check if this is a completion stage
                             if let GeneralToolExecutionStage::Completed { result } = &stage {
                                 // Send tool response to assistant
@@ -677,15 +695,17 @@ pub fn do_execute_worker(
                             }
                             
                             stages.push(stage);
-                        }
-                        _ => {
-                            error!("Received Planner stage update for non-Planner tool");
-                        }
                     }
-                    let _ = tui_tx.send(tui::Task::AddEvent(
-                        tui::events::TuiEvent::function_execution_update(execution.clone()),
-                    ));
+                    _ => {
+                        return Err(crate::Error::Whatever {
+                            message: format!("Received Planner stage update for non-Planner tool with call_id: {}", call_id),
+                            source: None,
+                        });
+                    }
                 }
+                let _ = tui_tx.send(tui::Task::AddEvent(
+                    tui::events::TuiEvent::function_execution_update(execution.clone()),
+                ));
             }
         }
     }

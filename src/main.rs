@@ -92,6 +92,13 @@ pub enum Error {
         #[snafu(source)]
         source: crossbeam::channel::SendError<assistant::Task>,
     },
+
+    #[snafu(display("Tool execution not found for call_id: {call_id}"))]
+    ToolExecutionNotFound {
+        #[snafu(implicit)]
+        location: Location,
+        call_id: String,
+    },
 }
 
 pub type SResult<T> = Result<T, Error>;
