@@ -60,7 +60,7 @@ Working directory: {{ cwd }}
 {% endif %}
 
 IMPORTANT: /no_think"""
-adapater = "OpenAI"
+adapter = "OpenAI"
 auth = "FIREWORKS_API_KEY"
 
 [mcp_servers.github]

@@ -167,7 +167,7 @@ struct ModelConfig {
     system_prompt: Option<String>,
     endpoint: Option<String>,
     auth: Option<String>,
-    adapater: Option<String>,
+    adapter: Option<String>,
 }
 
 /// An MCP Config
@@ -254,7 +254,7 @@ fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
                 auth,
             } = service_target;
             let model = model_config
-                .adapater
+                .adapter
                 .map(|adapter| {
                     serde_json::from_value(serde_json::json!({
                         "adapter_kind": adapter,
@@ -270,8 +270,14 @@ fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
             let auth = match model_config.auth {
                 None => auth,
                 Some(s) => match std::env::var(&s) {
-                    Ok(value) => AuthData::Key(value),
-                    Err(_) => AuthData::FromEnv(s),
+                    Ok(value) => {
+                        tracing::debug!("Successfully loaded auth from environment variable");
+                        AuthData::Key(value)
+                    },
+                    Err(_) => {
+                        tracing::debug!("Environment variable not found, using FromEnv auth method");
+                        AuthData::FromEnv(s)
+                    },
                 },
             };
             Ok(ServiceTarget {
