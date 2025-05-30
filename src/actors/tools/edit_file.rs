@@ -409,8 +409,24 @@ impl EditFile {
         
         let result = self.file_editor.edit_file(path, action, &mut file_reader);
         
-        let status = match result {
-            Ok(message) => ToolCallStatus::Finished(Ok(message)),
+        let status = match &result {
+            Ok(message) => {
+                // Send system state update for successful file edit
+                if let Ok(canonical_path) = std::fs::canonicalize(path) {
+                    if let Ok(content) = file_reader.get_or_read_file_content(&canonical_path) {
+                        if let Ok(metadata) = std::fs::metadata(&canonical_path) {
+                            if let Ok(last_modified) = metadata.modified() {
+                                let _ = self.tx.send(Message::FileEdited {
+                                    path: canonical_path,
+                                    content: content.to_string(),
+                                    last_modified,
+                                });
+                            }
+                        }
+                    }
+                }
+                ToolCallStatus::Finished(Ok(message.clone()))
+            }
             Err(e) => ToolCallStatus::Finished(Err(e.to_string())),
         };
 

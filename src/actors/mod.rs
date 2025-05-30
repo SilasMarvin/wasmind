@@ -7,6 +7,7 @@ pub mod tui;
 use genai::chat::ToolCall;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::path::PathBuf;
 use tokio::sync::broadcast;
 use tracing::error;
 
@@ -91,6 +92,11 @@ pub enum Message {
     // Context messages
     ScreenshotCaptured(Result<String, String>), // Ok(base64) or Err(error message)
     ClipboardCaptured(Result<String, String>),  // Ok(text) or Err(error message)
+
+    // System state update messages
+    FileRead { path: PathBuf, content: String, last_modified: std::time::SystemTime },
+    FileEdited { path: PathBuf, content: String, last_modified: std::time::SystemTime },
+    PlanUpdated(crate::actors::tools::planner::TaskPlan),
 }
 
 /// Base trait for all actors in the system

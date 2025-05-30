@@ -200,6 +200,9 @@ impl Planner {
         // Store the plan
         self.current_task_plan = Some(plan.clone());
         
+        // Send system state update
+        let _ = self.tx.send(Message::PlanUpdated(plan.clone()));
+        
         // Return response with numbered tasks
         let mut response = format!("Created task plan: {}\n", title);
         for (i, task) in plan.tasks.iter().enumerate() {
@@ -283,6 +286,9 @@ impl Planner {
             }
             _ => unreachable!(),
         }
+        
+        // Send system state update
+        let _ = self.tx.send(Message::PlanUpdated(task_plan.clone()));
         
         // Return response
         let response = format!("Updated task {}: {}", task_number, task_plan.tasks[task_index].description);

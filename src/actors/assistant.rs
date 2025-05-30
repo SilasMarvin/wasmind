@@ -20,11 +20,11 @@ pub struct Assistant {
     tx: broadcast::Sender<Message>,
     config: ParsedConfig,
     client: Client,
-    chat_request: Arc<Mutex<ChatRequest>>,
-    system_state: Arc<Mutex<SystemState>>,
-    available_tools: Arc<Mutex<Vec<Tool>>>,
+    chat_request: ChatRequest,
+    system_state: SystemState,
+    available_tools: Vec<Tool>,
     cancel_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    pending_content_parts: Arc<Mutex<Vec<genai::chat::ContentPart>>>,
+    pending_content_parts: Vec<genai::chat::ContentPart>,
 }
 
 impl Assistant {
@@ -37,13 +37,13 @@ impl Assistant {
         }
 
         // Update the chat request
-        *self.chat_request.lock().await = request.clone();
+        self.chat_request = request.clone();
 
         // Spawn the assist task
         let tx = self.tx.clone();
         let client = self.client.clone();
         let config = self.config.clone();
-        let chat_request = self.chat_request.clone();
+        let chat_request = request;
 
         let handle = tokio::spawn(async move {
             if let Err(e) = do_assist(tx, client, chat_request, config).await {
@@ -60,19 +60,15 @@ impl Assistant {
         info!("Assistant received {} new tools", new_tools.len());
 
         // Add new tools to existing tools
-        let mut available_tools = self.available_tools.lock().await;
         for new_tool in new_tools {
             // Remove any existing tool with the same name
-            available_tools.retain(|t| t.name != new_tool.name);
+            self.available_tools.retain(|t| t.name != new_tool.name);
             // Add the new tool
-            available_tools.push(new_tool);
+            self.available_tools.push(new_tool);
         }
 
-        let all_tools = available_tools.clone();
-        drop(available_tools); // Release the lock early
-
         // Build tool infos for system prompt
-        let tool_infos: Vec<ToolInfo> = all_tools
+        let tool_infos: Vec<ToolInfo> = self.available_tools
             .iter()
             .filter_map(|tool| {
                 tool.description.as_ref().map(|desc| ToolInfo {
@@ -83,19 +79,17 @@ impl Assistant {
             .collect();
 
         // Render system prompt with tools
-        let mut system_state = self.system_state.lock().await;
-        match system_state.render_system_prompt(
+        match self.system_state.render_system_prompt(
             &self.config.model.system_prompt,
             &tool_infos,
             self.config.whitelisted_commands.clone(),
         ) {
             Ok(rendered_prompt) => {
-                let mut chat_request = self.chat_request.lock().await;
-                *chat_request = chat_request
+                self.chat_request = self.chat_request
                     .clone()
                     .with_system(&rendered_prompt)
-                    .with_tools(all_tools);
-                system_state.reset_modified();
+                    .with_tools(self.available_tools.clone());
+                self.system_state.reset_modified();
             }
             Err(e) => {
                 error!("Failed to render system prompt: {}", e);
@@ -114,19 +108,14 @@ impl Assistant {
                 content: result.clone().unwrap_or_else(|e| format!("Error: {}", e)),
             };
 
-            let chat_request = {
-                let mut chat_request = self.chat_request.lock().await;
-                *chat_request = chat_request.clone().append_message(ChatMessage {
-                    role: ChatRole::Tool,
-                    content: MessageContent::ToolResponses(vec![tool_response]),
-                    options: None,
-                });
-
-                chat_request.clone()
-            };
+            self.chat_request = self.chat_request.clone().append_message(ChatMessage {
+                role: ChatRole::Tool,
+                content: MessageContent::ToolResponses(vec![tool_response]),
+                options: None,
+            });
 
             // Automatically continue the conversation
-            self.handle_assist_request(chat_request).await;
+            self.handle_assist_request(self.chat_request.clone()).await;
         }
     }
 
@@ -134,58 +123,79 @@ impl Assistant {
         info!("Assistant received microphone transcription");
 
         // Add user message to chat
-        let chat_request = {
-            let mut chat_request = self.chat_request.lock().await;
-            *chat_request = chat_request.clone().append_message(ChatMessage::user(text));
-            chat_request.clone()
-        };
+        self.chat_request = self.chat_request.clone().append_message(ChatMessage::user(text));
 
         // Send assist request
-        self.handle_assist_request(chat_request).await;
+        self.handle_assist_request(self.chat_request.clone()).await;
     }
 
     async fn handle_user_input(&mut self, text: String) {
         info!("Assistant received user input");
 
-        // Check if we have pending content parts
-        let chat_request = {
-            let mut pending_parts = self.pending_content_parts.lock().await;
+        info!("Got pending parts");
 
-            info!("Got pending parts");
-
-            // Add user message to chat
-            let mut chat_request = self.chat_request.lock().await;
-
-            info!("Locking chat_request");
-
-            if pending_parts.is_empty() {
-                // Simple text message
-                *chat_request = chat_request.clone().append_message(ChatMessage::user(text));
-            } else {
-                // Multi-part message with text and other content
-                let mut parts = vec![genai::chat::ContentPart::Text(text)];
-                parts.append(&mut pending_parts.clone());
-                *chat_request = chat_request
-                    .clone()
-                    .append_message(ChatMessage::user(MessageContent::Parts(parts)));
-                pending_parts.clear();
-            }
-            chat_request.clone()
-        };
+        if self.pending_content_parts.is_empty() {
+            // Simple text message
+            self.chat_request = self.chat_request.clone().append_message(ChatMessage::user(text));
+        } else {
+            // Multi-part message with text and other content
+            let mut parts = vec![genai::chat::ContentPart::Text(text)];
+            parts.append(&mut self.pending_content_parts.clone());
+            self.chat_request = self.chat_request
+                .clone()
+                .append_message(ChatMessage::user(MessageContent::Parts(parts)));
+            self.pending_content_parts.clear();
+        }
 
         info!("About to send assist request");
 
-        self.handle_assist_request(chat_request).await;
+        self.handle_assist_request(self.chat_request.clone()).await;
+    }
+
+    async fn maybe_rerender_system_prompt(&mut self) {
+        if self.system_state.is_modified() {
+            info!("System state modified, re-rendering system prompt");
+            
+            // Build tool infos for system prompt
+            let tool_infos: Vec<ToolInfo> = self.available_tools
+                .iter()
+                .filter_map(|tool| {
+                    tool.description.as_ref().map(|desc| ToolInfo {
+                        name: tool.name.clone(),
+                        description: desc.clone(),
+                    })
+                })
+                .collect();
+
+            // Render system prompt with tools
+            match self.system_state.render_system_prompt(
+                &self.config.model.system_prompt,
+                &tool_infos,
+                self.config.whitelisted_commands.clone(),
+            ) {
+                Ok(rendered_prompt) => {
+                    self.chat_request = self.chat_request
+                        .clone()
+                        .with_system(&rendered_prompt)
+                        .with_tools(self.available_tools.clone());
+                    self.system_state.reset_modified();
+                    info!("System prompt re-rendered successfully");
+                }
+                Err(e) => {
+                    error!("Failed to re-render system prompt: {}", e);
+                }
+            }
+        }
     }
 }
 
 async fn do_assist(
     tx: broadcast::Sender<Message>,
     client: Client,
-    chat_request: Arc<Mutex<ChatRequest>>,
+    chat_request: ChatRequest,
     config: ParsedConfig,
 ) -> SResult<()> {
-    let request = chat_request.lock().await.clone();
+    let request = chat_request;
 
     info!("Executing chat request");
     let resp = client
@@ -198,11 +208,8 @@ async fn do_assist(
     if let Some(message_content) = resp.content {
         info!("Got message content: {:?}", message_content);
 
-        // Add assistant response to chat history
-        let mut chat_request = chat_request.lock().await;
-        *chat_request = chat_request
-            .clone()
-            .append_message(ChatMessage::assistant(message_content.clone()));
+        // Note: We don't update chat_request here since it's owned by this function
+        // The Assistant struct will handle updating its own chat_request when needed
 
         // Send response
         let _ = tx.send(Message::AssistantResponse(message_content.clone()));
@@ -232,11 +239,11 @@ impl Actor for Assistant {
             tx,
             config,
             client,
-            chat_request: Arc::new(Mutex::new(ChatRequest::default())),
-            system_state: Arc::new(Mutex::new(SystemState::new())),
-            available_tools: Arc::new(Mutex::new(Vec::new())),
+            chat_request: ChatRequest::default(),
+            system_state: SystemState::new(),
+            available_tools: Vec::new(),
             cancel_handle: Arc::new(Mutex::new(None)),
-            pending_content_parts: Arc::new(Mutex::new(Vec::new())),
+            pending_content_parts: Vec::new(),
         }
     }
 
@@ -256,8 +263,7 @@ impl Actor for Assistant {
             Message::UserTUIInput(text) => self.handle_user_input(text).await,
             Message::Action(crate::actors::Action::Assist) => {
                 // Re-send current chat request
-                let request = self.chat_request.lock().await.clone();
-                self.handle_assist_request(request).await;
+                self.handle_assist_request(self.chat_request.clone()).await;
             }
             Message::Action(crate::actors::Action::Cancel) => {
                 // Cancel current request
@@ -271,7 +277,7 @@ impl Actor for Assistant {
                     // Add screenshot as an image content part
                     let content_part =
                         genai::chat::ContentPart::from_image_base64("image/png", base64);
-                    self.pending_content_parts.lock().await.push(content_part);
+                    self.pending_content_parts.push(content_part);
 
                     // Send user input to trigger assistant
                     let _ = self
@@ -283,6 +289,21 @@ impl Actor for Assistant {
             Message::ClipboardCaptured(_result) => {
                 // Clipboard text is sent as UserTUIInput by the TUI actor
                 // so we don't need to handle it here
+            }
+            Message::FileRead { path, content, last_modified } => {
+                info!("Updating system state with read file: {}", path.display());
+                self.system_state.update_file(path, content, last_modified);
+                self.maybe_rerender_system_prompt().await;
+            }
+            Message::FileEdited { path, content, last_modified } => {
+                info!("Updating system state with edited file: {}", path.display());
+                self.system_state.update_file(path, content, last_modified);
+                self.maybe_rerender_system_prompt().await;
+            }
+            Message::PlanUpdated(plan) => {
+                info!("Updating system state with new plan: {}", plan.title);
+                self.system_state.update_plan(plan);
+                self.maybe_rerender_system_prompt().await;
             }
             _ => {}
         }

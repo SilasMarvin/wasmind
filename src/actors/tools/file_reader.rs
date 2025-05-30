@@ -262,8 +262,22 @@ impl FileReaderActor {
         
         let result = file_reader.get_or_read_file_content(path);
         
-        let status = match result {
-            Ok(content) => ToolCallStatus::Finished(Ok(content.clone())),
+        let status = match &result {
+            Ok(content) => {
+                // Send system state update for successful file read
+                if let Ok(canonical_path) = std::fs::canonicalize(path) {
+                    if let Ok(metadata) = std::fs::metadata(&canonical_path) {
+                        if let Ok(last_modified) = metadata.modified() {
+                            let _ = self.tx.send(Message::FileRead {
+                                path: canonical_path,
+                                content: content.to_string(),
+                                last_modified,
+                            });
+                        }
+                    }
+                }
+                ToolCallStatus::Finished(Ok(content.to_string()))
+            }
             Err(e) => ToolCallStatus::Finished(Err(e.to_string())),
         };
 
