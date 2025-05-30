@@ -1,7 +1,6 @@
 pub mod assistant;
 pub mod context;
 pub mod microphone;
-pub mod tool_discovery;
 pub mod tools;
 pub mod tui;
 
@@ -99,7 +98,7 @@ pub enum Message {
 
     // TUI messages
     TUIClearInput,
-    TUIExit,
+    Exit,
 
     // Context messages
     ScreenshotCaptured(Result<String, String>), // Ok(base64) or Err(error message)
@@ -123,7 +122,7 @@ pub trait Actor: Send + Sized + 'static {
             let mut rx = self.get_rx();
             loop {
                 match rx.recv().await {
-                    Ok(Message::TUIExit) => break,
+                    Ok(Message::Exit) => break,
                     Ok(msg) => self.handle_message(msg).await,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         error!("RECEIVER LAGGED BY {} MESSAGES! This was unexpected.", n);

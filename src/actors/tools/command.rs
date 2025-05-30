@@ -1,7 +1,7 @@
-use genai::chat::ToolCall;
+use genai::chat::{Tool, ToolCall};
 use std::process::Stdio;
 use tokio::sync::broadcast;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
@@ -146,6 +146,18 @@ impl Actor for Command {
 
     fn get_rx(&self) -> broadcast::Receiver<Message> {
         self.tx.subscribe()
+    }
+
+    async fn on_start(&mut self) {
+        info!("Command tool starting - broadcasting availability");
+        
+        let tool = Tool {
+            name: TOOL_NAME.to_string(),
+            description: Some(TOOL_DESCRIPTION.to_string()),
+            schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
+        };
+        
+        let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
     }
 
     async fn handle_message(&mut self, message: Message) {

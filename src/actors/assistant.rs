@@ -56,14 +56,23 @@ impl Assistant {
         info!("Done assisting");
     }
 
-    async fn handle_tools_available(&mut self, tools: Vec<Tool>) {
-        info!("Assistant received {} tools", tools.len());
+    async fn handle_tools_available(&mut self, new_tools: Vec<Tool>) {
+        info!("Assistant received {} new tools", new_tools.len());
 
-        // Update available tools
-        *self.available_tools.lock().await = tools.clone();
+        // Add new tools to existing tools
+        let mut available_tools = self.available_tools.lock().await;
+        for new_tool in new_tools {
+            // Remove any existing tool with the same name
+            available_tools.retain(|t| t.name != new_tool.name);
+            // Add the new tool
+            available_tools.push(new_tool);
+        }
+        
+        let all_tools = available_tools.clone();
+        drop(available_tools); // Release the lock early
 
         // Build tool infos for system prompt
-        let tool_infos: Vec<ToolInfo> = tools
+        let tool_infos: Vec<ToolInfo> = all_tools
             .iter()
             .filter_map(|tool| {
                 tool.description.as_ref().map(|desc| ToolInfo {
@@ -85,7 +94,7 @@ impl Assistant {
                 *chat_request = chat_request
                     .clone()
                     .with_system(&rendered_prompt)
-                    .with_tools(tools);
+                    .with_tools(all_tools);
                 system_state.reset_modified();
             }
             Err(e) => {

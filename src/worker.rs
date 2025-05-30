@@ -6,7 +6,6 @@ use crate::{
     actors::assistant::Assistant,
     actors::context::Context,
     actors::microphone::Microphone,
-    actors::tool_discovery::ToolDiscovery,
     actors::tools::{
         command::Command, edit_file::EditFile, file_reader::FileReaderActor, planner::Planner,
     },
@@ -38,7 +37,6 @@ pub fn execute_worker(config: ParsedConfig) {
         // Create and run Core Actors
         TuiActor::new(config.clone(), tx.clone()).run();
         Assistant::new(config.clone(), tx.clone()).run();
-        ToolDiscovery::new(config.clone(), tx.clone()).run();
 
         // Create and run Tool Actors
         Command::new(config.clone(), tx.clone()).run();
@@ -57,7 +55,7 @@ pub fn execute_worker(config: ParsedConfig) {
         // Keep the runtime alive
         // Listen for exit signals
         loop {
-            if let Ok(Message::TUIExit) = rx.recv().await {
+            if let Ok(Message::Exit) = rx.recv().await {
                 info!("Received exit signal, shutting down");
                 break;
             }

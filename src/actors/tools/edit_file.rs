@@ -1,10 +1,10 @@
-use genai::chat::ToolCall;
+use genai::chat::{Tool, ToolCall};
 use snafu::{ResultExt, Snafu};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
@@ -434,6 +434,18 @@ impl Actor for EditFile {
 
     fn get_rx(&self) -> broadcast::Receiver<Message> {
         self.tx.subscribe()
+    }
+
+    async fn on_start(&mut self) {
+        info!("EditFile tool starting - broadcasting availability");
+        
+        let tool = Tool {
+            name: TOOL_NAME.to_string(),
+            description: Some(TOOL_DESCRIPTION.to_string()),
+            schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
+        };
+        
+        let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
     }
 
     async fn handle_message(&mut self, message: Message) {
