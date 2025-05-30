@@ -10,7 +10,7 @@ use crate::{
         context::Context,
         microphone::Microphone,
         tools::{
-            command::Command, edit_file::EditFile, file_reader::FileReaderActor, planner::Planner,
+            command::Command, edit_file::EditFile, file_reader::FileReaderActor, mcp::MCP, planner::Planner,
         },
         tui::TuiActor,
     },
@@ -60,7 +60,8 @@ pub fn start_actors(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> 
         Context::new(config.clone(), tx.clone()).run();
         Microphone::new(config.clone(), tx.clone()).run();
 
-        // TODO: Create and run MCP actor when implemented
+        // Create and run MCP actor
+        MCP::new(config.clone(), tx.clone()).run();
 
         info!("All actors started");
 

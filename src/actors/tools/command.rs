@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
-use tracing::{debug, info, error};
+use tracing::{debug, error, info};
 
-use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
+use crate::actors::{Action, Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
 
 pub const TOOL_NAME: &str = "execute_command";
@@ -182,14 +182,17 @@ impl Command {
         });
 
         // Store the handle so we can cancel it later if needed
-        self.running_commands.insert(tool_call_id.to_string(), handle);
+        self.running_commands
+            .insert(tool_call_id.to_string(), handle);
     }
 
     fn cleanup_completed_commands(&mut self) {
         // Remove completed tasks from the HashMap
-        self.running_commands.retain(|_, handle| !handle.is_finished());
+        self.running_commands
+            .retain(|_, handle| !handle.is_finished());
     }
 
+    #[allow(dead_code)]
     fn cancel_command(&mut self, tool_call_id: &str) {
         if let Some(handle) = self.running_commands.remove(tool_call_id) {
             handle.abort();
@@ -222,17 +225,20 @@ impl Actor for Command {
 
     async fn on_start(&mut self) {
         info!("Command tool starting - broadcasting availability");
-        
+
         let tool = Tool {
             name: TOOL_NAME.to_string(),
             description: Some(TOOL_DESCRIPTION.to_string()),
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
-        
+
         let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
     }
 
     async fn handle_message(&mut self, message: Message) {
+        // Cleanup completed commands periodically
+        self.cleanup_completed_commands();
+
         match message {
             Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
             Message::ToolCallUpdate(update) => match update.status {
@@ -253,6 +259,10 @@ impl Actor for Command {
                 }
                 _ => (),
             },
+            Message::Action(Action::Cancel) => {
+                // Cancel all running commands
+                self.cancel_all_commands();
+            }
             _ => (),
         }
     }
