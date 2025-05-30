@@ -1,6 +1,7 @@
-use super::events::{TuiEvent, FunctionExecution};
+use super::events::{TuiEvent, ToolExecution};
 use super::widgets::EventWidget;
 use std::collections::HashMap;
+use crate::actors::{ToolCallUpdate, ToolCallStatus, ToolCallType};
 
 const SPLASH: &str = r#"|WELCOME USER|                                                                           
 
@@ -36,8 +37,8 @@ pub struct App {
     total_height_cache: usize,
     /// Whether the cache needs to be invalidated
     cache_dirty: bool,
-    /// Track ongoing function executions by call_id
-    pub function_executions: HashMap<String, FunctionExecution>,
+    /// Track ongoing tool executions by call_id
+    pub tool_executions: HashMap<String, ToolExecution>,
 }
 
 impl App {
@@ -53,7 +54,7 @@ impl App {
             waiting_for_confirmation: false,
             total_height_cache: 0,
             cache_dirty: true,
-            function_executions: HashMap::new(),
+            tool_executions: HashMap::new(),
         };
         
         // Add splash message as the first event
@@ -90,27 +91,6 @@ impl App {
             }
             TuiEvent::SetWaitingForConfirmation { waiting } => {
                 self.waiting_for_confirmation = *waiting;
-            }
-            // Handle function execution updates
-            TuiEvent::FunctionExecutionUpdate { execution } => {
-                // Store the execution in our map
-                self.function_executions.insert(execution.call_id.clone(), execution.clone());
-                
-                // Remove old FunctionExecutionUpdate events for this call_id
-                self.events.retain(|e| {
-                    if let TuiEvent::FunctionExecutionUpdate { execution: ex } = e {
-                        ex.call_id != execution.call_id
-                    } else {
-                        true
-                    }
-                });
-                
-                // Add the updated event
-                self.events.push(event);
-                self.cache_dirty = true;
-                if self.auto_scroll {
-                    self.scroll_to_bottom();
-                }
             }
             // All other events
             _ => {
@@ -185,9 +165,63 @@ impl App {
     
     fn get_total_height(&mut self) -> usize {
         if self.cache_dirty {
-            self.total_height_cache = self.events.iter().map(|e| e.height(self.visible_width) as usize).sum();
+            // Calculate total height from events
+            let events_height: usize = self.events.iter()
+                .map(|e| e.height(self.visible_width) as usize)
+                .sum();
+            
+            // Calculate total height from tool executions
+            let tools_height: usize = self.tool_executions.values()
+                .map(|exec| {
+                    use crate::actors::tui::widgets::ToolExecutionWidget;
+                    let widget = ToolExecutionWidget { execution: exec };
+                    widget.height(self.visible_width) as usize
+                })
+                .sum();
+            
+            self.total_height_cache = events_height + tools_height;
             self.cache_dirty = false;
         }
         self.total_height_cache
+    }
+    
+    /// Track a tool call update
+    pub fn track_tool_update(&mut self, update: ToolCallUpdate) {
+        // Get or create the tool execution
+        let execution = self.tool_executions.entry(update.call_id.clone())
+            .or_insert_with(|| {
+                // Extract name and type from the first update
+                let (name, tool_type) = match &update.status {
+                    ToolCallStatus::Received { r#type, friendly_command_display } => {
+                        // Extract tool name from friendly display (e.g., "command: ls -la" -> "command")
+                        let name = friendly_command_display.split(':').next()
+                            .unwrap_or("unknown")
+                            .to_string();
+                        (name, r#type.clone())
+                    }
+                    _ => ("unknown".to_string(), ToolCallType::MCP), // Fallback
+                };
+                ToolExecution::new(update.call_id.clone(), name, tool_type)
+            });
+        
+        // Add the status update
+        execution.add_update(update.status.clone());
+        
+        // Handle special status updates
+        match &update.status {
+            ToolCallStatus::AwaitingUserYNConfirmation => {
+                self.waiting_for_confirmation = true;
+            }
+            ToolCallStatus::ReceivedUserYNConfirmation(_) => {
+                self.waiting_for_confirmation = false;
+            }
+            _ => {}
+        }
+        
+        // Mark cache as dirty to trigger redraw
+        self.cache_dirty = true;
+        if self.auto_scroll {
+            self.scroll_to_bottom();
+        }
     }
 }

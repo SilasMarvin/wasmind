@@ -62,7 +62,7 @@ impl Command {
 
         let args_string = args_array.join(" ");
         let friendly_command_display = format!("{command} {args_string}");
-        self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::Command,
@@ -94,7 +94,13 @@ impl Command {
             self.execute_command(&command, &args_array, &tool_call.call_id)
                 .await;
         } else {
-            self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+            self.pending_command = Some(PendingCommand {
+                command: command.to_string(),
+                args: args_array.clone(),
+                tool_call_id: tool_call.call_id.clone(),
+            });
+
+            let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call.call_id,
                 status: ToolCallStatus::AwaitingUserYNConfirmation,
             }));
@@ -121,7 +127,7 @@ impl Command {
         // This can for sure be displayed better to the LLM
         let output = format!("STDERR: {stderr}\n\nSTDOUT: {stdout}");
 
-        self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status: ToolCallStatus::Finished(Ok(output)),
         }));
@@ -148,6 +154,7 @@ impl Actor for Command {
             Message::ToolCallUpdate(update) => match update.status {
                 crate::actors::ToolCallStatus::ReceivedUserYNConfirmation(confirmation) => {
                     if !confirmation {
+                        self.pending_command = None;
                         return;
                     }
 

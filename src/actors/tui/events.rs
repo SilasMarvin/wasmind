@@ -1,15 +1,43 @@
 use serde::{Deserialize, Serialize};
 
-use crate::tools::ToolType;
+use crate::actors::{ToolCallType, ToolCallStatus};
 
-/// A complete function execution with all its stages
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FunctionExecution {
+/// Tracks a tool execution with all its updates
+#[derive(Debug, Clone)]
+pub struct ToolExecution {
     pub call_id: String,
     pub name: String,
-    pub tool_type: ToolType,
+    pub tool_type: ToolCallType,
     pub start_time: chrono::DateTime<chrono::Utc>,
+    pub updates: Vec<(chrono::DateTime<chrono::Utc>, ToolCallStatus)>,
 }
+
+impl ToolExecution {
+    pub fn new(call_id: String, name: String, tool_type: ToolCallType) -> Self {
+        Self {
+            call_id,
+            name,
+            tool_type,
+            start_time: chrono::Utc::now(),
+            updates: Vec::new(),
+        }
+    }
+    
+    pub fn add_update(&mut self, status: ToolCallStatus) {
+        self.updates.push((chrono::Utc::now(), status));
+    }
+    
+    pub fn is_complete(&self) -> bool {
+        self.updates.iter().any(|(_, status)| {
+            matches!(status, ToolCallStatus::Finished(_))
+        })
+    }
+    
+    pub fn latest_status(&self) -> Option<&ToolCallStatus> {
+        self.updates.last().map(|(_, status)| status)
+    }
+}
+
 
 /// Events that can be displayed in the TUI
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,15 +107,12 @@ pub enum TuiEvent {
         waiting: bool,
     },
     TaskPlanCreated {
-        plan: crate::tools::planner::TaskPlan,
+        plan: crate::actors::tools::planner::TaskPlan,
         timestamp: chrono::DateTime<chrono::Utc>,
     },
     TaskPlanUpdated {
-        plan: crate::tools::planner::TaskPlan,
+        plan: crate::actors::tools::planner::TaskPlan,
         timestamp: chrono::DateTime<chrono::Utc>,
-    },
-    FunctionExecutionUpdate {
-        execution: FunctionExecution,
     },
 }
 
@@ -193,14 +218,14 @@ impl TuiEvent {
         Self::SetWaitingForConfirmation { waiting }
     }
 
-    pub fn task_plan_created(plan: crate::tools::planner::TaskPlan) -> Self {
+    pub fn task_plan_created(plan: crate::actors::tools::planner::TaskPlan) -> Self {
         Self::TaskPlanCreated {
             plan,
             timestamp: chrono::Utc::now(),
         }
     }
 
-    pub fn task_plan_updated(plan: crate::tools::planner::TaskPlan) -> Self {
+    pub fn task_plan_updated(plan: crate::actors::tools::planner::TaskPlan) -> Self {
         Self::TaskPlanUpdated {
             plan,
             timestamp: chrono::Utc::now(),
@@ -219,8 +244,4 @@ impl TuiEvent {
         }
     }
 
-    pub fn function_execution_update(execution: FunctionExecution) -> Self {
-        Self::FunctionExecutionUpdate { execution }
-    }
 }
-

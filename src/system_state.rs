@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::template::{self, TemplateContext, ToolInfo};
-use crate::tools::planner::TaskPlan;
+use crate::actors::tools::planner::TaskPlan;
 
 /// Errors that can occur when working with SystemState
 #[derive(Debug, Snafu)]

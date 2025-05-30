@@ -8,7 +8,7 @@ use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
 use std::{collections::HashMap, fs, io, path::PathBuf};
 
-use crate::worker::Action;
+use crate::actors::Action;
 
 const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant.";
 

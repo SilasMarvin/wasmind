@@ -5,7 +5,7 @@ use crate::{
     config::{Config, ParsedConfig},
     system_state::SystemState,
     template::{TemplateContext, ToolInfo, is_template, render_template},
-    tools::planner::{Task, TaskPlan, TaskStatus},
+    actors::tools::planner::{Task, TaskPlan, TaskStatus},
 };
 
 /// Preview scenarios for system prompt rendering

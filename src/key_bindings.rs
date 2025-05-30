@@ -2,7 +2,7 @@ use rdev::Key;
 
 use crate::{
     config::{KeyBinding, ParsedKeyConfig},
-    worker::Action,
+    actors::Action,
 };
 
 #[derive(Debug, Clone)]

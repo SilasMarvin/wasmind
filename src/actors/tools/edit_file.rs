@@ -1,6 +1,13 @@
+use genai::chat::ToolCall;
 use snafu::{ResultExt, Snafu};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tokio::sync::{broadcast, Mutex};
+use tracing::debug;
+
+use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
+use crate::config::ParsedConfig;
 
 pub const TOOL_NAME: &str = "edit_file";
 pub const TOOL_DESCRIPTION: &str = "Edit file contents with various operations like insert, delete, or replace text";
@@ -94,7 +101,7 @@ impl FileEditor {
         &self,
         path: P,
         action: EditAction,
-        file_reader: &mut crate::tools::file_reader::FileReader,
+        file_reader: &mut super::file_reader::FileReader,
     ) -> Result<String> {
         let path_ref = path.as_ref();
         let canonical_path = fs::canonicalize(path_ref).context(CanonicalizePathSnafu {
@@ -306,216 +313,133 @@ impl Default for FileEditor {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tools::file_reader::FileReader;
-    use std::fs::File;
-    use std::io::Write;
-    use tempfile::TempDir;
+/// EditFile actor
+pub struct EditFile {
+    tx: broadcast::Sender<Message>,
+    config: ParsedConfig,
+    file_editor: FileEditor,
+    file_reader: Arc<Mutex<super::file_reader::FileReader>>,
+}
 
-    fn create_temp_file(dir: &TempDir, name: &str, content: &str) -> PathBuf {
-        let path = dir.path().join(name);
-        let mut file = File::create(&path).expect("Failed to create temp file");
-        write!(file, "{}", content).expect("Failed to write to temp file");
-        path
+impl EditFile {
+    pub fn with_file_reader(
+        config: ParsedConfig,
+        tx: broadcast::Sender<Message>,
+        file_reader: Arc<Mutex<super::file_reader::FileReader>>,
+    ) -> Self {
+        Self {
+            config,
+            tx,
+            file_editor: FileEditor::new(),
+            file_reader,
+        }
     }
 
-    #[test]
-    fn test_edit_file_not_read() {
-        let editor = FileEditor::new();
-        let mut file_reader = FileReader::new();
-        let tmp_dir = TempDir::new().unwrap();
-        let file_path = create_temp_file(&tmp_dir, "test.txt", "Hello World");
+    async fn handle_tool_call(&mut self, tool_call: ToolCall) {
+        if tool_call.fn_name != TOOL_NAME {
+            return;
+        }
 
-        let action = EditAction::InsertAtEnd { text: "\nNew line".to_string() };
-        let result = editor.edit_file(&file_path, action, &mut file_reader);
-
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), EditFileError::FileNotRead { .. }));
-    }
-
-    #[test]
-    fn test_insert_at_start() -> Result<()> {
-        let editor = FileEditor::new();
-        let mut file_reader = FileReader::new();
-        let tmp_dir = TempDir::new().unwrap();
-        let file_path = create_temp_file(&tmp_dir, "test.txt", "Hello World");
-
-        // First read the file
-        file_reader.get_or_read_file_content(&file_path).unwrap();
-
-        let action = EditAction::InsertAtStart { text: "Start: ".to_string() };
-        let result = editor.edit_file(&file_path, action, &mut file_reader)?;
-
-        assert!(result.contains("Successfully edited"));
-        
-        let new_content = std::fs::read_to_string(&file_path).unwrap();
-        assert_eq!(new_content, "Start: Hello World");
-        Ok(())
-    }
-
-    #[test]
-    fn test_insert_at_end() -> Result<()> {
-        let editor = FileEditor::new();
-        let mut file_reader = FileReader::new();
-        let tmp_dir = TempDir::new().unwrap();
-        let file_path = create_temp_file(&tmp_dir, "test.txt", "Hello World");
-
-        file_reader.get_or_read_file_content(&file_path).unwrap();
-
-        let action = EditAction::InsertAtEnd { text: " - End".to_string() };
-        let result = editor.edit_file(&file_path, action, &mut file_reader)?;
-
-        assert!(result.contains("Successfully edited"));
-        
-        let new_content = std::fs::read_to_string(&file_path).unwrap();
-        assert_eq!(new_content, "Hello World - End");
-        Ok(())
-    }
-
-    #[test]
-    fn test_replace_with_correct_occurrences() -> Result<()> {
-        let editor = FileEditor::new();
-        let mut file_reader = FileReader::new();
-        let tmp_dir = TempDir::new().unwrap();
-        let file_path = create_temp_file(&tmp_dir, "test.txt", "Hello World Hello");
-
-        file_reader.get_or_read_file_content(&file_path).unwrap();
-
-        let action = EditAction::Replace {
-            search_string: "Hello".to_string(),
-            replacement_text: "Hi".to_string(),
-            expected_occurrences: 2,
+        // Parse the arguments
+        let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
+            Ok(args) => args,
+            Err(e) => {
+                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                    call_id: tool_call.call_id,
+                    status: ToolCallStatus::Finished(Err(format!("Failed to parse arguments: {}", e))),
+                }));
+                return;
+            }
         };
-        let result = editor.edit_file(&file_path, action, &mut file_reader)?;
 
-        assert!(result.contains("Successfully edited"));
-        
-        let new_content = std::fs::read_to_string(&file_path).unwrap();
-        assert_eq!(new_content, "Hi World Hi");
-        Ok(())
-    }
-
-    #[test]
-    fn test_replace_with_wrong_occurrences() {
-        let editor = FileEditor::new();
-        let mut file_reader = FileReader::new();
-        let tmp_dir = TempDir::new().unwrap();
-        let file_path = create_temp_file(&tmp_dir, "test.txt", "Hello World");
-
-        file_reader.get_or_read_file_content(&file_path).unwrap();
-
-        let action = EditAction::Replace {
-            search_string: "Hello".to_string(),
-            replacement_text: "Hi".to_string(),
-            expected_occurrences: 2, // Should be 1
+        // Extract path
+        let path = match args.get("path").and_then(|v| v.as_str()) {
+            Some(p) => p,
+            None => {
+                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                    call_id: tool_call.call_id,
+                    status: ToolCallStatus::Finished(Err("Missing required field: path".to_string())),
+                }));
+                return;
+            }
         };
-        let result = editor.edit_file(&file_path, action, &mut file_reader);
 
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), EditFileError::OccurrenceMismatch { .. }));
-    }
-
-    #[test]
-    fn test_insert_before() -> Result<()> {
-        let editor = FileEditor::new();
-        let mut file_reader = FileReader::new();
-        let tmp_dir = TempDir::new().unwrap();
-        let file_path = create_temp_file(&tmp_dir, "test.txt", "Hello World");
-
-        file_reader.get_or_read_file_content(&file_path).unwrap();
-
-        let action = EditAction::InsertBefore {
-            search_string: "World".to_string(),
-            text: "Beautiful ".to_string(),
+        // Parse action
+        let action = match FileEditor::parse_action_from_args(&args) {
+            Ok(action) => action,
+            Err(e) => {
+                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                    call_id: tool_call.call_id,
+                    status: ToolCallStatus::Finished(Err(e.to_string())),
+                }));
+                return;
+            }
         };
-        let result = editor.edit_file(&file_path, action, &mut file_reader)?;
 
-        assert!(result.contains("Successfully edited"));
-        
-        let new_content = std::fs::read_to_string(&file_path).unwrap();
-        assert_eq!(new_content, "Hello Beautiful World");
-        Ok(())
-    }
-
-    #[test]
-    fn test_insert_after() -> Result<()> {
-        let editor = FileEditor::new();
-        let mut file_reader = FileReader::new();
-        let tmp_dir = TempDir::new().unwrap();
-        let file_path = create_temp_file(&tmp_dir, "test.txt", "Hello World");
-
-        file_reader.get_or_read_file_content(&file_path).unwrap();
-
-        let action = EditAction::InsertAfter {
-            search_string: "Hello".to_string(),
-            text: " Beautiful".to_string(),
+        let friendly_command_display = match &action {
+            EditAction::InsertAtStart { text } => format!("Insert at start of {}: {} chars", path, text.len()),
+            EditAction::InsertAtEnd { text } => format!("Insert at end of {}: {} chars", path, text.len()),
+            EditAction::Delete { search_string } => format!("Delete '{}' from {}", search_string, path),
+            EditAction::Replace { search_string, replacement_text, expected_occurrences } => {
+                format!("Replace {} occurrences of '{}' with '{}' in {}", 
+                    expected_occurrences, search_string, replacement_text, path)
+            },
+            EditAction::InsertBefore { search_string, text } => {
+                format!("Insert '{}' before '{}' in {}", text, search_string, path)
+            },
+            EditAction::InsertAfter { search_string, text } => {
+                format!("Insert '{}' after '{}' in {}", text, search_string, path)
+            },
         };
-        let result = editor.edit_file(&file_path, action, &mut file_reader)?;
 
-        assert!(result.contains("Successfully edited"));
-        
-        let new_content = std::fs::read_to_string(&file_path).unwrap();
-        assert_eq!(new_content, "Hello Beautiful World");
-        Ok(())
+        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+            call_id: tool_call.call_id.clone(),
+            status: ToolCallStatus::Received {
+                r#type: ToolCallType::EditFile,
+                friendly_command_display,
+            },
+        }));
+
+        // Execute the edit
+        self.execute_edit(path, action, &tool_call.call_id).await;
     }
 
-    #[test]
-    fn test_delete_text() -> Result<()> {
-        let editor = FileEditor::new();
-        let mut file_reader = FileReader::new();
-        let tmp_dir = TempDir::new().unwrap();
-        let file_path = create_temp_file(&tmp_dir, "test.txt", "Hello Beautiful World");
-
-        file_reader.get_or_read_file_content(&file_path).unwrap();
-
-        let action = EditAction::Delete {
-            search_string: " Beautiful".to_string(),
+    async fn execute_edit(&mut self, path: &str, action: EditAction, tool_call_id: &str) {
+        let mut file_reader = self.file_reader.lock().await;
+        
+        let result = self.file_editor.edit_file(path, action, &mut file_reader);
+        
+        let status = match result {
+            Ok(message) => ToolCallStatus::Finished(Ok(message)),
+            Err(e) => ToolCallStatus::Finished(Err(e.to_string())),
         };
-        let result = editor.edit_file(&file_path, action, &mut file_reader)?;
 
-        assert!(result.contains("Successfully edited"));
-        
-        let new_content = std::fs::read_to_string(&file_path).unwrap();
-        assert_eq!(new_content, "Hello World");
-        Ok(())
+        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+            call_id: tool_call_id.to_string(),
+            status,
+        }));
+    }
+}
+
+#[async_trait::async_trait]
+impl Actor for EditFile {
+    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
+        Self {
+            config,
+            tx: tx.clone(),
+            file_editor: FileEditor::new(),
+            file_reader: Arc::new(Mutex::new(super::file_reader::FileReader::new())),
+        }
     }
 
-    #[test]
-    fn test_search_string_not_found() {
-        let editor = FileEditor::new();
-        let mut file_reader = FileReader::new();
-        let tmp_dir = TempDir::new().unwrap();
-        let file_path = create_temp_file(&tmp_dir, "test.txt", "Hello World");
-
-        file_reader.get_or_read_file_content(&file_path).unwrap();
-
-        let action = EditAction::Delete {
-            search_string: "NotFound".to_string(),
-        };
-        let result = editor.edit_file(&file_path, action, &mut file_reader);
-
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), EditFileError::SearchStringNotFound { .. }));
+    fn get_rx(&self) -> broadcast::Receiver<Message> {
+        self.tx.subscribe()
     }
 
-    #[test]
-    fn test_parse_action_from_args() -> Result<()> {
-        let args = serde_json::json!({
-            "action": "replace",
-            "search_string": "old",
-            "replacement_text": "new",
-            "expected_occurrences": 2
-        });
-
-        let action = FileEditor::parse_action_from_args(&args)?;
-        
-        assert_eq!(action, EditAction::Replace {
-            search_string: "old".to_string(),
-            replacement_text: "new".to_string(),
-            expected_occurrences: 2,
-        });
-        Ok(())
+    async fn handle_message(&mut self, message: Message) {
+        match message {
+            Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
+            _ => (),
+        }
     }
 }

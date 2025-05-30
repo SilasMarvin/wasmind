@@ -1,11 +1,42 @@
+pub mod assistant;
+pub mod context;
+pub mod microphone;
+pub mod tool_discovery;
 pub mod tools;
 pub mod tui;
 
 use genai::chat::ToolCall;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use tokio::sync::broadcast;
+use tracing::error;
 
 use crate::config::ParsedConfig;
+
+/// Actions the worker can perform and users can bind keys to
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Action {
+    CaptureWindow,
+    CaptureClipboard,
+    ToggleRecordMicrophone,
+    Assist,
+    CancelAssist,
+    Exit,
+}
+
+impl Action {
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "CaptureWindow" => Some(Action::CaptureWindow),
+            "CaptureClipboard" => Some(Action::CaptureClipboard),
+            "ToggleRecordMicrophone" => Some(Action::ToggleRecordMicrophone),
+            "Assist" => Some(Action::Assist),
+            "CancelAssist" => Some(Action::CancelAssist),
+            "Exit" => Some(Action::Exit),
+            _ => None,
+        }
+    }
+}
 
 /// UserActions the worker can perform and users can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -19,20 +50,24 @@ pub enum UserAction {
 }
 
 /// ToolCall Update
+#[derive(Debug, Clone)]
 pub struct ToolCallUpdate {
-    call_id: String,
-    status: ToolCallStatus,
+    pub call_id: String,
+    pub status: ToolCallStatus,
 }
 
 /// ToolCall Type
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolCallType {
     Command,
     ReadFile,
     EditFile,
+    Planner,
     MCP,
 }
 
 /// ToolCall Status
+#[derive(Debug, Clone)]
 pub enum ToolCallStatus {
     Received {
         r#type: ToolCallType,
@@ -46,9 +81,29 @@ pub enum ToolCallStatus {
 /// The various messages actors can send
 #[derive(Debug, Clone)]
 pub enum Message {
+    // User actions from keyboard/TUI
     UserAction(UserAction),
+    UserTUIInput(String),
+
+    // Assistant messages
     AssistantToolCall(ToolCall),
+    AssistantResponse(genai::chat::MessageContent),
+
+    // Tool messages
     ToolCallUpdate(ToolCallUpdate),
+    ToolsAvailable(Vec<genai::chat::Tool>),
+
+    // Microphone messages
+    MicrophoneToggle,
+    MicrophoneTranscription(String),
+
+    // TUI messages
+    TUIClearInput,
+    TUIExit,
+
+    // Context messages
+    ScreenshotCaptured(Result<String, String>), // Ok(base64) or Err(error message)
+    ClipboardCaptured(Result<String, String>),  // Ok(text) or Err(error message)
 }
 
 /// Base trait for all actors in the system
@@ -65,9 +120,18 @@ pub trait Actor: Send + Sized + 'static {
         tokio::spawn(async move {
             self.on_start().await;
 
-            // If this errors we just crash
-            while let Ok(msg) = self.get_rx().recv().await {
-                self.handle_message(msg).await;
+            let mut rx = self.get_rx();
+            loop {
+                match rx.recv().await {
+                    Ok(Message::TUIExit) => break,
+                    Ok(msg) => self.handle_message(msg).await,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        error!("RECEIVER LAGGED BY {} MESSAGES! This was unexpected.", n);
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        error!("Channel closed")
+                    }
+                }
             }
 
             self.on_stop().await;
