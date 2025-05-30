@@ -880,10 +880,37 @@ impl<'a> ToolExecutionWidget<'a> {
                 ToolCallStatus::Finished(result) => {
                     match result {
                         Ok(output) => {
-                            lines.push(format!(
-                                "  [✓] Completed: {}",
-                                output.lines().next().unwrap_or(output)
-                            ));
+                            // Show detailed output only for Command tool (shell commands)
+                            // For other tools, just show "Success"
+                            if matches!(self.execution.tool_type, crate::actors::ToolCallType::Command) {
+                                lines.push("  [✓] Completed:".to_string());
+                                
+                                // Format command output with first/last lines
+                                let output_lines: Vec<&str> = output.lines().collect();
+                                let max_lines_to_show = 6; // 3 first + 3 last
+                                
+                                if output_lines.len() <= max_lines_to_show {
+                                    // Show all lines if output is short
+                                    for line in output_lines {
+                                        lines.push(format!("    {}", line));
+                                    }
+                                } else {
+                                    // Show first 3 lines
+                                    for line in output_lines.iter().take(3) {
+                                        lines.push(format!("    {}", line));
+                                    }
+                                    
+                                    // Add separator
+                                    lines.push("    ...".to_string());
+                                    
+                                    // Show last 3 lines
+                                    for line in output_lines.iter().rev().take(3).collect::<Vec<_>>().iter().rev() {
+                                        lines.push(format!("    {}", line));
+                                    }
+                                }
+                            } else {
+                                lines.push("  [✓] Success".to_string());
+                            }
                         }
                         Err(error) => {
                             lines.push(format!("  [✗] Failed: {}", error));
@@ -930,7 +957,44 @@ impl<'a> ToolExecutionWidget<'a> {
         
         // Calculate lines: name + separator + updates
         let mut lines = 2; // Name line + separator
-        lines += self.execution.updates.len(); // Each update takes at least one line
+        
+        // Calculate lines for each update
+        for (_timestamp, status) in &self.execution.updates {
+            match status {
+                crate::actors::ToolCallStatus::Received { .. } => {
+                    lines += 1; // One line for the received status
+                }
+                crate::actors::ToolCallStatus::AwaitingUserYNConfirmation => {
+                    lines += 1; // One line for confirmation prompt
+                }
+                crate::actors::ToolCallStatus::ReceivedUserYNConfirmation(_) => {
+                    lines += 1; // One line for confirmation response
+                }
+                crate::actors::ToolCallStatus::Finished(result) => {
+                    match result {
+                        Ok(output) => {
+                            if matches!(self.execution.tool_type, crate::actors::ToolCallType::Command) {
+                                lines += 1; // "[✓] Completed:" line
+                                
+                                let output_lines: Vec<&str> = output.lines().collect();
+                                let max_lines_to_show = 6; // 3 first + 3 last
+                                
+                                if output_lines.len() <= max_lines_to_show {
+                                    lines += output_lines.len(); // All output lines
+                                } else {
+                                    lines += 7; // 3 first + "..." + 3 last
+                                }
+                            } else {
+                                lines += 1; // Just "[✓] Success"
+                            }
+                        }
+                        Err(_) => {
+                            lines += 1; // Error line
+                        }
+                    }
+                }
+            }
+        }
         
         lines as u16 + 2 // +2 for borders
     }
