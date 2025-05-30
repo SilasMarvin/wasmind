@@ -384,6 +384,12 @@ impl Actor for TuiActor {
                     }
                 }
             }
+            Message::PlanUpdated(plan) => {
+                let mut app = self.app.lock().unwrap();
+                app.add_event(TuiEvent::task_plan_updated(plan));
+                drop(app);
+                self.trigger_redraw(false);
+            }
             _ => {}
         }
     }
