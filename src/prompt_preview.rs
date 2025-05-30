@@ -2,10 +2,10 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use crate::{
+    actors::tools::planner::{Task, TaskPlan, TaskStatus},
     config::{Config, ParsedConfig},
     system_state::SystemState,
     template::{TemplateContext, ToolInfo, is_template, render_template},
-    actors::tools::planner::{Task, TaskPlan, TaskStatus},
 };
 
 /// Preview scenarios for system prompt rendering
@@ -354,4 +354,3 @@ pub fn execute_demo(
 
     Ok(())
 }
-

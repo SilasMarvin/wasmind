@@ -6,7 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{Mutex, broadcast};
 use tracing::{debug, info};
 
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
@@ -46,7 +46,11 @@ pub enum FileCacheError {
     CacheMissInternal { path: PathBuf },
 
     #[snafu(display("File '{}' is too large ({} bytes). Maximum file size is {} bytes.", path.display(), actual_size, max_size))]
-    FileTooLarge { path: PathBuf, actual_size: u64, max_size: u64 },
+    FileTooLarge {
+        path: PathBuf,
+        actual_size: u64,
+        max_size: u64,
+    },
 }
 
 pub type Result<T, E = FileCacheError> = std::result::Result<T, E>;
@@ -79,7 +83,7 @@ impl FileReader {
         let metadata = fs::metadata(path_ref).context(ReadMetadataSnafu {
             path: path_ref.to_path_buf(),
         })?;
-        
+
         // Check file size before reading
         let file_size = metadata.len();
         if file_size > MAX_FILE_SIZE_BYTES {
@@ -89,7 +93,7 @@ impl FileReader {
                 max_size: MAX_FILE_SIZE_BYTES,
             });
         }
-        
+
         let last_modified_at_read = metadata.modified().context(GetModifiedTimeSnafu {
             path: path_ref.to_path_buf(),
         })?;
@@ -225,7 +229,10 @@ impl FileReaderActor {
             Err(e) => {
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
-                    status: ToolCallStatus::Finished(Err(format!("Failed to parse arguments: {}", e))),
+                    status: ToolCallStatus::Finished(Err(format!(
+                        "Failed to parse arguments: {}",
+                        e
+                    ))),
                 }));
                 return;
             }
@@ -237,7 +244,9 @@ impl FileReaderActor {
             None => {
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
-                    status: ToolCallStatus::Finished(Err("Missing required field: path".to_string())),
+                    status: ToolCallStatus::Finished(Err(
+                        "Missing required field: path".to_string()
+                    )),
                 }));
                 return;
             }
@@ -259,9 +268,9 @@ impl FileReaderActor {
 
     async fn execute_read(&mut self, path: &str, tool_call_id: &str) {
         let mut file_reader = self.file_reader.lock().await;
-        
+
         let result = file_reader.get_or_read_file_content(path);
-        
+
         let status = match &result {
             Ok(content) => {
                 // Send system state update for successful file read
@@ -310,13 +319,13 @@ impl Actor for FileReaderActor {
 
     async fn on_start(&mut self) {
         info!("FileReader tool starting - broadcasting availability");
-        
+
         let tool = Tool {
             name: TOOL_NAME.to_string(),
             description: Some(TOOL_DESCRIPTION.to_string()),
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
-        
+
         let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
     }
 

@@ -3,14 +3,15 @@ use snafu::{ResultExt, Snafu};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{Mutex, broadcast};
 use tracing::{debug, info};
 
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
 
 pub const TOOL_NAME: &str = "edit_file";
-pub const TOOL_DESCRIPTION: &str = "Edit file contents with various operations like insert, delete, or replace text";
+pub const TOOL_DESCRIPTION: &str =
+    "Edit file contents with various operations like insert, delete, or replace text";
 pub const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
@@ -51,7 +52,10 @@ pub enum EditFileError {
     FileModified { path: PathBuf },
 
     #[snafu(display("Search string '{}' not found in file '{}'", search_string, path.display()))]
-    SearchStringNotFound { search_string: String, path: PathBuf },
+    SearchStringNotFound {
+        search_string: String,
+        path: PathBuf,
+    },
 
     #[snafu(display("Expected {} occurrences of '{}' in file '{}', but found {}", expected, search_string, path.display(), actual))]
     OccurrenceMismatch {
@@ -65,10 +69,16 @@ pub enum EditFileError {
     MissingRequiredField { field: String, action: String },
 
     #[snafu(display("Failed to write file '{}': {}", path.display(), source))]
-    WriteFile { source: std::io::Error, path: PathBuf },
+    WriteFile {
+        source: std::io::Error,
+        path: PathBuf,
+    },
 
     #[snafu(display("Failed to canonicalize path '{}': {}", path.display(), source))]
-    CanonicalizePath { source: std::io::Error, path: PathBuf },
+    CanonicalizePath {
+        source: std::io::Error,
+        path: PathBuf,
+    },
 }
 
 pub type Result<T, E = EditFileError> = std::result::Result<T, E>;
@@ -76,16 +86,28 @@ pub type Result<T, E = EditFileError> = std::result::Result<T, E>;
 /// Actions that can be performed on a file
 #[derive(Debug, Clone, PartialEq)]
 pub enum EditAction {
-    InsertAtStart { text: String },
-    InsertAtEnd { text: String },
-    Delete { search_string: String },
-    Replace { 
-        search_string: String, 
-        replacement_text: String, 
-        expected_occurrences: usize 
+    InsertAtStart {
+        text: String,
     },
-    InsertBefore { search_string: String, text: String },
-    InsertAfter { search_string: String, text: String },
+    InsertAtEnd {
+        text: String,
+    },
+    Delete {
+        search_string: String,
+    },
+    Replace {
+        search_string: String,
+        replacement_text: String,
+        expected_occurrences: usize,
+    },
+    InsertBefore {
+        search_string: String,
+        text: String,
+    },
+    InsertAfter {
+        search_string: String,
+        text: String,
+    },
 }
 
 /// File editor that works with the FileReader cache
@@ -115,15 +137,20 @@ impl FileEditor {
             });
         }
 
-        if file_reader.has_been_modified(&canonical_path)
-            .map_err(|_| EditFileError::FileModified { path: canonical_path.clone() })? {
+        if file_reader
+            .has_been_modified(&canonical_path)
+            .map_err(|_| EditFileError::FileModified {
+                path: canonical_path.clone(),
+            })?
+        {
             return Err(EditFileError::FileModified {
                 path: canonical_path,
             });
         }
 
         // Get the current file content from cache
-        let current_content = file_reader.get_cached_content(&canonical_path)
+        let current_content = file_reader
+            .get_cached_content(&canonical_path)
             .expect("Content should be available after checks")
             .clone();
 
@@ -136,25 +163,22 @@ impl FileEditor {
         })?;
 
         // Update the cache with new content
-        file_reader.read_and_cache_file(&canonical_path)
-            .map_err(|_| EditFileError::FileModified { path: canonical_path.clone() })?;
+        file_reader
+            .read_and_cache_file(&canonical_path)
+            .map_err(|_| EditFileError::FileModified {
+                path: canonical_path.clone(),
+            })?;
 
-        Ok(format!("Successfully edited file: {}", canonical_path.display()))
+        Ok(format!(
+            "Successfully edited file: {}",
+            canonical_path.display()
+        ))
     }
 
-    fn apply_edit_action(
-        &self,
-        content: &str,
-        action: &EditAction,
-        path: &Path,
-    ) -> Result<String> {
+    fn apply_edit_action(&self, content: &str, action: &EditAction, path: &Path) -> Result<String> {
         match action {
-            EditAction::InsertAtStart { text } => {
-                Ok(format!("{}{}", text, content))
-            }
-            EditAction::InsertAtEnd { text } => {
-                Ok(format!("{}{}", content, text))
-            }
+            EditAction::InsertAtStart { text } => Ok(format!("{}{}", text, content)),
+            EditAction::InsertAtEnd { text } => Ok(format!("{}{}", content, text)),
             EditAction::Delete { search_string } => {
                 if !content.contains(search_string) {
                     return Err(EditFileError::SearchStringNotFound {
@@ -164,10 +188,10 @@ impl FileEditor {
                 }
                 Ok(content.replace(search_string, ""))
             }
-            EditAction::Replace { 
-                search_string, 
-                replacement_text, 
-                expected_occurrences 
+            EditAction::Replace {
+                search_string,
+                replacement_text,
+                expected_occurrences,
             } => {
                 let actual_occurrences = content.matches(search_string).count();
                 if actual_occurrences != *expected_occurrences {
@@ -180,7 +204,10 @@ impl FileEditor {
                 }
                 Ok(content.replace(search_string, replacement_text))
             }
-            EditAction::InsertBefore { search_string, text } => {
+            EditAction::InsertBefore {
+                search_string,
+                text,
+            } => {
                 if !content.contains(search_string) {
                     return Err(EditFileError::SearchStringNotFound {
                         search_string: search_string.clone(),
@@ -189,7 +216,10 @@ impl FileEditor {
                 }
                 Ok(content.replace(search_string, &format!("{}{}", text, search_string)))
             }
-            EditAction::InsertAfter { search_string, text } => {
+            EditAction::InsertAfter {
+                search_string,
+                text,
+            } => {
                 if !content.contains(search_string) {
                     return Err(EditFileError::SearchStringNotFound {
                         search_string: search_string.clone(),
@@ -203,55 +233,67 @@ impl FileEditor {
 
     /// Parse edit action from JSON arguments
     pub fn parse_action_from_args(args: &serde_json::Value) -> Result<EditAction> {
-        let action = args.get("action")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| EditFileError::MissingRequiredField {
+        let action = args.get("action").and_then(|v| v.as_str()).ok_or_else(|| {
+            EditFileError::MissingRequiredField {
                 field: "action".to_string(),
                 action: "unknown".to_string(),
-            })?;
+            }
+        })?;
 
         match action {
             "insert_at_start" => {
-                let text = args.get("replacement_text")
+                let text = args
+                    .get("replacement_text")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| EditFileError::MissingRequiredField {
                         field: "replacement_text".to_string(),
                         action: action.to_string(),
                     })?;
-                Ok(EditAction::InsertAtStart { text: text.to_string() })
+                Ok(EditAction::InsertAtStart {
+                    text: text.to_string(),
+                })
             }
             "insert_at_end" => {
-                let text = args.get("replacement_text")
+                let text = args
+                    .get("replacement_text")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| EditFileError::MissingRequiredField {
                         field: "replacement_text".to_string(),
                         action: action.to_string(),
                     })?;
-                Ok(EditAction::InsertAtEnd { text: text.to_string() })
+                Ok(EditAction::InsertAtEnd {
+                    text: text.to_string(),
+                })
             }
             "delete" => {
-                let search_string = args.get("search_string")
+                let search_string = args
+                    .get("search_string")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| EditFileError::MissingRequiredField {
                         field: "search_string".to_string(),
                         action: action.to_string(),
                     })?;
-                Ok(EditAction::Delete { search_string: search_string.to_string() })
+                Ok(EditAction::Delete {
+                    search_string: search_string.to_string(),
+                })
             }
             "replace" => {
-                let search_string = args.get("search_string")
+                let search_string = args
+                    .get("search_string")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| EditFileError::MissingRequiredField {
                         field: "search_string".to_string(),
                         action: action.to_string(),
                     })?;
-                let replacement_text = args.get("replacement_text")
+                let replacement_text = args
+                    .get("replacement_text")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| EditFileError::MissingRequiredField {
                         field: "replacement_text".to_string(),
                         action: action.to_string(),
                     })?;
-                let expected_occurrences = args.get("expected_occurrences")
+                let expected_occurrences = args
+                    .get("expected_occurrences")
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| EditFileError::MissingRequiredField {
                         field: "expected_occurrences".to_string(),
@@ -264,13 +306,15 @@ impl FileEditor {
                 })
             }
             "insert_before" => {
-                let search_string = args.get("search_string")
+                let search_string = args
+                    .get("search_string")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| EditFileError::MissingRequiredField {
                         field: "search_string".to_string(),
                         action: action.to_string(),
                     })?;
-                let text = args.get("replacement_text")
+                let text = args
+                    .get("replacement_text")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| EditFileError::MissingRequiredField {
                         field: "replacement_text".to_string(),
@@ -282,13 +326,15 @@ impl FileEditor {
                 })
             }
             "insert_after" => {
-                let search_string = args.get("search_string")
+                let search_string = args
+                    .get("search_string")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| EditFileError::MissingRequiredField {
                         field: "search_string".to_string(),
                         action: action.to_string(),
                     })?;
-                let text = args.get("replacement_text")
+                let text = args
+                    .get("replacement_text")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| EditFileError::MissingRequiredField {
                         field: "replacement_text".to_string(),
@@ -346,7 +392,10 @@ impl EditFile {
             Err(e) => {
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
-                    status: ToolCallStatus::Finished(Err(format!("Failed to parse arguments: {}", e))),
+                    status: ToolCallStatus::Finished(Err(format!(
+                        "Failed to parse arguments: {}",
+                        e
+                    ))),
                 }));
                 return;
             }
@@ -358,7 +407,9 @@ impl EditFile {
             None => {
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
-                    status: ToolCallStatus::Finished(Err("Missing required field: path".to_string())),
+                    status: ToolCallStatus::Finished(Err(
+                        "Missing required field: path".to_string()
+                    )),
                 }));
                 return;
             }
@@ -377,19 +428,37 @@ impl EditFile {
         };
 
         let friendly_command_display = match &action {
-            EditAction::InsertAtStart { text } => format!("Insert at start of {}: {} chars", path, text.len()),
-            EditAction::InsertAtEnd { text } => format!("Insert at end of {}: {} chars", path, text.len()),
-            EditAction::Delete { search_string } => format!("Delete '{}' from {}", search_string, path),
-            EditAction::Replace { search_string, replacement_text, expected_occurrences } => {
-                format!("Replace {} occurrences of '{}' with '{}' in {}", 
-                    expected_occurrences, search_string, replacement_text, path)
-            },
-            EditAction::InsertBefore { search_string, text } => {
+            EditAction::InsertAtStart { text } => {
+                format!("Insert at start of {}: {} chars", path, text.len())
+            }
+            EditAction::InsertAtEnd { text } => {
+                format!("Insert at end of {}: {} chars", path, text.len())
+            }
+            EditAction::Delete { search_string } => {
+                format!("Delete '{}' from {}", search_string, path)
+            }
+            EditAction::Replace {
+                search_string,
+                replacement_text,
+                expected_occurrences,
+            } => {
+                format!(
+                    "Replace {} occurrences of '{}' with '{}' in {}",
+                    expected_occurrences, search_string, replacement_text, path
+                )
+            }
+            EditAction::InsertBefore {
+                search_string,
+                text,
+            } => {
                 format!("Insert '{}' before '{}' in {}", text, search_string, path)
-            },
-            EditAction::InsertAfter { search_string, text } => {
+            }
+            EditAction::InsertAfter {
+                search_string,
+                text,
+            } => {
                 format!("Insert '{}' after '{}' in {}", text, search_string, path)
-            },
+            }
         };
 
         let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
@@ -406,9 +475,9 @@ impl EditFile {
 
     async fn execute_edit(&mut self, path: &str, action: EditAction, tool_call_id: &str) {
         let mut file_reader = self.file_reader.lock().await;
-        
+
         let result = self.file_editor.edit_file(path, action, &mut file_reader);
-        
+
         let status = match &result {
             Ok(message) => {
                 // Send system state update for successful file edit
@@ -460,13 +529,13 @@ impl Actor for EditFile {
 
     async fn on_start(&mut self) {
         info!("EditFile tool starting - broadcasting availability");
-        
+
         let tool = Tool {
             name: TOOL_NAME.to_string(),
             description: Some(TOOL_DESCRIPTION.to_string()),
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
-        
+
         let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
     }
 

@@ -7,9 +7,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget, Wrap},
 };
 
-use crate::actors::{ToolCallStatus};
+use crate::actors::ToolCallStatus;
 
-use super::events::{TuiEvent, ToolExecution};
+use super::events::{ToolExecution, TuiEvent};
 
 // Helper function to skip lines from text and render with appropriate borders
 fn render_text_with_skip(
@@ -760,7 +760,12 @@ impl<'a> TaskPlanWidget<'a> {
             .plan
             .tasks
             .iter()
-            .filter(|t| matches!(t.status, crate::actors::tools::planner::TaskStatus::Completed))
+            .filter(|t| {
+                matches!(
+                    t.status,
+                    crate::actors::tools::planner::TaskStatus::Completed
+                )
+            })
             .count();
         let total = self.plan.tasks.len();
         lines.push(String::new()); // Empty line before progress
@@ -864,7 +869,10 @@ impl<'a> ToolExecutionWidget<'a> {
         // Render status updates
         for (_timestamp, status) in &self.execution.updates {
             match status {
-                ToolCallStatus::Received { r#type: _, friendly_command_display } => {
+                ToolCallStatus::Received {
+                    r#type: _,
+                    friendly_command_display,
+                } => {
                     lines.push(format!("  --> {}", friendly_command_display));
                 }
                 ToolCallStatus::AwaitingUserYNConfirmation => {
@@ -882,13 +890,16 @@ impl<'a> ToolExecutionWidget<'a> {
                         Ok(output) => {
                             // Show detailed output only for Command tool (shell commands)
                             // For other tools, just show "Success"
-                            if matches!(self.execution.tool_type, crate::actors::ToolCallType::Command) {
+                            if matches!(
+                                self.execution.tool_type,
+                                crate::actors::ToolCallType::Command
+                            ) {
                                 lines.push("  [✓] Completed:".to_string());
-                                
+
                                 // Format command output with first/last lines
                                 let output_lines: Vec<&str> = output.lines().collect();
                                 let max_lines_to_show = 6; // 3 first + 3 last
-                                
+
                                 if output_lines.len() <= max_lines_to_show {
                                     // Show all lines if output is short
                                     for line in output_lines {
@@ -899,12 +910,19 @@ impl<'a> ToolExecutionWidget<'a> {
                                     for line in output_lines.iter().take(3) {
                                         lines.push(format!("    {}", line));
                                     }
-                                    
+
                                     // Add separator
                                     lines.push("    ...".to_string());
-                                    
+
                                     // Show last 3 lines
-                                    for line in output_lines.iter().rev().take(3).collect::<Vec<_>>().iter().rev() {
+                                    for line in output_lines
+                                        .iter()
+                                        .rev()
+                                        .take(3)
+                                        .collect::<Vec<_>>()
+                                        .iter()
+                                        .rev()
+                                    {
                                         lines.push(format!("    {}", line));
                                     }
                                 }
@@ -947,17 +965,17 @@ impl<'a> ToolExecutionWidget<'a> {
             Style::default(),
         );
     }
-    
+
     pub fn height(&self, width: u16) -> u16 {
         // Account for borders and padding
         let inner_width = width.saturating_sub(2) as usize;
         if inner_width == 0 {
             return 3; // Minimum height with borders
         }
-        
+
         // Calculate lines: name + separator + updates
         let mut lines = 2; // Name line + separator
-        
+
         // Calculate lines for each update
         for (_timestamp, status) in &self.execution.updates {
             match status {
@@ -973,12 +991,15 @@ impl<'a> ToolExecutionWidget<'a> {
                 crate::actors::ToolCallStatus::Finished(result) => {
                     match result {
                         Ok(output) => {
-                            if matches!(self.execution.tool_type, crate::actors::ToolCallType::Command) {
+                            if matches!(
+                                self.execution.tool_type,
+                                crate::actors::ToolCallType::Command
+                            ) {
                                 lines += 1; // "[✓] Completed:" line
-                                
+
                                 let output_lines: Vec<&str> = output.lines().collect();
                                 let max_lines_to_show = 6; // 3 first + 3 last
-                                
+
                                 if output_lines.len() <= max_lines_to_show {
                                     lines += output_lines.len(); // All output lines
                                 } else {
@@ -995,7 +1016,7 @@ impl<'a> ToolExecutionWidget<'a> {
                 }
             }
         }
-        
+
         lines as u16 + 2 // +2 for borders
     }
 }

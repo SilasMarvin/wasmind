@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::actors::{ToolCallType, ToolCallStatus};
+use crate::actors::{ToolCallStatus, ToolCallType};
 
 /// Tracks a tool execution with all its updates
 #[derive(Debug, Clone)]
@@ -22,22 +22,21 @@ impl ToolExecution {
             updates: Vec::new(),
         }
     }
-    
+
     pub fn add_update(&mut self, status: ToolCallStatus) {
         self.updates.push((chrono::Utc::now(), status));
     }
-    
+
     pub fn is_complete(&self) -> bool {
-        self.updates.iter().any(|(_, status)| {
-            matches!(status, ToolCallStatus::Finished(_))
-        })
+        self.updates
+            .iter()
+            .any(|(_, status)| matches!(status, ToolCallStatus::Finished(_)))
     }
-    
+
     pub fn latest_status(&self) -> Option<&ToolCallStatus> {
         self.updates.last().map(|(_, status)| status)
     }
 }
-
 
 /// Events that can be displayed in the TUI
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,5 +242,4 @@ impl TuiEvent {
             timestamp: chrono::Utc::now(),
         }
     }
-
 }

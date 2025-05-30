@@ -1,7 +1,7 @@
-use super::events::{TuiEvent, ToolExecution};
+use super::events::{ToolExecution, TuiEvent};
 use super::widgets::EventWidget;
+use crate::actors::{ToolCallStatus, ToolCallType, ToolCallUpdate};
 use std::collections::HashMap;
-use crate::actors::{ToolCallUpdate, ToolCallStatus, ToolCallType};
 
 const SPLASH: &str = r#"|WELCOME USER|                                                                           
 
@@ -56,21 +56,28 @@ impl App {
             cache_dirty: true,
             tool_executions: HashMap::new(),
         };
-        
+
         // Add splash message as the first event
         app.add_event(TuiEvent::system(SPLASH.to_string()));
-        
+
         app
     }
 
     pub fn add_event(&mut self, event: TuiEvent) {
         match &event {
             // Handle partial assistant responses by updating the last event
-            TuiEvent::AssistantResponse { text, is_partial, .. } => {
+            TuiEvent::AssistantResponse {
+                text, is_partial, ..
+            } => {
                 if *is_partial {
                     // Find the last assistant response and update it
                     for e in self.events.iter_mut().rev() {
-                        if let TuiEvent::AssistantResponse { text: existing_text, is_partial: existing_partial, .. } = e {
+                        if let TuiEvent::AssistantResponse {
+                            text: existing_text,
+                            is_partial: existing_partial,
+                            ..
+                        } = e
+                        {
                             if *existing_partial {
                                 *existing_text = text.clone();
                                 self.cache_dirty = true;
@@ -103,7 +110,6 @@ impl App {
         }
     }
 
-
     pub fn get_input(&self) -> &str {
         &self.input
     }
@@ -131,7 +137,7 @@ impl App {
         let total_height = self.get_total_height();
         let max_scroll = total_height.saturating_sub(self.visible_height as usize);
         self.scroll_position = (self.scroll_position + amount).min(max_scroll);
-        
+
         // Re-enable auto-scroll if we've scrolled to the bottom
         if self.scroll_position >= max_scroll {
             self.auto_scroll = true;
@@ -149,7 +155,6 @@ impl App {
         self.auto_scroll = false;
     }
 
-    
     pub fn set_visible_dimensions(&mut self, width: u16, height: u16) {
         if self.visible_width != width {
             self.cache_dirty = true;
@@ -162,39 +167,49 @@ impl App {
         }
     }
 
-    
     fn get_total_height(&mut self) -> usize {
         if self.cache_dirty {
             // Calculate total height from events
-            let events_height: usize = self.events.iter()
+            let events_height: usize = self
+                .events
+                .iter()
                 .map(|e| e.height(self.visible_width) as usize)
                 .sum();
-            
+
             // Calculate total height from tool executions
-            let tools_height: usize = self.tool_executions.values()
+            let tools_height: usize = self
+                .tool_executions
+                .values()
                 .map(|exec| {
                     use crate::actors::tui::widgets::ToolExecutionWidget;
                     let widget = ToolExecutionWidget { execution: exec };
                     widget.height(self.visible_width) as usize
                 })
                 .sum();
-            
+
             self.total_height_cache = events_height + tools_height;
             self.cache_dirty = false;
         }
         self.total_height_cache
     }
-    
+
     /// Track a tool call update
     pub fn track_tool_update(&mut self, update: ToolCallUpdate) {
         // Get or create the tool execution
-        let execution = self.tool_executions.entry(update.call_id.clone())
+        let execution = self
+            .tool_executions
+            .entry(update.call_id.clone())
             .or_insert_with(|| {
                 // Extract name and type from the first update
                 let (name, tool_type) = match &update.status {
-                    ToolCallStatus::Received { r#type, friendly_command_display } => {
+                    ToolCallStatus::Received {
+                        r#type,
+                        friendly_command_display,
+                    } => {
                         // Extract tool name from friendly display (e.g., "command: ls -la" -> "command")
-                        let name = friendly_command_display.split(':').next()
+                        let name = friendly_command_display
+                            .split(':')
+                            .next()
                             .unwrap_or("unknown")
                             .to_string();
                         (name, r#type.clone())
@@ -203,10 +218,10 @@ impl App {
                 };
                 ToolExecution::new(update.call_id.clone(), name, tool_type)
             });
-        
+
         // Add the status update
         execution.add_update(update.status.clone());
-        
+
         // Handle special status updates
         match &update.status {
             ToolCallStatus::AwaitingUserYNConfirmation => {
@@ -217,7 +232,7 @@ impl App {
             }
             _ => {}
         }
-        
+
         // Mark cache as dirty to trigger redraw
         self.cache_dirty = true;
         if self.auto_scroll {

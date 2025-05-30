@@ -68,7 +68,8 @@ impl Assistant {
         }
 
         // Build tool infos for system prompt
-        let tool_infos: Vec<ToolInfo> = self.available_tools
+        let tool_infos: Vec<ToolInfo> = self
+            .available_tools
             .iter()
             .filter_map(|tool| {
                 tool.description.as_ref().map(|desc| ToolInfo {
@@ -85,7 +86,8 @@ impl Assistant {
             self.config.whitelisted_commands.clone(),
         ) {
             Ok(rendered_prompt) => {
-                self.chat_request = self.chat_request
+                self.chat_request = self
+                    .chat_request
                     .clone()
                     .with_system(&rendered_prompt)
                     .with_tools(self.available_tools.clone());
@@ -123,7 +125,10 @@ impl Assistant {
         info!("Assistant received microphone transcription");
 
         // Add user message to chat
-        self.chat_request = self.chat_request.clone().append_message(ChatMessage::user(text));
+        self.chat_request = self
+            .chat_request
+            .clone()
+            .append_message(ChatMessage::user(text));
 
         // Send assist request
         self.handle_assist_request(self.chat_request.clone()).await;
@@ -136,12 +141,16 @@ impl Assistant {
 
         if self.pending_content_parts.is_empty() {
             // Simple text message
-            self.chat_request = self.chat_request.clone().append_message(ChatMessage::user(text));
+            self.chat_request = self
+                .chat_request
+                .clone()
+                .append_message(ChatMessage::user(text));
         } else {
             // Multi-part message with text and other content
             let mut parts = vec![genai::chat::ContentPart::Text(text)];
             parts.append(&mut self.pending_content_parts.clone());
-            self.chat_request = self.chat_request
+            self.chat_request = self
+                .chat_request
                 .clone()
                 .append_message(ChatMessage::user(MessageContent::Parts(parts)));
             self.pending_content_parts.clear();
@@ -155,9 +164,10 @@ impl Assistant {
     async fn maybe_rerender_system_prompt(&mut self) {
         if self.system_state.is_modified() {
             info!("System state modified, re-rendering system prompt");
-            
+
             // Build tool infos for system prompt
-            let tool_infos: Vec<ToolInfo> = self.available_tools
+            let tool_infos: Vec<ToolInfo> = self
+                .available_tools
                 .iter()
                 .filter_map(|tool| {
                     tool.description.as_ref().map(|desc| ToolInfo {
@@ -174,7 +184,8 @@ impl Assistant {
                 self.config.whitelisted_commands.clone(),
             ) {
                 Ok(rendered_prompt) => {
-                    self.chat_request = self.chat_request
+                    self.chat_request = self
+                        .chat_request
                         .clone()
                         .with_system(&rendered_prompt)
                         .with_tools(self.available_tools.clone());
@@ -294,12 +305,20 @@ impl Actor for Assistant {
                 // Clipboard text is sent as UserTUIInput by the TUI actor
                 // so we don't need to handle it here
             }
-            Message::FileRead { path, content, last_modified } => {
+            Message::FileRead {
+                path,
+                content,
+                last_modified,
+            } => {
                 info!("Updating system state with read file: {}", path.display());
                 self.system_state.update_file(path, content, last_modified);
                 self.maybe_rerender_system_prompt().await;
             }
-            Message::FileEdited { path, content, last_modified } => {
+            Message::FileEdited {
+                path,
+                content,
+                last_modified,
+            } => {
                 info!("Updating system state with edited file: {}", path.display());
                 self.system_state.update_file(path, content, last_modified);
                 self.maybe_rerender_system_prompt().await;

@@ -1,7 +1,7 @@
 use crossbeam::channel;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast};
-use tracing::{error, info};
+use tracing::info;
 
 use crate::{
     actors::{
@@ -10,7 +10,8 @@ use crate::{
         context::Context,
         microphone::Microphone,
         tools::{
-            command::Command, edit_file::EditFile, file_reader::FileReaderActor, mcp::MCP, planner::Planner,
+            command::Command, edit_file::EditFile, file_reader::FileReaderActor, mcp::MCP,
+            planner::Planner,
         },
         tui::TuiActor,
     },
@@ -83,7 +84,11 @@ pub fn start_actors(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> 
     }
 }
 
-pub fn start_headless_actors(runtime: &tokio::runtime::Runtime, config: ParsedConfig, initial_prompt: String) -> WorkerHandle {
+pub fn start_headless_actors(
+    runtime: &tokio::runtime::Runtime,
+    config: ParsedConfig,
+    initial_prompt: String,
+) -> WorkerHandle {
     info!("Starting headless actor system");
 
     // Create crossbeam channel for exit notification
@@ -142,9 +147,11 @@ pub fn start_headless_actors(runtime: &tokio::runtime::Runtime, config: ParsedCo
                 Ok(Message::ActorReady { actor_id }) => {
                     info!("Actor {} is ready", actor_id);
                     ready_actors.insert(actor_id);
-                    
+
                     // Check if all required actors are ready and we haven't sent the initial prompt yet
-                    if !initial_prompt_sent && required_actors.iter().all(|id| ready_actors.contains(id)) {
+                    if !initial_prompt_sent
+                        && required_actors.iter().all(|id| ready_actors.contains(id))
+                    {
                         info!("All actors ready, sending initial prompt");
                         let _ = tx.send(Message::UserTUIInput(initial_prompt.clone()));
                         initial_prompt_sent = true;

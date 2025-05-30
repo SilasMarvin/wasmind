@@ -129,13 +129,13 @@ impl Config {
     pub fn from_file(path: &str) -> Result<Self, ConfigError> {
         let contents = fs::read_to_string(path)?;
         let mut config: Config = toml::from_str(&contents).context(TomlDeserializeSnafu)?;
-        
+
         // Merge with default whitelisted commands if none specified
         if config.whitelisted_commands.is_empty() {
             let default = Config::default()?;
             config.whitelisted_commands = default.whitelisted_commands;
         }
-        
+
         Ok(config)
     }
 
@@ -273,11 +273,13 @@ fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
                     Ok(value) => {
                         tracing::debug!("Successfully loaded auth from environment variable");
                         AuthData::Key(value)
-                    },
+                    }
                     Err(_) => {
-                        tracing::debug!("Environment variable not found, using FromEnv auth method");
+                        tracing::debug!(
+                            "Environment variable not found, using FromEnv auth method"
+                        );
                         AuthData::FromEnv(s)
-                    },
+                    }
                 },
             };
             Ok(ServiceTarget {

@@ -106,12 +106,15 @@ impl Planner {
             Err(e) => {
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
-                    status: ToolCallStatus::Finished(Err(format!("Failed to parse planner arguments: {}", e))),
+                    status: ToolCallStatus::Finished(Err(format!(
+                        "Failed to parse planner arguments: {}",
+                        e
+                    ))),
                 }));
                 return;
             }
         };
-        
+
         let action = match args.get("action").and_then(|v| v.as_str()) {
             Some(action) => action,
             None => {
@@ -122,11 +125,12 @@ impl Planner {
                 return;
             }
         };
-        
+
         let response_content = match action {
             "create" => self.handle_create_plan(&args, &tool_call.call_id).await,
             "update" | "complete" | "start" | "skip" => {
-                self.handle_update_plan(action, &args, &tool_call.call_id).await
+                self.handle_update_plan(action, &args, &tool_call.call_id)
+                    .await
             }
             _ => {
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
@@ -137,34 +141,34 @@ impl Planner {
             }
         };
     }
-    
-    async fn handle_create_plan(
-        &mut self,
-        args: &serde_json::Value,
-        tool_call_id: &str,
-    ) {
+
+    async fn handle_create_plan(&mut self, args: &serde_json::Value, tool_call_id: &str) {
         let title = match args.get("title").and_then(|v| v.as_str()) {
             Some(title) => title,
             None => {
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished(Err("Missing 'title' field for create action".to_string())),
+                    status: ToolCallStatus::Finished(Err(
+                        "Missing 'title' field for create action".to_string(),
+                    )),
                 }));
                 return;
             }
         };
-        
+
         let tasks = match args.get("tasks").and_then(|v| v.as_array()) {
             Some(tasks) => tasks,
             None => {
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished(Err("Missing 'tasks' field for create action".to_string())),
+                    status: ToolCallStatus::Finished(Err(
+                        "Missing 'tasks' field for create action".to_string(),
+                    )),
                 }));
                 return;
             }
         };
-        
+
         let mut task_list = Vec::new();
         for task in tasks {
             if let Some(desc) = task.as_str() {
@@ -174,7 +178,7 @@ impl Planner {
                 });
             }
         }
-        
+
         if task_list.is_empty() {
             let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call_id.to_string(),
@@ -182,7 +186,7 @@ impl Planner {
             }));
             return;
         }
-        
+
         let plan = TaskPlan {
             title: title.to_string(),
             tasks: task_list,
@@ -196,25 +200,25 @@ impl Planner {
                 friendly_command_display,
             },
         }));
-        
+
         // Store the plan
         self.current_task_plan = Some(plan.clone());
-        
+
         // Send system state update
         let _ = self.tx.send(Message::PlanUpdated(plan.clone()));
-        
+
         // Return response with numbered tasks
         let mut response = format!("Created task plan: {}\n", title);
         for (i, task) in plan.tasks.iter().enumerate() {
             response.push_str(&format!("{}. {}\n", i + 1, task.description));
         }
-        
+
         let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status: ToolCallStatus::Finished(Ok(response)),
         }));
     }
-    
+
     async fn handle_update_plan(
         &mut self,
         action: &str,
@@ -226,33 +230,40 @@ impl Planner {
             None => {
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished(Err("No active task plan. Create a plan first.".to_string())),
+                    status: ToolCallStatus::Finished(Err(
+                        "No active task plan. Create a plan first.".to_string(),
+                    )),
                 }));
                 return;
             }
         };
-        
+
         let task_number = match args.get("task_number").and_then(|v| v.as_u64()) {
             Some(num) => num as usize,
             None => {
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished(Err("Missing 'task_number' field".to_string())),
+                    status: ToolCallStatus::Finished(
+                        Err("Missing 'task_number' field".to_string()),
+                    ),
                 }));
                 return;
             }
         };
-        
+
         if task_number == 0 || task_number > task_plan.tasks.len() {
             let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call_id.to_string(),
-                status: ToolCallStatus::Finished(Err(format!("Invalid task number. Must be between 1 and {}", task_plan.tasks.len()))),
+                status: ToolCallStatus::Finished(Err(format!(
+                    "Invalid task number. Must be between 1 and {}",
+                    task_plan.tasks.len()
+                ))),
             }));
             return;
         }
-        
+
         let task_index = task_number - 1;
-        
+
         let friendly_command_display = match action {
             "update" => format!("Update task {} in plan", task_number),
             "complete" => format!("Complete task {} in plan", task_number),
@@ -268,7 +279,7 @@ impl Planner {
                 friendly_command_display,
             },
         }));
-        
+
         match action {
             "update" => {
                 if let Some(new_desc) = args.get("new_description").and_then(|v| v.as_str()) {
@@ -286,12 +297,15 @@ impl Planner {
             }
             _ => unreachable!(),
         }
-        
+
         // Send system state update
         let _ = self.tx.send(Message::PlanUpdated(task_plan.clone()));
-        
+
         // Return response
-        let response = format!("Updated task {}: {}", task_number, task_plan.tasks[task_index].description);
+        let response = format!(
+            "Updated task {}: {}",
+            task_number, task_plan.tasks[task_index].description
+        );
         let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status: ToolCallStatus::Finished(Ok(response)),
@@ -321,13 +335,13 @@ impl Actor for Planner {
 
     async fn on_start(&mut self) {
         info!("Planner tool starting - broadcasting availability");
-        
+
         let tool = Tool {
             name: TOOL_NAME.to_string(),
             description: Some(TOOL_DESCRIPTION.to_string()),
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
-        
+
         let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
     }
 

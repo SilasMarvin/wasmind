@@ -1,6 +1,6 @@
+use crate::system_state::SystemState;
 use minijinja::{Environment, context};
 use serde::Serialize;
-use crate::system_state::SystemState;
 
 /// Context for rendering templates
 #[derive(Debug, Clone, Serialize)]
@@ -37,10 +37,12 @@ impl TemplateContext {
         let cwd = std::env::current_dir()
             .map(|path| path.display().to_string())
             .unwrap_or_else(|_| "unknown".to_string());
-            
+
         Self {
             tools,
-            current_datetime: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            current_datetime: chrono::Utc::now()
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string(),
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
             cwd,
@@ -51,15 +53,18 @@ impl TemplateContext {
 }
 
 /// Render a template string with the given context
-pub fn render_template(template_str: &str, context: &TemplateContext) -> Result<String, minijinja::Error> {
+pub fn render_template(
+    template_str: &str,
+    context: &TemplateContext,
+) -> Result<String, minijinja::Error> {
     let mut env = Environment::new();
-    
+
     // Add the template
     env.add_template("system_prompt", template_str)?;
-    
+
     // Get the template
     let tmpl = env.get_template("system_prompt")?;
-    
+
     // Render with context
     let ctx = context! {
         tools => &context.tools,
@@ -71,7 +76,7 @@ pub fn render_template(template_str: &str, context: &TemplateContext) -> Result<
         files => &context.system_state["files"],
         plan => &context.system_state["plan"],
     };
-    
+
     tmpl.render(ctx)
 }
 
@@ -105,7 +110,7 @@ mod tests {
     #[test]
     fn test_template_context() {
         use crate::system_state::SystemState;
-        
+
         let system_state = SystemState::new();
         let context = TemplateContext::new(
             vec![
@@ -132,19 +137,15 @@ mod tests {
         use crate::system_state::SystemState;
         use std::path::PathBuf;
         use std::time::SystemTime;
-        
+
         let mut system_state = SystemState::new();
         system_state.update_file(
             PathBuf::from("test.txt"),
             "Hello World".to_string(),
             SystemTime::now(),
         );
-        
-        let context = TemplateContext::new(
-            vec![],
-            vec![],
-            &system_state,
-        );
+
+        let context = TemplateContext::new(vec![], vec![], &system_state);
 
         let template = "Files loaded: {{ files.count }}";
         let result = render_template(template, &context).unwrap();
@@ -154,7 +155,7 @@ mod tests {
     #[test]
     fn test_system_prompt_template() {
         use crate::system_state::SystemState;
-        
+
         let system_state = SystemState::new();
         let context = TemplateContext::new(
             vec![
@@ -183,19 +184,19 @@ System: {{ os }} ({{ arch }})
 Working directory: {{ cwd }}"#;
 
         let result = render_template(template, &context).unwrap();
-        
+
         // Check that tool count is dynamic
         assert!(result.contains("access to 2 tools"));
-        
+
         // Check that tools are listed
         assert!(result.contains("- execute_command: Execute a shell command"));
         assert!(result.contains("- read_file: Read file contents"));
-        
+
         // Check that system info is included
         assert!(result.contains("Current date and time:"));
         assert!(result.contains("System:"));
         assert!(result.contains("Working directory:"));
-        
+
         // Check that cwd is not "unknown" (should be actual directory)
         assert!(!result.contains("Working directory: unknown"));
     }
@@ -203,13 +204,13 @@ Working directory: {{ cwd }}"#;
     #[test]
     fn test_cwd_template_variable() {
         use crate::system_state::SystemState;
-        
+
         let system_state = SystemState::new();
         let context = TemplateContext::new(vec![], vec![], &system_state);
 
         let template = "Current directory: {{ cwd }}";
         let result = render_template(template, &context).unwrap();
-        
+
         // Should not be unknown and should contain a path
         assert!(!result.contains("unknown"));
         assert!(result.contains("Current directory: "));

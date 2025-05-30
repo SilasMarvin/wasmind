@@ -94,12 +94,22 @@ pub enum Message {
     ClipboardCaptured(Result<String, String>),  // Ok(text) or Err(error message)
 
     // System state update messages
-    FileRead { path: PathBuf, content: String, last_modified: std::time::SystemTime },
-    FileEdited { path: PathBuf, content: String, last_modified: std::time::SystemTime },
+    FileRead {
+        path: PathBuf,
+        content: String,
+        last_modified: std::time::SystemTime,
+    },
+    FileEdited {
+        path: PathBuf,
+        content: String,
+        last_modified: std::time::SystemTime,
+    },
     PlanUpdated(crate::actors::tools::planner::TaskPlan),
 
     // Actor lifecycle messages
-    ActorReady { actor_id: &'static str },
+    ActorReady {
+        actor_id: &'static str,
+    },
 }
 
 /// Base trait for all actors in the system
@@ -121,7 +131,9 @@ pub trait Actor: Send + Sized + 'static {
             self.on_start().await;
 
             // Signal that this actor is ready
-            let _ = tx.send(Message::ActorReady { actor_id: Self::ACTOR_ID });
+            let _ = tx.send(Message::ActorReady {
+                actor_id: Self::ACTOR_ID,
+            });
 
             let mut rx = self.get_rx();
             loop {

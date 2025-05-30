@@ -322,4 +322,3 @@ fn record_audio(recording: Arc<AtomicBool>, tx: broadcast::Sender<Message>) -> M
 
     Ok(())
 }
-
