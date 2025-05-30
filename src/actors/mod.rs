@@ -19,7 +19,7 @@ pub enum Action {
     CaptureClipboard,
     ToggleRecordMicrophone,
     Assist,
-    CancelAssist,
+    Cancel,
     Exit,
 }
 
@@ -30,22 +30,11 @@ impl Action {
             "CaptureClipboard" => Some(Action::CaptureClipboard),
             "ToggleRecordMicrophone" => Some(Action::ToggleRecordMicrophone),
             "Assist" => Some(Action::Assist),
-            "CancelAssist" => Some(Action::CancelAssist),
+            "CancelAssist" => Some(Action::Cancel),
             "Exit" => Some(Action::Exit),
             _ => None,
         }
     }
-}
-
-/// UserActions the worker can perform and users can bind keys to
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum UserAction {
-    CaptureWindow,
-    CaptureClipboard,
-    ToggleRecordMicrophone,
-    Assist,
-    CancelAssist,
-    Exit,
 }
 
 /// ToolCall Update
@@ -81,7 +70,7 @@ pub enum ToolCallStatus {
 #[derive(Debug, Clone)]
 pub enum Message {
     // User actions from keyboard/TUI
-    UserAction(UserAction),
+    Action(Action),
     UserTUIInput(String),
 
     // Assistant messages
@@ -98,7 +87,6 @@ pub enum Message {
 
     // TUI messages
     TUIClearInput,
-    Exit,
 
     // Context messages
     ScreenshotCaptured(Result<String, String>), // Ok(base64) or Err(error message)
@@ -122,7 +110,7 @@ pub trait Actor: Send + Sized + 'static {
             let mut rx = self.get_rx();
             loop {
                 match rx.recv().await {
-                    Ok(Message::Exit) => break,
+                    Ok(Message::Action(Action::Exit)) => break,
                     Ok(msg) => self.handle_message(msg).await,
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         error!("RECEIVER LAGGED BY {} MESSAGES! This was unexpected.", n);

@@ -23,7 +23,7 @@ use tokio::sync::broadcast;
 use tracing::{error, info};
 
 use crate::{
-    actors::{Actor, Message, UserAction},
+    actors::{Action, Actor, Message},
     config::ParsedConfig,
     key_bindings::KeyBindingManager,
 };
@@ -91,32 +91,6 @@ impl TuiActor {
         thread::spawn(move || {
             handle_input(app_clone, tx_clone, redraw_tx_clone);
         });
-
-        // // Spawn keyboard listener for global hotkeys
-        // let tx_clone = self.tx.clone();
-        // let key_bindings_clone = self.key_bindings.clone();
-        // thread::spawn(move || {
-        //     if let Err(e) = rdev::listen(move |event| {
-        //         if let rdev::EventType::KeyPress(key) = event.event_type {
-        //             let mut key_bindings = key_bindings_clone.lock().unwrap();
-        //             let actions = key_bindings.handle_event(key);
-        //             for action in actions {
-        //                 let _ = tx_clone.send(Message::UserAction(match action {
-        //                     crate::actors::Action::CaptureWindow => UserAction::CaptureWindow,
-        //                     crate::actors::Action::CaptureClipboard => UserAction::CaptureClipboard,
-        //                     crate::actors::Action::ToggleRecordMicrophone => {
-        //                         UserAction::ToggleRecordMicrophone
-        //                     }
-        //                     crate::actors::Action::Assist => UserAction::Assist,
-        //                     crate::actors::Action::CancelAssist => UserAction::CancelAssist,
-        //                     crate::actors::Action::Exit => UserAction::Exit,
-        //                 }));
-        //             }
-        //         }
-        //     }) {
-        //         error!("Error listening to keyboard events: {:?}", e);
-        //     }
-        // });
 
         // Initial draw
         terminal
@@ -188,6 +162,7 @@ fn handle_input(
                         }
                         KeyCode::Char(c) => {
                             if c == 'c' && key.modifiers.contains(KeyModifiers::CONTROL) {
+                                let _ = tx.send(Message::Action(Action::Exit));
                                 let _ = redraw_tx.send(RedrawMessage::End);
                                 break;
                             }
@@ -326,28 +301,28 @@ impl Actor for TuiActor {
                 drop(app);
                 self.trigger_redraw(false);
             }
-            Message::UserAction(UserAction::CaptureWindow) => {
+            Message::Action(Action::CaptureWindow) => {
                 let mut app = self.app.lock().unwrap();
                 app.add_event(TuiEvent::screenshot("Screenshot captured".to_string()));
                 drop(app);
                 self.trigger_redraw(false);
             }
-            Message::UserAction(UserAction::CaptureClipboard) => {
+            Message::Action(Action::CaptureClipboard) => {
                 // Context actor will send the actual clipboard event
             }
-            Message::UserAction(UserAction::ToggleRecordMicrophone) => {
+            Message::Action(Action::ToggleRecordMicrophone) => {
                 let mut app = self.app.lock().unwrap();
                 app.add_event(TuiEvent::microphone_started());
                 drop(app);
                 self.trigger_redraw(false);
             }
-            Message::UserAction(UserAction::Assist) => {
+            Message::Action(Action::Assist) => {
                 let mut app = self.app.lock().unwrap();
                 app.waiting_for_response = true;
                 drop(app);
                 self.trigger_redraw(false);
             }
-            Message::UserAction(UserAction::CancelAssist) => {
+            Message::Action(Action::Cancel) => {
                 let mut app = self.app.lock().unwrap();
                 app.waiting_for_response = false;
                 app.add_event(TuiEvent::system("Cancelled assistant response".to_string()));

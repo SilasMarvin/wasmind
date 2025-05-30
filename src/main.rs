@@ -5,7 +5,7 @@ use key_bindings::KeyBindingManager;
 use rdev::{Event, EventType, listen};
 use snafu::{Location, ResultExt, Snafu};
 use tokio::runtime;
-use tracing::error;
+use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 pub mod actors;
@@ -130,24 +130,42 @@ fn run_main_program() -> SResult<()> {
     let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
     let mut key_binding_manager = KeyBindingManager::from(&parsed_config.keys);
 
-    let _worker_handle = std::thread::spawn(move || {
-        worker::execute_worker(parsed_config);
+    // Create the tokio runtime in main thread
+    let runtime = runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime");
+
+    // Start the actor system
+    let worker_handle = worker::start_actors(&runtime, parsed_config);
+
+    // Clone the message sender for the callback
+    let message_tx = worker_handle.message_tx.clone();
+
+    // Spawn a thread to monitor for exit
+    std::thread::spawn(move || {
+        // Wait for exit signal from actors
+        let _ = worker_handle.exit_rx.recv();
+        info!("Received exit signal from actors, exiting...");
+        std::process::exit(0);
     });
 
     let callback = move |event: Event| match event.event_type {
-        EventType::KeyPress(_key) => {
-            // let actions = key_binding_manager.handle_event(key);
-            // for action in actions {
-            //     if let Err(e) = tx.send(worker::Event::Action(action)) {
-            //         error!("Error sending action to worker: {e:?}");
-            //     }
-            // }
+        EventType::KeyPress(key) => {
+            let actions = key_binding_manager.handle_event(key);
+            for action in actions {
+                if let Err(e) = message_tx.send(actors::Message::Action(action)) {
+                    error!("Error sending action to actors: {:?}", e);
+                }
+            }
         }
         EventType::KeyRelease(_) => {
             key_binding_manager.clear();
         }
         _ => (),
     };
+
+    info!("Starting global key listener");
 
     // This will block and has to be in the main thread
     if let Err(error) = listen(callback) {

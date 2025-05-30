@@ -1,7 +1,9 @@
 use genai::chat::{Tool, ToolCall};
+use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::sync::broadcast;
-use tracing::{debug, info};
+use tokio::task::JoinHandle;
+use tracing::{debug, info, error};
 
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
@@ -38,6 +40,7 @@ pub struct Command {
     tx: broadcast::Sender<Message>,
     pending_command: Option<PendingCommand>,
     config: ParsedConfig,
+    running_commands: HashMap<String, JoinHandle<()>>,
 }
 
 impl Command {
@@ -108,29 +111,97 @@ impl Command {
     }
 
     async fn execute_command(&mut self, command: &str, args: &[String], tool_call_id: &str) {
-        // TODO: Spawn new tokio task with the ability to cancel it
+        let command = command.to_string();
+        let args = args.to_vec();
+        let tool_call_id_clone = tool_call_id.to_string();
+        let tx = self.tx.clone();
 
-        // Spawn the command
-        let mut child = tokio::process::Command::new(command);
-        child
-            .args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        // Spawn the command in a separate task
+        let handle = tokio::spawn(async move {
+            let tool_call_id = tool_call_id_clone;
+            // Create the command
+            let mut child = tokio::process::Command::new(&command);
+            child
+                .args(&args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
 
-        // Wait for the command to complete
-        let output = child.output().await.unwrap();
+            // Execute the command
+            let output = match child.output().await {
+                Ok(output) => output,
+                Err(e) => {
+                    let error_msg = format!("Failed to execute command '{}': {}", command, e);
+                    error!("{}", error_msg);
+                    let _ = tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                        call_id: tool_call_id,
+                        status: ToolCallStatus::Finished(Err(error_msg)),
+                    }));
+                    return;
+                }
+            };
 
-        // Convert output to string
-        let stdout = String::from_utf8(output.stdout).unwrap();
-        let stderr = String::from_utf8(output.stderr).unwrap();
+            // Convert output to strings
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
 
-        // This can for sure be displayed better to the LLM
-        let output = format!("STDERR: {stderr}\n\nSTDOUT: {stdout}");
+            // Check if the command was successful
+            let result = if output.status.success() {
+                // Command succeeded
+                let output_text = if stdout.is_empty() && stderr.is_empty() {
+                    "Command completed successfully with no output".to_string()
+                } else if stderr.is_empty() {
+                    stdout.to_string()
+                } else if stdout.is_empty() {
+                    stderr.to_string()
+                } else {
+                    format!("STDOUT:\n{}\n\nSTDERR:\n{}", stdout, stderr)
+                };
+                Ok(output_text)
+            } else {
+                // Command failed
+                let error_msg = if let Some(code) = output.status.code() {
+                    if stderr.is_empty() {
+                        format!("Command failed with exit code {}", code)
+                    } else {
+                        format!("Command failed with exit code {}:\n{}", code, stderr)
+                    }
+                } else {
+                    if stderr.is_empty() {
+                        "Command terminated by signal".to_string()
+                    } else {
+                        format!("Command terminated by signal:\n{}", stderr)
+                    }
+                };
+                Err(error_msg)
+            };
 
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Finished(Ok(output)),
-        }));
+            let _ = tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                call_id: tool_call_id,
+                status: ToolCallStatus::Finished(result),
+            }));
+        });
+
+        // Store the handle so we can cancel it later if needed
+        self.running_commands.insert(tool_call_id.to_string(), handle);
+    }
+
+    fn cleanup_completed_commands(&mut self) {
+        // Remove completed tasks from the HashMap
+        self.running_commands.retain(|_, handle| !handle.is_finished());
+    }
+
+    fn cancel_command(&mut self, tool_call_id: &str) {
+        if let Some(handle) = self.running_commands.remove(tool_call_id) {
+            handle.abort();
+            info!("Cancelled command execution for tool call {}", tool_call_id);
+        }
+    }
+
+    fn cancel_all_commands(&mut self) {
+        for (tool_call_id, handle) in self.running_commands.drain() {
+            handle.abort();
+            info!("Cancelled command execution for tool call {}", tool_call_id);
+        }
     }
 }
 
@@ -141,6 +212,7 @@ impl Actor for Command {
             config,
             tx,
             pending_command: None,
+            running_commands: HashMap::new(),
         }
     }
 

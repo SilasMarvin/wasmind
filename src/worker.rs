@@ -1,31 +1,43 @@
+use crossbeam::channel;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast};
 use tracing::{error, info};
 
 use crate::{
-    actors::assistant::Assistant,
-    actors::context::Context,
-    actors::microphone::Microphone,
-    actors::tools::{
-        command::Command, edit_file::EditFile, file_reader::FileReaderActor, planner::Planner,
+    actors::{
+        Action, Actor, Message,
+        assistant::Assistant,
+        context::Context,
+        microphone::Microphone,
+        tools::{
+            command::Command, edit_file::EditFile, file_reader::FileReaderActor, planner::Planner,
+        },
+        tui::TuiActor,
     },
-    actors::tui::TuiActor,
-    actors::{Actor, Message},
     config::ParsedConfig,
 };
 
-pub fn execute_worker(config: ParsedConfig) {
-    info!("Starting worker with actor system");
+/// Handle for communicating with the worker thread
+pub struct WorkerHandle {
+    /// Sender to send messages to the actor system
+    pub message_tx: broadcast::Sender<Message>,
+    /// Receiver to know when the system should exit
+    pub exit_rx: channel::Receiver<()>,
+}
 
-    // Create the tokio runtime
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to create tokio runtime");
+pub fn start_actors(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> WorkerHandle {
+    info!("Starting actor system");
 
-    runtime.block_on(async {
-        // Create broadcast channel for actor communication
-        let (tx, mut rx) = broadcast::channel::<Message>(1024);
+    // Create crossbeam channel for exit notification
+    let (exit_tx, exit_rx) = channel::bounded(1);
+
+    // Create broadcast channel for actor communication
+    let (tx, _) = broadcast::channel::<Message>(1024);
+    let message_tx = tx.clone();
+
+    // Spawn the actor system task
+    runtime.spawn(async move {
+        let mut rx = tx.subscribe();
 
         // Create shared file reader that will be used by both FileReaderActor and EditFile
         let file_reader = Arc::new(Mutex::new(
@@ -55,10 +67,17 @@ pub fn execute_worker(config: ParsedConfig) {
         // Keep the runtime alive
         // Listen for exit signals
         loop {
-            if let Ok(Message::Exit) = rx.recv().await {
+            if let Ok(Message::Action(Action::Exit)) = rx.recv().await {
                 info!("Received exit signal, shutting down");
+                // Notify main thread that we're exiting
+                let _ = exit_tx.send(());
                 break;
             }
         }
     });
+
+    WorkerHandle {
+        message_tx,
+        exit_rx,
+    }
 }

@@ -67,7 +67,7 @@ impl Assistant {
             // Add the new tool
             available_tools.push(new_tool);
         }
-        
+
         let all_tools = available_tools.clone();
         drop(available_tools); // Release the lock early
 
@@ -254,12 +254,12 @@ impl Actor for Assistant {
                 self.handle_microphone_transcription(text).await
             }
             Message::UserTUIInput(text) => self.handle_user_input(text).await,
-            Message::UserAction(crate::actors::UserAction::Assist) => {
+            Message::Action(crate::actors::Action::Assist) => {
                 // Re-send current chat request
                 let request = self.chat_request.lock().await.clone();
                 self.handle_assist_request(request).await;
             }
-            Message::UserAction(crate::actors::UserAction::CancelAssist) => {
+            Message::Action(crate::actors::Action::Cancel) => {
                 // Cancel current request
                 if let Some(handle) = self.cancel_handle.lock().await.take() {
                     handle.abort();

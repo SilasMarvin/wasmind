@@ -3,8 +3,8 @@ use snafu::{ResultExt, Snafu};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::template::{self, TemplateContext, ToolInfo};
 use crate::actors::tools::planner::TaskPlan;
+use crate::template::{self, TemplateContext, ToolInfo};
 
 /// Errors that can occur when working with SystemState
 #[derive(Debug, Snafu)]
@@ -169,7 +169,6 @@ impl SystemState {
         self.files.len()
     }
 
-
     /// Generate the files section for the system prompt
     pub fn render_files_section(&self) -> String {
         if self.files.is_empty() {
@@ -242,21 +241,16 @@ impl SystemState {
         }
 
         // Build template context
-        let context = TemplateContext::new(
-            tools.to_vec(),
-            whitelisted_commands,
-            self,
-        );
+        let context = TemplateContext::new(tools.to_vec(), whitelisted_commands, self);
 
         // Render the template
-        template::render_template(prompt_template, &context)
-            .context(TemplateRenderFailedSnafu)
+        template::render_template(prompt_template, &context).context(TemplateRenderFailedSnafu)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::tools::planner::{Task, TaskStatus};
+    use crate::actors::tools::planner::{Task, TaskStatus};
 
     use super::*;
     use std::time::SystemTime;
@@ -451,7 +445,7 @@ Whitelisted commands: {{ whitelisted_commands|join(', ') }}
         );
 
         let result = template::render_template(template, &context).unwrap();
-        
+
         // Verify the rendered output contains expected content
         assert!(result.contains("You are an AI assistant with access to 4 tools"));
         assert!(result.contains("- command: Execute system commands"));
@@ -469,8 +463,10 @@ Whitelisted commands: {{ whitelisted_commands|join(', ') }}
         assert!(template::is_template("Hello {{ name }}!"));
         assert!(template::is_template("{% if condition %}yes{% endif %}"));
         assert!(template::is_template("{# This is a comment #}"));
-        assert!(template::is_template("Mixed {{ var }} and {% tag %} content"));
-        
+        assert!(template::is_template(
+            "Mixed {{ var }} and {% tag %} content"
+        ));
+
         // Should not detect templates
         assert!(!template::is_template("Hello World!"));
         assert!(!template::is_template("Just plain text"));
@@ -482,15 +478,11 @@ Whitelisted commands: {{ whitelisted_commands|join(', ') }}
     fn test_non_template_passthrough() {
         let plain_prompt = "You are a helpful assistant.";
         let system_state = SystemState::new();
-        let context = TemplateContext::new(
-            vec![],
-            vec![],
-            &system_state,
-        );
+        let context = TemplateContext::new(vec![], vec![], &system_state);
 
         // Should return the same string if it's not a template
         assert!(!template::is_template(plain_prompt));
-        
+
         // Verify that non-templates work as well in render_template
         let result = template::render_template(plain_prompt, &context).unwrap();
         assert_eq!(result, plain_prompt);
@@ -509,13 +501,9 @@ Current plan: active
 {% endif %}"#;
 
         let mut state = SystemState::new();
-        
+
         // Test with no files or plan
-        let result = state.render_system_prompt(
-            template,
-            &[],
-            vec![],
-        ).unwrap();
+        let result = state.render_system_prompt(template, &[], vec![]).unwrap();
         assert!(result.contains("You are an AI assistant."));
         assert!(!result.contains("Currently loaded files"));
         assert!(!result.contains("Current plan"));
@@ -527,11 +515,7 @@ Current plan: active
             SystemTime::now(),
         );
 
-        let result = state.render_system_prompt(
-            template,
-            &[],
-            vec![],
-        ).unwrap();
+        let result = state.render_system_prompt(template, &[], vec![]).unwrap();
         assert!(result.contains("Currently loaded files: 1"));
         assert!(!result.contains("Current plan"));
 
@@ -541,11 +525,7 @@ Current plan: active
             tasks: vec![],
         });
 
-        let result = state.render_system_prompt(
-            template,
-            &[],
-            vec![],
-        ).unwrap();
+        let result = state.render_system_prompt(template, &[], vec![]).unwrap();
         assert!(result.contains("Currently loaded files: 1"));
         assert!(result.contains("Current plan: active"));
     }
@@ -553,10 +533,10 @@ Current plan: active
     #[test]
     fn test_modified_flag_tracking() {
         let mut state = SystemState::new();
-        
+
         // Initially not modified
         assert!(!state.is_modified());
-        
+
         // Adding a file sets modified
         state.update_file(
             PathBuf::from("test.txt"),
@@ -564,28 +544,28 @@ Current plan: active
             SystemTime::now(),
         );
         assert!(state.is_modified());
-        
+
         // Reset clears the flag
         state.reset_modified();
         assert!(!state.is_modified());
-        
+
         // Updating plan sets modified
         state.update_plan(TaskPlan {
             title: "Plan".to_string(),
             tasks: vec![],
         });
         assert!(state.is_modified());
-        
+
         state.reset_modified();
         assert!(!state.is_modified());
-        
+
         // Removing a file sets modified
         let path = PathBuf::from("test.txt");
         state.update_file(path.clone(), "content".to_string(), SystemTime::now());
         state.reset_modified();
         state.remove_file(&path);
         assert!(state.is_modified());
-        
+
         // Clearing plan sets modified
         state.reset_modified();
         state.clear_plan();

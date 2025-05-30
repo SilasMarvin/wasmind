@@ -1,12 +1,12 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
-use image::{ImageFormat, imageops::FilterType, DynamicImage};
+use image::{DynamicImage, ImageFormat, imageops::FilterType};
 use std::io::Cursor;
 use tokio::sync::broadcast;
 use tracing::{error, info};
 use xcap::{Window, image::RgbaImage};
 
 use crate::{
-    actors::{Actor, Message, UserAction},
+    actors::{Action, Actor, Message},
     config::ParsedConfig,
 };
 
@@ -18,7 +18,7 @@ pub struct Context {
 
 impl Context {
     const MAX_SIZE: u32 = 1024;
-    
+
     fn capture_screen() -> Result<RgbaImage, String> {
         let windows = Window::all().map_err(|e| format!("Failed to get windows: {}", e))?;
 
@@ -27,7 +27,9 @@ impl Context {
             .filter(|w| w.is_focused().unwrap_or(false) && !w.is_minimized().unwrap_or(true))
             .max_by_key(|w| w.width().unwrap_or(0) * w.height().unwrap_or(0))
         {
-            let image = largest_window.capture_image().map_err(|e| format!("Failed to capture image: {}", e))?;
+            let image = largest_window
+                .capture_image()
+                .map_err(|e| format!("Failed to capture image: {}", e))?;
 
             let (width, height) = (image.width(), image.height());
 
@@ -50,10 +52,13 @@ impl Context {
             Err("No focused window found".to_string())
         }
     }
-    
+
     fn capture_clipboard() -> Result<String, String> {
-        let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
-        let text = clipboard.get_text().map_err(|e| format!("Failed to get clipboard text: {}", e))?;
+        let mut clipboard =
+            arboard::Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
+        let text = clipboard
+            .get_text()
+            .map_err(|e| format!("Failed to get clipboard text: {}", e))?;
         Ok(text)
     }
     async fn handle_capture_window(&mut self) {
@@ -63,9 +68,10 @@ impl Context {
                 let mut buffer = Cursor::new(Vec::new());
                 if let Err(e) = image.write_to(&mut buffer, ImageFormat::Png) {
                     error!("Failed to encode screenshot: {}", e);
-                    let _ = self.tx.send(Message::ScreenshotCaptured(
-                        Err(format!("Failed to encode screenshot: {}", e))
-                    ));
+                    let _ = self.tx.send(Message::ScreenshotCaptured(Err(format!(
+                        "Failed to encode screenshot: {}",
+                        e
+                    ))));
                     return;
                 }
                 let base64 = STANDARD.encode(buffer.into_inner());
@@ -73,9 +79,10 @@ impl Context {
             }
             Err(e) => {
                 error!("Failed to capture screen: {}", e);
-                let _ = self.tx.send(Message::ScreenshotCaptured(
-                    Err(format!("Failed to capture screen: {}", e))
-                ));
+                let _ = self.tx.send(Message::ScreenshotCaptured(Err(format!(
+                    "Failed to capture screen: {}",
+                    e
+                ))));
             }
         }
     }
@@ -88,9 +95,10 @@ impl Context {
             }
             Err(e) => {
                 error!("Failed to capture clipboard: {}", e);
-                let _ = self.tx.send(Message::ClipboardCaptured(
-                    Err(format!("Failed to capture clipboard: {}", e))
-                ));
+                let _ = self.tx.send(Message::ClipboardCaptured(Err(format!(
+                    "Failed to capture clipboard: {}",
+                    e
+                ))));
             }
         }
     }
@@ -108,14 +116,13 @@ impl Actor for Context {
 
     async fn handle_message(&mut self, message: Message) {
         match message {
-            Message::UserAction(UserAction::CaptureWindow) => {
+            Message::Action(Action::CaptureWindow) => {
                 self.handle_capture_window().await;
             }
-            Message::UserAction(UserAction::CaptureClipboard) => {
+            Message::Action(Action::CaptureClipboard) => {
                 self.handle_capture_clipboard().await;
             }
             _ => {}
         }
     }
 }
-

@@ -2,8 +2,7 @@ use std::io::Cursor;
 use std::{
     io::BufWriter,
     sync::{
-        Arc,
-        LazyLock,
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
     thread,
@@ -21,7 +20,7 @@ use whisper_rs::{
     FullParams, GGMLLogLevel, SamplingStrategy, WhisperContext, WhisperContextParameters,
 };
 
-use crate::actors::{Actor, Message, UserAction};
+use crate::actors::{Action, Actor, Message};
 use crate::config::ParsedConfig;
 
 #[derive(Debug, Snafu)]
@@ -110,7 +109,7 @@ impl Actor for Microphone {
     async fn handle_message(&mut self, message: Message) {
         match message {
             Message::MicrophoneToggle => self.handle_toggle_record().await,
-            Message::UserAction(UserAction::ToggleRecordMicrophone) => self.handle_toggle_record().await,
+            Message::Action(Action::ToggleRecordMicrophone) => self.handle_toggle_record().await,
             _ => (),
         }
     }
@@ -317,3 +316,4 @@ fn record_audio(recording: Arc<AtomicBool>, tx: broadcast::Sender<Message>) -> M
 
     Ok(())
 }
+
