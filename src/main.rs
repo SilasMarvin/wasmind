@@ -9,6 +9,8 @@ use tokio::runtime;
 use tracing::error;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
+pub mod actors;
+
 mod assistant;
 mod cli;
 mod config;
