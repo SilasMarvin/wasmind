@@ -339,20 +339,6 @@ impl Actor for TuiActor {
                 drop(app);
                 self.trigger_redraw(false);
             }
-            Message::AssistantToolCall(tool_call) => {
-                // Tool calls are now tracked via ToolCallUpdate messages
-                // Just mark that we're waiting for a response
-                let mut app = self.app.lock().unwrap();
-                app.waiting_for_response = true;
-
-                // Add a system message showing the tool call
-                app.add_event(TuiEvent::function_call(
-                    tool_call.fn_name.clone(),
-                    Some(tool_call.fn_arguments.to_string()),
-                ));
-                drop(app);
-                self.trigger_redraw(false);
-            }
             Message::ScreenshotCaptured(result) => {
                 let mut app = self.app.lock().unwrap();
                 match result {
