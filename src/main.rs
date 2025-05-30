@@ -106,6 +106,9 @@ fn main() -> SResult<()> {
         cli::Commands::Run => {
             run_main_program()?;
         }
+        cli::Commands::Headless { prompt } => {
+            run_headless_program(prompt)?;
+        }
         cli::Commands::PromptPreview {
             all,
             empty,
@@ -171,6 +174,26 @@ fn run_main_program() -> SResult<()> {
     if let Err(error) = listen(callback) {
         error!("Error listening for global key events: {:?}", error)
     }
+
+    Ok(())
+}
+
+fn run_headless_program(prompt: String) -> SResult<()> {
+    let config = Config::new().context(ConfigSnafu)?;
+    let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
+
+    // Create the tokio runtime in main thread
+    let runtime = runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime");
+
+    // Start the actor system without TUI
+    let worker_handle = worker::start_headless_actors(&runtime, parsed_config, prompt);
+
+    // Wait for exit signal from actors
+    let _ = worker_handle.exit_rx.recv();
+    info!("Received exit signal from actors, exiting...");
 
     Ok(())
 }

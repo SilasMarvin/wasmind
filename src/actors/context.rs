@@ -106,12 +106,18 @@ impl Context {
 
 #[async_trait::async_trait]
 impl Actor for Context {
+    const ACTOR_ID: &'static str = "context";
+
     fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
         Self { tx, config }
     }
 
     fn get_rx(&self) -> broadcast::Receiver<Message> {
         self.tx.subscribe()
+    }
+
+    fn get_tx(&self) -> broadcast::Sender<Message> {
+        self.tx.clone()
     }
 
     async fn handle_message(&mut self, message: Message) {

@@ -292,6 +292,8 @@ impl MCP {
 
 #[async_trait::async_trait]
 impl Actor for MCP {
+    const ACTOR_ID: &'static str = "mcp";
+
     fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
         Self {
             config,
@@ -304,6 +306,10 @@ impl Actor for MCP {
 
     fn get_rx(&self) -> broadcast::Receiver<Message> {
         self.tx.subscribe()
+    }
+
+    fn get_tx(&self) -> broadcast::Sender<Message> {
+        self.tx.clone()
     }
 
     async fn on_start(&mut self) {

@@ -230,6 +230,8 @@ async fn do_assist(
 
 #[async_trait::async_trait]
 impl Actor for Assistant {
+    const ACTOR_ID: &'static str = "assistant";
+
     fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
         let client = Client::builder()
             .with_service_target_resolver(config.model.service_target_resolver.clone())
@@ -251,9 +253,11 @@ impl Actor for Assistant {
         self.tx.subscribe()
     }
 
-    async fn handle_message(&mut self, message: Message) {
-        info!("RECIVE IN ASSISTANT: {:?}", message);
+    fn get_tx(&self) -> broadcast::Sender<Message> {
+        self.tx.clone()
+    }
 
+    async fn handle_message(&mut self, message: Message) {
         match message {
             Message::ToolsAvailable(tools) => self.handle_tools_available(tools).await,
             Message::ToolCallUpdate(update) => self.handle_tool_call_update(update).await,

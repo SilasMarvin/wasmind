@@ -12,6 +12,11 @@ pub struct Cli {
 pub enum Commands {
     /// Run the main copilot assistant (default behavior)
     Run,
+    /// Run in headless mode with an initial prompt
+    Headless {
+        /// The initial prompt to send to the LLM
+        prompt: String,
+    },
     /// Preview how system prompts are rendered with different states
     PromptPreview {
         /// Show all preview scenarios

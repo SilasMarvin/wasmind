@@ -97,11 +97,17 @@ pub enum Message {
     FileRead { path: PathBuf, content: String, last_modified: std::time::SystemTime },
     FileEdited { path: PathBuf, content: String, last_modified: std::time::SystemTime },
     PlanUpdated(crate::actors::tools::planner::TaskPlan),
+
+    // Actor lifecycle messages
+    ActorReady { actor_id: &'static str },
 }
 
 /// Base trait for all actors in the system
 #[async_trait::async_trait]
 pub trait Actor: Send + Sized + 'static {
+    /// Unique identifier for this actor type
+    const ACTOR_ID: &'static str;
+
     /// new
     fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self;
 
@@ -110,8 +116,12 @@ pub trait Actor: Send + Sized + 'static {
 
     /// run
     fn run(mut self) {
+        let tx = self.get_tx();
         tokio::spawn(async move {
             self.on_start().await;
+
+            // Signal that this actor is ready
+            let _ = tx.send(Message::ActorReady { actor_id: Self::ACTOR_ID });
 
             let mut rx = self.get_rx();
             loop {
@@ -130,6 +140,9 @@ pub trait Actor: Send + Sized + 'static {
             self.on_stop().await;
         });
     }
+
+    /// Gets the message sender
+    fn get_tx(&self) -> broadcast::Sender<Message>;
 
     /// Called when a message is broadcasted
     async fn handle_message(&mut self, message: Message);

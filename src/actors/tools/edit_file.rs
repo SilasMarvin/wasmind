@@ -439,6 +439,8 @@ impl EditFile {
 
 #[async_trait::async_trait]
 impl Actor for EditFile {
+    const ACTOR_ID: &'static str = "edit_file";
+
     fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
         Self {
             config,
@@ -450,6 +452,10 @@ impl Actor for EditFile {
 
     fn get_rx(&self) -> broadcast::Receiver<Message> {
         self.tx.subscribe()
+    }
+
+    fn get_tx(&self) -> broadcast::Sender<Message> {
+        self.tx.clone()
     }
 
     async fn on_start(&mut self) {

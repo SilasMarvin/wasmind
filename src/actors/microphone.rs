@@ -94,6 +94,8 @@ impl Microphone {
 
 #[async_trait::async_trait]
 impl Actor for Microphone {
+    const ACTOR_ID: &'static str = "microphone";
+
     fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
         Self {
             config,
@@ -104,6 +106,10 @@ impl Actor for Microphone {
 
     fn get_rx(&self) -> broadcast::Receiver<Message> {
         self.tx.subscribe()
+    }
+
+    fn get_tx(&self) -> broadcast::Sender<Message> {
+        self.tx.clone()
     }
 
     async fn handle_message(&mut self, message: Message) {

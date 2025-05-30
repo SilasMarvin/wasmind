@@ -232,6 +232,8 @@ fn handle_input(
 
 #[async_trait::async_trait]
 impl Actor for TuiActor {
+    const ACTOR_ID: &'static str = "tui";
+
     fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
         let key_bindings = KeyBindingManager::from(&config.keys);
 
@@ -257,6 +259,10 @@ impl Actor for TuiActor {
 
     fn get_rx(&self) -> broadcast::Receiver<Message> {
         self.tx.subscribe()
+    }
+
+    fn get_tx(&self) -> broadcast::Sender<Message> {
+        self.tx.clone()
     }
 
     async fn handle_message(&mut self, message: Message) {
