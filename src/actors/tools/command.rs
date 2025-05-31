@@ -96,7 +96,13 @@ impl Command {
         if is_whitelisted {
             self.execute_command(&command, &args_array, &tool_call.call_id)
                 .await;
+        } else if self.config.auto_approve_commands {
+            // Auto-approve non-whitelisted commands
+            info!("Auto-approving non-whitelisted command: {}", command);
+            self.execute_command(&command, &args_array, &tool_call.call_id)
+                .await;
         } else {
+            // Await user confirmation (traditional behavior)
             self.pending_command = Some(PendingCommand {
                 command: command.to_string(),
                 args: args_array.clone(),

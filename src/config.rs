@@ -61,6 +61,8 @@ pub struct Config {
     mcp_servers: HashMap<String, McpServerConfig>,
     #[serde(default)]
     whitelisted_commands: Vec<String>,
+    #[serde(default)]
+    auto_approve_commands: bool,
 }
 
 impl Config {
@@ -207,6 +209,7 @@ impl TryFrom<Config> for ParsedConfig {
         let mcp_servers = value.mcp_servers;
 
         let whitelisted_commands = value.whitelisted_commands;
+        let auto_approve_commands = value.auto_approve_commands;
 
         tracing::debug!("Loaded whitelisted commands: {:?}", whitelisted_commands);
 
@@ -215,6 +218,7 @@ impl TryFrom<Config> for ParsedConfig {
             model,
             mcp_servers,
             whitelisted_commands,
+            auto_approve_commands,
         })
     }
 }
@@ -226,6 +230,7 @@ pub struct ParsedConfig {
     pub model: ParsedModelConfig,
     pub mcp_servers: HashMap<String, McpServerConfig>,
     pub whitelisted_commands: Vec<String>,
+    pub auto_approve_commands: bool,
 }
 
 /// The parsed and verified key bindings

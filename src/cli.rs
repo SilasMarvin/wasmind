@@ -16,6 +16,9 @@ pub enum Commands {
     Headless {
         /// The initial prompt to send to the LLM
         prompt: String,
+        /// Auto-approve non-whitelisted commands (overrides config setting)
+        #[arg(long)]
+        auto_approve_commands: bool,
     },
     /// Preview how system prompts are rendered with different states
     PromptPreview {

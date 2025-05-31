@@ -1,11 +1,11 @@
 use crossbeam::channel;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast};
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
     actors::{
-        Action, Actor, Message,
+        Action, Actor, Message, ToolCallStatus,
         assistant::Assistant,
         context::Context,
         microphone::Microphone,
@@ -161,6 +161,14 @@ pub fn start_headless_actors(
                     info!("Received exit signal, shutting down");
                     let _ = exit_tx.send(());
                     break;
+                }
+                Ok(Message::ToolCallUpdate(update)) => {
+                    // In headless mode, if a command needs user confirmation, log error and exit
+                    if let ToolCallStatus::AwaitingUserYNConfirmation = update.status {
+                        error!("Non-whitelisted command attempted in headless mode without auto-approval. Use --auto-approve-commands flag or set auto_approve_commands=true in config to allow this.");
+                        let _ = exit_tx.send(());
+                        break;
+                    }
                 }
                 Ok(Message::AssistantResponse(content)) => {
                     // Check if this is a final response (no tool calls)

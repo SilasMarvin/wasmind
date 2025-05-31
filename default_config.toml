@@ -1,3 +1,8 @@
+# Automatically approve non-whitelisted commands (default: false)
+# When false, non-whitelisted commands require user confirmation
+# When true, all commands are auto-approved (use with caution)
+auto_approve_commands = false
+
 # Commands that can be executed without user confirmation
 # Common safe commands are whitelisted by default
 whitelisted_commands = [
