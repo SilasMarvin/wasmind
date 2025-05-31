@@ -157,6 +157,7 @@ fn handle_input(
                             let input = app.get_input().to_string();
                             if !input.is_empty() {
                                 app.clear_input();
+                                app.waiting_for_response = true;
                                 let _ = tx.send(Message::UserTUIInput(input));
                             }
                         }

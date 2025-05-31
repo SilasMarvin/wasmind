@@ -8,6 +8,8 @@ use tracing::{debug, error, info};
 use crate::actors::{Action, Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
 
+const MAX_COMMAND_OUTPUT_CHARS: usize = 16_384;
+
 pub const TOOL_NAME: &str = "execute_command";
 pub const TOOL_DESCRIPTION: &str =
     "Execute a shell command with specified arguments. E.G. pwd, git, ls, etc...";
@@ -162,7 +164,17 @@ impl Command {
                 } else {
                     format!("STDOUT:\n{}\n\nSTDERR:\n{}", stdout, stderr)
                 };
-                Ok(output_text)
+                if output_text.chars().count() > MAX_COMMAND_OUTPUT_CHARS {
+                    Ok(format!(
+                        "WARNING: OUTPUT WAS TOO LARGE - TRUNCATED\n\n{}",
+                        output_text
+                            .chars()
+                            .take(MAX_COMMAND_OUTPUT_CHARS)
+                            .collect::<String>()
+                    ))
+                } else {
+                    Ok(output_text)
+                }
             } else {
                 // Command failed
                 let error_msg = if let Some(code) = output.status.code() {
@@ -178,7 +190,17 @@ impl Command {
                         format!("Command terminated by signal:\n{}", stderr)
                     }
                 };
-                Err(error_msg)
+                if error_msg.chars().count() > MAX_COMMAND_OUTPUT_CHARS {
+                    Err(format!(
+                        "WARNING: OUTPUT WAS TOO LARGE - TRUNCATED\n\n{}",
+                        error_msg
+                            .chars()
+                            .take(MAX_COMMAND_OUTPUT_CHARS)
+                            .collect::<String>()
+                    ))
+                } else {
+                    Err(error_msg)
+                }
             };
 
             let _ = tx.send(Message::ToolCallUpdate(ToolCallUpdate {

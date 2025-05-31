@@ -106,7 +106,10 @@ fn main() -> SResult<()> {
         cli::Commands::Run => {
             run_main_program()?;
         }
-        cli::Commands::Headless { prompt, auto_approve_commands } => {
+        cli::Commands::Headless {
+            prompt,
+            auto_approve_commands,
+        } => {
             run_headless_program(prompt, auto_approve_commands)?;
         }
         cli::Commands::PromptPreview {
@@ -181,7 +184,7 @@ fn run_main_program() -> SResult<()> {
 fn run_headless_program(prompt: String, auto_approve_commands_override: bool) -> SResult<()> {
     let config = Config::new().context(ConfigSnafu)?;
     let mut parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
-    
+
     // Override config setting if CLI flag is provided
     if auto_approve_commands_override {
         parsed_config.auto_approve_commands = true;

@@ -1,5 +1,5 @@
 use crossbeam::channel;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{Mutex, broadcast};
 use tracing::{error, info};
 
@@ -71,6 +71,8 @@ pub fn start_actors(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> 
         loop {
             if let Ok(Message::Action(Action::Exit)) = rx.recv().await {
                 info!("Received exit signal, shutting down");
+                // This is a horrible hack to let the tui restore the terminal first
+                tokio::time::sleep(Duration::from_millis(10)).await;
                 // Notify main thread that we're exiting
                 let _ = exit_tx.send(());
                 break;

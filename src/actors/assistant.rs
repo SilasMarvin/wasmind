@@ -36,18 +36,19 @@ impl Assistant {
             handle.abort();
         }
 
-        // Update the chat request
-        self.chat_request = request.clone();
-
         // Spawn the assist task
         let tx = self.tx.clone();
         let client = self.client.clone();
         let config = self.config.clone();
-        let chat_request = request;
+
+        error!(
+            "DOING CHAT REQUEST WITH:\n{:?}",
+            serde_json::to_string_pretty(&request).unwrap()
+        );
 
         let handle = tokio::spawn(async move {
-            if let Err(e) = do_assist(tx, client, chat_request, config).await {
-                error!("Error in assist task: {}", e);
+            if let Err(e) = do_assist(tx, client, request, config).await {
+                error!("Error in assist task: {:?}", e);
             }
         });
 
@@ -327,6 +328,14 @@ impl Actor for Assistant {
                 info!("Updating system state with new plan: {}", plan.title);
                 self.system_state.update_plan(plan);
                 self.maybe_rerender_system_prompt().await;
+            }
+            Message::AssistantResponse(content) => {
+                info!("Assistant received response message, adding to chat history");
+                self.chat_request = self.chat_request.clone().append_message(ChatMessage {
+                    role: ChatRole::Assistant,
+                    content,
+                    options: None,
+                });
             }
             _ => {}
         }

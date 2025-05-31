@@ -13,7 +13,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
-use snafu::{Location, ResultExt, Snafu};
+use snafu::{Backtrace, ErrorCompat, Location, ResultExt, Snafu};
 use tokio::sync::broadcast;
 use tracing::error;
 use whisper_rs::{
