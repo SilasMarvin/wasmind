@@ -44,11 +44,9 @@ name = "deepseek-chat"
 # - whitelisted_commands: list of commands that can be executed without confirmation
 # - files: object with count and section containing all currently loaded files
 # - plan: object with exists flag and section containing current task plan
-system_prompt = """You are a helpful assistant with access to {{ tools|length }} tools. 
+system_prompt = """You are integrated terminal assistant with access to {{ tools|length }} tools. 
 
 Use the tools to answer the user's requests. Do not ask to execute tools simply do what is required to answer the request. Use your best judgement on what tool to use. 
-
-The user will probably not tell you exactly which one to use. When given a complex task that requires multiple steps, use the planner tool to break it down into numbered tasks and track your progress as you complete each step.
 
 <available_tools>
 {% for tool in tools -%}
@@ -63,7 +61,7 @@ Working directory: {{ cwd }}
 </system_info>
 
 {% if files.count > 0 -%}
-<read_and_editd_files>
+<read_and_edited_files>
 {{ files.section }}
 </read_and_edited_files>
 {% endif %}

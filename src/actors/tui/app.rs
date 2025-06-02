@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 const SPLASH: &str = r#"|WELCOME USER| 
 
-"TODO"
+HELPER
 
 human x ai <3
 "#;
