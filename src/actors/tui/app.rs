@@ -3,14 +3,9 @@ use super::widgets::EventWidget;
 use crate::actors::{ToolCallStatus, ToolCallType, ToolCallUpdate};
 use std::collections::HashMap;
 
-const SPLASH: &str = r#"|WELCOME USER|                                                                           
+const SPLASH: &str = r#"|WELCOME USER| 
 
-     ██╗ █████╗ ███╗   ██╗███████╗██╗   ██╗
-     ██║██╔══██╗████╗  ██║██╔════╝╚██╗ ██╔╝
-     ██║███████║██╔██╗ ██║█████╗   ╚████╔╝ 
-██   ██║██╔══██║██║╚██╗██║██╔══╝    ╚██╔╝  
-╚█████╔╝██║  ██║██║ ╚████║███████╗   ██║   
- ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝
+"TODO"
 
 human x ai <3
 "#;
