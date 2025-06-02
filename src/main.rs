@@ -1,25 +1,21 @@
 use std::sync::LazyLock;
 
 use config::{Config, ConfigError, ParsedConfig};
-use crossbeam::channel::unbounded;
 use key_bindings::KeyBindingManager;
 use rdev::{Event, EventType, listen};
 use snafu::{Location, ResultExt, Snafu};
 use tokio::runtime;
-use tracing::error;
+use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
-mod assistant;
+pub mod actors;
+
 mod cli;
 mod config;
-mod context;
 mod key_bindings;
-mod mcp;
 mod prompt_preview;
 pub mod system_state;
 pub mod template;
-pub mod tools;
-mod tui;
 mod worker;
 
 pub static TOKIO_RUNTIME: LazyLock<runtime::Runtime> = LazyLock::new(|| {
@@ -69,30 +65,6 @@ pub enum Error {
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 
-    #[snafu(display("Error sending MCP task"))]
-    MCPTaskSend {
-        #[snafu(implicit)]
-        location: Location,
-        #[snafu(source)]
-        source: crossbeam::channel::SendError<mcp::Task>,
-    },
-
-    #[snafu(display("Error sending microphone task"))]
-    MicrophoneTaskSend {
-        #[snafu(implicit)]
-        location: Location,
-        #[snafu(source)]
-        source: crossbeam::channel::SendError<context::microphone::Task>,
-    },
-
-    #[snafu(display("Error sending assistant task"))]
-    AssistantTaskSend {
-        #[snafu(implicit)]
-        location: Location,
-        #[snafu(source)]
-        source: crossbeam::channel::SendError<assistant::Task>,
-    },
-
     #[snafu(display("Tool execution not found for call_id: {call_id}"))]
     ToolExecutionNotFound {
         #[snafu(implicit)]
@@ -134,6 +106,12 @@ fn main() -> SResult<()> {
         cli::Commands::Run => {
             run_main_program()?;
         }
+        cli::Commands::Headless {
+            prompt,
+            auto_approve_commands,
+        } => {
+            run_headless_program(prompt, auto_approve_commands)?;
+        }
         cli::Commands::PromptPreview {
             all,
             empty,
@@ -158,18 +136,32 @@ fn run_main_program() -> SResult<()> {
     let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
     let mut key_binding_manager = KeyBindingManager::from(&parsed_config.keys);
 
-    let (tx, rx) = unbounded();
-    let local_tx = tx.clone();
-    let _worker_handle = std::thread::spawn(move || {
-        worker::execute_worker(local_tx, rx, parsed_config);
+    // Create the tokio runtime in main thread
+    let runtime = runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime");
+
+    // Start the actor system
+    let worker_handle = worker::start_actors(&runtime, parsed_config);
+
+    // Clone the message sender for the callback
+    let message_tx = worker_handle.message_tx.clone();
+
+    // Spawn a thread to monitor for exit
+    std::thread::spawn(move || {
+        // Wait for exit signal from actors
+        let _ = worker_handle.exit_rx.recv();
+        info!("Received exit signal from actors, exiting...");
+        std::process::exit(0);
     });
 
     let callback = move |event: Event| match event.event_type {
         EventType::KeyPress(key) => {
             let actions = key_binding_manager.handle_event(key);
             for action in actions {
-                if let Err(e) = tx.send(worker::Event::Action(action)) {
-                    error!("Error sending action to worker: {e:?}");
+                if let Err(e) = message_tx.send(actors::Message::Action(action)) {
+                    error!("Error sending action to actors: {:?}", e);
                 }
             }
         }
@@ -179,10 +171,37 @@ fn run_main_program() -> SResult<()> {
         _ => (),
     };
 
+    info!("Starting global key listener");
+
     // This will block and has to be in the main thread
     if let Err(error) = listen(callback) {
         error!("Error listening for global key events: {:?}", error)
     }
+
+    Ok(())
+}
+
+fn run_headless_program(prompt: String, auto_approve_commands_override: bool) -> SResult<()> {
+    let config = Config::new().context(ConfigSnafu)?;
+    let mut parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
+
+    // Override config setting if CLI flag is provided
+    if auto_approve_commands_override {
+        parsed_config.auto_approve_commands = true;
+    }
+
+    // Create the tokio runtime in main thread
+    let runtime = runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create tokio runtime");
+
+    // Start the actor system without TUI
+    let worker_handle = worker::start_headless_actors(&runtime, parsed_config, prompt);
+
+    // Wait for exit signal from actors
+    let _ = worker_handle.exit_rx.recv();
+    info!("Received exit signal from actors, exiting...");
 
     Ok(())
 }

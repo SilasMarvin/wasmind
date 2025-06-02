@@ -8,7 +8,7 @@ use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
 use std::{collections::HashMap, fs, io, path::PathBuf};
 
-use crate::worker::Action;
+use crate::actors::Action;
 
 const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant.";
 
@@ -61,6 +61,8 @@ pub struct Config {
     mcp_servers: HashMap<String, McpServerConfig>,
     #[serde(default)]
     whitelisted_commands: Vec<String>,
+    #[serde(default)]
+    auto_approve_commands: bool,
 }
 
 impl Config {
@@ -129,13 +131,13 @@ impl Config {
     pub fn from_file(path: &str) -> Result<Self, ConfigError> {
         let contents = fs::read_to_string(path)?;
         let mut config: Config = toml::from_str(&contents).context(TomlDeserializeSnafu)?;
-        
+
         // Merge with default whitelisted commands if none specified
         if config.whitelisted_commands.is_empty() {
             let default = Config::default()?;
             config.whitelisted_commands = default.whitelisted_commands;
         }
-        
+
         Ok(config)
     }
 
@@ -207,6 +209,7 @@ impl TryFrom<Config> for ParsedConfig {
         let mcp_servers = value.mcp_servers;
 
         let whitelisted_commands = value.whitelisted_commands;
+        let auto_approve_commands = value.auto_approve_commands;
 
         tracing::debug!("Loaded whitelisted commands: {:?}", whitelisted_commands);
 
@@ -215,6 +218,7 @@ impl TryFrom<Config> for ParsedConfig {
             model,
             mcp_servers,
             whitelisted_commands,
+            auto_approve_commands,
         })
     }
 }
@@ -226,6 +230,7 @@ pub struct ParsedConfig {
     pub model: ParsedModelConfig,
     pub mcp_servers: HashMap<String, McpServerConfig>,
     pub whitelisted_commands: Vec<String>,
+    pub auto_approve_commands: bool,
 }
 
 /// The parsed and verified key bindings
@@ -273,11 +278,13 @@ fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
                     Ok(value) => {
                         tracing::debug!("Successfully loaded auth from environment variable");
                         AuthData::Key(value)
-                    },
+                    }
                     Err(_) => {
-                        tracing::debug!("Environment variable not found, using FromEnv auth method");
+                        tracing::debug!(
+                            "Environment variable not found, using FromEnv auth method"
+                        );
                         AuthData::FromEnv(s)
-                    },
+                    }
                 },
             };
             Ok(ServiceTarget {

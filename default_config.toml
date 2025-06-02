@@ -1,3 +1,8 @@
+# Automatically approve non-whitelisted commands (default: false)
+# When false, non-whitelisted commands require user confirmation
+# When true, all commands are auto-approved (use with caution)
+auto_approve_commands = false
+
 # Commands that can be executed without user confirmation
 # Common safe commands are whitelisted by default
 whitelisted_commands = [
@@ -28,8 +33,7 @@ whitelisted_commands = [
 ]
 
 [model]
-name = "accounts/fireworks/models/qwen3-235b-a22b"
-endpoint = "https://api.fireworks.ai/inference/v1/"
+name = "deepseek-chat"
 # System prompt can be a plain string or a Jinja template
 # Available template variables:
 # - tools: list of available tools with name and description
@@ -40,36 +44,33 @@ endpoint = "https://api.fireworks.ai/inference/v1/"
 # - whitelisted_commands: list of commands that can be executed without confirmation
 # - files: object with count and section containing all currently loaded files
 # - plan: object with exists flag and section containing current task plan
-system_prompt = """You are a helpful assistant with access to {{ tools|length }} tools. Use the tools to answer the user's requests. Do not ask to execute tools simply do what is required to answer the request. Use your best judgement on what tool to use. The user will probably not tell you exactly which one to use. When given a complex task that requires multiple steps, use the planner tool to break it down into numbered tasks and track your progress as you complete each step.
+system_prompt = """You are integrated terminal assistant with access to {{ tools|length }} tools. 
 
-Available tools:
+Use the tools to answer the user's requests. Do not ask to execute tools simply do what is required to answer the request. Use your best judgement on what tool to use. 
+
+<available_tools>
 {% for tool in tools -%}
 - {{ tool.name }}: {{ tool.description }}
 {% endfor %}
+</available_tools>
 
+<system_info>
 Current date and time: {{ current_datetime }}
 System: {{ os }} ({{ arch }})
 Working directory: {{ cwd }}
+</system_info>
 
 {% if files.count > 0 -%}
+<read_and_edited_files>
 {{ files.section }}
+</read_and_edited_files>
 {% endif %}
 
 {% if plan.exists -%}
+<plan>
 {{ plan.section }}
-{% endif %}
-
-IMPORTANT: /no_think"""
-adapter = "OpenAI"
-auth = "FIREWORKS_API_KEY"
-
-[mcp_servers.github]
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-github"]
-
-[mcp_servers.playwright]
-command = "npx"
-args = ["@playwright/mcp@latest", "--browser", "brave"]
+</plan>
+{% endif %}"""
 
 [key_bindings]
 clear_defaults = false

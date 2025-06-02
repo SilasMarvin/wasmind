@@ -7,9 +7,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget, Wrap},
 };
 
-use crate::tools::{ToolType, MCPExecutionStage, CommandExecutionStage, GeneralToolExecutionStage};
+use crate::actors::ToolCallStatus;
 
-use super::events::{FunctionExecution, TuiEvent};
+use super::events::{ToolExecution, TuiEvent};
 
 // Helper function to skip lines from text and render with appropriate borders
 fn render_text_with_skip(
@@ -187,9 +187,6 @@ impl EventWidget for TuiEvent {
             TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => {
                 // These are state changes, not rendered
             }
-            TuiEvent::FunctionExecutionUpdate { execution } => {
-                FunctionExecutionWidget { execution }.render_with_skip(area, buf, skip_lines);
-            }
         }
     }
 
@@ -303,39 +300,6 @@ impl EventWidget for TuiEvent {
             }
             TuiEvent::SetWaitingForResponse { .. } | TuiEvent::SetWaitingForConfirmation { .. } => {
                 0
-            }
-            TuiEvent::FunctionExecutionUpdate { execution } => {
-                // Calculate height based on stages in the tool type
-                let mut lines = 2; // Name line + separator
-
-                match &execution.tool_type {
-                    ToolType::MCP(stages) => {
-                        lines += stages.len(); // Each stage takes one line
-                    }
-                    ToolType::Command(stages) => {
-                        for stage in stages {
-                            match stage {
-                                CommandExecutionStage::Result { stdout, stderr, .. } => {
-                                    lines += 1; // Base line for command result
-                                    if !stdout.is_empty() {
-                                        lines += 1;
-                                    }
-                                    if !stderr.is_empty() {
-                                        lines += 1;
-                                    }
-                                }
-                                _ => {
-                                    lines += 1; // All other stages take one line
-                                }
-                            }
-                        }
-                    }
-                    ToolType::FileReader(stages) | ToolType::FileEditor(stages) | ToolType::Planner(stages) => {
-                        lines += stages.len(); // Each stage takes one line
-                    }
-                }
-                
-                lines as u16 + 2 // +2 for borders
             }
             _ => 3, // Default height for simple widgets
         }
@@ -773,7 +737,7 @@ impl<'a> Widget for SystemWidget<'a> {
 }
 
 struct TaskPlanWidget<'a> {
-    plan: &'a crate::tools::planner::TaskPlan,
+    plan: &'a crate::actors::tools::planner::TaskPlan,
     timestamp: &'a chrono::DateTime<chrono::Utc>,
 }
 
@@ -796,7 +760,12 @@ impl<'a> TaskPlanWidget<'a> {
             .plan
             .tasks
             .iter()
-            .filter(|t| matches!(t.status, crate::tools::planner::TaskStatus::Completed))
+            .filter(|t| {
+                matches!(
+                    t.status,
+                    crate::actors::tools::planner::TaskStatus::Completed
+                )
+            })
             .count();
         let total = self.plan.tasks.len();
         lines.push(String::new()); // Empty line before progress
@@ -879,12 +848,13 @@ impl<'a> Widget for MicrophoneStoppedWidget<'a> {
     }
 }
 
-struct FunctionExecutionWidget<'a> {
-    execution: &'a FunctionExecution,
+// Widget for ToolExecution
+pub struct ToolExecutionWidget<'a> {
+    pub execution: &'a ToolExecution,
 }
 
-impl<'a> FunctionExecutionWidget<'a> {
-    fn render_with_skip(&self, area: Rect, buf: &mut Buffer, skip_lines: usize) {
+impl<'a> ToolExecutionWidget<'a> {
+    pub fn render_with_skip(&self, area: Rect, buf: &mut Buffer, skip_lines: usize) {
         // Build the content lines
         let mut lines = vec![];
 
@@ -892,100 +862,76 @@ impl<'a> FunctionExecutionWidget<'a> {
         lines.push(format!(
             "[>] {} [{}]",
             self.execution.name,
-            &self.execution.call_id[..8]
+            &self.execution.call_id[..8.min(self.execution.call_id.len())]
         ));
         lines.push("─".repeat(area.width.saturating_sub(2) as usize));
 
-        // Render stages based on tool type
-        match &self.execution.tool_type {
-            ToolType::MCP(stages) => {
-                for stage in stages {
-                    match stage {
-                        MCPExecutionStage::Called { args } => {
-                            if let Some(args) = args {
-                                lines.push(format!("  --> Called with args: {}", args));
-                            } else {
-                                lines.push("  --> Called".to_string());
-                            }
-                        }
-                        MCPExecutionStage::Completed { result } => {
-                            lines.push(format!(
-                                "  [v] Completed: {}",
-                                result.lines().next().unwrap_or(result)
-                            ));
-                        }
-                        MCPExecutionStage::Failed { error } => {
-                            lines.push(format!("  [X] Failed: {}", error));
-                        }
+        // Render status updates
+        for (_timestamp, status) in &self.execution.updates {
+            match status {
+                ToolCallStatus::Received {
+                    r#type: _,
+                    friendly_command_display,
+                } => {
+                    lines.push(format!("  --> {}", friendly_command_display));
+                }
+                ToolCallStatus::AwaitingUserYNConfirmation => {
+                    lines.push("  [?] Awaiting confirmation (y/n)".to_string());
+                }
+                ToolCallStatus::ReceivedUserYNConfirmation(confirmed) => {
+                    if *confirmed {
+                        lines.push("  [✓] User confirmed".to_string());
+                    } else {
+                        lines.push("  [✗] User declined".to_string());
                     }
                 }
-            }
-            ToolType::Command(stages) => {
-                for stage in stages {
-                    match stage {
-                        CommandExecutionStage::Called { args } => {
-                            if let Some(args) = args {
-                                lines.push(format!("  --> Called with args: {}", args));
+                ToolCallStatus::Finished(result) => {
+                    match result {
+                        Ok(output) => {
+                            // Show detailed output only for Command tool (shell commands)
+                            // For other tools, just show "Success"
+                            if matches!(
+                                self.execution.tool_type,
+                                crate::actors::ToolCallType::Command
+                            ) {
+                                lines.push("  [✓] Completed:".to_string());
+
+                                // Format command output with first/last lines
+                                let output_lines: Vec<&str> = output.lines().collect();
+                                let max_lines_to_show = 6; // 3 first + 3 last
+
+                                if output_lines.len() <= max_lines_to_show {
+                                    // Show all lines if output is short
+                                    for line in output_lines {
+                                        lines.push(format!("    {}", line));
+                                    }
+                                } else {
+                                    // Show first 3 lines
+                                    for line in output_lines.iter().take(3) {
+                                        lines.push(format!("    {}", line));
+                                    }
+
+                                    // Add separator
+                                    lines.push("    ...".to_string());
+
+                                    // Show last 3 lines
+                                    for line in output_lines
+                                        .iter()
+                                        .rev()
+                                        .take(3)
+                                        .collect::<Vec<_>>()
+                                        .iter()
+                                        .rev()
+                                    {
+                                        lines.push(format!("    {}", line));
+                                    }
+                                }
                             } else {
-                                lines.push("  --> Called".to_string());
+                                lines.push("  [✓] Success".to_string());
                             }
                         }
-                        CommandExecutionStage::AwaitingApproval { command, args } => {
-                            lines.push(format!(
-                                "  [?] Awaiting approval: {} {}",
-                                command,
-                                args.join(" ")
-                            ));
-                        }
-                        CommandExecutionStage::Executing { command } => {
-                            lines.push(format!("  ... Executing: {}", command));
-                        }
-                        CommandExecutionStage::Result {
-                            stdout,
-                            stderr,
-                            exit_code,
-                        } => {
-                            lines.push(format!(
-                                "  [=] Command completed (exit: {})",
-                                exit_code
-                            ));
-                            if !stdout.is_empty() {
-                                lines.push(format!(
-                                    "      Output: {}",
-                                    stdout.lines().next().unwrap_or("")
-                                ));
-                            }
-                            if !stderr.is_empty() {
-                                lines.push(format!(
-                                    "      Error: {}",
-                                    stderr.lines().next().unwrap_or("")
-                                ));
-                            }
-                        }
-                        CommandExecutionStage::Failed { error } => {
-                            lines.push(format!("  [X] Failed: {}", error));
-                        }
-                    }
-                }
-            }
-            ToolType::FileReader(stages) | ToolType::FileEditor(stages) | ToolType::Planner(stages) => {
-                for stage in stages {
-                    match stage {
-                        GeneralToolExecutionStage::Called { args } => {
-                            if let Some(args) = args {
-                                lines.push(format!("  --> Called with args: {}", args));
-                            } else {
-                                lines.push("  --> Called".to_string());
-                            }
-                        }
-                        GeneralToolExecutionStage::Completed { result } => {
-                            lines.push(format!(
-                                "  [v] Completed: {}",
-                                result.lines().next().unwrap_or(result)
-                            ));
-                        }
-                        GeneralToolExecutionStage::Failed { error } => {
-                            lines.push(format!("  [X] Failed: {}", error));
+                        Err(error) => {
+                            lines.push(format!("  [✗] Failed: {}", error));
                         }
                     }
                 }
@@ -994,8 +940,8 @@ impl<'a> FunctionExecutionWidget<'a> {
 
         let text = lines.join("\n");
 
-        // Determine if this function is complete using the ToolType method
-        let is_complete = self.execution.tool_type.is_complete();
+        // Determine if this function is complete
+        let is_complete = self.execution.is_complete();
 
         let border_color = if is_complete {
             Color::DarkGray
@@ -1009,7 +955,7 @@ impl<'a> FunctionExecutionWidget<'a> {
             &text,
             skip_lines,
             &format!(
-                "Function Execution [{}]",
+                "Tool Execution [{}]",
                 self.execution
                     .start_time
                     .with_timezone(&Local)
@@ -1019,9 +965,63 @@ impl<'a> FunctionExecutionWidget<'a> {
             Style::default(),
         );
     }
+
+    pub fn height(&self, width: u16) -> u16 {
+        // Account for borders and padding
+        let inner_width = width.saturating_sub(2) as usize;
+        if inner_width == 0 {
+            return 3; // Minimum height with borders
+        }
+
+        // Calculate lines: name + separator + updates
+        let mut lines = 2; // Name line + separator
+
+        // Calculate lines for each update
+        for (_timestamp, status) in &self.execution.updates {
+            match status {
+                crate::actors::ToolCallStatus::Received { .. } => {
+                    lines += 1; // One line for the received status
+                }
+                crate::actors::ToolCallStatus::AwaitingUserYNConfirmation => {
+                    lines += 1; // One line for confirmation prompt
+                }
+                crate::actors::ToolCallStatus::ReceivedUserYNConfirmation(_) => {
+                    lines += 1; // One line for confirmation response
+                }
+                crate::actors::ToolCallStatus::Finished(result) => {
+                    match result {
+                        Ok(output) => {
+                            if matches!(
+                                self.execution.tool_type,
+                                crate::actors::ToolCallType::Command
+                            ) {
+                                lines += 1; // "[✓] Completed:" line
+
+                                let output_lines: Vec<&str> = output.lines().collect();
+                                let max_lines_to_show = 6; // 3 first + 3 last
+
+                                if output_lines.len() <= max_lines_to_show {
+                                    lines += output_lines.len(); // All output lines
+                                } else {
+                                    lines += 7; // 3 first + "..." + 3 last
+                                }
+                            } else {
+                                lines += 1; // Just "[✓] Success"
+                            }
+                        }
+                        Err(_) => {
+                            lines += 1; // Error line
+                        }
+                    }
+                }
+            }
+        }
+
+        lines as u16 + 2 // +2 for borders
+    }
 }
 
-impl<'a> Widget for FunctionExecutionWidget<'a> {
+impl<'a> Widget for ToolExecutionWidget<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.render_with_skip(area, buf, 0);
     }

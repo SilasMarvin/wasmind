@@ -1,8 +1,8 @@
 use rdev::Key;
 
 use crate::{
+    actors::Action,
     config::{KeyBinding, ParsedKeyConfig},
-    worker::Action,
 };
 
 #[derive(Debug, Clone)]

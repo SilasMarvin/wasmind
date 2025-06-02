@@ -16,7 +16,7 @@ genai = { path = "/Users/silasmarvin/github/rust-genai" }
 image = "0.25.6"
 rdev = { version = "0.5.3", features = ["unstable_grab"] }
 serde = { version = "1.0.219", features = ["derive"] }
-tokio = { version = "1.45.0", features = ["rt-multi-thread", "time", "process"] }
+tokio = { version = "1.45.0", features = ["rt-multi-thread", "time", "process", "sync"] }
 snafu = "0.8.5"
 toml = "0.8.22"
 tracing = "0.1.41"
@@ -35,6 +35,7 @@ crossterm = "0.28"
 chrono = { version = "0.4", features = ["serde"] }
 minijinja = { version = "2.6", features = ["builtins"] }
 clap = { version = "4.0", features = ["derive"] }
+async-trait = "0.1"
 
 [dev-dependencies]
 tempfile = "3"

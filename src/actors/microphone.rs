@@ -2,8 +2,7 @@ use std::io::Cursor;
 use std::{
     io::BufWriter,
     sync::{
-        Arc,
-        LazyLock, // Changed from once_cell::sync::Lazy
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
     thread,
@@ -11,29 +10,21 @@ use std::{
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use crossbeam::channel::{Receiver, Sender};
-// Removed: use once_cell::sync::Lazy;
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
-use snafu::{Location, ResultExt, Snafu};
+use snafu::{Backtrace, ErrorCompat, Location, ResultExt, Snafu};
+use tokio::sync::broadcast;
 use tracing::error;
 use whisper_rs::{
     FullParams, GGMLLogLevel, SamplingStrategy, WhisperContext, WhisperContextParameters,
 };
 
-use crate::{config::ParsedConfig, worker};
+use crate::actors::{Action, Actor, Message};
+use crate::config::ParsedConfig;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Sending event to worker"))]
-    SendEvent {
-        #[snafu(implicit)]
-        location: Location,
-        #[snafu(source)]
-        source: crossbeam::channel::SendError<worker::Event>,
-    },
-
     #[snafu(whatever, display("{message}"))]
     Whatever {
         message: String,
@@ -43,12 +34,6 @@ pub enum Error {
 }
 
 pub type MResult<T> = Result<T, Error>;
-
-/// Tasks the microphone can receive from the worker
-#[derive(Debug, Clone)]
-pub enum Task {
-    ToggleRecord,
-}
 
 // Define the model path as a constant
 const MODEL_PATH: &str = "/Users/silasmarvin/github/copilot/models/ggml-tiny.bin";
@@ -83,46 +68,60 @@ static WHISPER_CONTEXT: LazyLock<WhisperContext> = LazyLock::new(|| {
         .expect("failed to load model")
 });
 
-pub fn execute_microphone(tx: Sender<worker::Event>, rx: Receiver<Task>, config: ParsedConfig) {
-    if let Err(e) = do_execute_microphone(tx, rx, config) {
-        error!("Error while executing microphone: {e:?}");
+/// Microphone actor
+pub struct Microphone {
+    tx: broadcast::Sender<Message>,
+    config: ParsedConfig,
+    recording: Arc<AtomicBool>,
+}
+
+impl Microphone {
+    async fn handle_toggle_record(&mut self) {
+        if !self.recording.load(Ordering::Relaxed) {
+            let local_recording = self.recording.clone();
+            let local_tx = self.tx.clone();
+            thread::spawn(move || {
+                if let Err(e) = record_audio(local_recording, local_tx) {
+                    error!("Error while recording audio: {e:?}");
+                }
+            });
+            self.recording.store(true, Ordering::Relaxed);
+        } else {
+            self.recording.store(false, Ordering::Relaxed);
+        }
     }
 }
 
-fn do_execute_microphone(
-    tx: Sender<worker::Event>,
-    rx: Receiver<Task>,
-    _config: ParsedConfig,
-) -> MResult<()> {
-    let recording = Arc::new(AtomicBool::new(false));
+#[async_trait::async_trait]
+impl Actor for Microphone {
+    const ACTOR_ID: &'static str = "microphone";
 
-    while let Ok(task) = rx.recv() {
-        match task {
-            Task::ToggleRecord => {
-                if !recording.load(Ordering::Relaxed) {
-                    let local_recording = recording.clone();
-                    let local_tx = tx.clone();
-                    thread::spawn(move || {
-                        if let Err(e) = record_audio(local_recording, local_tx) {
-                            error!("Error while recording audio: {e:?}");
-                        }
-                    });
-                    recording.store(true, Ordering::Relaxed);
-                } else {
-                    recording.store(false, Ordering::Relaxed);
-                }
-            }
+    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
+        Self {
+            config,
+            tx,
+            recording: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    Ok(())
+    fn get_rx(&self) -> broadcast::Receiver<Message> {
+        self.tx.subscribe()
+    }
+
+    fn get_tx(&self) -> broadcast::Sender<Message> {
+        self.tx.clone()
+    }
+
+    async fn handle_message(&mut self, message: Message) {
+        match message {
+            Message::MicrophoneToggle => self.handle_toggle_record().await,
+            Message::Action(Action::ToggleRecordMicrophone) => self.handle_toggle_record().await,
+            _ => (),
+        }
+    }
 }
 
-// TODO: There is a bunch todo here.
-// We should not assume the default config is f32, we should iterate over configs and see if they
-// support it. We should also have support for converting the int audio to f32. Really, this
-// section just needs a whole review
-fn record_audio(recording: Arc<AtomicBool>, tx: Sender<worker::Event>) -> MResult<()> {
+fn record_audio(recording: Arc<AtomicBool>, tx: broadcast::Sender<Message>) -> MResult<()> {
     let host = cpal::default_host();
     let device = host.default_input_device().unwrap();
     let config = device.default_input_config().unwrap();
@@ -318,8 +317,7 @@ fn record_audio(recording: Arc<AtomicBool>, tx: Sender<worker::Event>) -> MResul
     }
 
     if !full_text.is_empty() {
-        tx.send(worker::Event::MicrophoneResponse(full_text))
-            .context(SendEventSnafu)?;
+        let _ = tx.send(Message::MicrophoneTranscription(full_text));
     }
 
     Ok(())
