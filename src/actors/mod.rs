@@ -2,6 +2,7 @@ pub mod agent;
 pub mod assistant;
 pub mod context;
 pub mod microphone;
+pub mod state_system;
 pub mod tools;
 pub mod tui;
 
