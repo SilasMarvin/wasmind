@@ -1,8 +1,7 @@
 use genai::chat::{Tool, ToolCall};
-use serde_json::Value;
 use std::fmt;
 use tokio::sync::broadcast;
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;

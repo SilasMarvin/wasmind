@@ -12,11 +12,11 @@ pub mod actors;
 
 mod cli;
 mod config;
+mod hive;
 mod key_bindings;
 mod prompt_preview;
 pub mod system_state;
 pub mod template;
-mod worker;
 
 pub static TOKIO_RUNTIME: LazyLock<runtime::Runtime> = LazyLock::new(|| {
     runtime::Builder::new_multi_thread()
@@ -142,17 +142,17 @@ fn run_main_program() -> SResult<()> {
         .build()
         .expect("Failed to create tokio runtime");
 
-    // Start the actor system
-    let worker_handle = worker::start_actors(&runtime, parsed_config);
+    // Start the HIVE multi-agent system
+    let hive_handle = hive::start_hive(&runtime, parsed_config);
 
     // Clone the message sender for the callback
-    let message_tx = worker_handle.message_tx.clone();
+    let message_tx = hive_handle.message_tx.clone();
 
     // Spawn a thread to monitor for exit
     std::thread::spawn(move || {
-        // Wait for exit signal from actors
-        let _ = worker_handle.exit_rx.recv();
-        info!("Received exit signal from actors, exiting...");
+        // Wait for exit signal from HIVE system
+        let _ = hive_handle.exit_rx.recv();
+        info!("Received exit signal from HIVE system, exiting...");
         std::process::exit(0);
     });
 
@@ -196,12 +196,12 @@ fn run_headless_program(prompt: String, auto_approve_commands_override: bool) ->
         .build()
         .expect("Failed to create tokio runtime");
 
-    // Start the actor system without TUI
-    let worker_handle = worker::start_headless_actors(&runtime, parsed_config, prompt);
+    // Start the HIVE system without TUI
+    let hive_handle = hive::start_headless_hive(&runtime, parsed_config, prompt);
 
-    // Wait for exit signal from actors
-    let _ = worker_handle.exit_rx.recv();
-    info!("Received exit signal from actors, exiting...");
+    // Wait for exit signal from HIVE system
+    let _ = hive_handle.exit_rx.recv();
+    info!("Received exit signal from HIVE system, exiting...");
 
     Ok(())
 }

@@ -63,6 +63,8 @@ pub struct Config {
     whitelisted_commands: Vec<String>,
     #[serde(default)]
     auto_approve_commands: bool,
+    #[serde(default)]
+    hive: HiveConfig,
 }
 
 impl Config {
@@ -163,13 +165,27 @@ struct KeyConfig {
 }
 
 /// The model configuration we deserialize directly from toml
-#[derive(Deserialize, Default, Debug)]
+#[derive(Deserialize, Default, Debug, Clone)]
 struct ModelConfig {
     name: String,
     system_prompt: Option<String>,
     endpoint: Option<String>,
     auth: Option<String>,
     adapter: Option<String>,
+}
+
+/// HIVE multi-agent configuration
+#[derive(Deserialize, Default, Debug, Clone)]
+pub struct HiveConfig {
+    /// Model configuration for the main manager agent
+    #[serde(default)]
+    pub main_manager_model: Option<ModelConfig>,
+    /// Model configuration for sub-manager agents
+    #[serde(default)]
+    pub sub_manager_model: Option<ModelConfig>,
+    /// Model configuration for worker agents
+    #[serde(default)]
+    pub worker_model: Option<ModelConfig>,
 }
 
 /// An MCP Config
@@ -211,6 +227,12 @@ impl TryFrom<Config> for ParsedConfig {
         let whitelisted_commands = value.whitelisted_commands;
         let auto_approve_commands = value.auto_approve_commands;
 
+        let hive = ParsedHiveConfig {
+            main_manager_model: value.hive.main_manager_model.map(parse_model_config),
+            sub_manager_model: value.hive.sub_manager_model.map(parse_model_config),
+            worker_model: value.hive.worker_model.map(parse_model_config),
+        };
+
         tracing::debug!("Loaded whitelisted commands: {:?}", whitelisted_commands);
 
         Ok(Self {
@@ -219,6 +241,7 @@ impl TryFrom<Config> for ParsedConfig {
             mcp_servers,
             whitelisted_commands,
             auto_approve_commands,
+            hive,
         })
     }
 }
@@ -231,6 +254,7 @@ pub struct ParsedConfig {
     pub mcp_servers: HashMap<String, McpServerConfig>,
     pub whitelisted_commands: Vec<String>,
     pub auto_approve_commands: bool,
+    pub hive: ParsedHiveConfig,
 }
 
 /// The parsed and verified key bindings
@@ -247,6 +271,14 @@ pub struct ParsedModelConfig {
     pub name: String,
     pub system_prompt: String,
     pub service_target_resolver: ServiceTargetResolver,
+}
+
+/// The parsed and verified HIVE config
+#[derive(Debug, Clone)]
+pub struct ParsedHiveConfig {
+    pub main_manager_model: Option<ParsedModelConfig>,
+    pub sub_manager_model: Option<ParsedModelConfig>,
+    pub worker_model: Option<ParsedModelConfig>,
 }
 
 fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {

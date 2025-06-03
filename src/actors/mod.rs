@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod assistant;
 pub mod context;
 pub mod microphone;
