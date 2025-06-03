@@ -166,7 +166,7 @@ struct KeyConfig {
 
 /// The model configuration we deserialize directly from toml
 #[derive(Deserialize, Default, Debug, Clone)]
-struct ModelConfig {
+pub struct ModelConfig {
     name: String,
     system_prompt: Option<String>,
     endpoint: Option<String>,

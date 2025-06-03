@@ -13,7 +13,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
-use snafu::{Backtrace, ErrorCompat, Location, ResultExt, Snafu};
+use snafu::Snafu;
 use tokio::sync::broadcast;
 use tracing::error;
 use whisper_rs::{
@@ -71,6 +71,7 @@ static WHISPER_CONTEXT: LazyLock<WhisperContext> = LazyLock::new(|| {
 /// Microphone actor
 pub struct Microphone {
     tx: broadcast::Sender<Message>,
+    #[allow(dead_code)] // TODO: Use for model path, sample rates, audio settings
     config: ParsedConfig,
     recording: Arc<AtomicBool>,
 }

@@ -44,6 +44,7 @@ name = "deepseek-chat"
 # - whitelisted_commands: list of commands that can be executed without confirmation
 # - files: object with count and section containing all currently loaded files
 # - plan: object with exists flag and section containing current task plan
+# - agents: object with count and section containing spawned agents and their tasks
 system_prompt = """You are integrated terminal assistant with access to {{ tools|length }} tools. 
 
 Use the tools to answer the user's requests. Do not ask to execute tools simply do what is required to answer the request. Use your best judgement on what tool to use. 
@@ -70,6 +71,12 @@ Working directory: {{ cwd }}
 <plan>
 {{ plan.section }}
 </plan>
+{% endif %}
+
+{% if agents.count > 0 -%}
+<spawned_agents>
+{{ agents.section }}
+</spawned_agents>
 {% endif %}"""
 
 [key_bindings]
@@ -156,6 +163,12 @@ Working directory: {{ cwd }}
 <plan>
 {{ plan.section }}
 </plan>
+{% endif %}
+
+{% if agents.count > 0 -%}
+<spawned_agents>
+{{ agents.section }}
+</spawned_agents>
 {% endif %}
 
 Focus on completing your specific task efficiently and report your progress clearly."""

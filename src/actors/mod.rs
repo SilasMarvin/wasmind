@@ -14,6 +14,7 @@ use tokio::sync::broadcast;
 use tracing::error;
 
 use crate::config::ParsedConfig;
+use self::agent::{AgentId, TaskId, TaskStatus};
 
 /// Actions the worker can perform and users can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -107,6 +108,21 @@ pub enum Message {
         last_modified: std::time::SystemTime,
     },
     PlanUpdated(crate::actors::tools::planner::TaskPlan),
+
+    // Agent management messages
+    AgentSpawned {
+        agent_id: AgentId,
+        agent_role: String,
+        task_id: TaskId,
+        task_description: String,
+    },
+    AgentStatusUpdate {
+        agent_id: AgentId,
+        status: TaskStatus,
+    },
+    AgentRemoved {
+        agent_id: AgentId,
+    },
 
     // Actor lifecycle messages
     ActorReady {

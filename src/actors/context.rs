@@ -13,6 +13,7 @@ use crate::{
 /// Context actor that handles screen and clipboard capture
 pub struct Context {
     tx: broadcast::Sender<Message>,
+    #[allow(dead_code)] // TODO: Use for screenshot size, quality settings
     config: ParsedConfig,
 }
 

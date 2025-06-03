@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::{
     actors::{
         assistant::Assistant,
+        state_system::StateSystem,
         tools::{
             command::Command, edit_file::EditFile, file_reader::FileReaderActor, mcp::MCP,
             plan_approval::PlanApproval, planner::Planner, spawn_agent::SpawnAgent,
@@ -116,6 +117,8 @@ pub struct Agent {
     pub child_tx: Option<broadcast::Sender<InterAgentMessage>>,
     /// Internal message channel for this agent's actors
     internal_tx: Option<broadcast::Sender<Message>>,
+    /// Current state of the agent
+    state: AgentState,
 }
 
 impl Agent {
@@ -148,6 +151,7 @@ impl Agent {
             child_rx: Some(child_rx),
             child_tx: Some(child_tx),
             internal_tx: None,
+            state: AgentState::Initializing,
         }
     }
 
@@ -171,6 +175,7 @@ impl Agent {
             child_rx: None,
             child_tx: None,
             internal_tx: None,
+            state: AgentState::Initializing,
         }
     }
 
@@ -282,6 +287,12 @@ impl Agent {
         let mut ready_actors = std::collections::HashSet::new();
         let required_actors = self.get_required_actors();
         let mut initial_prompt_sent = false;
+        
+        // Transition to WaitingForActors state
+        self.state = AgentState::WaitingForActors {
+            ready_actors: ready_actors.clone(),
+            required_actors: required_actors.clone(),
+        };
 
         // Main agent loop
         let mut task_completed = false;
@@ -289,6 +300,9 @@ impl Agent {
             tokio::select! {
                 // Handle internal messages from actors
                 Ok(msg) = message_rx.recv() => {
+                    // First, attempt state transition
+                    self.transition(&msg);
+                    
                     match &msg {
                         Message::ActorReady { actor_id } => {
                             info!("Agent {}: Actor {} is ready", self.id().0, actor_id);
@@ -390,6 +404,21 @@ impl Agent {
                 InterAgentMessage::TaskStatusUpdate { task_id, status, from_agent } => {
                     info!("Manager received status update for task {} from agent {}", task_id.0, from_agent.0);
                     
+                    // Send AgentStatusUpdate to update system state
+                    if let Some(tx) = self.get_internal_tx() {
+                        let _ = tx.send(Message::AgentStatusUpdate {
+                            agent_id: from_agent.clone(),
+                            status: status.clone(),
+                        });
+                        
+                        // If task is done, remove the agent from tracking
+                        if matches!(&status, TaskStatus::Done(_)) {
+                            let _ = tx.send(Message::AgentRemoved {
+                                agent_id: from_agent.clone(),
+                            });
+                        }
+                    }
+                    
                     // Format the status update as a message to the manager's LLM
                     let status_message = match &status {
                         TaskStatus::Done(Ok(result)) => {
@@ -439,5 +468,298 @@ impl Agent {
                 }
             }
         }
+    }
+}
+
+/// States that an Agent can be in during its lifecycle
+#[derive(Debug, Clone, PartialEq)]
+pub enum AgentState {
+    /// Agent is initializing and starting actors
+    Initializing,
+    /// Waiting for all required actors to be ready
+    WaitingForActors { 
+        ready_actors: std::collections::HashSet<&'static str>,
+        required_actors: Vec<&'static str>,
+    },
+    /// Agent is active and processing its task
+    Active,
+    /// Worker agent waiting for manager approval of plan
+    WaitingForApproval { 
+        plan_id: String,
+    },
+    /// Manager agent waiting for spawned sub-agents to complete
+    WaitingForSubAgents {
+        agent_ids: Vec<AgentId>,
+    },
+    /// Agent is completing its task and preparing final report
+    Completing,
+    /// Agent has terminated (successfully or with error)
+    Terminated {
+        result: Result<String, String>,
+    },
+}
+
+impl crate::actors::state_system::StateSystem for Agent {
+    type State = AgentState;
+    
+    fn current_state(&self) -> &Self::State {
+        &self.state
+    }
+    
+    fn transition(&mut self, message: &Message) -> Option<Self::State> {
+        use AgentState::*;
+        
+        let new_state = match (&self.state, message) {
+            // Actor ready messages during initialization
+            (WaitingForActors { ready_actors, required_actors }, Message::ActorReady { actor_id }) => {
+                let mut new_ready = ready_actors.clone();
+                new_ready.insert(actor_id);
+                
+                if required_actors.iter().all(|id| new_ready.contains(id)) {
+                    Some(Active)
+                } else {
+                    Some(WaitingForActors {
+                        ready_actors: new_ready,
+                        required_actors: required_actors.clone(),
+                    })
+                }
+            }
+            
+            // Plan created by worker - waiting for approval
+            (Active, Message::PlanUpdated(_)) if matches!(&self.behavior, AgentBehavior::Worker(_)) => {
+                Some(WaitingForApproval {
+                    plan_id: format!("plan_{}", self.task_id.0),
+                })
+            }
+            
+            // Plan approved/rejected - back to active
+            (WaitingForApproval { .. }, Message::AssistantToolCall(tool_call)) 
+                if tool_call.fn_name == "approve_plan" || tool_call.fn_name == "reject_plan" => {
+                Some(Active)
+            }
+            
+            // Manager spawned agents - track them
+            (Active, Message::AgentSpawned { agent_id, .. }) 
+                if matches!(&self.behavior, AgentBehavior::Manager(_)) => {
+                Some(WaitingForSubAgents {
+                    agent_ids: vec![agent_id.clone()],
+                })
+            }
+            
+            // More agents spawned while already waiting
+            (WaitingForSubAgents { agent_ids }, Message::AgentSpawned { agent_id, .. }) => {
+                let mut new_ids = agent_ids.clone();
+                new_ids.push(agent_id.clone());
+                Some(WaitingForSubAgents { agent_ids: new_ids })
+            }
+            
+            // Sub-agent completed
+            (WaitingForSubAgents { agent_ids }, Message::AgentStatusUpdate { agent_id, status }) 
+                if matches!(status, TaskStatus::Done(_)) => {
+                let mut remaining = agent_ids.clone();
+                remaining.retain(|id| id != agent_id);
+                
+                if remaining.is_empty() {
+                    Some(Active)
+                } else {
+                    Some(WaitingForSubAgents { agent_ids: remaining })
+                }
+            }
+            
+            // Task completion
+            (Active, Message::AssistantResponse(_)) => {
+                // In a real implementation, we'd check if this response indicates completion
+                None
+            }
+            
+            _ => None,
+        };
+        
+        if let Some(ref new_state) = new_state {
+            tracing::info!("Agent {} state transition: {:?} -> {:?}", self.id().0, self.state, new_state);
+            self.state = new_state.clone();
+        }
+        
+        new_state
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::actors::state_system::StateSystem;
+    use crate::actors::state_system::test_utils::*;
+    use crate::config::{Config, ParsedConfig};
+    
+    fn create_test_agent(is_manager: bool) -> Agent {
+        let config: ParsedConfig = Config::default().unwrap().try_into().unwrap();
+        if is_manager {
+            Agent::new_manager("Test Manager".to_string(), "Test task".to_string(), config)
+        } else {
+            Agent::new_worker("Test Worker".to_string(), "Test task".to_string(), config)
+        }
+    }
+    
+    #[test]
+    fn test_agent_creation() {
+        let worker = create_test_agent(false);
+        assert_eq!(worker.role(), "Test Worker");
+        assert!(matches!(worker.behavior, AgentBehavior::Worker(_)));
+        assert_eq!(worker.state, AgentState::Initializing);
+        
+        let manager = create_test_agent(true);
+        assert_eq!(manager.role(), "Test Manager");
+        assert!(matches!(manager.behavior, AgentBehavior::Manager(_)));
+        assert_eq!(manager.state, AgentState::Initializing);
+    }
+    
+    #[test]
+    fn test_agent_required_actors() {
+        let worker = create_test_agent(false);
+        let worker_actors = worker.get_required_actors();
+        assert!(worker_actors.contains(&"assistant"));
+        assert!(worker_actors.contains(&"command"));
+        assert!(!worker_actors.contains(&"spawn_agent"));
+        
+        let manager = create_test_agent(true);
+        let manager_actors = manager.get_required_actors();
+        assert!(manager_actors.contains(&"assistant"));
+        assert!(manager_actors.contains(&"spawn_agent"));
+        assert!(!manager_actors.contains(&"command"));
+    }
+    
+    #[test]
+    fn test_agent_state_waiting_for_actors() {
+        let mut agent = create_test_agent(false);
+        let required = agent.get_required_actors();
+        
+        // Start in WaitingForActors state
+        agent.state = AgentState::WaitingForActors {
+            ready_actors: std::collections::HashSet::new(),
+            required_actors: required.clone(),
+        };
+        
+        // Add actors one by one
+        for (i, actor_id) in required.iter().enumerate() {
+            let is_last = i == required.len() - 1;
+            
+            if is_last {
+                // Last actor should transition to Active
+                assert_state_transition(
+                    &mut agent,
+                    Message::ActorReady { actor_id },
+                    AgentState::Active,
+                );
+            } else {
+                // Not all actors ready yet
+                agent.transition(&Message::ActorReady { actor_id });
+                assert!(matches!(agent.state, AgentState::WaitingForActors { .. }));
+            }
+        }
+    }
+    
+    #[test]
+    fn test_worker_plan_approval_flow() {
+        let mut worker = create_test_agent(false);
+        worker.state = AgentState::Active;
+        
+        // Worker creates a plan
+        let plan = crate::actors::tools::planner::TaskPlan {
+            title: "Test Plan".to_string(),
+            tasks: vec![],
+        };
+        
+        let expected_plan_id = format!("plan_{}", worker.task_id.0);
+        assert_state_transition(
+            &mut worker,
+            Message::PlanUpdated(plan),
+            AgentState::WaitingForApproval {
+                plan_id: expected_plan_id,
+            },
+        );
+    }
+    
+    #[test]
+    fn test_manager_spawning_agents() {
+        let mut manager = create_test_agent(true);
+        manager.state = AgentState::Active;
+        
+        let agent_id = AgentId("sub-agent-1".to_string());
+        
+        assert_state_transition(
+            &mut manager,
+            Message::AgentSpawned {
+                agent_id: agent_id.clone(),
+                agent_role: "Worker".to_string(),
+                task_id: TaskId("task-1".to_string()),
+                task_description: "Do work".to_string(),
+            },
+            AgentState::WaitingForSubAgents {
+                agent_ids: vec![agent_id],
+            },
+        );
+    }
+    
+    #[test]
+    fn test_manager_multiple_sub_agents() {
+        let mut manager = create_test_agent(true);
+        let agent_id1 = AgentId("sub-1".to_string());
+        let agent_id2 = AgentId("sub-2".to_string());
+        
+        // Start with one sub-agent
+        manager.state = AgentState::WaitingForSubAgents {
+            agent_ids: vec![agent_id1.clone()],
+        };
+        
+        // Spawn another
+        assert_state_transition(
+            &mut manager,
+            Message::AgentSpawned {
+                agent_id: agent_id2.clone(),
+                agent_role: "Worker".to_string(),
+                task_id: TaskId("task-2".to_string()),
+                task_description: "More work".to_string(),
+            },
+            AgentState::WaitingForSubAgents {
+                agent_ids: vec![agent_id1.clone(), agent_id2.clone()],
+            },
+        );
+        
+        // First agent completes
+        assert_state_transition(
+            &mut manager,
+            Message::AgentStatusUpdate {
+                agent_id: agent_id1,
+                status: TaskStatus::Done(Ok("Success".to_string())),
+            },
+            AgentState::WaitingForSubAgents {
+                agent_ids: vec![agent_id2.clone()],
+            },
+        );
+        
+        // Second agent completes - back to Active
+        assert_state_transition(
+            &mut manager,
+            Message::AgentStatusUpdate {
+                agent_id: agent_id2,
+                status: TaskStatus::Done(Ok("Also success".to_string())),
+            },
+            AgentState::Active,
+        );
+    }
+    
+    #[test]
+    fn test_agent_communication_channels() {
+        let config: ParsedConfig = Config::default().unwrap().try_into().unwrap();
+        let (parent_tx, _) = broadcast::channel(100);
+        let (child_tx, _) = broadcast::channel(100);
+        
+        let mut worker = Agent::new_worker("Worker".to_string(), "Task".to_string(), config.clone());
+        worker.parent_tx = Some(parent_tx.clone());
+        assert!(worker.parent_tx.is_some());
+        
+        let mut manager = Agent::new_manager("Manager".to_string(), "Task".to_string(), config);
+        manager.child_tx = Some(child_tx.clone());
+        assert!(manager.child_tx.is_some());
     }
 }

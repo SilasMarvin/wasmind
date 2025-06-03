@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{Mutex, broadcast};
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
@@ -201,6 +201,7 @@ impl FileReader {
 /// FileReader actor
 pub struct FileReaderActor {
     tx: broadcast::Sender<Message>,
+    #[allow(dead_code)] // TODO: Use for file size limits, timeout settings
     config: ParsedConfig,
     file_reader: Arc<Mutex<FileReader>>,
 }

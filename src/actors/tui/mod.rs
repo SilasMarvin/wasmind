@@ -56,8 +56,10 @@ type TuiResult<T> = Result<T, TuiError>;
 #[derive(Clone)]
 pub struct TuiActor {
     tx: broadcast::Sender<Message>,
+    #[allow(dead_code)] // TODO: Use for UI refresh rates, colors, layout settings
     config: ParsedConfig,
     app: Arc<Mutex<App>>,
+    #[allow(dead_code)] // TODO: Use for dynamic key binding updates
     key_bindings: Arc<Mutex<KeyBindingManager>>,
     redraw_tx: crossbeam::channel::Sender<RedrawMessage>,
 }

@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, broadcast};
 use tracing::{error, info};
 
 use crate::{
-    GenaiSnafu, SResult,
+    SResult,
     actors::{Actor, Message, ToolCallStatus, ToolCallUpdate, state_system::StateSystem},
     config::ParsedConfig,
     system_state::SystemState,
@@ -227,7 +227,7 @@ async fn do_assist(
     let resp = client
         .exec_chat(&config.model.name, request, None)
         .await
-        .context(GenaiSnafu)?;
+        .context(crate::GenaiSnafu)?;
 
     info!("Got resp: {:?}", resp);
 
@@ -352,6 +352,32 @@ impl Actor for Assistant {
                     options: None,
                 });
             }
+            Message::AgentSpawned {
+                agent_id,
+                agent_role,
+                task_id,
+                task_description,
+            } => {
+                info!("Agent spawned: {} ({})", agent_role, agent_id.0);
+                let agent_info = crate::system_state::AgentTaskInfo::new(
+                    agent_id,
+                    agent_role,
+                    task_id,
+                    task_description,
+                );
+                self.system_state.add_agent(agent_info);
+                self.maybe_rerender_system_prompt().await;
+            }
+            Message::AgentStatusUpdate { agent_id, status } => {
+                info!("Agent status update: {:?}", status);
+                self.system_state.update_agent_status(&agent_id, status);
+                self.maybe_rerender_system_prompt().await;
+            }
+            Message::AgentRemoved { agent_id } => {
+                info!("Agent removed: {}", agent_id.0);
+                self.system_state.remove_agent(&agent_id);
+                self.maybe_rerender_system_prompt().await;
+            }
             _ => {}
         }
     }
@@ -359,42 +385,45 @@ impl Actor for Assistant {
 
 impl StateSystem for Assistant {
     type State = AssistantState;
-    
+
     fn current_state(&self) -> &Self::State {
         &self.state
     }
-    
+
     fn transition(&mut self, message: &Message) -> Option<Self::State> {
         let new_state = match (&self.state, message) {
             // From Idle to Processing when receiving user input or assist action
-            (AssistantState::Idle, Message::UserTUIInput(_)) |
-            (AssistantState::Idle, Message::MicrophoneTranscription(_)) |
-            (AssistantState::Idle, Message::Action(crate::actors::Action::Assist)) => {
+            (AssistantState::Idle, Message::UserTUIInput(_))
+            | (AssistantState::Idle, Message::MicrophoneTranscription(_))
+            | (AssistantState::Idle, Message::Action(crate::actors::Action::Assist)) => {
                 Some(AssistantState::Processing)
             }
-            
+
             // From Processing to WaitingForTools when assistant makes tool calls
             (AssistantState::Processing, Message::AssistantResponse(content)) => {
                 match content {
                     MessageContent::ToolCalls(tool_calls) => {
                         let call_ids = tool_calls.iter().map(|tc| tc.call_id.clone()).collect();
-                        Some(AssistantState::WaitingForTools { 
-                            pending_tool_calls: call_ids 
+                        Some(AssistantState::WaitingForTools {
+                            pending_tool_calls: call_ids,
                         })
                     }
                     // If response has no tool calls, go back to Idle
-                    _ => Some(AssistantState::Idle)
+                    _ => Some(AssistantState::Idle),
                 }
             }
-            
+
             // From WaitingForTools back to Processing when tool finishes
-            (AssistantState::WaitingForTools { pending_tool_calls }, Message::ToolCallUpdate(update)) => {
+            (
+                AssistantState::WaitingForTools { pending_tool_calls },
+                Message::ToolCallUpdate(update),
+            ) => {
                 if let ToolCallStatus::Finished(_) = &update.status {
                     // Only process tool updates for calls we're actually waiting for
                     if pending_tool_calls.contains(&update.call_id) {
                         let mut remaining_calls = pending_tool_calls.clone();
                         remaining_calls.retain(|id| id != &update.call_id);
-                        
+
                         if remaining_calls.is_empty() {
                             // All tools finished, back to processing for next LLM response
                             Some(AssistantState::Processing)
@@ -411,24 +440,27 @@ impl StateSystem for Assistant {
                     None // No state change for non-finished tool updates
                 }
             }
-            
+
             // Cancel action can move from Processing or WaitingForTools back to Idle
-            (AssistantState::Processing, Message::Action(crate::actors::Action::Cancel)) |
-            (AssistantState::WaitingForTools { .. }, Message::Action(crate::actors::Action::Cancel)) => {
-                Some(AssistantState::Idle)
-            }
-            
+            (AssistantState::Processing, Message::Action(crate::actors::Action::Cancel))
+            | (
+                AssistantState::WaitingForTools { .. },
+                Message::Action(crate::actors::Action::Cancel),
+            ) => Some(AssistantState::Idle),
+
             // Any state can go to Error (though we don't currently track errors explicitly)
             // This would be used if we wanted to track error states explicitly
-            
             _ => None, // No state transition
         };
-        
+
         if let Some(ref new_state) = new_state {
-            info!("Assistant state transition: {:?} -> {:?}", self.state, new_state);
+            info!(
+                "Assistant state transition: {:?} -> {:?}",
+                self.state, new_state
+            );
             self.state = new_state.clone();
         }
-        
+
         new_state
     }
 }
@@ -438,43 +470,43 @@ mod tests {
     use super::*;
     use crate::actors::state_system::test_utils::*;
     use genai::chat::ToolCall;
-    
+
     fn create_test_assistant() -> Assistant {
         use crate::config::Config;
         let config = Config::default().unwrap().try_into().unwrap();
         let (tx, _) = broadcast::channel(10);
         Assistant::new(config, tx)
     }
-    
+
     #[test]
     fn test_assistant_starts_in_idle() {
         let assistant = create_test_assistant();
         assert_eq!(assistant.current_state(), &AssistantState::Idle);
     }
-    
+
     #[test]
     fn test_assistant_state_transition_user_input() {
         let mut assistant = create_test_assistant();
         assistant.state = AssistantState::Idle; // Set to Idle state
-        
+
         assert_state_transition(
             &mut assistant,
             Message::UserTUIInput("Hello".to_string()),
             AssistantState::Processing,
         );
     }
-    
+
     #[test]
     fn test_assistant_state_transition_tool_calls() {
         let mut assistant = create_test_assistant();
         assistant.state = AssistantState::Processing;
-        
+
         let tool_calls = vec![ToolCall {
             call_id: "call_123".to_string(),
             fn_name: "test_function".to_string(),
             fn_arguments: serde_json::json!({}),
         }];
-        
+
         assert_state_transition(
             &mut assistant,
             Message::AssistantResponse(MessageContent::ToolCalls(tool_calls)),
@@ -483,31 +515,31 @@ mod tests {
             },
         );
     }
-    
+
     #[test]
     fn test_assistant_state_transition_tool_finished() {
         let mut assistant = create_test_assistant();
         assistant.state = AssistantState::WaitingForTools {
             pending_tool_calls: vec!["call_123".to_string()],
         };
-        
+
         let update = ToolCallUpdate {
             call_id: "call_123".to_string(),
             status: ToolCallStatus::Finished(Ok("Success".to_string())),
         };
-        
+
         assert_state_transition(
             &mut assistant,
             Message::ToolCallUpdate(update),
             AssistantState::Processing,
         );
     }
-    
+
     #[test]
     fn test_assistant_no_transition_wrong_message() {
         let mut assistant = create_test_assistant();
         assistant.state = AssistantState::Idle;
-        
+
         // Random message that shouldn't cause transition from Idle
         assert_no_state_transition(
             &mut assistant,
@@ -519,7 +551,7 @@ mod tests {
     fn test_user_input_while_processing_dropped() {
         let mut assistant = create_test_assistant();
         assistant.state = AssistantState::Processing;
-        
+
         // User input should be dropped while processing
         assert_no_state_transition(
             &mut assistant,
@@ -533,7 +565,7 @@ mod tests {
         assistant.state = AssistantState::WaitingForTools {
             pending_tool_calls: vec!["call_123".to_string()],
         };
-        
+
         // User input should be dropped while waiting for tools
         assert_no_state_transition(
             &mut assistant,
@@ -545,34 +577,28 @@ mod tests {
     fn test_tool_update_while_not_waiting_dropped() {
         let mut assistant = create_test_assistant();
         assistant.state = AssistantState::Idle;
-        
+
         let update = ToolCallUpdate {
             call_id: "unexpected_call".to_string(),
             status: ToolCallStatus::Finished(Ok("Success".to_string())),
         };
-        
+
         // Tool update should be dropped when not waiting for tools
-        assert_no_state_transition(
-            &mut assistant,
-            Message::ToolCallUpdate(update),
-        );
+        assert_no_state_transition(&mut assistant, Message::ToolCallUpdate(update));
     }
 
     #[test]
     fn test_tool_update_while_processing_dropped() {
         let mut assistant = create_test_assistant();
         assistant.state = AssistantState::Processing;
-        
+
         let update = ToolCallUpdate {
             call_id: "unexpected_call".to_string(),
             status: ToolCallStatus::Finished(Ok("Success".to_string())),
         };
-        
+
         // Tool update should be dropped while processing (before tools are called)
-        assert_no_state_transition(
-            &mut assistant,
-            Message::ToolCallUpdate(update),
-        );
+        assert_no_state_transition(&mut assistant, Message::ToolCallUpdate(update));
     }
 
     #[test]
@@ -581,40 +607,37 @@ mod tests {
         assistant.state = AssistantState::WaitingForTools {
             pending_tool_calls: vec!["call_123".to_string()],
         };
-        
+
         let update = ToolCallUpdate {
             call_id: "call_456".to_string(), // Different call ID
             status: ToolCallStatus::Finished(Ok("Success".to_string())),
         };
-        
+
         // Tool update with wrong call ID should be ignored
-        assert_no_state_transition(
-            &mut assistant,
-            Message::ToolCallUpdate(update),
-        );
+        assert_no_state_transition(&mut assistant, Message::ToolCallUpdate(update));
     }
 
     #[test]
     fn test_multiple_user_inputs_while_processing() {
         let mut assistant = create_test_assistant();
         assistant.state = AssistantState::Processing;
-        
+
         // Multiple user inputs should all be dropped
         assert_no_state_transition(
             &mut assistant,
             Message::UserTUIInput("First request".to_string()),
         );
-        
+
         assert_no_state_transition(
             &mut assistant,
             Message::MicrophoneTranscription("Second request".to_string()),
         );
-        
+
         assert_no_state_transition(
             &mut assistant,
             Message::Action(crate::actors::Action::Assist),
         );
-        
+
         // Should still be in Processing state
         assert_eq!(assistant.current_state(), &AssistantState::Processing);
     }
@@ -625,12 +648,12 @@ mod tests {
         assistant.state = AssistantState::WaitingForTools {
             pending_tool_calls: vec!["call_123".to_string(), "call_456".to_string()],
         };
-        
+
         let update = ToolCallUpdate {
             call_id: "call_123".to_string(),
             status: ToolCallStatus::Finished(Ok("Success".to_string())),
         };
-        
+
         // Should transition to still waiting but with one less pending call
         assert_state_transition(
             &mut assistant,

@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast};
-use tracing::{debug, info};
+use tracing::info;
 
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
@@ -362,6 +362,7 @@ impl Default for FileEditor {
 /// EditFile actor
 pub struct EditFile {
     tx: broadcast::Sender<Message>,
+    #[allow(dead_code)] // TODO: Use for file operation settings, limits
     config: ParsedConfig,
     file_editor: FileEditor,
     file_reader: Arc<Mutex<super::file_reader::FileReader>>,

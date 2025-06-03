@@ -125,6 +125,14 @@ impl SpawnAgent {
         let mut agent = agent;
         agent.parent_tx = Some(self.child_tx.clone());
 
+        // Send AgentSpawned message to update system state
+        let _ = self.tx.send(Message::AgentSpawned {
+            agent_id: agent_id.clone(),
+            agent_role: agent_role.clone(),
+            task_id: task_id.clone(),
+            task_description: input.task_description.clone(),
+        });
+
         // Create response
         let response = AgentSpawnedResponse {
             agent_id: agent_id.clone(),
@@ -154,7 +162,7 @@ impl SpawnAgent {
                 loop {
                     if let Ok(InterAgentMessage::TaskStatusUpdate { task_id, status, from_agent }) = child_rx.recv().await {
                         if from_agent == agent_id_copy && task_id == task_id_copy {
-                            if let crate::actors::agent::TaskStatus::Done(result) = status {
+                            if let crate::actors::agent::TaskStatus::Done(_result) = status {
                                 // Agent completed, we'll handle this in the manager's message loop
                                 break;
                             }

@@ -3,8 +3,14 @@ name = "copilot"
 version = "0.1.0"
 edition = "2024"
 
-[target.aarch64-apple-darwin]
-rustflags = "-lc++ -l framework=Accelerate"
+[[bin]]
+name = "copilot"
+path = "src/main.rs"
+
+[lib]
+name = "copilot"
+path = "src/lib.rs"
+
 
 [dependencies]
 arboard = "3.5.0"

@@ -63,6 +63,7 @@ struct RejectPlanInput {
 /// PlanApproval tool actor for managers to approve/reject plans
 pub struct PlanApproval {
     tx: broadcast::Sender<Message>,
+    #[allow(dead_code)] // TODO: Use for approval timeout, channel buffer sizes
     config: ParsedConfig,
     /// Channel to communicate with child agents
     child_tx: broadcast::Sender<InterAgentMessage>,

@@ -3,7 +3,10 @@ use snafu::{ResultExt, Snafu};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::actors::tools::planner::TaskPlan;
+use crate::actors::{
+    agent::{AgentId, TaskId, TaskStatus},
+    tools::planner::TaskPlan,
+};
 use crate::template::{self, TemplateContext, ToolInfo};
 
 /// Errors that can occur when working with SystemState
@@ -82,6 +85,67 @@ impl std::fmt::Display for FileInfo {
     }
 }
 
+/// Information about a spawned agent and its assigned task
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskInfo {
+    pub agent_id: AgentId,
+    pub agent_role: String,
+    pub task_id: TaskId,
+    pub task_description: String,
+    pub status: TaskStatus,
+    pub spawned_at: std::time::SystemTime,
+}
+
+impl AgentTaskInfo {
+    pub fn new(
+        agent_id: AgentId,
+        agent_role: String,
+        task_id: TaskId,
+        task_description: String,
+    ) -> Self {
+        Self {
+            agent_id,
+            agent_role,
+            task_id,
+            task_description,
+            status: TaskStatus::InProgress,
+            spawned_at: std::time::SystemTime::now(),
+        }
+    }
+
+    /// Get status icon using same style as planner
+    pub fn status_icon(&self) -> &'static str {
+        match &self.status {
+            TaskStatus::InProgress => "[~]",
+            TaskStatus::Done(Ok(_)) => "[x]",
+            TaskStatus::Done(Err(_)) => "[!]",
+            TaskStatus::AwaitingManager(_) => "[?]",
+        }
+    }
+
+    /// Format for display in system prompt
+    pub fn format_for_prompt(&self) -> String {
+        let details = match &self.status {
+            TaskStatus::Done(Ok(result)) => format!(" - {}", result),
+            TaskStatus::Done(Err(error)) => format!(" - Error: {}", error),
+            TaskStatus::AwaitingManager(awaiting) => match awaiting {
+                crate::actors::agent::TaskAwaitingManager::AwaitingPlanApproval(_) => " - Awaiting plan approval".to_string(),
+                crate::actors::agent::TaskAwaitingManager::AwaitingMoreInformation(info) => format!(" - Needs: {}", info),
+            },
+            TaskStatus::InProgress => String::new(),
+        };
+
+        format!(
+            "{} {} ({}): {}{}",
+            self.status_icon(),
+            self.agent_role,
+            self.agent_id.0,
+            self.task_description,
+            details
+        )
+    }
+}
+
 /// Manages the system state that gets injected into the system prompt
 #[derive(Debug, Clone)]
 pub struct SystemState {
@@ -89,6 +153,8 @@ pub struct SystemState {
     files: HashMap<PathBuf, FileInfo>,
     /// Current task plan if any
     current_plan: Option<TaskPlan>,
+    /// Spawned agents and their tasks
+    agents: HashMap<AgentId, AgentTaskInfo>,
     /// Maximum number of lines to show per file in system prompt
     max_file_lines: usize,
     /// Track whether the state has been modified since last check
@@ -100,6 +166,7 @@ impl Default for SystemState {
         Self {
             files: HashMap::new(),
             current_plan: None,
+            agents: HashMap::new(),
             max_file_lines: 50, // Max lines per file
             modified: false,
         }
@@ -147,6 +214,37 @@ impl SystemState {
     /// Get the current task plan
     pub fn get_plan(&self) -> Option<&TaskPlan> {
         self.current_plan.as_ref()
+    }
+
+    /// Add or update a spawned agent
+    pub fn add_agent(&mut self, agent_info: AgentTaskInfo) {
+        self.agents.insert(agent_info.agent_id.clone(), agent_info);
+        self.modified = true;
+    }
+
+    /// Update an agent's task status
+    pub fn update_agent_status(&mut self, agent_id: &AgentId, status: TaskStatus) {
+        if let Some(agent_info) = self.agents.get_mut(agent_id) {
+            agent_info.status = status;
+            self.modified = true;
+        }
+    }
+
+    /// Remove an agent (when task is complete)
+    pub fn remove_agent(&mut self, agent_id: &AgentId) {
+        if self.agents.remove(agent_id).is_some() {
+            self.modified = true;
+        }
+    }
+
+    /// Get all agents
+    pub fn get_agents(&self) -> &HashMap<AgentId, AgentTaskInfo> {
+        &self.agents
+    }
+
+    /// Get agent count
+    pub fn agent_count(&self) -> usize {
+        self.agents.len()
     }
 
     /// Get all files currently loaded
@@ -199,6 +297,25 @@ impl SystemState {
         }
     }
 
+    /// Generate the agents section for the system prompt
+    pub fn render_agents_section(&self) -> String {
+        if self.agents.is_empty() {
+            return "No agents currently spawned.".to_string();
+        }
+
+        let mut lines = vec!["## Spawned Agents and Tasks".to_string()];
+        
+        // Sort agents by spawn time for consistent output
+        let mut sorted_agents: Vec<_> = self.agents.values().collect();
+        sorted_agents.sort_by_key(|agent| agent.spawned_at);
+
+        for (i, agent) in sorted_agents.iter().enumerate() {
+            lines.push(format!("{}. {}", i + 1, agent.format_for_prompt()));
+        }
+
+        lines.join("\n")
+    }
+
     /// Generate the complete system state context for templates
     pub fn to_template_context(&self) -> serde_json::Value {
         serde_json::json!({
@@ -209,6 +326,10 @@ impl SystemState {
             "plan": {
                 "exists": self.current_plan.is_some(),
                 "section": self.render_plan_section()
+            },
+            "agents": {
+                "count": self.agent_count(),
+                "section": self.render_agents_section()
             }
         })
     }
@@ -570,5 +691,90 @@ Current plan: active
         state.reset_modified();
         state.clear_plan();
         assert!(state.is_modified());
+    }
+
+    #[test]
+    fn test_agent_tracking() {
+        use crate::actors::agent::{AgentId, TaskId, TaskStatus};
+        
+        let mut state = SystemState::new();
+        
+        // Initially no agents
+        assert_eq!(state.agent_count(), 0);
+        assert_eq!(state.render_agents_section(), "No agents currently spawned.");
+        
+        // Add an agent
+        let agent_id = AgentId("agent-1".to_string());
+        let task_id = TaskId("task-1".to_string());
+        let agent_info = AgentTaskInfo::new(
+            agent_id.clone(),
+            "Software Engineer".to_string(),
+            task_id.clone(),
+            "Implement user authentication".to_string(),
+        );
+        
+        state.add_agent(agent_info);
+        assert_eq!(state.agent_count(), 1);
+        assert!(state.is_modified());
+        
+        // Check rendering
+        let section = state.render_agents_section();
+        assert!(section.contains("## Spawned Agents and Tasks"));
+        assert!(section.contains("[~] Software Engineer (agent-1): Implement user authentication"));
+        
+        // Update agent status
+        state.update_agent_status(&agent_id, TaskStatus::Done(Ok("Completed successfully".to_string())));
+        let section = state.render_agents_section();
+        assert!(section.contains("[x] Software Engineer (agent-1): Implement user authentication - Completed successfully"));
+        
+        // Add another agent
+        let agent_id2 = AgentId("agent-2".to_string());
+        let task_id2 = TaskId("task-2".to_string());
+        let agent_info2 = AgentTaskInfo::new(
+            agent_id2.clone(),
+            "Database Architect".to_string(),
+            task_id2,
+            "Design schema for user data".to_string(),
+        );
+        state.add_agent(agent_info2);
+        assert_eq!(state.agent_count(), 2);
+        
+        // Update second agent with error
+        state.update_agent_status(&agent_id2, TaskStatus::Done(Err("Connection timeout".to_string())));
+        let section = state.render_agents_section();
+        assert!(section.contains("[!] Database Architect (agent-2): Design schema for user data - Error: Connection timeout"));
+        
+        // Remove first agent
+        state.remove_agent(&agent_id);
+        assert_eq!(state.agent_count(), 1);
+        
+        // Remove second agent
+        state.remove_agent(&agent_id2);
+        assert_eq!(state.agent_count(), 0);
+        assert_eq!(state.render_agents_section(), "No agents currently spawned.");
+    }
+
+    #[test]
+    fn test_agent_template_context() {
+        use crate::actors::agent::{AgentId, TaskId};
+        
+        let mut state = SystemState::new();
+        
+        // Add an agent
+        let agent_info = AgentTaskInfo::new(
+            AgentId("test-agent".to_string()),
+            "Project Manager".to_string(),
+            TaskId("test-task".to_string()),
+            "Plan sprint tasks".to_string(),
+        );
+        state.add_agent(agent_info);
+        
+        // Get template context
+        let context = state.to_template_context();
+        assert_eq!(context["agents"]["count"], 1);
+        
+        let agents_section = context["agents"]["section"].as_str().unwrap();
+        assert!(agents_section.contains("## Spawned Agents and Tasks"));
+        assert!(agents_section.contains("Project Manager"));
     }
 }

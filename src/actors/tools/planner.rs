@@ -85,6 +85,7 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
 /// Planner actor
 pub struct Planner {
     tx: broadcast::Sender<Message>,
+    #[allow(dead_code)] // TODO: Use for planning parameters, model settings
     config: ParsedConfig,
     current_task_plan: Option<TaskPlan>,
 }
@@ -125,7 +126,7 @@ impl Planner {
             }
         };
 
-        let response_content = match action {
+        let _response_content = match action {
             "create" => self.handle_create_plan(&args, &tool_call.call_id).await,
             "update" | "complete" | "start" | "skip" => {
                 self.handle_update_plan(action, &args, &tool_call.call_id)
