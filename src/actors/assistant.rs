@@ -284,6 +284,10 @@ impl Actor for Assistant {
         self.tx.clone()
     }
 
+    async fn on_start(&mut self) {
+        info!("Assistant actor starting...");
+    }
+
     async fn handle_message(&mut self, message: Message) {
         match message {
             Message::ToolsAvailable(tools) => self.handle_tools_available(tools).await,

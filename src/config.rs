@@ -98,12 +98,13 @@ impl Config {
                 }
                 Ok(user_config)
             } else {
-                // Merge key bindings
-                default
-                    .key_bindings
-                    .bindings
-                    .extend(user_config.key_bindings.bindings);
-                user_config.key_bindings.bindings = default.key_bindings.bindings;
+                // Merge key bindings: add default bindings that don't conflict with user bindings
+                for (binding, action) in default.key_bindings.bindings {
+                    // Only add default bindings if the user hasn't defined this binding
+                    if !user_config.key_bindings.bindings.contains_key(&binding) {
+                        user_config.key_bindings.bindings.insert(binding, action);
+                    }
+                }
 
                 // Merge whitelisted commands if user config doesn't have any
                 // or extend the default list with user's additional commands
@@ -151,7 +152,13 @@ impl Config {
     }
 
     pub fn default() -> Result<Self, ConfigError> {
+        // Use headless config for builds without GUI features
+        #[cfg(not(feature = "gui"))]
+        let default_contents = include_str!("../headless_config.toml");
+        
+        #[cfg(feature = "gui")]
         let default_contents = include_str!("../default_config.toml");
+        
         tracing::debug!("Default config contents:\n{}", default_contents);
         let config: Config = toml::from_str(default_contents).context(TomlDeserializeSnafu)?;
         tracing::debug!(

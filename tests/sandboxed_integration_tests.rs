@@ -158,25 +158,33 @@ whitelisted_commands = [
     "sort", "uniq", "diff", "tree", "mkdir", "touch", "cp", "mv", "rm"
 ]
 
+[model]
+name = "deepseek-chat"
+api_key_env_var = "DEEPSEEK_API_KEY"
+system_prompt = "You are a helpful assistant integrated with various tools to help users."
+
 [key_bindings]
-clear_defaults = false
+clear_defaults = true
 
 [key_bindings.bindings]
-"cmd-alt-a" = "Assist"
+"ctrl-a" = "Assist"
 "ctrl-c" = "Exit"
 
 [hive]
 
 [hive.main_manager_model]
 name = "deepseek-chat"
+api_key_env_var = "DEEPSEEK_API_KEY"
 system_prompt = "You are a test manager. Break down tasks and delegate to workers."
 
 [hive.sub_manager_model]
 name = "deepseek-chat"
+api_key_env_var = "DEEPSEEK_API_KEY"
 system_prompt = "You are a test sub-manager. Manage your assigned tasks."
 
 [hive.worker_model]
 name = "deepseek-chat"
+api_key_env_var = "DEEPSEEK_API_KEY"
 system_prompt = "You are a test worker. Use tools to complete your assigned task."
 "#;
             

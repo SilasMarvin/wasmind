@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copilot Sandbox Testing Script
+# Hive Sandbox Testing Script
 # This script runs end-to-end tests in a safe Docker environment
 
 set -e
@@ -8,7 +8,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "🚀 Copilot Sandbox Testing"
+echo "🚀 Hive Sandbox Testing"
 echo "=========================="
 
 # Check if Docker is installed
@@ -57,13 +57,13 @@ sleep 5
 # Wait for container to be healthy
 echo "⏳ Waiting for container to be ready..."
 for i in {1..30}; do
-    if docker exec copilot-test-sandbox python3 /workspace/validate-tests.py &>/dev/null; then
+    if docker exec hive-test-sandbox python3 /workspace/validate-tests.py &>/dev/null; then
         echo "✅ Container is ready"
         break
     fi
     if [ $i -eq 30 ]; then
         echo "❌ Container failed to become ready"
-        docker logs copilot-test-sandbox
+        docker logs hive-test-sandbox
         exit 1
     fi
     sleep 1

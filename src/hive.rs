@@ -117,6 +117,27 @@ pub fn start_headless_hive(
         required_actors.push(Microphone::ACTOR_ID);
         let mut main_manager_started = false;
 
+        // If no shared actors are required (headless build), start main manager immediately
+        if required_actors.is_empty() {
+            info!("HIVE: No shared actors required, starting Main Manager immediately");
+            
+            // Create the Main Manager agent with the initial prompt as its task
+            let main_manager = Agent::new_manager(
+                "Main Manager".to_string(),
+                initial_prompt.clone(),
+                config.clone(),
+            );
+            
+            // Start the Main Manager in its own task
+            let exit_tx = tx.clone();
+            tokio::spawn(async move {
+                main_manager.run().await;
+                // When the main manager completes, send exit signal
+                let _ = exit_tx.send(Message::Action(Action::Exit));
+            });
+            main_manager_started = true;
+        }
+
         // Keep the runtime alive and listen for exit signals
         loop {
             match rx.recv().await {
