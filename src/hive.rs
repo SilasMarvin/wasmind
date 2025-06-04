@@ -98,7 +98,7 @@ pub fn start_headless_hive(
         Microphone::new(config.clone(), tx.clone()).run();
 
         // Track when context actors are ready
-        let mut ready_actors = std::collections::HashSet::new();
+        let mut ready_actors: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut required_actors: Vec<&'static str> = Vec::new();
         #[cfg(feature = "gui")]
         required_actors.push(Context::ACTOR_ID);
@@ -133,7 +133,7 @@ pub fn start_headless_hive(
 
                     // Check if all required actors are ready and we haven't started the main manager yet
                     if !main_manager_started
-                        && required_actors.iter().all(|id| ready_actors.contains(id))
+                        && required_actors.iter().all(|id| ready_actors.contains(*id))
                     {
                         // Create the Main Manager agent with the initial prompt as its task
                         let main_manager = Agent::new_manager(

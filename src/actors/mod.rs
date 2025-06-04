@@ -139,7 +139,7 @@ pub enum Message {
 
     // Actor lifecycle messages
     ActorReady {
-        actor_id: &'static str,
+        actor_id: String,
     },
 
     // Task completion message
@@ -173,7 +173,7 @@ pub trait Actor: Send + Sized + 'static {
             // Signal that this actor is ready
             tracing::info!("Actor ready, sending ready signal");
             let _ = tx.send(Message::ActorReady {
-                actor_id: Self::ACTOR_ID,
+                actor_id: Self::ACTOR_ID.to_string(),
             });
 
             let mut rx = self.get_rx();

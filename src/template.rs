@@ -19,6 +19,8 @@ pub struct TemplateContext {
     pub whitelisted_commands: Vec<String>,
     /// System state with files and plans
     pub system_state: serde_json::Value,
+    /// Agent's assigned task description
+    pub task: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -48,6 +50,32 @@ impl TemplateContext {
             cwd,
             whitelisted_commands,
             system_state: system_state.to_template_context(),
+            task: None,
+        }
+    }
+
+    /// Create a new template context with system state and task description
+    pub fn with_task(
+        tools: Vec<ToolInfo>,
+        whitelisted_commands: Vec<String>,
+        system_state: &SystemState,
+        task_description: Option<String>,
+    ) -> Self {
+        let cwd = std::env::current_dir()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        Self {
+            tools,
+            current_datetime: chrono::Utc::now()
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string(),
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+            cwd,
+            whitelisted_commands,
+            system_state: system_state.to_template_context(),
+            task: task_description,
         }
     }
 }
@@ -75,6 +103,7 @@ pub fn render_template(
         whitelisted_commands => &context.whitelisted_commands,
         files => &context.system_state["files"],
         plan => &context.system_state["plan"],
+        task => &context.task,
     };
 
     tmpl.render(ctx)

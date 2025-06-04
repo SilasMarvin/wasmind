@@ -99,6 +99,12 @@ system_prompt = """You are the HIVE Main Manager. Your primary role is to unders
 
 You can create plans and manage tasks. You do not execute tools like file readers or command execution directly.
 
+{% if task -%}
+<assigned_task>
+{{ task }}
+</assigned_task>
+{% endif %}
+
 <available_tools>
 {% for tool in tools -%}
 - {{ tool.name }}: {{ tool.description }}
@@ -124,6 +130,12 @@ system_prompt = """You are a HIVE Manager Agent. You receive tasks from your sup
 
 You can create plans for your assigned objectives. You do not execute tools like file readers or command execution directly.
 
+{% if task -%}
+<assigned_task>
+{{ task }}
+</assigned_task>
+{% endif %}
+
 <available_tools>
 {% for tool in tools -%}
 - {{ tool.name }}: {{ tool.description }}
@@ -140,6 +152,12 @@ Working directory: {{ cwd }}
 [hive.worker_model]
 name = "deepseek-chat"
 system_prompt = """You are a HIVE Worker Agent. You can use available tools to accomplish your assigned task. If the task is complex, you can propose a plan to your Manager for approval.
+
+{% if task -%}
+<assigned_task>
+{{ task }}
+</assigned_task>
+{% endif %}
 
 <available_tools>
 {% for tool in tools -%}

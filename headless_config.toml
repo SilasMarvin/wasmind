@@ -47,14 +47,23 @@ clear_defaults = true
 # Main Manager configuration
 [hive.main_manager_model]
 name = "deepseek-chat"
-system_prompt = "You are the HIVE Main Manager. Break down tasks and delegate to workers."
+system_prompt = """You are the HIVE Main Manager. Break down tasks and delegate to workers.
+{% if task -%}
+Your assigned task: {{ task }}
+{% endif %}"""
 
 # Sub-Manager configuration
 [hive.sub_manager_model]
 name = "deepseek-chat"
-system_prompt = "You are a HIVE Manager Agent. Manage your assigned tasks."
+system_prompt = """You are a HIVE Manager Agent. Manage your assigned tasks.
+{% if task -%}
+Your assigned task: {{ task }}
+{% endif %}"""
 
 # Worker configuration
 [hive.worker_model]
 name = "deepseek-chat"
-system_prompt = "You are a HIVE Worker Agent. Use tools to complete your assigned task."
+system_prompt = """You are a HIVE Worker Agent. Use tools to complete your assigned task.
+{% if task -%}
+Your assigned task: {{ task }}
+{% endif %}"""

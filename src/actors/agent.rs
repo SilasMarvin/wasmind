@@ -250,7 +250,7 @@ impl Agent {
         match &self.behavior {
             AgentBehavior::Manager(_) => {
                 // Managers only get planning and agent management tools
-                Assistant::new(self.config.clone(), tx.clone()).run();
+                Assistant::with_task(self.config.clone(), tx.clone(), self.task_description.clone()).run();
                 Planner::new(self.config.clone(), tx.clone()).run();
 
                 // Add complete tool for sub-managers or Main Manager in headless mode
@@ -273,7 +273,7 @@ impl Agent {
             }
             AgentBehavior::Worker(_) => {
                 // Workers get all execution tools
-                Assistant::new(self.config.clone(), tx.clone()).run();
+                Assistant::with_task(self.config.clone(), tx.clone(), self.task_description.clone()).run();
                 Command::new(self.config.clone(), tx.clone()).run();
                 FileReaderActor::with_file_reader(
                     self.config.clone(),
@@ -323,11 +323,11 @@ impl Agent {
 
                     match &msg {
                         Message::ActorReady { actor_id } => {
-                            ready_actors.insert(*actor_id);
+                            ready_actors.insert(actor_id.clone());
 
                             // Check if all required actors are ready and we haven't sent the initial prompt yet
                             if !initial_prompt_sent
-                                && required_actors.iter().all(|id| ready_actors.contains(id))
+                                && required_actors.iter().all(|id| ready_actors.contains(*id))
                             {
                                 self.send_initial_prompt(&message_tx).await;
                                 initial_prompt_sent = true;
@@ -336,7 +336,7 @@ impl Agent {
                         Message::TaskCompleted { summary: _, success: _ } => {
                             // Agent explicitly signaled task completion via Complete tool
                             task_completed = true;
-                            self.handle_internal_message(msg).await;
+                            self.handle_internal_message(msg.clone()).await;
                         }
                         Message::AssistantResponse(content) => {
                             // Check if assistant has finished (no tool calls) - treat as error
@@ -373,10 +373,10 @@ impl Agent {
                                 }
                                 _ => {}
                             }
-                            self.handle_internal_message(msg).await;
+                            self.handle_internal_message(msg.clone()).await;
                         }
                         _ => {
-                            self.handle_internal_message(msg).await;
+                            self.handle_internal_message(msg.clone()).await;
                         }
                     }
 
@@ -415,8 +415,9 @@ impl Agent {
     /// Send the initial prompt to the assistant based on agent type
     #[tracing::instrument(name = "send_initial_prompt", skip(self, message_tx), fields(agent_id = %self.id().0))]
     async fn send_initial_prompt(&self, message_tx: &broadcast::Sender<Message>) {
-        // Send the actual task description to start the task
-        let _ = message_tx.send(Message::UserTUIInput(self.task_description.clone()));
+        // Send the task completion instruction
+        let initial_message = format!("Complete your assigned task: {}", self.task_description);
+        let _ = message_tx.send(Message::UserTUIInput(initial_message));
     }
 
     /// Handle internal messages from the agent's actors
@@ -554,7 +555,7 @@ pub enum AgentState {
     Initializing,
     /// Waiting for all required actors to be ready
     WaitingForActors {
-        ready_actors: std::collections::HashSet<&'static str>,
+        ready_actors: std::collections::HashSet<String>,
         required_actors: Vec<&'static str>,
     },
     /// Agent is active and processing its task
@@ -589,9 +590,9 @@ impl crate::actors::state_system::StateSystem for Agent {
                 Message::ActorReady { actor_id },
             ) => {
                 let mut new_ready = ready_actors.clone();
-                new_ready.insert(actor_id);
+                new_ready.insert(actor_id.clone());
 
-                if required_actors.iter().all(|id| new_ready.contains(id)) {
+                if required_actors.iter().all(|id| new_ready.contains(*id)) {
                     Some(Active)
                 } else {
                     Some(WaitingForActors {
@@ -736,12 +737,12 @@ mod tests {
                 // Last actor should transition to Active
                 assert_state_transition(
                     &mut agent,
-                    Message::ActorReady { actor_id },
+                    Message::ActorReady { actor_id: actor_id.to_string() },
                     AgentState::Active,
                 );
             } else {
                 // Not all actors ready yet
-                agent.transition(&Message::ActorReady { actor_id });
+                agent.transition(&Message::ActorReady { actor_id: actor_id.to_string() });
                 assert!(matches!(agent.state, AgentState::WaitingForActors { .. }));
             }
         }

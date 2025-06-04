@@ -360,13 +360,24 @@ impl SystemState {
         tools: &[ToolInfo],
         whitelisted_commands: Vec<String>,
     ) -> Result<String> {
+        self.render_system_prompt_with_task(prompt_template, tools, whitelisted_commands, None)
+    }
+
+    /// Render the system prompt with the given template, tools, and task description
+    pub fn render_system_prompt_with_task(
+        &self,
+        prompt_template: &str,
+        tools: &[ToolInfo],
+        whitelisted_commands: Vec<String>,
+        task_description: Option<String>,
+    ) -> Result<String> {
         // Check if it's a template
         if !template::is_template(prompt_template) {
             return Ok(prompt_template.to_string());
         }
 
-        // Build template context
-        let context = TemplateContext::new(tools.to_vec(), whitelisted_commands, self);
+        // Build template context with task
+        let context = TemplateContext::with_task(tools.to_vec(), whitelisted_commands, self, task_description);
 
         // Render the template
         template::render_template(prompt_template, &context).context(TemplateRenderFailedSnafu)

@@ -323,17 +323,26 @@ clear_defaults = true
 [hive.main_manager_model]
 name = "deepseek-chat"
 api_key_env_var = "DEEPSEEK_API_KEY"
-system_prompt = "You are a Main Manager. You MUST delegate all file reading, command execution, and file editing tasks to Worker agents using the spawn_agent_and_assign_task tool. Never try to do these tasks yourself. When you have completed the overall task, you MUST call the 'complete' tool to signal completion."
+system_prompt = """You are a Main Manager. You MUST delegate all file reading, command execution, and file editing tasks to Worker agents using the spawn_agent_and_assign_task tool. Never try to do these tasks yourself. When you have completed the overall task, you MUST call the 'complete' tool to signal completion.
+{% if task -%}
+Your assigned task: {{ task }}
+{% endif %}"""
 
 [hive.sub_manager_model]
 name = "deepseek-chat"
 api_key_env_var = "DEEPSEEK_API_KEY"
-system_prompt = "You are a Sub-Manager. You MUST delegate all file reading, command execution, and file editing tasks to Worker agents using the spawn_agent_and_assign_task tool. When you have completed your assigned task, you MUST call the 'complete' tool to signal completion."
+system_prompt = """You are a Sub-Manager. You MUST delegate all file reading, command execution, and file editing tasks to Worker agents using the spawn_agent_and_assign_task tool. When you have completed your assigned task, you MUST call the 'complete' tool to signal completion.
+{% if task -%}
+Your assigned task: {{ task }}
+{% endif %}"""
 
 [hive.worker_model]
 name = "deepseek-chat"
 api_key_env_var = "DEEPSEEK_API_KEY"
-system_prompt = "You are a Worker agent. Use your available tools (file_reader, command, edit_file, complete) to complete the specific task assigned to you. Always use the appropriate tool for the task. When you have finished your assigned task, you MUST call the 'complete' tool to signal completion."
+system_prompt = """You are a Worker agent. Use your available tools (file_reader, command, edit_file, complete) to complete the specific task assigned to you. Always use the appropriate tool for the task. When you have finished your assigned task, you MUST call the 'complete' tool to signal completion.
+{% if task -%}
+Your assigned task: {{ task }}
+{% endif %}"""
 "#;
 
         // Write config to sandbox using heredoc to avoid quoting issues

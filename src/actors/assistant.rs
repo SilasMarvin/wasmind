@@ -39,6 +39,7 @@ pub struct Assistant {
     cancel_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pending_content_parts: Vec<genai::chat::ContentPart>,
     state: AssistantState,
+    task_description: Option<String>,
 }
 
 impl Assistant {
@@ -91,11 +92,12 @@ impl Assistant {
             })
             .collect();
 
-        // Render system prompt with tools
-        match self.system_state.render_system_prompt(
+        // Render system prompt with tools and task description
+        match self.system_state.render_system_prompt_with_task(
             &self.config.model.system_prompt,
             &tool_infos,
             self.config.whitelisted_commands.clone(),
+            self.task_description.clone(),
         ) {
             Ok(rendered_prompt) => {
                 self.chat_request = self
@@ -179,11 +181,12 @@ impl Assistant {
                 })
                 .collect();
 
-            // Render system prompt with tools
-            match self.system_state.render_system_prompt(
+            // Render system prompt with tools and task description
+            match self.system_state.render_system_prompt_with_task(
                 &self.config.model.system_prompt,
                 &tool_infos,
                 self.config.whitelisted_commands.clone(),
+                self.task_description.clone(),
             ) {
                 Ok(rendered_prompt) => {
                     self.chat_request = self
@@ -299,6 +302,7 @@ impl Actor for Assistant {
             cancel_handle: Arc::new(Mutex::new(None)),
             pending_content_parts: Vec::new(),
             state: AssistantState::Idle,
+            task_description: None,
         }
     }
 
@@ -404,6 +408,28 @@ impl Actor for Assistant {
                 self.maybe_rerender_system_prompt().await;
             }
             _ => {}
+        }
+    }
+}
+
+impl Assistant {
+    /// Create a new Assistant with a task description
+    pub fn with_task(config: ParsedConfig, tx: broadcast::Sender<Message>, task_description: String) -> Self {
+        let client = Client::builder()
+            .with_service_target_resolver(config.model.service_target_resolver.clone())
+            .build();
+
+        Self {
+            tx,
+            config,
+            client,
+            chat_request: ChatRequest::default(),
+            system_state: SystemState::new(),
+            available_tools: Vec::new(),
+            cancel_handle: Arc::new(Mutex::new(None)),
+            pending_content_parts: Vec::new(),
+            state: AssistantState::Idle,
+            task_description: Some(task_description),
         }
     }
 }

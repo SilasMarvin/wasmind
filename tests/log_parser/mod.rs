@@ -8,10 +8,10 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 
 // Import the Message types for deserialization
-use crate::docker_sandbox::*; // This will give us access to Message types through the parent module
+use hive::actors::{Message, agent::InterAgentMessage};
 
 /// Represents a single structured log entry
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct LogEntry {
     pub timestamp: DateTime<Utc>,
     pub level: LogLevel,
@@ -20,9 +20,19 @@ pub struct LogEntry {
     pub message: String,
     pub fields: HashMap<String, serde_json::Value>,
     pub thread_id: Option<String>,
-    // Parsed message objects
-    pub hive_message: Option<serde_json::Value>, // Serialized Message
-    pub inter_agent_message: Option<serde_json::Value>, // Serialized InterAgentMessage
+    // Parsed structured message
+    pub structured_message: Option<StructuredMessage>,
+}
+
+/// Enum representing the different types of structured messages we can parse from logs
+/// Uses the actual Message and InterAgentMessage types from the codebase
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StructuredMessage {
+    /// Messages from the main Message enum in src/actors/mod.rs
+    Message(Message),
+    /// Messages from the InterAgentMessage enum in src/actors/agent.rs  
+    InterAgentMessage(InterAgentMessage),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -134,8 +144,8 @@ impl LogParser {
             .and_then(|t| t.as_str())
             .map(String::from);
 
-        // Try to parse message content if it contains serialized messages
-        let (hive_message, inter_agent_message) = Self::extract_message_objects(&fields);
+        // Try to parse structured message content
+        let structured_message = Self::parse_structured_message(&fields);
 
         Ok(LogEntry {
             timestamp,
@@ -145,8 +155,7 @@ impl LogParser {
             message,
             fields,
             thread_id,
-            hive_message,
-            inter_agent_message,
+            structured_message,
         })
     }
 
@@ -160,7 +169,7 @@ impl LogParser {
 
         // Split into components, but handle multiple spaces
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 4 {
+        if parts.len() < 3 {
             return Err("Invalid log line format".to_string());
         }
 
@@ -170,18 +179,26 @@ impl LogParser {
         let level = parts[1].parse::<LogLevel>()
             .unwrap_or(LogLevel::Info);
 
-        let thread_id = Some(parts[2].to_string());
-
-        // Everything after thread_id contains span_name: target: message
-        let remaining = parts[3..].join(" ");
+        // Check if we have thread_id format (ThreadId(XX)) or not
+        let (thread_id, remaining) = if parts.len() >= 4 && parts[2].starts_with("ThreadId(") {
+            // Format with thread_id: timestamp level ThreadId(XX) target: message
+            let thread_id = Some(parts[2].to_string());
+            let remaining = parts[3..].join(" ");
+            (thread_id, remaining)
+        } else {
+            // Format without thread_id: timestamp level target: message
+            let thread_id = None;
+            let remaining = parts[2..].join(" ");
+            (thread_id, remaining)
+        };
 
         let (span_name, target, message) = self.extract_span_target_message(&remaining);
         
         // Extract structured fields from message
         let fields = self.extract_fields_from_message(&message);
         
-        // Try to parse message content if it contains serialized messages
-        let (hive_message, inter_agent_message) = Self::extract_message_objects(&fields);
+        // Try to parse structured message content
+        let structured_message = Self::parse_structured_message(&fields);
 
         Ok(LogEntry {
             timestamp,
@@ -191,8 +208,7 @@ impl LogParser {
             message,
             fields,
             thread_id,
-            hive_message,
-            inter_agent_message,
+            structured_message,
         })
     }
 
@@ -232,28 +248,6 @@ impl LogParser {
         }
     }
 
-    /// Extract span name from target or message (kept for compatibility)
-    fn extract_span_name(&self, target: &str, message: &str) -> Option<String> {
-        // Look for span patterns in the message
-        if message.contains("enter span") || message.contains("exit span") {
-            // Extract span name from patterns like "enter span: span_name"
-            if let Some(start) = message.find("span: ") {
-                let span_part = &message[start + 6..];
-                if let Some(end) = span_part.find(' ') {
-                    return Some(span_part[..end].to_string());
-                } else {
-                    return Some(span_part.to_string());
-                }
-            }
-        }
-        
-        // Look for known span patterns in target
-        if target.contains("::") {
-            target.split("::").last().map(String::from)
-        } else {
-            None
-        }
-    }
 
     /// Extract structured fields from message content
     fn extract_fields_from_message(&self, message: &str) -> HashMap<String, serde_json::Value> {
@@ -280,42 +274,14 @@ impl LogParser {
     }
 
     /// Extract and parse message objects from log fields
-    fn extract_message_objects(fields: &HashMap<String, serde_json::Value>) -> (Option<serde_json::Value>, Option<serde_json::Value>) {
-        let hive_message = fields.get("message")
+    /// Parse structured messages from log fields using Serde's untagged deserialization
+    fn parse_structured_message(fields: &HashMap<String, serde_json::Value>) -> Option<StructuredMessage> {
+        fields.get("message")
             .and_then(|v| v.as_str())
             .and_then(|s| {
-                // Try to parse as JSON
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
-                    // Check if it looks like a Message by checking for common Message variants
-                    if parsed.is_object() {
-                        let obj = parsed.as_object().unwrap();
-                        if obj.contains_key("Action") || obj.contains_key("AssistantResponse") || 
-                           obj.contains_key("TaskCompleted") || obj.contains_key("AgentSpawned") {
-                            return Some(parsed);
-                        }
-                    }
-                }
-                None
-            });
-
-        let inter_agent_message = fields.get("message")
-            .and_then(|v| v.as_str())
-            .and_then(|s| {
-                // Try to parse as JSON
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
-                    // Check if it looks like an InterAgentMessage
-                    if parsed.is_object() {
-                        let obj = parsed.as_object().unwrap();
-                        if obj.contains_key("TaskStatusUpdate") || obj.contains_key("PlanApproved") || 
-                           obj.contains_key("PlanRejected") {
-                            return Some(parsed);
-                        }
-                    }
-                }
-                None
-            });
-
-        (hive_message, inter_agent_message)
+                // Try to deserialize directly into our StructuredMessage enum
+                serde_json::from_str::<StructuredMessage>(s).ok()
+            })
     }
 
     /// Get all parsed log entries
@@ -377,34 +343,17 @@ impl LogParser {
         false
     }
 
-    /// Get entries that contain HIVE messages
-    pub fn entries_with_hive_messages(&self) -> Vec<&LogEntry> {
-        self.entries.iter().filter(|e| e.hive_message.is_some()).collect()
-    }
 
-    /// Get entries that contain InterAgent messages
-    pub fn entries_with_inter_agent_messages(&self) -> Vec<&LogEntry> {
-        self.entries.iter().filter(|e| e.inter_agent_message.is_some()).collect()
-    }
-
-    /// Get entries containing TaskCompleted messages
-    pub fn entries_with_task_completed(&self) -> Vec<&LogEntry> {
-        self.entries.iter()
-            .filter(|e| {
-                e.hive_message.as_ref()
-                    .and_then(|msg| msg.as_object())
-                    .map_or(false, |obj| obj.contains_key("TaskCompleted"))
-            })
-            .collect()
-    }
 
     /// Get entries containing AssistantToolCall messages
     pub fn entries_with_assistant_tool_calls(&self) -> Vec<&LogEntry> {
         self.entries.iter()
             .filter(|e| {
-                e.hive_message.as_ref()
-                    .and_then(|msg| msg.as_object())
-                    .map_or(false, |obj| obj.contains_key("AssistantToolCall"))
+                if let Some(StructuredMessage::Message(msg)) = &e.structured_message {
+                    matches!(msg, Message::AssistantToolCall(_))
+                } else {
+                    false
+                }
             })
             .collect()
     }
@@ -413,13 +362,24 @@ impl LogParser {
     pub fn entries_with_tool_call(&self, tool_name: &str) -> Vec<&LogEntry> {
         self.entries.iter()
             .filter(|e| {
-                e.hive_message.as_ref()
-                    .and_then(|msg| msg.as_object())
-                    .and_then(|obj| obj.get("AssistantToolCall"))
-                    .and_then(|tool_call| tool_call.as_object())
-                    .and_then(|tc| tc.get("fn_name"))
-                    .and_then(|name| name.as_str())
-                    .map_or(false, |name| name == tool_name)
+                if let Some(StructuredMessage::Message(Message::AssistantToolCall(tool_call))) = &e.structured_message {
+                    tool_call.fn_name == tool_name
+                } else {
+                    false
+                }
+            })
+            .collect()
+    }
+
+    /// Get entries containing TaskCompleted messages
+    pub fn entries_with_task_completed(&self) -> Vec<&LogEntry> {
+        self.entries.iter()
+            .filter(|e| {
+                if let Some(StructuredMessage::Message(msg)) = &e.structured_message {
+                    matches!(msg, Message::TaskCompleted { .. })
+                } else {
+                    false
+                }
             })
             .collect()
     }
@@ -431,9 +391,7 @@ impl LogParser {
         for entry in &self.entries {
             if pattern_index < message_patterns.len() {
                 let pattern = message_patterns[pattern_index];
-                let matches = entry.hive_message.as_ref()
-                    .and_then(|msg| msg.as_object())
-                    .map_or(false, |obj| obj.contains_key(pattern));
+                let matches = self.entry_matches_pattern(entry, pattern);
                     
                 if matches {
                     pattern_index += 1;
@@ -445,6 +403,47 @@ impl LogParser {
         }
         
         false
+    }
+
+    /// Check if a log entry matches a given pattern
+    fn entry_matches_pattern(&self, entry: &LogEntry, pattern: &str) -> bool {
+        match &entry.structured_message {
+            Some(StructuredMessage::Message(msg)) => {
+                match msg {
+                    Message::Action(_) => pattern == "Action",
+                    Message::UserTUIInput(_) => pattern == "UserTUIInput",
+                    Message::AssistantToolCall(_) => pattern == "AssistantToolCall",
+                    Message::AssistantResponse(_) => pattern == "AssistantResponse",
+                    Message::ToolCallUpdate(_) => pattern == "ToolCallUpdate",
+                    Message::ToolsAvailable(_) => pattern == "ToolsAvailable",
+                    Message::FileRead { .. } => pattern == "FileRead",
+                    Message::FileEdited { .. } => pattern == "FileEdited",
+                    Message::PlanUpdated(_) => pattern == "PlanUpdated",
+                    Message::AgentSpawned { .. } => pattern == "AgentSpawned",
+                    Message::AgentStatusUpdate { .. } => pattern == "AgentStatusUpdate",
+                    Message::AgentRemoved { .. } => pattern == "AgentRemoved",
+                    Message::ActorReady { .. } => pattern == "ActorReady",
+                    Message::TaskCompleted { .. } => pattern == "TaskCompleted",
+                    Message::TUIClearInput => pattern == "TUIClearInput",
+                    #[cfg(feature = "audio")]
+                    Message::MicrophoneToggle => pattern == "MicrophoneToggle",
+                    #[cfg(feature = "audio")]
+                    Message::MicrophoneTranscription(_) => pattern == "MicrophoneTranscription",
+                    #[cfg(feature = "gui")]
+                    Message::ScreenshotCaptured(_) => pattern == "ScreenshotCaptured",
+                    #[cfg(feature = "gui")]
+                    Message::ClipboardCaptured(_) => pattern == "ClipboardCaptured",
+                }
+            }
+            Some(StructuredMessage::InterAgentMessage(msg)) => {
+                match msg {
+                    InterAgentMessage::TaskStatusUpdate { .. } => pattern == "TaskStatusUpdate",
+                    InterAgentMessage::PlanApproved { .. } => pattern == "PlanApproved",
+                    InterAgentMessage::PlanRejected { .. } => pattern == "PlanRejected",
+                }
+            }
+            None => false,
+        }
     }
 
     /// Get statistics about the logs
@@ -661,8 +660,7 @@ mod tests {
                 message: "Agent started".to_string(),
                 fields: HashMap::new(),
                 thread_id: Some("ThreadId(01)".to_string()),
-                hive_message: None,
-                inter_agent_message: None,
+                structured_message: None,
             },
             LogEntry {
                 timestamp: chrono::Utc::now(),
@@ -672,8 +670,7 @@ mod tests {
                 message: "Config loaded".to_string(),
                 fields: HashMap::new(),
                 thread_id: Some("ThreadId(02)".to_string()),
-                hive_message: None,
-                inter_agent_message: None,
+                structured_message: None,
             },
         ];
         
@@ -697,18 +694,21 @@ mod tests {
 
     #[test]
     fn test_message_object_extraction() {
-        let parser = LogParser::new();
         let mut fields = HashMap::new();
         
         // Test TaskCompleted message extraction
         fields.insert("message".to_string(), serde_json::Value::String(r#"{"TaskCompleted":{"summary":"File read successfully","success":true}}"#.to_string()));
         
-        let (hive_message, inter_agent_message) = LogParser::extract_message_objects(&fields);
+        let structured_message = LogParser::parse_structured_message(&fields);
         
-        assert!(hive_message.is_some());
-        let hive_msg = hive_message.unwrap();
-        assert!(hive_msg.as_object().unwrap().contains_key("TaskCompleted"));
-        assert!(inter_agent_message.is_none());
+        assert!(structured_message.is_some());
+        match structured_message.unwrap() {
+            StructuredMessage::Message(Message::TaskCompleted { summary, success }) => {
+                assert_eq!(summary, "File read successfully");
+                assert_eq!(success, true);
+            },
+            _ => panic!("Expected TaskCompleted message"),
+        }
     }
 
     #[test]
@@ -723,8 +723,7 @@ mod tests {
                 message: "Starting spawn_agent_and_assign_task".to_string(),
                 fields: HashMap::new(),
                 thread_id: None,
-                hive_message: None,
-                inter_agent_message: None,
+                structured_message: None,
             },
             LogEntry {
                 timestamp: chrono::Utc::now(),
@@ -734,8 +733,7 @@ mod tests {
                 message: "Calling complete_tool_call".to_string(),
                 fields: HashMap::new(),
                 thread_id: None,
-                hive_message: None,
-                inter_agent_message: None,
+                structured_message: None,
             },
         ];
 
@@ -784,8 +782,7 @@ mod tests {
                 message: "Debug message".to_string(),
                 fields: HashMap::new(),
                 thread_id: Some("ThreadId(01)".to_string()),
-                hive_message: None,
-                inter_agent_message: None,
+                structured_message: None,
             },
             LogEntry {
                 timestamp: chrono::Utc::now(),
@@ -795,8 +792,7 @@ mod tests {
                 message: "Info message".to_string(),
                 fields: HashMap::new(),
                 thread_id: Some("ThreadId(02)".to_string()),
-                hive_message: None,
-                inter_agent_message: None,
+                structured_message: None,
             },
         ];
         

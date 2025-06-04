@@ -6,10 +6,8 @@
 mod log_parser;
 mod docker_sandbox;
 
-use log_parser::{LogParser, LogLevel, LogEntry};
+use log_parser::{LogParser, LogLevel};
 use docker_sandbox::{DockerSandbox, LogVerificationResult};
-use std::collections::HashMap;
-use chrono::Utc;
 
 #[test]
 fn test_log_parser_standard_format() {
