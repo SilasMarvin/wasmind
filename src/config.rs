@@ -89,7 +89,7 @@ impl Config {
 
         if let Some(mut user_config) = user_config {
             // Always load default config to get whitelisted commands
-            let mut default = Config::default()?;
+            let default = Config::default()?;
 
             if user_config.key_bindings.clear_defaults {
                 // Even with clear_defaults, use default whitelisted commands if user hasn't specified any
