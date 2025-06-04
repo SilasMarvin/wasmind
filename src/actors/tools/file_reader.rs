@@ -219,6 +219,7 @@ impl FileReaderActor {
         }
     }
 
+    #[tracing::instrument(name = "file_reader_tool_call", skip(self, tool_call), fields(call_id = %tool_call.call_id, function = %tool_call.fn_name))]
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
         if tool_call.fn_name != TOOL_NAME {
             return;

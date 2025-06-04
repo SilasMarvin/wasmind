@@ -72,9 +72,7 @@ pub type SResult<T> = Result<T, Error>;
 
 // Library functions that main.rs can use
 pub fn init_logger() {
-    use tracing_subscriber::{EnvFilter, FmtSubscriber};
-
-    let builder = FmtSubscriber::builder().with_env_filter(EnvFilter::from_env("HIVE_LOG"));
+    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
 
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -83,11 +81,19 @@ pub fn init_logger() {
         .open("log.txt")
         .expect("Unable to open log file");
 
-    builder
-        .with_writer(file)
-        .without_time()
-        .with_ansi(false)
-        .init()
+    tracing_subscriber::registry()
+        .with(EnvFilter::from_env("HIVE_LOG"))
+        .with(
+            fmt::layer()
+                .with_writer(file)
+                .with_ansi(false)
+                .with_target(true)
+                .with_level(true)
+                .with_thread_ids(true)
+                .with_span_events(fmt::format::FmtSpan::ENTER | fmt::format::FmtSpan::EXIT)
+                .compact()
+        )
+        .init();
 }
 
 pub fn run_main_program() -> SResult<()> {

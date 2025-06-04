@@ -46,6 +46,7 @@ pub struct Command {
 }
 
 impl Command {
+    #[tracing::instrument(name = "command_tool_call", skip(self, tool_call), fields(call_id = %tool_call.call_id, function = %tool_call.fn_name))]
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
         if tool_call.fn_name != TOOL_NAME {
             return;
@@ -118,7 +119,9 @@ impl Command {
         }
     }
 
+    #[tracing::instrument(name = "execute_command", skip(self, args, tool_call_id), fields(command = %command, args_count = args.len(), call_id = %tool_call_id))]
     async fn execute_command(&mut self, command: &str, args: &[String], tool_call_id: &str) {
+        tracing::info!("Executing shell command");
         let command = command.to_string();
         let args = args.to_vec();
         let tool_call_id_clone = tool_call_id.to_string();

@@ -42,8 +42,9 @@ pub struct Assistant {
 }
 
 impl Assistant {
+    #[tracing::instrument(name = "assist_request", skip(self, request), fields(tools_count = request.tools.as_ref().map_or(0, |tools| tools.len())))]
     async fn handle_assist_request(&mut self, request: ChatRequest) {
-        info!("Assistant received assist request");
+        tracing::info!("Processing assist request");
 
         // Cancel any existing request
         if let Some(handle) = self.cancel_handle.lock().await.take() {
@@ -71,8 +72,9 @@ impl Assistant {
         info!("Done assisting");
     }
 
+    #[tracing::instrument(name = "tools_available", skip(self, new_tools), fields(tools_count = new_tools.len()))]
     async fn handle_tools_available(&mut self, new_tools: Vec<Tool>) {
-        info!("Assistant received {} new tools", new_tools.len());
+        tracing::info!("Registering new tools");
 
         // Add new tools to existing tools
         for new_tool in new_tools {
@@ -149,8 +151,9 @@ impl Assistant {
         self.handle_assist_request(self.chat_request.clone()).await;
     }
 
+    #[tracing::instrument(name = "user_input", skip(self, text), fields(input_length = text.len()))]
     async fn handle_user_input(&mut self, text: String) {
-        info!("Assistant received user input");
+        tracing::info!("Processing user input");
 
         info!("Got pending parts");
 
@@ -215,6 +218,7 @@ impl Assistant {
     }
 }
 
+#[tracing::instrument(name = "llm_request", skip(tx, client, chat_request, config), fields(model = %config.model.name, tools_count = chat_request.tools.as_ref().map_or(0, |tools| tools.len())))]
 async fn do_assist(
     tx: broadcast::Sender<Message>,
     client: Client,
@@ -223,7 +227,7 @@ async fn do_assist(
 ) -> SResult<()> {
     let request = chat_request;
 
-    info!("Executing chat request");
+    tracing::info!("Executing LLM chat request");
     let resp = client
         .exec_chat(&config.model.name, request, None)
         .await

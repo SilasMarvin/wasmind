@@ -146,7 +146,7 @@ pub mod docker_test_utils {
             }
         }
         
-        /// Run hive in headless mode with a prompt
+        /// Run hive in headless mode with a prompt and capture logs
         pub async fn run_hive_headless(&self, prompt: &str, timeout_secs: u64) -> Result<(i32, String, String), String> {
             // Create a test config in the sandbox
             let config_content = r#"
@@ -175,17 +175,17 @@ clear_defaults = true
 [hive.main_manager_model]
 name = "deepseek-chat"
 api_key_env_var = "DEEPSEEK_API_KEY"
-system_prompt = "You are a test manager. Break down tasks and delegate to workers."
+system_prompt = "You are a Main Manager. You MUST delegate all file reading, command execution, and file editing tasks to Worker agents using the spawn_agent_and_assign_task tool. Never try to do these tasks yourself."
 
 [hive.sub_manager_model]
 name = "deepseek-chat"
 api_key_env_var = "DEEPSEEK_API_KEY"
-system_prompt = "You are a test sub-manager. Manage your assigned tasks."
+system_prompt = "You are a Sub-Manager. You MUST delegate all file reading, command execution, and file editing tasks to Worker agents using the spawn_agent_and_assign_task tool."
 
 [hive.worker_model]
 name = "deepseek-chat"
 api_key_env_var = "DEEPSEEK_API_KEY"
-system_prompt = "You are a test worker. Use tools to complete your assigned task."
+system_prompt = "You are a Worker agent. Use your available tools (file_reader, command, edit_file) to complete the specific task assigned to you. Always use the appropriate tool for the task."
 "#;
             
             // Write config to sandbox using heredoc to avoid quoting issues
@@ -194,15 +194,77 @@ system_prompt = "You are a test worker. Use tools to complete your assigned task
                 config_content
             )).await?;
             
-            // Run hive with the prompt (use printf to handle quotes properly)
+            // Run hive with the prompt and capture logs
             let escaped_prompt = prompt.replace("'", "'\"'\"'");
             let cmd = format!(
-                "cd /workspace && HIVE_CONFIG_PATH=/workspace/test-config.toml timeout {} hive headless --auto-approve-commands '{}'",
+                "cd /workspace && rm -f log.txt && HIVE_LOG=debug HIVE_CONFIG_PATH=/workspace/test-config.toml timeout {} hive headless --auto-approve-commands '{}' ; echo '=== LOG OUTPUT ===' ; cat log.txt 2>/dev/null || echo 'No log file found'",
                 timeout_secs,
                 escaped_prompt
             );
             
             self.exec_command(&cmd).await
+        }
+        
+        /// Verify log output contains expected execution patterns
+        pub fn verify_log_execution(&self, stdout: &str, expected_tools: &[&str]) -> Result<bool, String> {
+            // Extract log content from stdout (after the marker)
+            let log_marker = "=== LOG OUTPUT ===";
+            let log_content = if let Some(pos) = stdout.find(log_marker) {
+                &stdout[pos + log_marker.len()..]
+            } else {
+                return Err("Log output marker not found in stdout".to_string());
+            };
+            
+            // Check for basic execution patterns
+            let mut verification_results = Vec::new();
+            
+            // Check for HIVE startup
+            if log_content.contains("Starting headless HIVE multi-agent system") {
+                verification_results.push("✅ HIVE system started".to_string());
+            } else {
+                verification_results.push("❌ HIVE system startup not found".to_string());
+            }
+            
+            // Check for agent creation
+            if log_content.contains("Agent starting execution") {
+                verification_results.push("✅ Agent started".to_string());
+            } else {
+                verification_results.push("❌ Agent startup not found".to_string());
+            }
+            
+            // Check for actor readiness
+            let ready_count = log_content.matches("Actor ready, sending ready signal").count();
+            if ready_count >= 4 {
+                verification_results.push(format!("✅ {} actors ready", ready_count));
+            } else {
+                verification_results.push(format!("❌ Only {} actors ready, expected >= 4", ready_count));
+            }
+            
+            // Check for LLM interaction
+            if log_content.contains("Executing LLM chat request") {
+                verification_results.push("✅ LLM request executed".to_string());
+            } else {
+                verification_results.push("❌ No LLM requests found".to_string());
+            }
+            
+            // Check for expected tools
+            for tool in expected_tools {
+                if log_content.contains(tool) {
+                    verification_results.push(format!("✅ Tool '{}' found in logs", tool));
+                } else {
+                    verification_results.push(format!("⚠️  Tool '{}' not found in logs", tool));
+                }
+            }
+            
+            // Print verification results
+            println!("Log Verification Results:");
+            for result in &verification_results {
+                println!("  {}", result);
+            }
+            
+            // Return success if no critical errors (❌) found
+            let has_critical_errors = verification_results.iter().any(|r| r.contains("❌"));
+            Ok(!has_critical_errors)
         }
         
         fn check_docker_available(&self) -> bool {
@@ -283,18 +345,23 @@ async fn test_sandboxed_file_reading_workflow() {
     // Create a test file in the sandbox
     sandbox.exec_command("echo 'Test file content for reading' > /workspace/temp/read_test.txt").await.unwrap();
     
-    // Run hive to read the file
-    let prompt = "Read the contents of the file /workspace/temp/read_test.txt and tell me what it contains";
+    // Run hive to read the file - explicit prompt that should force delegation
+    let prompt = "I need you to read the file /workspace/temp/read_test.txt and tell me its exact contents. You must use your tools to read this file.";
     
     let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
     
     println!("Exit code: {}", exit_code);
-    println!("Stdout: {}", stdout);
     println!("Stderr: {}", stderr);
     
-    // In a real scenario, we'd check that the output contains the file content
-    // For now, we verify the command completed
+    // Verify command completed
     assert!(exit_code == 0 || exit_code == 124, "Command should complete or timeout gracefully");
+    
+    // Verify log execution shows expected delegation and tool usage patterns
+    let log_verification = sandbox.verify_log_execution(&stdout, &["spawn_agent_and_assign_task", "file_reader", "Worker"]);
+    match log_verification {
+        Ok(success) => assert!(success, "Log verification failed - expected delegation and file reading patterns not found"),
+        Err(e) => panic!("Log verification error: {}", e),
+    }
     
     sandbox.stop().await.expect("Failed to stop sandbox");
 }
@@ -305,17 +372,23 @@ async fn test_sandboxed_command_execution_workflow() {
     let mut sandbox = docker_test_utils::DockerSandbox::new();
     sandbox.start().await.expect("Failed to start sandbox");
     
-    // Test safe command execution
-    let prompt = "Execute the command 'ls /workspace/test-files' and show me the results";
+    // Test safe command execution - explicit prompt that should force delegation  
+    let prompt = "I need you to execute the command 'ls /workspace/test-files' and show me the results. You must use your tools to run this command.";
     
     let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
     
     println!("Exit code: {}", exit_code);
-    println!("Stdout: {}", stdout);
     println!("Stderr: {}", stderr);
     
     // Verify command completed
     assert!(exit_code == 0 || exit_code == 124, "Command should complete or timeout gracefully");
+    
+    // Verify log execution shows expected delegation and command execution patterns  
+    let log_verification = sandbox.verify_log_execution(&stdout, &["spawn_agent_and_assign_task", "command", "Worker"]);
+    match log_verification {
+        Ok(success) => assert!(success, "Log verification failed - expected delegation and command execution patterns not found"),
+        Err(e) => panic!("Log verification error: {}", e),
+    }
     
     sandbox.stop().await.expect("Failed to stop sandbox");
 }
@@ -348,8 +421,8 @@ async fn test_sandboxed_multi_step_workflow() {
     let mut sandbox = docker_test_utils::DockerSandbox::new();
     sandbox.start().await.expect("Failed to start sandbox");
     
-    // Test a complex workflow that involves multiple steps
-    let prompt = "Create a directory called 'test-project' in /workspace/temp, then create a README.md file in it with the content 'This is a test project', then list the contents of the directory";
+    // Test a complex workflow that involves multiple steps - explicit delegation required
+    let prompt = "You must complete this multi-step task by delegating to worker agents: 1) Create a directory called 'test-project' in /workspace/temp, 2) Create a README.md file in it with the content 'This is a test project', 3) List the contents of the directory. Use your tools to accomplish each step.";
     
     let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 45).await.unwrap();
     

@@ -25,8 +25,9 @@ pub struct HiveHandle {
 }
 
 /// Start the HIVE multi-agent system with TUI
+#[tracing::instrument(name = "start_hive", skip(runtime, config))]
 pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> HiveHandle {
-    info!("Starting HIVE multi-agent system");
+    tracing::info!("Starting HIVE multi-agent system");
 
     // Create crossbeam channel for exit notification
     let (exit_tx, exit_rx) = channel::bounded(1);
@@ -82,12 +83,13 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
 }
 
 /// Start the HIVE multi-agent system in headless mode
+#[tracing::instrument(name = "start_headless_hive", skip(runtime, config), fields(prompt_length = initial_prompt.len()))]
 pub fn start_headless_hive(
     runtime: &tokio::runtime::Runtime,
     config: ParsedConfig,
     initial_prompt: String,
 ) -> HiveHandle {
-    info!("Starting headless HIVE multi-agent system");
+    tracing::info!("Starting headless HIVE multi-agent system");
 
     // Create crossbeam channel for exit notification
     let (exit_tx, exit_rx) = channel::bounded(1);

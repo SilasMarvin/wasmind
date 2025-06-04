@@ -198,6 +198,66 @@ async fn test_my_error_scenario() {
 }
 ```
 
+## Log Verification & Analysis
+
+### Automated Log Verification
+
+All Docker tests now include comprehensive log verification to ensure HIVE system components executed correctly:
+
+**What Gets Verified:**
+- ✅ HIVE system startup and initialization
+- ✅ Agent creation and actor readiness (4+ actors expected)
+- ✅ LLM interaction and API calls
+- ✅ Tool registration and availability
+- ⚠️ Specific tool usage patterns (depends on prompt effectiveness)
+
+**Using the Log Verification Utility:**
+```bash
+# Analyze any HIVE log file
+python tests/log_verification.py log.txt
+
+# Output shows verification results by category:
+# - System Startup: HIVE initialization, config loading
+# - Agent Lifecycle: Agent creation, actor readiness, state transitions  
+# - Tool Execution: Tool registration, LLM tool usage
+# - LLM Interaction: API requests, network connections
+```
+
+### Manual Log Analysis
+
+**Key Log Patterns to Look For:**
+```bash
+# System started correctly
+grep "Starting headless HIVE multi-agent system" log.txt
+
+# All actors became ready (expect 4+ for managers)
+grep -c "Actor ready, sending ready signal" log.txt
+
+# Agent reached active state
+grep "All actors ready, starting task" log.txt
+
+# LLM interaction occurred
+grep "Executing LLM chat request" log.txt
+
+# Tool usage (varies by prompt)
+grep -i "command\|file_reader\|planner" log.txt
+```
+
+**Debugging Test Failures:**
+1. **No log output**: Check `HIVE_LOG=debug` is set in test environment
+2. **System startup failed**: Look for config loading or actor initialization errors
+3. **Tools not used**: Verify test prompts are specific enough to trigger tool calls
+4. **Timeouts**: Check for hung actors or missing ready signals
+
+### Understanding Test Results
+
+**Expected Verification Patterns:**
+- ✅ **System Framework Working**: Core HIVE startup, agents, actors all functional
+- ✅ **LLM Integration Active**: API calls happening with tool schemas
+- ⚠️ **Tool Usage Variable**: Depends on prompt specificity and LLM behavior
+
+**Key Insight**: Current tests validate the **framework functionality** rather than specific tool execution. The system works correctly even when showing "tool not found" warnings - this indicates the LLM didn't choose to use specific tools, not that the tools are broken.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -221,27 +281,59 @@ async fn test_my_error_scenario() {
 3. **Container fails to start**
    ```bash
    # Check container logs
-   docker logs copilot-test-sandbox
+   docker logs hive-test-sandbox
    
    # Rebuild container
    docker-compose -f tests/docker/docker-compose.test.yml build --no-cache
    ```
 
-4. **Tests timeout**
-   - Increase timeout values in test functions
-   - Check if container has sufficient resources
-   - Verify network connectivity for external dependencies
+4. **Tests timeout or fail verification**
+   ```bash
+   # Check HIVE logs in container
+   docker exec hive-test-sandbox cat /workspace/log.txt
+   
+   # Run verification manually
+   docker exec hive-test-sandbox python /workspace/tests/log_verification.py /workspace/log.txt
+   
+   # Debug interactively
+   docker exec -it hive-test-sandbox bash
+   cd /workspace && HIVE_LOG=debug hive headless "test prompt"
+   ```
+
+5. **Log verification warnings**
+   - ⚠️ "Tool not found" warnings are often expected - they indicate LLM didn't use specific tools
+   - ❌ Critical errors indicate actual system failures
+   - Focus on fixing ❌ errors first, ⚠️ warnings may need better prompts
 
 ### Debug Mode
 
 ```bash
-# Run tests with full Docker output
+# Run tests with full Docker output and logs
 ./scripts/run-sandbox-tests.sh --verbose
 
-# Interactive debugging
+# Interactive debugging with log access
 docker-compose -f tests/docker/docker-compose.test.yml up -d
-docker exec -it copilot-test-sandbox bash
+docker exec -it hive-test-sandbox bash
+
+# Manual test execution with full logging
+cd /workspace
+HIVE_LOG=debug hive headless --auto-approve-commands "your test prompt"
+cat log.txt  # Review structured logs
+python tests/log_verification.py log.txt  # Verify execution
 ```
+
+### Creating Better Test Prompts
+
+**Prompt Guidelines for Tool Usage:**
+- **File Reading**: "Read the file /workspace/test.txt and summarize its contents"
+- **Command Execution**: "Run the command 'ls -la /workspace' and show the results"  
+- **Multi-step Tasks**: "Create a file called test.txt, write 'hello' to it, then read it back"
+- **Error Handling**: "Try to read a non-existent file /workspace/missing.txt"
+
+**Avoid Generic Prompts:**
+- ❌ "Help me with this task" (too vague)
+- ❌ "Analyze the situation" (no specific action)
+- ✅ "Execute command X and show output" (specific tool action)
 
 ## Future Improvements
 

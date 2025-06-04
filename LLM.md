@@ -114,25 +114,127 @@ Initializing → WaitingForActors → Active → [WaitingForApproval/WaitingForS
 - Actor lifecycle monitoring via ready/status messages
 - Graceful shutdown on system exit signals
 
+## Logging & Observability
+
+### Structured Tracing System
+The system uses comprehensive structured logging with tracing spans for full observability:
+
+**Key Log Environment Variables:**
+- `HIVE_LOG=debug` - Enables detailed structured logging (writes to `log.txt`)
+- `HIVE_LOG=info` - Standard operational logging
+- `HIVE_LOG=trace` - Maximum verbosity (includes all spans)
+
+**Important Span Hierarchies:**
+```
+start_headless_hive
+├── agent_run (agent_id, role, agent_type)
+│   ├── start_actors (agent_id, role)
+│   │   └── actor_lifecycle (actor_id)
+│   │       ├── tools_available (tools_count)
+│   │       ├── user_input (input_length)
+│   │       │   └── assist_request (tools_count)
+│   │       │       └── llm_request (model, tools_count)
+│   │       └── command_tool_call (call_id, function)
+│   │           └── execute_command (command, args_count)
+│   ├── send_initial_prompt
+│   └── handle_internal_message (message_type)
+```
+
+**Critical Logging Patterns:**
+- All actors send `ActorReady` messages when initialized
+- Agent state transitions are logged with full context
+- Tool executions include call IDs and parameters
+- LLM requests show model, tool count, and network activity
+
+### Debugging Workflows
+
+**System Startup Issues:**
+1. Check for "Starting headless HIVE multi-agent system" log entry
+2. Verify all required actors send ready signals (expect 4+ for managers)
+3. Look for "All actors ready, starting task" state transition
+4. Confirm "Executing LLM chat request" appears
+
+**Tool Execution Problems:**
+1. Search logs for tool name patterns (e.g., "command", "file_reader") 
+2. Check for `{tool}_tool_call` spans with proper call IDs
+3. Verify tool registration in `tools_available` spans
+4. Look for tool execution spans with parameters
+
+**Agent Communication Issues:**
+1. Monitor `handle_internal_message` spans for message flow
+2. Check agent state transitions for stuck states
+3. Verify parent-child agent communication patterns
+4. Look for broadcast channel lag warnings
+
+**Configuration Problems:**
+1. Search for config loading entries and feature detection
+2. Verify appropriate default config is loaded (GUI vs headless)
+3. Check for invalid action/binding rejections
+4. Confirm key binding merge logic works correctly
+
+### Log Analysis Tools
+
+**Built-in Verification:**
+- `tests/log_verification.py` - Standalone log analysis utility
+- Docker tests include automatic log verification
+- Use `python tests/log_verification.py log.txt` for post-mortem analysis
+
+**Manual Analysis Patterns:**
+```bash
+# Count actor readiness
+grep "Actor ready" log.txt | wc -l
+
+# Find tool usage
+grep -o "tools_count=[0-9]*" log.txt | sort | uniq -c
+
+# Check agent lifecycle
+grep "agent_run.*enter\|agent_run.*exit" log.txt
+
+# Monitor LLM interactions
+grep "llm_request" log.txt
+```
+
 ## Development Guidelines
 
 ### Adding New Tools
 1. Implement `Actor` trait in `src/actors/tools/`
-2. Add to agent's required actors list in `get_required_actors()`
-3. Start tool actor in agent's `start_actors()` method
-4. Register tool schema for LLM usage
+2. Add `#[tracing::instrument]` to key methods with relevant fields
+3. Add to agent's required actors list in `get_required_actors()`
+4. Start tool actor in agent's `start_actors()` method
+5. Register tool schema for LLM usage
+6. Update test verification to check for tool usage patterns
 
-### Debugging Tips
-- Use `HIVE_LOG=debug` for detailed logging (writes to `log.txt`)
-- Check actor ready messages for initialization issues
-- Verify config loading with feature-appropriate defaults
-- Monitor agent state transitions for stuck states
+### Adding Tracing Spans
+```rust
+#[tracing::instrument(name = "operation_name", skip(self, large_params), fields(key_field = %value))]
+async fn my_function(&self, param: String) -> Result<()> {
+    tracing::info!("Starting operation");
+    // ... implementation
+    tracing::debug!("Operation details");
+    Ok(())
+}
+```
+
+**Span Best Practices:**
+- Use descriptive span names that match the operation
+- Include relevant fields (IDs, counts, types) but skip large data
+- Add INFO level events for key milestones
+- Use DEBUG for detailed flow information
+- Include enter/exit events for timing analysis
+
+### Testing Guidelines
+- All Docker tests now include automatic log verification
+- Test prompts should be specific enough to trigger tool usage
+- Use log verification to ensure expected system behavior
+- Check both positive cases (tools used) and negative cases (errors handled)
 
 ### Common Gotchas
 - Headless builds need immediate Main Manager startup (no shared actors)
 - Config merging must respect feature flags
 - Broadcast channels require proper subscription timing
 - Actor ready messages are crucial for system startup
+- Tool usage requires explicit LLM prompts - generic prompts may not trigger tools
+- Log verification expects specific patterns - update tests when changing log formats
 
 ## Current Status
 

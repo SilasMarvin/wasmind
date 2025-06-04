@@ -226,8 +226,9 @@ impl Agent {
 
 
     /// Start the agent's actors based on its behavior type
+    #[tracing::instrument(name = "start_actors", skip(self), fields(agent_id = %self.id().0, role = %self.role()))]
     pub async fn start_actors(&self) -> broadcast::Sender<Message> {
-        info!("Starting actors for agent {} ({})", self.id().0, self.role());
+        tracing::info!("Starting actors for agent");
 
         // Create broadcast channel for internal actor communication
         let (tx, _) = broadcast::channel::<Message>(1024);
@@ -278,7 +279,9 @@ impl Agent {
     }
 
     /// Run the agent's main loop
+    #[tracing::instrument(name = "agent_run", skip(self), fields(agent_id = %self.id().0, role = %self.role(), agent_type = ?self.behavior))]
     pub async fn run(mut self) {
+        tracing::info!("Agent starting execution");
         let message_tx = self.start_actors().await;
         self.internal_tx = Some(message_tx.clone());
         let mut message_rx = message_tx.subscribe();
@@ -362,6 +365,7 @@ impl Agent {
     }
 
     /// Send the initial prompt to the assistant based on agent type
+    #[tracing::instrument(name = "send_initial_prompt", skip(self, message_tx), fields(agent_id = %self.id().0))]
     async fn send_initial_prompt(&self, message_tx: &broadcast::Sender<Message>) {
         // Send initial message to start the task
         let _ = message_tx.send(Message::UserTUIInput(
@@ -370,6 +374,7 @@ impl Agent {
     }
 
     /// Handle internal messages from the agent's actors
+    #[tracing::instrument(name = "handle_internal_message", skip(self, message), fields(agent_id = %self.id().0, message_type = ?std::mem::discriminant(&message)))]
     async fn handle_internal_message(&mut self, message: Message) {
         // Handle messages that apply to both managers and workers
         match &message {

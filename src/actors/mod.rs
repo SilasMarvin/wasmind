@@ -157,28 +157,41 @@ pub trait Actor: Send + Sized + 'static {
     /// run
     fn run(mut self) {
         let tx = self.get_tx();
+        let actor_id = Self::ACTOR_ID;
+        let span = tracing::info_span!("actor_lifecycle", actor_id = actor_id);
         tokio::spawn(async move {
+            let _guard = span.enter();
+            tracing::info!("Actor starting");
             self.on_start().await;
 
             // Signal that this actor is ready
+            tracing::info!("Actor ready, sending ready signal");
             let _ = tx.send(Message::ActorReady {
                 actor_id: Self::ACTOR_ID,
             });
 
             let mut rx = self.get_rx();
+            tracing::info!("Actor entering message loop");
             loop {
                 match rx.recv().await {
-                    Ok(Message::Action(Action::Exit)) => break,
-                    Ok(msg) => self.handle_message(msg).await,
+                    Ok(Message::Action(Action::Exit)) => {
+                        tracing::info!("Actor received exit signal");
+                        break;
+                    }
+                    Ok(msg) => {
+                        tracing::debug!("Actor handling message");
+                        self.handle_message(msg).await;
+                    }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        error!("RECEIVER LAGGED BY {} MESSAGES! This was unexpected.", n);
+                        tracing::error!("RECEIVER LAGGED BY {} MESSAGES! This was unexpected.", n);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        error!("Channel closed")
+                        tracing::error!("Channel closed");
                     }
                 }
             }
 
+            tracing::info!("Actor stopping");
             self.on_stop().await;
         });
     }
