@@ -7,8 +7,8 @@ pub mod prompt_preview;
 pub mod system_state;
 pub mod template;
 
-use std::sync::LazyLock;
 use snafu::{Location, Snafu};
+use std::sync::LazyLock;
 use tokio::runtime;
 
 pub static TOKIO_RUNTIME: LazyLock<runtime::Runtime> = LazyLock::new(|| {
@@ -27,6 +27,7 @@ pub enum Error {
         source: config::ConfigError,
     },
 
+    #[cfg(feature = "gui")]
     #[snafu(display("Error copying clipboard"))]
     Clipboard {
         #[snafu(implicit)]
@@ -35,6 +36,7 @@ pub enum Error {
         source: arboard::Error,
     },
 
+    #[cfg(feature = "gui")]
     #[snafu(display("Error copying clipboard"))]
     Xcap {
         #[snafu(implicit)]
@@ -71,7 +73,7 @@ pub type SResult<T> = Result<T, Error>;
 // Library functions that main.rs can use
 pub fn init_logger() {
     use tracing_subscriber::{EnvFilter, FmtSubscriber};
-    
+
     let builder = FmtSubscriber::builder().with_env_filter(EnvFilter::from_env("FILLER_NAME"));
 
     let file = std::fs::OpenOptions::new()
@@ -91,14 +93,16 @@ pub fn init_logger() {
 pub fn run_main_program() -> SResult<()> {
     use config::{Config, ParsedConfig};
     use key_bindings::KeyBindingManager;
+    #[cfg(feature = "gui")]
+    use key_bindings::rdev_key_to_crossterm;
+    #[cfg(feature = "gui")]
     use rdev::{Event, EventType, listen};
     use snafu::ResultExt;
     use tokio::runtime;
     use tracing::{error, info};
-    
+
     let config = Config::new().context(ConfigSnafu)?;
     let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
-    let mut key_binding_manager = KeyBindingManager::from(&parsed_config.keys);
 
     // Create the tokio runtime in main thread
     let runtime = runtime::Builder::new_multi_thread()
@@ -107,39 +111,53 @@ pub fn run_main_program() -> SResult<()> {
         .expect("Failed to create tokio runtime");
 
     // Start the HIVE multi-agent system
-    let hive_handle = hive::start_hive(&runtime, parsed_config);
+    let hive_handle = hive::start_hive(&runtime, parsed_config.clone());
 
-    // Clone the message sender for the callback
-    let message_tx = hive_handle.message_tx.clone();
+    #[cfg(feature = "gui")]
+    {
+        let mut key_binding_manager = KeyBindingManager::from(&parsed_config.keys);
 
-    // Spawn a thread to monitor for exit
-    std::thread::spawn(move || {
+        // Clone the message sender for the callback
+        let message_tx = hive_handle.message_tx.clone();
+
+        // Spawn a thread to monitor for exit
+        std::thread::spawn(move || {
+            // Wait for exit signal from HIVE system
+            let _ = hive_handle.exit_rx.recv();
+            info!("Received exit signal from HIVE system, exiting...");
+            std::process::exit(0);
+        });
+
+        let callback = move |event: Event| match event.event_type {
+            EventType::KeyPress(key) => {
+                if let Some(key_code) = rdev_key_to_crossterm(key) {
+                    let actions = key_binding_manager.handle_event(key_code);
+                    for action in actions {
+                        if let Err(e) = message_tx.send(actors::Message::Action(action)) {
+                            error!("Error sending action to actors: {:?}", e);
+                        }
+                    }
+                }
+            }
+            EventType::KeyRelease(_) => {
+                key_binding_manager.clear();
+            }
+            _ => (),
+        };
+
+        info!("Starting global key listener");
+
+        // This will block and has to be in the main thread
+        if let Err(error) = listen(callback) {
+            error!("Error listening for global key events: {:?}", error)
+        }
+    }
+
+    #[cfg(not(feature = "gui"))]
+    {
         // Wait for exit signal from HIVE system
         let _ = hive_handle.exit_rx.recv();
         info!("Received exit signal from HIVE system, exiting...");
-        std::process::exit(0);
-    });
-
-    let callback = move |event: Event| match event.event_type {
-        EventType::KeyPress(key) => {
-            let actions = key_binding_manager.handle_event(key);
-            for action in actions {
-                if let Err(e) = message_tx.send(actors::Message::Action(action)) {
-                    error!("Error sending action to actors: {:?}", e);
-                }
-            }
-        }
-        EventType::KeyRelease(_) => {
-            key_binding_manager.clear();
-        }
-        _ => (),
-    };
-
-    info!("Starting global key listener");
-
-    // This will block and has to be in the main thread
-    if let Err(error) = listen(callback) {
-        error!("Error listening for global key events: {:?}", error)
     }
 
     Ok(())
@@ -150,7 +168,7 @@ pub fn run_headless_program(prompt: String, auto_approve_commands_override: bool
     use snafu::ResultExt;
     use tokio::runtime;
     use tracing::info;
-    
+
     let config = Config::new().context(ConfigSnafu)?;
     let mut parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
 
@@ -174,3 +192,4 @@ pub fn run_headless_program(prompt: String, auto_approve_commands_override: bool
 
     Ok(())
 }
+

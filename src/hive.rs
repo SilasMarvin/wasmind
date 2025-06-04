@@ -5,13 +5,16 @@ use tracing::info;
 use crate::{
     actors::{
         agent::Agent,
-        context::Context,
-        microphone::Microphone,
         tui::TuiActor,
         Action, Actor, Message,
     },
     config::ParsedConfig,
 };
+
+#[cfg(feature = "gui")]
+use crate::actors::context::Context;
+#[cfg(feature = "audio")]
+use crate::actors::microphone::Microphone;
 
 /// Handle for communicating with the HIVE system
 pub struct HiveHandle {
@@ -40,7 +43,9 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
 
         // Create and run TUI and Context actors (these are shared across all agents)
         TuiActor::new(config.clone(), tx.clone()).run();
+        #[cfg(feature = "gui")]
         Context::new(config.clone(), tx.clone()).run();
+        #[cfg(feature = "audio")]
         Microphone::new(config.clone(), tx.clone()).run();
 
         // Create the Main Manager agent
@@ -98,12 +103,18 @@ pub fn start_headless_hive(
         info!("Creating and starting headless HIVE system actors...");
 
         // Create and run Context and Microphone actors (no TUI in headless mode)
+        #[cfg(feature = "gui")]
         Context::new(config.clone(), tx.clone()).run();
+        #[cfg(feature = "audio")]
         Microphone::new(config.clone(), tx.clone()).run();
 
         // Track when context actors are ready
         let mut ready_actors = std::collections::HashSet::new();
-        let required_actors = vec![Context::ACTOR_ID, Microphone::ACTOR_ID];
+        let mut required_actors: Vec<&'static str> = Vec::new();
+        #[cfg(feature = "gui")]
+        required_actors.push(Context::ACTOR_ID);
+        #[cfg(feature = "audio")]
+        required_actors.push(Microphone::ACTOR_ID);
         let mut main_manager_started = false;
 
         // Keep the runtime alive and listen for exit signals

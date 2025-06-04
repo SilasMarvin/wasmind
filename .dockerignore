@@ -1,0 +1,26 @@
+# Ignore build artifacts and large directories
+target/
+# Note: Include Cargo.lock for reproducible builds
+
+# Ignore test artifacts  
+tests/target/
+**/*.tmp
+**/tmp/
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore logs
+*.log
+log.txt
+
+# Ignore temporary files
+*.temp
+*.bak

@@ -288,6 +288,7 @@ impl Actor for Assistant {
         match message {
             Message::ToolsAvailable(tools) => self.handle_tools_available(tools).await,
             Message::ToolCallUpdate(update) => self.handle_tool_call_update(update).await,
+            #[cfg(feature = "audio")]
             Message::MicrophoneTranscription(text) => {
                 self.handle_microphone_transcription(text).await
             }
@@ -303,6 +304,7 @@ impl Actor for Assistant {
                     info!("Cancelled assist request");
                 }
             }
+            #[cfg(feature = "gui")]
             Message::ScreenshotCaptured(result) => {
                 if let Ok(base64) = result {
                     // Add screenshot as an image content part
@@ -317,6 +319,7 @@ impl Actor for Assistant {
                 }
                 // Errors are already handled by TUI
             }
+            #[cfg(feature = "gui")]
             Message::ClipboardCaptured(_result) => {
                 // Clipboard text is sent as UserTUIInput by the TUI actor
                 // so we don't need to handle it here
@@ -394,8 +397,11 @@ impl StateSystem for Assistant {
         let new_state = match (&self.state, message) {
             // From Idle to Processing when receiving user input or assist action
             (AssistantState::Idle, Message::UserTUIInput(_))
-            | (AssistantState::Idle, Message::MicrophoneTranscription(_))
             | (AssistantState::Idle, Message::Action(crate::actors::Action::Assist)) => {
+                Some(AssistantState::Processing)
+            }
+            #[cfg(feature = "audio")]
+            (AssistantState::Idle, Message::MicrophoneTranscription(_)) => {
                 Some(AssistantState::Processing)
             }
 

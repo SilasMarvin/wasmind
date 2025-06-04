@@ -3,7 +3,7 @@ use genai::{
     ServiceTarget,
     resolver::{AuthData, Endpoint, ServiceTargetResolver},
 };
-use rdev::Key;
+use crossterm::event::KeyCode;
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
 use std::{collections::HashMap, fs, io, path::PathBuf};
@@ -12,7 +12,7 @@ use crate::actors::Action;
 
 const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant.";
 
-pub type KeyBinding = Vec<Key>;
+pub type KeyBinding = Vec<KeyCode>;
 
 /// Errors while getting the config
 #[derive(Debug, Snafu)]
@@ -342,51 +342,85 @@ fn parse_key_combination(input: &str) -> Option<KeyBinding> {
 
     for key_str in parts {
         let key = match key_str {
-            // Modifiers
-            "ctrl" => Key::ControlLeft,
-            "alt" => Key::Alt, // Option on MacOS
-            "meta" | "cmd" | "super" | "win" => Key::MetaLeft,
-            "shift" => Key::ShiftLeft,
-
             // Letters
-            "a" => Key::KeyA,
-            "b" => Key::KeyB,
-            "c" => Key::KeyC,
-            "d" => Key::KeyD,
-            "e" => Key::KeyE,
-            "f" => Key::KeyF,
-            "g" => Key::KeyG,
-            "h" => Key::KeyH,
-            "i" => Key::KeyI,
-            "j" => Key::KeyJ,
-            "k" => Key::KeyK,
-            "l" => Key::KeyL,
-            "m" => Key::KeyM,
-            "n" => Key::KeyN,
-            "o" => Key::KeyO,
-            "p" => Key::KeyP,
-            "q" => Key::KeyQ,
-            "r" => Key::KeyR,
-            "s" => Key::KeyS,
-            "t" => Key::KeyT,
-            "u" => Key::KeyU,
-            "v" => Key::KeyV,
-            "w" => Key::KeyW,
-            "x" => Key::KeyX,
-            "y" => Key::KeyY,
-            "z" => Key::KeyZ,
+            "a" => KeyCode::Char('a'),
+            "b" => KeyCode::Char('b'),
+            "c" => KeyCode::Char('c'),
+            "d" => KeyCode::Char('d'),
+            "e" => KeyCode::Char('e'),
+            "f" => KeyCode::Char('f'),
+            "g" => KeyCode::Char('g'),
+            "h" => KeyCode::Char('h'),
+            "i" => KeyCode::Char('i'),
+            "j" => KeyCode::Char('j'),
+            "k" => KeyCode::Char('k'),
+            "l" => KeyCode::Char('l'),
+            "m" => KeyCode::Char('m'),
+            "n" => KeyCode::Char('n'),
+            "o" => KeyCode::Char('o'),
+            "p" => KeyCode::Char('p'),
+            "q" => KeyCode::Char('q'),
+            "r" => KeyCode::Char('r'),
+            "s" => KeyCode::Char('s'),
+            "t" => KeyCode::Char('t'),
+            "u" => KeyCode::Char('u'),
+            "v" => KeyCode::Char('v'),
+            "w" => KeyCode::Char('w'),
+            "x" => KeyCode::Char('x'),
+            "y" => KeyCode::Char('y'),
+            "z" => KeyCode::Char('z'),
 
             // Numbers
-            "0" => Key::Num0,
-            "1" => Key::Num1,
-            "2" => Key::Num2,
-            "3" => Key::Num3,
-            "4" => Key::Num4,
-            "5" => Key::Num5,
-            "6" => Key::Num6,
-            "7" => Key::Num7,
-            "8" => Key::Num8,
-            "9" => Key::Num9,
+            "0" => KeyCode::Char('0'),
+            "1" => KeyCode::Char('1'),
+            "2" => KeyCode::Char('2'),
+            "3" => KeyCode::Char('3'),
+            "4" => KeyCode::Char('4'),
+            "5" => KeyCode::Char('5'),
+            "6" => KeyCode::Char('6'),
+            "7" => KeyCode::Char('7'),
+            "8" => KeyCode::Char('8'),
+            "9" => KeyCode::Char('9'),
+
+            // Special keys
+            "enter" => KeyCode::Enter,
+            "escape" | "esc" => KeyCode::Esc,
+            "space" => KeyCode::Char(' '),
+            "tab" => KeyCode::Tab,
+            "backspace" => KeyCode::Backspace,
+            "delete" | "del" => KeyCode::Delete,
+            "insert" => KeyCode::Insert,
+            "home" => KeyCode::Home,
+            "end" => KeyCode::End,
+            "pageup" => KeyCode::PageUp,
+            "pagedown" => KeyCode::PageDown,
+            "up" => KeyCode::Up,
+            "down" => KeyCode::Down,
+            "left" => KeyCode::Left,
+            "right" => KeyCode::Right,
+
+            // Function keys
+            "f1" => KeyCode::F(1),
+            "f2" => KeyCode::F(2),
+            "f3" => KeyCode::F(3),
+            "f4" => KeyCode::F(4),
+            "f5" => KeyCode::F(5),
+            "f6" => KeyCode::F(6),
+            "f7" => KeyCode::F(7),
+            "f8" => KeyCode::F(8),
+            "f9" => KeyCode::F(9),
+            "f10" => KeyCode::F(10),
+            "f11" => KeyCode::F(11),
+            "f12" => KeyCode::F(12),
+
+            // Note: Modifiers are handled differently in crossterm 
+            // We'll need to handle them in the key binding system
+            "ctrl" | "alt" | "meta" | "cmd" | "super" | "win" | "shift" => {
+                // For now, ignore modifiers in the binding parsing
+                // They'll be handled separately in the key event processing
+                continue;
+            }
+
             _ => return None,
         };
         binding.push(key);

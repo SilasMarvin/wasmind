@@ -1,6 +1,8 @@
 pub mod agent;
 pub mod assistant;
+#[cfg(feature = "gui")]
 pub mod context;
+#[cfg(feature = "audio")]
 pub mod microphone;
 pub mod state_system;
 pub mod tools;
@@ -19,8 +21,11 @@ use self::agent::{AgentId, TaskId, TaskStatus};
 /// Actions the worker can perform and users can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Action {
+    #[cfg(feature = "gui")]
     CaptureWindow,
+    #[cfg(feature = "gui")]
     CaptureClipboard,
+    #[cfg(feature = "audio")]
     ToggleRecordMicrophone,
     Assist,
     Cancel,
@@ -30,8 +35,11 @@ pub enum Action {
 impl Action {
     pub fn from_str(value: &str) -> Option<Self> {
         match value {
+            #[cfg(feature = "gui")]
             "CaptureWindow" => Some(Action::CaptureWindow),
+            #[cfg(feature = "gui")]
             "CaptureClipboard" => Some(Action::CaptureClipboard),
+            #[cfg(feature = "audio")]
             "ToggleRecordMicrophone" => Some(Action::ToggleRecordMicrophone),
             "Assist" => Some(Action::Assist),
             "CancelAssist" => Some(Action::Cancel),
@@ -86,14 +94,18 @@ pub enum Message {
     ToolsAvailable(Vec<genai::chat::Tool>),
 
     // Microphone messages
+    #[cfg(feature = "audio")]
     MicrophoneToggle,
+    #[cfg(feature = "audio")]
     MicrophoneTranscription(String),
 
     // TUI messages
     TUIClearInput,
 
     // Context messages
+    #[cfg(feature = "gui")]
     ScreenshotCaptured(Result<String, String>), // Ok(base64) or Err(error message)
+    #[cfg(feature = "gui")]
     ClipboardCaptured(Result<String, String>),  // Ok(text) or Err(error message)
 
     // System state update messages

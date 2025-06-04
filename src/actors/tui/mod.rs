@@ -303,6 +303,7 @@ impl Actor for TuiActor {
                 drop(app);
                 self.trigger_redraw(false);
             }
+            #[cfg(feature = "audio")]
             Message::MicrophoneTranscription(text) => {
                 let mut app = self.app.lock().unwrap();
                 app.add_event(TuiEvent::user_microphone(text));
@@ -310,15 +311,18 @@ impl Actor for TuiActor {
                 drop(app);
                 self.trigger_redraw(false);
             }
+            #[cfg(feature = "gui")]
             Message::Action(Action::CaptureWindow) => {
                 let mut app = self.app.lock().unwrap();
                 app.add_event(TuiEvent::screenshot("Screenshot captured".to_string()));
                 drop(app);
                 self.trigger_redraw(false);
             }
+            #[cfg(feature = "gui")]
             Message::Action(Action::CaptureClipboard) => {
                 // Context actor will send the actual clipboard event
             }
+            #[cfg(feature = "audio")]
             Message::Action(Action::ToggleRecordMicrophone) => {
                 let mut app = self.app.lock().unwrap();
                 app.add_event(TuiEvent::microphone_started());
@@ -348,6 +352,7 @@ impl Actor for TuiActor {
                 drop(app);
                 self.trigger_redraw(false);
             }
+            #[cfg(feature = "gui")]
             Message::ScreenshotCaptured(result) => {
                 let mut app = self.app.lock().unwrap();
                 match result {
@@ -362,6 +367,7 @@ impl Actor for TuiActor {
                 drop(app);
                 self.trigger_redraw(false);
             }
+            #[cfg(feature = "gui")]
             Message::ClipboardCaptured(result) => {
                 let mut app = self.app.lock().unwrap();
                 match result {
