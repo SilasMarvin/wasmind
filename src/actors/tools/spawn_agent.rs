@@ -70,8 +70,6 @@ impl SpawnAgent {
             return;
         }
 
-        info!("SpawnAgent tool called with ID: {}", tool_call.call_id);
-
         // Send received status
         let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
@@ -145,8 +143,6 @@ impl SpawnAgent {
 
         if input.wait {
             // If wait is true, spawn the agent and wait for completion
-            info!("Spawning agent {} and waiting for completion", agent_id.0);
-
             let mut child_rx = self.child_tx.subscribe();
             let agent_id_copy = agent_id.clone();
             let task_id_copy = task_id.clone();
@@ -185,8 +181,6 @@ impl SpawnAgent {
             }));
         } else {
             // Spawn the agent without waiting
-            info!("Spawning agent {} without waiting", agent_id.0);
-
             tokio::spawn(async move {
                 agent.run().await;
             });

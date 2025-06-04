@@ -1,4 +1,5 @@
 pub mod command;
+pub mod complete;
 pub mod edit_file;
 pub mod file_reader;
 pub mod mcp;

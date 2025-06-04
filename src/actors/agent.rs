@@ -10,12 +10,16 @@ use crate::{
         assistant::Assistant,
         state_system::StateSystem,
         tools::{
-            command::Command, edit_file::EditFile, file_reader::FileReaderActor, mcp::MCP,
-            plan_approval::PlanApproval, planner::Planner, spawn_agent::SpawnAgent,
+            command::Command, complete::Complete, edit_file::EditFile,
+            file_reader::FileReaderActor, mcp::MCP, plan_approval::PlanApproval, planner::Planner,
+            spawn_agent::SpawnAgent,
         },
     },
     config::ParsedConfig,
 };
+
+/// Role name for the main manager agent
+pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
 
 /// Unique identifier for an agent
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -132,7 +136,7 @@ impl Agent {
         let (child_tx, child_rx) = broadcast::channel(1024);
 
         // Use the appropriate model config based on role
-        if role == "Main Manager" {
+        if role == MAIN_MANAGER_ROLE {
             if let Some(main_manager_model) = &config.hive.main_manager_model {
                 config.model = main_manager_model.clone();
             }
@@ -204,12 +208,19 @@ impl Agent {
     pub fn get_required_actors(&self) -> Vec<&'static str> {
         match &self.behavior {
             AgentBehavior::Manager(_) => {
-                vec![
+                let mut actors = vec![
                     Assistant::ACTOR_ID,
                     Planner::ACTOR_ID,
                     SpawnAgent::ACTOR_ID,
                     PlanApproval::ACTOR_ID,
-                ]
+                ];
+
+                // Add complete tool for sub-managers or Main Manager in headless mode
+                if self.role() != MAIN_MANAGER_ROLE || cfg!(not(feature = "gui")) {
+                    actors.push(Complete::ACTOR_ID);
+                }
+
+                actors
             }
             AgentBehavior::Worker(_) => {
                 vec![
@@ -219,6 +230,7 @@ impl Agent {
                     EditFile::ACTOR_ID,
                     Planner::ACTOR_ID,
                     MCP::ACTOR_ID,
+                    Complete::ACTOR_ID,
                 ]
             }
         }
@@ -227,8 +239,6 @@ impl Agent {
     /// Start the agent's actors based on its behavior type
     #[tracing::instrument(name = "start_actors", skip(self), fields(agent_id = %self.id().0, role = %self.role()))]
     pub async fn start_actors(&self) -> broadcast::Sender<Message> {
-        tracing::info!("Starting actors for agent");
-
         // Create broadcast channel for internal actor communication
         let (tx, _) = broadcast::channel::<Message>(1024);
 
@@ -242,6 +252,11 @@ impl Agent {
                 // Managers only get planning and agent management tools
                 Assistant::new(self.config.clone(), tx.clone()).run();
                 Planner::new(self.config.clone(), tx.clone()).run();
+
+                // Add complete tool for sub-managers or Main Manager in headless mode
+                if self.role() != MAIN_MANAGER_ROLE || cfg!(not(feature = "gui")) {
+                    Complete::new(self.config.clone(), tx.clone()).run();
+                }
 
                 // Add spawn_agent and plan approval tools for managers
                 if let Some(child_tx) = &self.child_tx {
@@ -269,6 +284,7 @@ impl Agent {
                 EditFile::with_file_reader(self.config.clone(), tx.clone(), file_reader).run();
                 Planner::new(self.config.clone(), tx.clone()).run();
                 MCP::new(self.config.clone(), tx.clone()).run();
+                Complete::new(self.config.clone(), tx.clone()).run();
             }
         }
 
@@ -278,7 +294,6 @@ impl Agent {
     /// Run the agent's main loop
     #[tracing::instrument(name = "agent_run", skip(self), fields(agent_id = %self.id().0, role = %self.role(), agent_type = ?self.behavior))]
     pub async fn run(mut self) {
-        tracing::info!("Agent starting execution");
         let message_tx = self.start_actors().await;
         self.internal_tx = Some(message_tx.clone());
         let mut message_rx = message_tx.subscribe();
@@ -300,29 +315,59 @@ impl Agent {
             tokio::select! {
                 // Handle internal messages from actors
                 Ok(msg) = message_rx.recv() => {
+                    tracing::debug!(name = "agent_received_internal_message", message = ?msg);
+
                     // First, attempt state transition
                     self.transition(&msg);
 
                     match &msg {
                         Message::ActorReady { actor_id } => {
-                            info!("Agent {}: Actor {} is ready", self.id().0, actor_id);
                             ready_actors.insert(*actor_id);
 
                             // Check if all required actors are ready and we haven't sent the initial prompt yet
                             if !initial_prompt_sent
                                 && required_actors.iter().all(|id| ready_actors.contains(id))
                             {
-                                info!("Agent {}: All actors ready, starting task", self.id().0);
                                 self.send_initial_prompt(&message_tx).await;
                                 initial_prompt_sent = true;
                             }
                         }
+                        Message::TaskCompleted { summary: _, success: _ } => {
+                            // Agent explicitly signaled task completion via Complete tool
+                            task_completed = true;
+                            self.handle_internal_message(msg).await;
+                        }
                         Message::AssistantResponse(content) => {
-                            // Check if assistant has finished (no tool calls)
+                            // Check if assistant has finished (no tool calls) - treat as error
                             match content {
-                                genai::chat::MessageContent::Text(_) |
-                                genai::chat::MessageContent::Parts(_) => {
-                                    info!("Agent {}: Task completed", self.id().0);
+                                genai::chat::MessageContent::Text(text) => {
+                                    // Report failure with the text content
+                                    if let Some(parent_tx) = &self.parent_tx {
+                                        let _ = parent_tx.send(InterAgentMessage::TaskStatusUpdate {
+                                            task_id: self.task_id.clone(),
+                                            status: TaskStatus::Done(Err(format!("Agent failed to use complete tool properly. Last response: {}", text))),
+                                            from_agent: self.id().clone(),
+                                        });
+                                    }
+                                    task_completed = true;
+                                }
+                                genai::chat::MessageContent::Parts(parts) => {
+                                    // Extract text from parts and report failure
+                                    let text_content = parts.iter()
+                                        .filter_map(|part| match part {
+                                            genai::chat::ContentPart::Text(text) => Some(text.as_str()),
+                                            _ => None,
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join(" ");
+
+                                    if let Some(parent_tx) = &self.parent_tx {
+                                        let _ = parent_tx.send(InterAgentMessage::TaskStatusUpdate {
+                                            task_id: self.task_id.clone(),
+                                            status: TaskStatus::Done(Err(format!("Agent failed to use complete tool properly. Last response: {}", text_content))),
+                                            from_agent: self.id().clone(),
+                                        });
+                                    }
                                     task_completed = true;
                                 }
                                 _ => {}
@@ -346,16 +391,20 @@ impl Agent {
                         None
                     }
                 } => {
+                    tracing::debug!(name = "agent_received_child_message", message = ?msg);
                     self.handle_child_message(msg).await;
                 }
             }
         }
 
-        // Report completion to parent if we have one
+        // Agent finished - this should have been handled by TaskCompleted message
+        // If we reach here without explicit completion, it's likely an error
         if let Some(parent_tx) = &self.parent_tx {
             let _ = parent_tx.send(InterAgentMessage::TaskStatusUpdate {
                 task_id: self.task_id.clone(),
-                status: TaskStatus::Done(Ok("Task completed".to_string())),
+                status: TaskStatus::Done(Err(
+                    "Agent exited without explicit completion".to_string()
+                )),
                 from_agent: self.id().clone(),
             });
         }
@@ -376,6 +425,22 @@ impl Agent {
     async fn handle_internal_message(&mut self, message: Message) {
         // Handle messages that apply to both managers and workers
         match &message {
+            Message::TaskCompleted { summary, success } => {
+                // Report task completion to parent if we have one
+                if let Some(parent_tx) = &self.parent_tx {
+                    let status = if *success {
+                        TaskStatus::Done(Ok(summary.clone()))
+                    } else {
+                        TaskStatus::Done(Err(summary.clone()))
+                    };
+
+                    let _ = parent_tx.send(InterAgentMessage::TaskStatusUpdate {
+                        task_id: self.task_id.clone(),
+                        status,
+                        from_agent: self.id().clone(),
+                    });
+                }
+            }
             Message::PlanUpdated(plan) => {
                 // If we're a worker and have a parent, report the plan for approval
                 if let AgentBehavior::Worker(_) = &self.behavior {
@@ -414,11 +479,6 @@ impl Agent {
                     status,
                     from_agent,
                 } => {
-                    info!(
-                        "Manager received status update for task {} from agent {}",
-                        task_id.0, from_agent.0
-                    );
-
                     // Send AgentStatusUpdate to update system state
                     if let Some(tx) = self.get_internal_tx() {
                         let _ = tx.send(Message::AgentStatusUpdate {
@@ -469,27 +529,18 @@ impl Agent {
                         }
                     };
 
-                    // Find the internal message_tx to send this update to the manager's assistant
                     if let Some(tx) = self.get_internal_tx() {
                         let _ = tx.send(Message::UserTUIInput(status_message));
                     }
                 }
-                InterAgentMessage::PlanApproved { task_id, plan_id } => {
-                    info!(
-                        "Agent received plan approval for task {} plan {}",
-                        task_id.0, plan_id
-                    );
+                InterAgentMessage::PlanApproved { task_id: _, plan_id: _ } => {
                     // Workers will handle this in their planner actor
                 }
                 InterAgentMessage::PlanRejected {
-                    task_id,
-                    plan_id,
-                    reason,
+                    task_id: _,
+                    plan_id: _,
+                    reason: _,
                 } => {
-                    info!(
-                        "Agent received plan rejection for task {} plan {}: {}",
-                        task_id.0, plan_id, reason
-                    );
                     // Workers will handle this in their planner actor
                 }
             }

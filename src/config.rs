@@ -125,18 +125,10 @@ impl Config {
                         .collect();
                 }
 
-                tracing::debug!(
-                    "Final whitelisted commands: {:?}",
-                    user_config.whitelisted_commands
-                );
                 Ok(user_config)
             }
         } else {
             let config = Config::default()?;
-            tracing::debug!(
-                "Using default config, whitelisted commands: {:?}",
-                config.whitelisted_commands
-            );
             Ok(config)
         }
     }
@@ -162,12 +154,7 @@ impl Config {
         #[cfg(feature = "gui")]
         let default_contents = include_str!("../default_config.toml");
 
-        tracing::debug!("Default config contents:\n{}", default_contents);
         let config: Config = toml::from_str(default_contents).context(TomlDeserializeSnafu)?;
-        tracing::debug!(
-            "Parsed default config - whitelisted_commands: {:?}",
-            config.whitelisted_commands
-        );
         Ok(config)
     }
 }
@@ -250,8 +237,6 @@ impl TryFrom<Config> for ParsedConfig {
             worker_model: value.hive.worker_model.map(parse_model_config),
         };
 
-        tracing::debug!("Loaded whitelisted commands: {:?}", whitelisted_commands);
-
         Ok(Self {
             keys,
             model,
@@ -330,7 +315,7 @@ fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
                     }
                     Err(_) => {
                         tracing::debug!(
-                            "Environment variable not found, using FromEnv auth method"
+                            "Auth environment variable not found, using FromEnv auth method"
                         );
                         AuthData::FromEnv(s)
                     }

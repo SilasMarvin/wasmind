@@ -121,7 +121,6 @@ impl Command {
 
     #[tracing::instrument(name = "execute_command", skip(self, args, tool_call_id), fields(command = %command, args_count = args.len(), call_id = %tool_call_id))]
     async fn execute_command(&mut self, command: &str, args: &[String], tool_call_id: &str) {
-        tracing::info!("Executing shell command");
         let command = command.to_string();
         let args = args.to_vec();
         let tool_call_id_clone = tool_call_id.to_string();

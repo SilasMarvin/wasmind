@@ -204,17 +204,6 @@ grep "llm_request" log.txt
 5. Register tool schema for LLM usage
 6. Update test verification to check for tool usage patterns
 
-### Adding Tracing Spans
-```rust
-#[tracing::instrument(name = "operation_name", skip(self, large_params), fields(key_field = %value))]
-async fn my_function(&self, param: String) -> Result<()> {
-    tracing::info!("Starting operation");
-    // ... implementation
-    tracing::debug!("Operation details");
-    Ok(())
-}
-```
-
 **Span Best Practices:**
 - Use descriptive span names that match the operation
 - Include relevant fields (IDs, counts, types) but skip large data

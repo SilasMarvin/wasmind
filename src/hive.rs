@@ -1,6 +1,5 @@
 use crossbeam::channel;
 use tokio::sync::broadcast;
-use tracing::info;
 
 use crate::{
     actors::{Action, Actor, Message, agent::Agent, tui::TuiActor},
@@ -23,8 +22,6 @@ pub struct HiveHandle {
 /// Start the HIVE multi-agent system with TUI
 #[tracing::instrument(name = "start_hive", skip(runtime, config))]
 pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> HiveHandle {
-    tracing::info!("Starting HIVE multi-agent system");
-
     // Create crossbeam channel for exit notification
     let (exit_tx, exit_rx) = channel::bounded(1);
 
@@ -36,8 +33,6 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
     runtime.spawn(async move {
         let mut rx = tx.subscribe();
 
-        info!("Creating and starting HIVE system actors...");
-
         // Create and run TUI and Context actors (these are shared across all agents)
         TuiActor::new(config.clone(), tx.clone()).run();
         #[cfg(feature = "gui")]
@@ -47,7 +42,7 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
 
         // Create the Main Manager agent
         let main_manager = Agent::new_manager(
-            "Main Manager".to_string(),
+            crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
             "Assist the user with their software engineering tasks".to_string(),
             config.clone(),
         );
@@ -57,12 +52,11 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
             main_manager.run().await;
         });
 
-        info!("HIVE system started with Main Manager");
-
         // Keep the runtime alive and listen for exit signals
         loop {
-            if let Ok(Message::Action(Action::Exit)) = rx.recv().await {
-                info!("Received exit signal, shutting down HIVE system");
+            let msg = rx.recv().await.expect("Error receiving in hive");
+            tracing::debug!(name = "hive_received_message", message = ?msg);
+            if let Message::Action(Action::Exit) = msg {
                 // This is a horrible hack to let the tui restore the terminal first
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                 // Notify main thread that we're exiting
@@ -85,8 +79,6 @@ pub fn start_headless_hive(
     config: ParsedConfig,
     initial_prompt: String,
 ) -> HiveHandle {
-    tracing::info!("Starting headless HIVE multi-agent system");
-
     // Create crossbeam channel for exit notification
     let (exit_tx, exit_rx) = channel::bounded(1);
 
@@ -97,8 +89,6 @@ pub fn start_headless_hive(
     // Spawn the HIVE system task
     runtime.spawn(async move {
         let mut rx = tx.subscribe();
-
-        info!("Creating and starting headless HIVE system actors...");
 
         // Create and run Context and Microphone actors (no TUI in headless mode)
         #[cfg(feature = "gui")]
@@ -117,11 +107,9 @@ pub fn start_headless_hive(
 
         // If no shared actors are required (headless build), start main manager immediately
         if required_actors.is_empty() {
-            info!("HIVE: No shared actors required, starting Main Manager immediately");
-
             // Create the Main Manager agent with the initial prompt as its task
             let main_manager = Agent::new_manager(
-                "Main Manager".to_string(),
+                crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
                 initial_prompt.clone(),
                 config.clone(),
             );
@@ -140,18 +128,15 @@ pub fn start_headless_hive(
         loop {
             match rx.recv().await {
                 Ok(Message::ActorReady { actor_id }) => {
-                    info!("HIVE: Actor {} is ready", actor_id);
                     ready_actors.insert(actor_id);
 
                     // Check if all required actors are ready and we haven't started the main manager yet
                     if !main_manager_started
                         && required_actors.iter().all(|id| ready_actors.contains(id))
                     {
-                        info!("HIVE: All shared actors ready, starting Main Manager");
-
                         // Create the Main Manager agent with the initial prompt as its task
                         let main_manager = Agent::new_manager(
-                            "Main Manager".to_string(),
+                            crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
                             initial_prompt.clone(),
                             config.clone(),
                         );
@@ -167,7 +152,6 @@ pub fn start_headless_hive(
                     }
                 }
                 Ok(Message::Action(Action::Exit)) => {
-                    info!("Received exit signal, shutting down headless HIVE system");
                     let _ = exit_tx.send(());
                     break;
                 }

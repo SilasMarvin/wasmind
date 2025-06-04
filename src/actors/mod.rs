@@ -139,6 +139,12 @@ pub enum Message {
     ActorReady {
         actor_id: &'static str,
     },
+
+    // Task completion message
+    TaskCompleted {
+        summary: String,
+        success: bool,
+    },
 }
 
 /// Base trait for all actors in the system
@@ -160,7 +166,6 @@ pub trait Actor: Send + Sized + 'static {
         let span = tracing::info_span!("actor_lifecycle", actor_id = actor_id);
         tokio::spawn(async move {
             let _guard = span.enter();
-            tracing::info!("Actor starting");
             self.on_start().await;
 
             // Signal that this actor is ready
@@ -170,7 +175,6 @@ pub trait Actor: Send + Sized + 'static {
             });
 
             let mut rx = self.get_rx();
-            tracing::info!("Actor entering message loop");
             loop {
                 match rx.recv().await {
                     Ok(Message::Action(Action::Exit)) => {

@@ -2,7 +2,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use image::{DynamicImage, ImageFormat, imageops::FilterType};
 use std::io::Cursor;
 use tokio::sync::broadcast;
-use tracing::{error, info};
+use tracing::error;
 use xcap::{Window, image::RgbaImage};
 
 use crate::{
@@ -63,7 +63,6 @@ impl Context {
         Ok(text)
     }
     async fn handle_capture_window(&mut self) {
-        info!("Capturing window");
         match Self::capture_screen() {
             Ok(image) => {
                 let mut buffer = Cursor::new(Vec::new());
@@ -89,7 +88,6 @@ impl Context {
     }
 
     async fn handle_capture_clipboard(&mut self) {
-        info!("Capturing clipboard");
         match Self::capture_clipboard() {
             Ok(text) => {
                 let _ = self.tx.send(Message::ClipboardCaptured(Ok(text)));

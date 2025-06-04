@@ -44,8 +44,6 @@ pub struct Assistant {
 impl Assistant {
     #[tracing::instrument(name = "assist_request", skip(self, request), fields(tools_count = request.tools.as_ref().map_or(0, |tools| tools.len())))]
     async fn handle_assist_request(&mut self, request: ChatRequest) {
-        tracing::info!("Processing assist request");
-
         // Cancel any existing request
         if let Some(handle) = self.cancel_handle.lock().await.take() {
             handle.abort();
@@ -68,14 +66,10 @@ impl Assistant {
         });
 
         *self.cancel_handle.lock().await = Some(handle);
-
-        info!("Done assisting");
     }
 
     #[tracing::instrument(name = "tools_available", skip(self, new_tools), fields(tools_count = new_tools.len()))]
     async fn handle_tools_available(&mut self, new_tools: Vec<Tool>) {
-        tracing::info!("Registering new tools");
-
         // Add new tools to existing tools
         for new_tool in new_tools {
             // Remove any existing tool with the same name
@@ -119,8 +113,6 @@ impl Assistant {
     async fn handle_tool_call_update(&mut self, update: ToolCallUpdate) {
         // Check if this is a completion
         if let ToolCallStatus::Finished(result) = &update.status {
-            info!("Tool call {} finished", update.call_id);
-
             // Create tool response and add to chat
             let tool_response = genai::chat::ToolResponse {
                 call_id: update.call_id.clone(),
@@ -139,8 +131,6 @@ impl Assistant {
     }
 
     async fn handle_microphone_transcription(&mut self, text: String) {
-        info!("Assistant received microphone transcription");
-
         // Add user message to chat
         self.chat_request = self
             .chat_request
@@ -153,9 +143,6 @@ impl Assistant {
 
     #[tracing::instrument(name = "user_input", skip(self, text), fields(input_length = text.len()))]
     async fn handle_user_input(&mut self, text: String) {
-        tracing::info!("Processing user input");
-
-        info!("Got pending parts");
 
         if self.pending_content_parts.is_empty() {
             // Simple text message
@@ -174,15 +161,11 @@ impl Assistant {
             self.pending_content_parts.clear();
         }
 
-        info!("About to send assist request");
-
         self.handle_assist_request(self.chat_request.clone()).await;
     }
 
     async fn maybe_rerender_system_prompt(&mut self) {
         if self.system_state.is_modified() {
-            info!("System state modified, re-rendering system prompt");
-
             // Build tool infos for system prompt
             let tool_infos: Vec<ToolInfo> = self
                 .available_tools
@@ -208,7 +191,6 @@ impl Assistant {
                         .with_system(&rendered_prompt)
                         .with_tools(self.available_tools.clone());
                     self.system_state.reset_modified();
-                    info!("System prompt re-rendered successfully");
                 }
                 Err(e) => {
                     error!("Failed to re-render system prompt: {}", e);
@@ -227,16 +209,12 @@ async fn do_assist(
 ) -> SResult<()> {
     let request = chat_request;
 
-    tracing::info!("Executing LLM chat request");
     let resp = client
         .exec_chat(&config.model.name, request, None)
         .await
         .context(crate::GenaiSnafu)?;
 
-    info!("Got resp: {:?}", resp);
-
     if let Some(message_content) = resp.content {
-        info!("Got message content: {:?}", message_content);
 
         // Note: We don't update chat_request here since it's owned by this function
         // The Assistant struct will handle updating its own chat_request when needed
@@ -289,7 +267,6 @@ impl Actor for Assistant {
     }
 
     async fn on_start(&mut self) {
-        info!("Assistant actor starting...");
     }
 
     async fn handle_message(&mut self, message: Message) {
@@ -309,7 +286,6 @@ impl Actor for Assistant {
                 // Cancel current request
                 if let Some(handle) = self.cancel_handle.lock().await.take() {
                     handle.abort();
-                    info!("Cancelled assist request");
                 }
             }
             #[cfg(feature = "gui")]
@@ -337,7 +313,6 @@ impl Actor for Assistant {
                 content,
                 last_modified,
             } => {
-                info!("Updating system state with read file: {}", path.display());
                 self.system_state.update_file(path, content, last_modified);
                 self.maybe_rerender_system_prompt().await;
             }
@@ -346,7 +321,6 @@ impl Actor for Assistant {
                 content,
                 last_modified,
             } => {
-                info!("Updating system state with edited file: {}", path.display());
                 self.system_state.update_file(path, content, last_modified);
                 self.maybe_rerender_system_prompt().await;
             }
@@ -356,7 +330,6 @@ impl Actor for Assistant {
                 self.maybe_rerender_system_prompt().await;
             }
             Message::AssistantResponse(content) => {
-                info!("Assistant received response message, adding to chat history");
                 self.chat_request = self.chat_request.clone().append_message(ChatMessage {
                     role: ChatRole::Assistant,
                     content,
@@ -369,7 +342,6 @@ impl Actor for Assistant {
                 task_id,
                 task_description,
             } => {
-                info!("Agent spawned: {} ({})", agent_role, agent_id.0);
                 let agent_info = crate::system_state::AgentTaskInfo::new(
                     agent_id,
                     agent_role,
@@ -380,12 +352,10 @@ impl Actor for Assistant {
                 self.maybe_rerender_system_prompt().await;
             }
             Message::AgentStatusUpdate { agent_id, status } => {
-                info!("Agent status update: {:?}", status);
                 self.system_state.update_agent_status(&agent_id, status);
                 self.maybe_rerender_system_prompt().await;
             }
             Message::AgentRemoved { agent_id } => {
-                info!("Agent removed: {}", agent_id.0);
                 self.system_state.remove_agent(&agent_id);
                 self.maybe_rerender_system_prompt().await;
             }

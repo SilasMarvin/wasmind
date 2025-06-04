@@ -14,15 +14,10 @@ This directory contains comprehensive tests for the Copilot multi-agent AI syste
 - **Coverage**: Multi-agent communication, plan workflows
 - **Status**: ✅ Excellent coverage for agent coordination
 
-### 3. **Sandboxed End-to-End Tests (New)**
+### 3. **Sandboxed End-to-End Tests**
 - **Location**: `tests/sandboxed_integration_tests.rs`
 - **Coverage**: Complete user workflows in Docker sandbox
-- **Status**: 🆕 Safe testing of real tool execution
-
-### 4. **Error Recovery Tests (New)**
-- **Location**: `tests/error_recovery_tests.rs`  
-- **Coverage**: Failure scenarios and system resilience
-- **Status**: 🆕 Comprehensive error handling validation
+- **Status**: ✅ Safe testing of real tool execution
 
 ## Docker Sandbox Testing
 
@@ -98,9 +93,6 @@ docker-compose -f tests/docker/docker-compose.test.yml build
 # Run sandbox tests (requires Docker)
 cargo test --test sandboxed_integration_tests -- --ignored
 
-# Run error recovery tests
-cargo test --test error_recovery_tests -- --ignored
-
 # Run traditional integration tests
 cargo test --test hive_integration_tests
 ```
@@ -112,26 +104,13 @@ cargo test --test hive_integration_tests
 **File**: `tests/sandboxed_integration_tests.rs`
 
 - ✅ **File Reading**: User prompt → file read → response
-- ✅ **File Editing**: User prompt → file modification → verification  
 - ✅ **Command Execution**: User prompt → safe command → output
 - ✅ **Multi-Agent Tasks**: Complex workflows with agent coordination
-- ✅ **Plan Approval**: Planning workflow with manager approval
+- ✅ **Error Recovery**: Handling of failing commands gracefully
+- ✅ **Multi-Step Workflows**: Create directory, write file, list contents
 - ✅ **System Lifecycle**: Startup, execution, clean shutdown
 
-### 2. Error Recovery Tests
-
-**File**: `tests/error_recovery_tests.rs`
-
-- ✅ **Command Failures**: Handling of failing commands
-- ✅ **Permission Errors**: File access denied scenarios
-- ✅ **Agent Communication Failures**: Channel closures, timeouts
-- ✅ **Resource Exhaustion**: Memory/disk limit handling
-- ✅ **Invalid Input**: Malicious or malformed prompts
-- ✅ **Concurrent Conflicts**: Race conditions and locking
-- ✅ **Cleanup Verification**: Resource leak detection
-- ✅ **Security Isolation**: Network and capability restrictions
-
-### 3. Performance Baseline Tests
+### 2. Performance Baseline Tests
 
 - **Response Time**: System should complete reasonable tasks within 30 seconds
 - **Resource Usage**: Memory usage under 400MB, reasonable CPU utilization
@@ -162,37 +141,21 @@ Each test run creates:
 #[tokio::test]
 #[ignore] // Mark as sandbox test
 async fn test_my_new_workflow() {
-    let mut sandbox = docker_test_utils::DockerSandbox::new();
-    sandbox.start().await.expect("Failed to start sandbox");
-    
-    let prompt = "Your test prompt here";
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 30).await.unwrap();
-    
-    // Add assertions
-    assert!(exit_code == 0, "Workflow should complete successfully");
-    
-    sandbox.stop().await.expect("Failed to stop sandbox");
-}
-```
-
-### 2. Error Recovery Tests
-
-```rust
-#[tokio::test]
-#[ignore]
-async fn test_my_error_scenario() {
     let mut sandbox = DockerSandbox::new();
     sandbox.start().await.expect("Failed to start sandbox");
     
-    // Set up error condition
-    sandbox.exec_command("setup error condition").await.unwrap();
+    let prompt = "Your test prompt here";
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
     
-    // Run test that should recover gracefully
-    let prompt = "Test prompt that encounters the error";
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 30).await.unwrap();
-    
-    // Verify graceful handling
-    assert!(exit_code >= 0, "Should handle error gracefully");
+    // Verify log execution
+    let log_verification = sandbox.verify_log_execution(
+        &stdout,
+        &["expected_tool_1", "expected_tool_2"],
+    );
+    match log_verification {
+        Ok(success) => assert!(success, "Log verification failed"),
+        Err(e) => panic!("Log verification error: {}", e),
+    }
     
     sandbox.stop().await.expect("Failed to stop sandbox");
 }

@@ -62,15 +62,18 @@ where
 {
     tokio::time::timeout(Duration::from_millis(timeout_ms), async {
         loop {
-            if let Ok(msg) = rx.recv().await {
-                if predicate(&msg) {
-                    return Some(msg);
+            match rx.recv().await {
+                Ok(msg) => {
+                    if predicate(&msg) {
+                        return Some(msg);
+                    }
                 }
+                Err(_) => return None, // Channel closed or lagged
             }
         }
     })
     .await
-    .unwrap()
+    .unwrap_or(None)
 }
 
 #[tokio::test]
@@ -121,7 +124,7 @@ async fn test_manager_worker_communication() {
     })
     .await;
 
-    assert!(msg.is_some());
+    assert!(msg.is_some(), "Manager should receive InProgress status update from worker");
 
     // Simulate task completion
     worker_to_manager_tx
