@@ -175,17 +175,17 @@ clear_defaults = true
 [hive.main_manager_model]
 name = "deepseek-chat"
 api_key_env_var = "DEEPSEEK_API_KEY"
-system_prompt = "You are a Main Manager. You MUST delegate all file reading, command execution, and file editing tasks to Worker agents using the spawn_agent_and_assign_task tool. Never try to do these tasks yourself."
+system_prompt = "You are a Main Manager. You MUST delegate all file reading, command execution, and file editing tasks to Worker agents using the spawn_agent_and_assign_task tool. Never try to do these tasks yourself. When you have completed the overall task, you MUST call the 'complete' tool to signal completion."
 
 [hive.sub_manager_model]
 name = "deepseek-chat"
 api_key_env_var = "DEEPSEEK_API_KEY"
-system_prompt = "You are a Sub-Manager. You MUST delegate all file reading, command execution, and file editing tasks to Worker agents using the spawn_agent_and_assign_task tool."
+system_prompt = "You are a Sub-Manager. You MUST delegate all file reading, command execution, and file editing tasks to Worker agents using the spawn_agent_and_assign_task tool. When you have completed your assigned task, you MUST call the 'complete' tool to signal completion."
 
 [hive.worker_model]
 name = "deepseek-chat"
 api_key_env_var = "DEEPSEEK_API_KEY"
-system_prompt = "You are a Worker agent. Use your available tools (file_reader, command, edit_file) to complete the specific task assigned to you. Always use the appropriate tool for the task."
+system_prompt = "You are a Worker agent. Use your available tools (file_reader, command, edit_file, complete) to complete the specific task assigned to you. Always use the appropriate tool for the task. When you have finished your assigned task, you MUST call the 'complete' tool to signal completion."
 "#;
 
         // Write config to sandbox using heredoc to avoid quoting issues
@@ -277,6 +277,24 @@ system_prompt = "You are a Worker agent. Use your available tools (file_reader, 
             verification_results.push("✅ Tool calls executed".to_string());
         } else {
             verification_results.push("⚠️  No tool call patterns found".to_string());
+        }
+
+        // Check for Complete tool usage - agents should signal completion explicitly
+        let complete_patterns = vec!["complete_tool_call", "task_completion_signal", "TaskCompleted"];
+        let found_patterns: Vec<&str> = complete_patterns.iter()
+            .filter(|pattern| log_content.contains(*pattern))
+            .copied()
+            .collect();
+        
+        if !found_patterns.is_empty() {
+            verification_results.push(format!("✅ Complete tool patterns found: {:?}", found_patterns));
+        } else {
+            verification_results.push("⚠️  Complete tool not found - agents may not be signaling completion properly".to_string());
+            // Also check for any mention of "complete" to see what we're actually getting
+            let complete_mentions = log_content.matches("complete").count();
+            if complete_mentions > 0 {
+                verification_results.push(format!("   Note: Found {} mentions of 'complete' in logs", complete_mentions));
+            }
         }
 
         // Check for command execution patterns

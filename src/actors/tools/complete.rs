@@ -53,10 +53,21 @@ impl Complete {
             return;
         }
 
+        tracing::debug!(
+            name = "complete_tool_call", 
+            call_id = %tool_call.call_id,
+            "Agent called complete tool to signal task completion"
+        );
+
         // Parse input
         let input: CompleteInput = match serde_json::from_value(tool_call.fn_arguments) {
             Ok(input) => input,
             Err(e) => {
+                tracing::debug!(
+                    name = "complete_tool_parse_error",
+                    error = %e,
+                    "Failed to parse complete tool arguments"
+                );
                 let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
@@ -64,6 +75,13 @@ impl Complete {
                 return;
             }
         };
+
+        tracing::debug!(
+            name = "task_completion_signal",
+            summary = %input.summary,
+            success = input.success,
+            "Agent signaling task completion via complete tool"
+        );
 
         // Send completion signal
         let completion_message = if input.success {

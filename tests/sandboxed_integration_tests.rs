@@ -54,8 +54,8 @@ async fn test_sandboxed_file_reading_workflow() {
         .await
         .unwrap();
 
-    // Run hive to read the file - explicit prompt that should force delegation
-    let prompt = "I need you to read the file /workspace/temp/read_test.txt and tell me its exact contents. You must use your tools to read this file.";
+    // Run hive to read the file - explicit prompt that should force delegation and completion
+    let prompt = "I need you to read the file /workspace/temp/read_test.txt and tell me its exact contents. You must use your tools to read this file. When you have completed this task, use the complete tool to signal that you are done.";
 
     let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 60).await.unwrap();
 
@@ -68,10 +68,10 @@ async fn test_sandboxed_file_reading_workflow() {
         "Command should complete or timeout gracefully"
     );
 
-    // Verify log execution shows expected delegation and tool usage patterns
+    // Verify log execution shows expected delegation and tool usage patterns, including completion
     let log_verification = sandbox.verify_log_execution(
         &stdout,
-        &["spawn_agent_and_assign_task", "file_reader", "Worker"],
+        &["spawn_agent_and_assign_task", "file_reader", "Worker", "complete"],
     );
     match log_verification {
         Ok(success) => assert!(
@@ -98,8 +98,8 @@ async fn test_sandboxed_command_execution_workflow() {
     let mut sandbox = DockerSandbox::new();
     sandbox.start().await.expect("Failed to start sandbox");
 
-    // Test safe command execution - explicit prompt that should force delegation
-    let prompt = "I need you to execute the command 'ls /workspace/test-files' and show me the results. You must use your tools to run this command.";
+    // Test safe command execution - explicit prompt that should force delegation and completion
+    let prompt = "I need you to execute the command 'ls /workspace/test-files' and show me the results. You must use your tools to run this command. When you have completed this task, use the complete tool to signal that you are done.";
 
     let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
 
@@ -112,10 +112,10 @@ async fn test_sandboxed_command_execution_workflow() {
         "Command should complete or timeout gracefully"
     );
 
-    // Verify log execution shows expected delegation and command execution patterns
+    // Verify log execution shows expected delegation and command execution patterns, including completion
     let log_verification = sandbox.verify_log_execution(
         &stdout,
-        &["spawn_agent_and_assign_task", "command", "Worker"],
+        &["spawn_agent_and_assign_task", "command", "Worker", "complete"],
     );
     match log_verification {
         Ok(success) => assert!(
@@ -143,7 +143,7 @@ async fn test_sandboxed_error_recovery() {
     sandbox.start().await.expect("Failed to start sandbox");
 
     // Test error handling with a command that will fail
-    let prompt = "Execute the command 'cat /nonexistent/file.txt' and handle the error gracefully";
+    let prompt = "Execute the command 'cat /nonexistent/file.txt' and handle the error gracefully. When you have completed this task (including error handling), use the complete tool to signal that you are done.";
 
     let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
 
@@ -155,10 +155,10 @@ async fn test_sandboxed_error_recovery() {
     // Exit code might be non-zero due to the failing command, but should not be a system crash
     assert!(exit_code >= 0, "System should handle errors gracefully");
 
-    // Verify log execution shows system handled the error without crashing
+    // Verify log execution shows system handled the error without crashing and completed properly
     let log_verification = sandbox.verify_log_execution(
         &stdout,
-        &["spawn_agent_and_assign_task", "command", "Worker"],
+        &["spawn_agent_and_assign_task", "command", "Worker", "complete"],
     );
     match log_verification {
         Ok(success) => assert!(
@@ -178,7 +178,7 @@ async fn test_sandboxed_multi_step_workflow() {
     sandbox.start().await.expect("Failed to start sandbox");
 
     // Test a complex workflow that involves multiple steps - explicit delegation required
-    let prompt = "You must complete this multi-step task by delegating to worker agents: 1) Create a directory called 'test-project' in /workspace/temp, 2) Create a README.md file in it with the content 'This is a test project', 3) List the contents of the directory. Use your tools to accomplish each step.";
+    let prompt = "You must complete this multi-step task by delegating to worker agents: 1) Create a directory called 'test-project' in /workspace/temp, 2) Create a README.md file in it with the content 'This is a test project', 3) List the contents of the directory. Use your tools to accomplish each step. When all steps are completed, use the complete tool to signal that you are done.";
 
     let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 90).await.unwrap();
 
@@ -192,10 +192,10 @@ async fn test_sandboxed_multi_step_workflow() {
         "Multi-step workflow should complete"
     );
 
-    // Verify log execution shows expected delegation and multi-step execution patterns
+    // Verify log execution shows expected delegation and multi-step execution patterns, including completion
     let log_verification = sandbox.verify_log_execution(
         &stdout,
-        &["spawn_agent_and_assign_task", "command", "Worker"],
+        &["spawn_agent_and_assign_task", "command", "Worker", "complete"],
     );
     match log_verification {
         Ok(success) => assert!(
