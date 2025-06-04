@@ -129,8 +129,12 @@ impl AgentTaskInfo {
             TaskStatus::Done(Ok(result)) => format!(" - {}", result),
             TaskStatus::Done(Err(error)) => format!(" - Error: {}", error),
             TaskStatus::AwaitingManager(awaiting) => match awaiting {
-                crate::actors::agent::TaskAwaitingManager::AwaitingPlanApproval(_) => " - Awaiting plan approval".to_string(),
-                crate::actors::agent::TaskAwaitingManager::AwaitingMoreInformation(info) => format!(" - Needs: {}", info),
+                crate::actors::agent::TaskAwaitingManager::AwaitingPlanApproval(_) => {
+                    " - Awaiting plan approval".to_string()
+                }
+                crate::actors::agent::TaskAwaitingManager::AwaitingMoreInformation(info) => {
+                    format!(" - Needs: {}", info)
+                }
             },
             TaskStatus::InProgress => String::new(),
         };
@@ -304,7 +308,7 @@ impl SystemState {
         }
 
         let mut lines = vec!["## Spawned Agents and Tasks".to_string()];
-        
+
         // Sort agents by spawn time for consistent output
         let mut sorted_agents: Vec<_> = self.agents.values().collect();
         sorted_agents.sort_by_key(|agent| agent.spawned_at);
@@ -696,13 +700,16 @@ Current plan: active
     #[test]
     fn test_agent_tracking() {
         use crate::actors::agent::{AgentId, TaskId, TaskStatus};
-        
+
         let mut state = SystemState::new();
-        
+
         // Initially no agents
         assert_eq!(state.agent_count(), 0);
-        assert_eq!(state.render_agents_section(), "No agents currently spawned.");
-        
+        assert_eq!(
+            state.render_agents_section(),
+            "No agents currently spawned."
+        );
+
         // Add an agent
         let agent_id = AgentId("agent-1".to_string());
         let task_id = TaskId("task-1".to_string());
@@ -712,21 +719,24 @@ Current plan: active
             task_id.clone(),
             "Implement user authentication".to_string(),
         );
-        
+
         state.add_agent(agent_info);
         assert_eq!(state.agent_count(), 1);
         assert!(state.is_modified());
-        
+
         // Check rendering
         let section = state.render_agents_section();
         assert!(section.contains("## Spawned Agents and Tasks"));
         assert!(section.contains("[~] Software Engineer (agent-1): Implement user authentication"));
-        
+
         // Update agent status
-        state.update_agent_status(&agent_id, TaskStatus::Done(Ok("Completed successfully".to_string())));
+        state.update_agent_status(
+            &agent_id,
+            TaskStatus::Done(Ok("Completed successfully".to_string())),
+        );
         let section = state.render_agents_section();
         assert!(section.contains("[x] Software Engineer (agent-1): Implement user authentication - Completed successfully"));
-        
+
         // Add another agent
         let agent_id2 = AgentId("agent-2".to_string());
         let task_id2 = TaskId("task-2".to_string());
@@ -738,28 +748,34 @@ Current plan: active
         );
         state.add_agent(agent_info2);
         assert_eq!(state.agent_count(), 2);
-        
+
         // Update second agent with error
-        state.update_agent_status(&agent_id2, TaskStatus::Done(Err("Connection timeout".to_string())));
+        state.update_agent_status(
+            &agent_id2,
+            TaskStatus::Done(Err("Connection timeout".to_string())),
+        );
         let section = state.render_agents_section();
         assert!(section.contains("[!] Database Architect (agent-2): Design schema for user data - Error: Connection timeout"));
-        
+
         // Remove first agent
         state.remove_agent(&agent_id);
         assert_eq!(state.agent_count(), 1);
-        
+
         // Remove second agent
         state.remove_agent(&agent_id2);
         assert_eq!(state.agent_count(), 0);
-        assert_eq!(state.render_agents_section(), "No agents currently spawned.");
+        assert_eq!(
+            state.render_agents_section(),
+            "No agents currently spawned."
+        );
     }
 
     #[test]
     fn test_agent_template_context() {
         use crate::actors::agent::{AgentId, TaskId};
-        
+
         let mut state = SystemState::new();
-        
+
         // Add an agent
         let agent_info = AgentTaskInfo::new(
             AgentId("test-agent".to_string()),
@@ -768,11 +784,11 @@ Current plan: active
             "Plan sprint tasks".to_string(),
         );
         state.add_agent(agent_info);
-        
+
         // Get template context
         let context = state.to_template_context();
         assert_eq!(context["agents"]["count"], 1);
-        
+
         let agents_section = context["agents"]["section"].as_str().unwrap();
         assert!(agents_section.contains("## Spawned Agents and Tasks"));
         assert!(agents_section.contains("Project Manager"));

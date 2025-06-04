@@ -4,8 +4,8 @@ use tokio::sync::broadcast;
 use tracing::info;
 
 use crate::actors::{
-    agent::{InterAgentMessage, TaskId},
     Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    agent::{InterAgentMessage, TaskId},
 };
 use crate::config::ParsedConfig;
 
@@ -217,6 +217,8 @@ impl Actor for PlanApproval {
             schema: Some(serde_json::from_str(REJECT_TOOL_INPUT_SCHEMA).unwrap()),
         };
 
-        let _ = self.tx.send(Message::ToolsAvailable(vec![approve_tool, reject_tool]));
+        let _ = self
+            .tx
+            .send(Message::ToolsAvailable(vec![approve_tool, reject_tool]));
     }
 }

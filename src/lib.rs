@@ -72,7 +72,7 @@ pub type SResult<T> = Result<T, Error>;
 
 // Library functions that main.rs can use
 pub fn init_logger() {
-    use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt};
+    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -91,7 +91,7 @@ pub fn init_logger() {
                 .with_level(true)
                 .with_thread_ids(true)
                 .with_span_events(fmt::format::FmtSpan::ENTER | fmt::format::FmtSpan::EXIT)
-                .compact()
+                .compact(),
         )
         .init();
 }
@@ -199,4 +199,3 @@ pub fn run_headless_program(prompt: String, auto_approve_commands_override: bool
 
     Ok(())
 }
-

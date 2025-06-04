@@ -4,8 +4,8 @@ use tokio::sync::broadcast;
 use tracing::info;
 
 use crate::actors::{
-    agent::{Agent, AgentSpawnedResponse, InterAgentMessage},
     Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    agent::{Agent, AgentSpawnedResponse, InterAgentMessage},
 };
 use crate::config::ParsedConfig;
 
@@ -140,18 +140,17 @@ impl SpawnAgent {
             agent_role: agent_role.clone(),
         };
 
-        let response_json = serde_json::to_string(&response).unwrap_or_else(|_| {
-            format!("Agent spawned with ID: {}", agent_id.0)
-        });
+        let response_json = serde_json::to_string(&response)
+            .unwrap_or_else(|_| format!("Agent spawned with ID: {}", agent_id.0));
 
         if input.wait {
             // If wait is true, spawn the agent and wait for completion
             info!("Spawning agent {} and waiting for completion", agent_id.0);
-            
+
             let mut child_rx = self.child_tx.subscribe();
             let agent_id_copy = agent_id.clone();
             let task_id_copy = task_id.clone();
-            
+
             // Spawn the agent
             tokio::spawn(async move {
                 agent.run().await;
@@ -160,7 +159,12 @@ impl SpawnAgent {
             // Wait for the agent to complete
             tokio::spawn(async move {
                 loop {
-                    if let Ok(InterAgentMessage::TaskStatusUpdate { task_id, status, from_agent }) = child_rx.recv().await {
+                    if let Ok(InterAgentMessage::TaskStatusUpdate {
+                        task_id,
+                        status,
+                        from_agent,
+                    }) = child_rx.recv().await
+                    {
                         if from_agent == agent_id_copy && task_id == task_id_copy {
                             if let crate::actors::agent::TaskStatus::Done(_result) = status {
                                 // Agent completed, we'll handle this in the manager's message loop
@@ -182,7 +186,7 @@ impl SpawnAgent {
         } else {
             // Spawn the agent without waiting
             info!("Spawning agent {} without waiting", agent_id.0);
-            
+
             tokio::spawn(async move {
                 agent.run().await;
             });

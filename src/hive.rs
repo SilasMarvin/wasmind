@@ -3,11 +3,7 @@ use tokio::sync::broadcast;
 use tracing::info;
 
 use crate::{
-    actors::{
-        agent::Agent,
-        tui::TuiActor,
-        Action, Actor, Message,
-    },
+    actors::{Action, Actor, Message, agent::Agent, tui::TuiActor},
     config::ParsedConfig,
 };
 
@@ -122,14 +118,14 @@ pub fn start_headless_hive(
         // If no shared actors are required (headless build), start main manager immediately
         if required_actors.is_empty() {
             info!("HIVE: No shared actors required, starting Main Manager immediately");
-            
+
             // Create the Main Manager agent with the initial prompt as its task
             let main_manager = Agent::new_manager(
                 "Main Manager".to_string(),
                 initial_prompt.clone(),
                 config.clone(),
             );
-            
+
             // Start the Main Manager in its own task
             let exit_tx = tx.clone();
             tokio::spawn(async move {
@@ -152,14 +148,14 @@ pub fn start_headless_hive(
                         && required_actors.iter().all(|id| ready_actors.contains(id))
                     {
                         info!("HIVE: All shared actors ready, starting Main Manager");
-                        
+
                         // Create the Main Manager agent with the initial prompt as its task
                         let main_manager = Agent::new_manager(
                             "Main Manager".to_string(),
                             initial_prompt.clone(),
                             config.clone(),
                         );
-                        
+
                         // Start the Main Manager in its own task
                         let exit_tx = tx.clone();
                         tokio::spawn(async move {

@@ -1,9 +1,9 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 use genai::{
     ServiceTarget,
     resolver::{AuthData, Endpoint, ServiceTargetResolver},
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
 use std::{collections::HashMap, fs, io, path::PathBuf};
@@ -71,12 +71,15 @@ impl Config {
     pub fn new() -> Result<Self, ConfigError> {
         // Check for environment variable first
         let config_file_path = if let Ok(env_path) = std::env::var("HIVE_CONFIG_PATH") {
-            tracing::debug!("Using config path from HIVE_CONFIG_PATH env var: {}", env_path);
+            tracing::debug!(
+                "Using config path from HIVE_CONFIG_PATH env var: {}",
+                env_path
+            );
             PathBuf::from(env_path)
         } else {
             get_config_file_path()
         };
-        
+
         tracing::debug!("Looking for config file at: {:?}", config_file_path);
         let user_config: Option<Config> = if fs::exists(&config_file_path)? {
             tracing::debug!("Found user config file");
@@ -155,10 +158,10 @@ impl Config {
         // Use headless config for builds without GUI features
         #[cfg(not(feature = "gui"))]
         let default_contents = include_str!("../headless_config.toml");
-        
+
         #[cfg(feature = "gui")]
         let default_contents = include_str!("../default_config.toml");
-        
+
         tracing::debug!("Default config contents:\n{}", default_contents);
         let config: Config = toml::from_str(default_contents).context(TomlDeserializeSnafu)?;
         tracing::debug!(
@@ -362,7 +365,7 @@ pub fn parse_key_combination(input: &str) -> Option<KeyBinding> {
             "alt" => modifiers |= KeyModifiers::ALT,
             "meta" | "cmd" | "super" | "win" => modifiers |= KeyModifiers::SUPER,
             "shift" => modifiers |= KeyModifiers::SHIFT,
-            
+
             // Letters
             "a" => key_code = Some(KeyCode::Char('a')),
             "b" => key_code = Some(KeyCode::Char('b')),

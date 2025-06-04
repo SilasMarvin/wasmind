@@ -1,18 +1,18 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{Mutex, broadcast};
 use tracing::info;
 use uuid::Uuid;
 
 use crate::{
     actors::{
+        Actor, Message,
         assistant::Assistant,
         state_system::StateSystem,
         tools::{
             command::Command, edit_file::EditFile, file_reader::FileReaderActor, mcp::MCP,
             plan_approval::PlanApproval, planner::Planner, spawn_agent::SpawnAgent,
         },
-        Actor, Message,
     },
     config::ParsedConfig,
 };
@@ -83,10 +83,7 @@ pub enum InterAgentMessage {
         from_agent: AgentId,
     },
     /// Manager approves a plan
-    PlanApproved {
-        task_id: TaskId,
-        plan_id: String,
-    },
+    PlanApproved { task_id: TaskId, plan_id: String },
     /// Manager rejects a plan
     PlanRejected {
         task_id: TaskId,
@@ -126,11 +123,14 @@ impl Agent {
     pub fn new_manager(role: String, task_description: String, mut config: ParsedConfig) -> Self {
         let id = AgentId::new();
         let task_id = TaskId::new();
-        let behavior = AgentBehavior::Manager(ManagerLogic { id, role: role.clone() });
-        
+        let behavior = AgentBehavior::Manager(ManagerLogic {
+            id,
+            role: role.clone(),
+        });
+
         // Managers need child communication channels
         let (child_tx, child_rx) = broadcast::channel(1024);
-        
+
         // Use the appropriate model config based on role
         if role == "Main Manager" {
             if let Some(main_manager_model) = &config.hive.main_manager_model {
@@ -141,7 +141,7 @@ impl Agent {
                 config.model = sub_manager_model.clone();
             }
         }
-        
+
         Agent {
             behavior,
             config,
@@ -160,12 +160,12 @@ impl Agent {
         let id = AgentId::new();
         let task_id = TaskId::new();
         let behavior = AgentBehavior::Worker(WorkerLogic { id, role });
-        
+
         // Use the worker model config if available
         if let Some(worker_model) = &config.hive.worker_model {
             config.model = worker_model.clone();
         }
-        
+
         Agent {
             behavior,
             config,
@@ -194,7 +194,7 @@ impl Agent {
             AgentBehavior::Worker(logic) => &logic.role,
         }
     }
-    
+
     /// Get the internal message sender
     pub fn get_internal_tx(&self) -> Option<&broadcast::Sender<Message>> {
         self.internal_tx.as_ref()
@@ -224,7 +224,6 @@ impl Agent {
         }
     }
 
-
     /// Start the agent's actors based on its behavior type
     #[tracing::instrument(name = "start_actors", skip(self), fields(agent_id = %self.id().0, role = %self.role()))]
     pub async fn start_actors(&self) -> broadcast::Sender<Message> {
@@ -243,20 +242,18 @@ impl Agent {
                 // Managers only get planning and agent management tools
                 Assistant::new(self.config.clone(), tx.clone()).run();
                 Planner::new(self.config.clone(), tx.clone()).run();
-                
+
                 // Add spawn_agent and plan approval tools for managers
                 if let Some(child_tx) = &self.child_tx {
-                    SpawnAgent::new_with_channel(
-                        self.config.clone(),
-                        tx.clone(),
-                        child_tx.clone(),
-                    ).run();
-                    
+                    SpawnAgent::new_with_channel(self.config.clone(), tx.clone(), child_tx.clone())
+                        .run();
+
                     PlanApproval::new_with_channel(
                         self.config.clone(),
                         tx.clone(),
                         child_tx.clone(),
-                    ).run();
+                    )
+                    .run();
                 }
             }
             AgentBehavior::Worker(_) => {
@@ -290,7 +287,7 @@ impl Agent {
         let mut ready_actors = std::collections::HashSet::new();
         let required_actors = self.get_required_actors();
         let mut initial_prompt_sent = false;
-        
+
         // Transition to WaitingForActors state
         self.state = AgentState::WaitingForActors {
             ready_actors: ready_actors.clone(),
@@ -305,7 +302,7 @@ impl Agent {
                 Ok(msg) = message_rx.recv() => {
                     // First, attempt state transition
                     self.transition(&msg);
-                    
+
                     match &msg {
                         Message::ActorReady { actor_id } => {
                             info!("Agent {}: Actor {} is ready", self.id().0, actor_id);
@@ -336,7 +333,7 @@ impl Agent {
                             self.handle_internal_message(msg).await;
                         }
                     }
-                    
+
                     if task_completed {
                         break;
                     }
@@ -369,7 +366,8 @@ impl Agent {
     async fn send_initial_prompt(&self, message_tx: &broadcast::Sender<Message>) {
         // Send initial message to start the task
         let _ = message_tx.send(Message::UserTUIInput(
-            "Please analyze your objective and determine the best approach to accomplish it.".to_string()
+            "Please analyze your objective and determine the best approach to accomplish it."
+                .to_string(),
         ));
     }
 
@@ -385,7 +383,7 @@ impl Agent {
                         let _ = parent_tx.send(InterAgentMessage::TaskStatusUpdate {
                             task_id: self.task_id.clone(),
                             status: TaskStatus::AwaitingManager(
-                                TaskAwaitingManager::AwaitingPlanApproval(plan.clone())
+                                TaskAwaitingManager::AwaitingPlanApproval(plan.clone()),
                             ),
                             from_agent: self.id().clone(),
                         });
@@ -395,7 +393,12 @@ impl Agent {
             Message::ToolCallUpdate(update) => {
                 // If a tool finishes with an error, we might want to report it
                 if let crate::actors::ToolCallStatus::Finished(Err(error)) = &update.status {
-                    info!("Agent {}: Tool call {} failed: {}", self.id().0, update.call_id, error);
+                    info!(
+                        "Agent {}: Tool call {} failed: {}",
+                        self.id().0,
+                        update.call_id,
+                        error
+                    );
                 }
             }
             _ => {}
@@ -406,16 +409,23 @@ impl Agent {
     async fn handle_child_message(&mut self, message: InterAgentMessage) {
         if let AgentBehavior::Manager(_) = &self.behavior {
             match message {
-                InterAgentMessage::TaskStatusUpdate { task_id, status, from_agent } => {
-                    info!("Manager received status update for task {} from agent {}", task_id.0, from_agent.0);
-                    
+                InterAgentMessage::TaskStatusUpdate {
+                    task_id,
+                    status,
+                    from_agent,
+                } => {
+                    info!(
+                        "Manager received status update for task {} from agent {}",
+                        task_id.0, from_agent.0
+                    );
+
                     // Send AgentStatusUpdate to update system state
                     if let Some(tx) = self.get_internal_tx() {
                         let _ = tx.send(Message::AgentStatusUpdate {
                             agent_id: from_agent.clone(),
                             status: status.clone(),
                         });
-                        
+
                         // If task is done, remove the agent from tracking
                         if matches!(&status, TaskStatus::Done(_)) {
                             let _ = tx.send(Message::AgentRemoved {
@@ -423,7 +433,7 @@ impl Agent {
                             });
                         }
                     }
-                    
+
                     // Format the status update as a message to the manager's LLM
                     let status_message = match &status {
                         TaskStatus::Done(Ok(result)) => {
@@ -439,36 +449,47 @@ impl Agent {
                             )
                         }
                         TaskStatus::InProgress => {
-                            format!(
-                                "Agent {} is working on task {}.",
-                                from_agent.0, task_id.0
-                            )
+                            format!("Agent {} is working on task {}.", from_agent.0, task_id.0)
                         }
-                        TaskStatus::AwaitingManager(TaskAwaitingManager::AwaitingPlanApproval(plan)) => {
+                        TaskStatus::AwaitingManager(TaskAwaitingManager::AwaitingPlanApproval(
+                            plan,
+                        )) => {
                             format!(
                                 "Agent {} has submitted a plan for task {} and is awaiting your approval.\n\nPlan:\n{}",
                                 from_agent.0, task_id.0, plan
                             )
                         }
-                        TaskStatus::AwaitingManager(TaskAwaitingManager::AwaitingMoreInformation(info)) => {
+                        TaskStatus::AwaitingManager(
+                            TaskAwaitingManager::AwaitingMoreInformation(info),
+                        ) => {
                             format!(
                                 "Agent {} needs more information for task {}:\n{}",
                                 from_agent.0, task_id.0, info
                             )
                         }
                     };
-                    
+
                     // Find the internal message_tx to send this update to the manager's assistant
                     if let Some(tx) = self.get_internal_tx() {
                         let _ = tx.send(Message::UserTUIInput(status_message));
                     }
                 }
                 InterAgentMessage::PlanApproved { task_id, plan_id } => {
-                    info!("Agent received plan approval for task {} plan {}", task_id.0, plan_id);
+                    info!(
+                        "Agent received plan approval for task {} plan {}",
+                        task_id.0, plan_id
+                    );
                     // Workers will handle this in their planner actor
                 }
-                InterAgentMessage::PlanRejected { task_id, plan_id, reason } => {
-                    info!("Agent received plan rejection for task {} plan {}: {}", task_id.0, plan_id, reason);
+                InterAgentMessage::PlanRejected {
+                    task_id,
+                    plan_id,
+                    reason,
+                } => {
+                    info!(
+                        "Agent received plan rejection for task {} plan {}: {}",
+                        task_id.0, plan_id, reason
+                    );
                     // Workers will handle this in their planner actor
                 }
             }
@@ -482,44 +503,44 @@ pub enum AgentState {
     /// Agent is initializing and starting actors
     Initializing,
     /// Waiting for all required actors to be ready
-    WaitingForActors { 
+    WaitingForActors {
         ready_actors: std::collections::HashSet<&'static str>,
         required_actors: Vec<&'static str>,
     },
     /// Agent is active and processing its task
     Active,
     /// Worker agent waiting for manager approval of plan
-    WaitingForApproval { 
-        plan_id: String,
-    },
+    WaitingForApproval { plan_id: String },
     /// Manager agent waiting for spawned sub-agents to complete
-    WaitingForSubAgents {
-        agent_ids: Vec<AgentId>,
-    },
+    WaitingForSubAgents { agent_ids: Vec<AgentId> },
     /// Agent is completing its task and preparing final report
     Completing,
     /// Agent has terminated (successfully or with error)
-    Terminated {
-        result: Result<String, String>,
-    },
+    Terminated { result: Result<String, String> },
 }
 
 impl crate::actors::state_system::StateSystem for Agent {
     type State = AgentState;
-    
+
     fn current_state(&self) -> &Self::State {
         &self.state
     }
-    
+
     fn transition(&mut self, message: &Message) -> Option<Self::State> {
         use AgentState::*;
-        
+
         let new_state = match (&self.state, message) {
             // Actor ready messages during initialization
-            (WaitingForActors { ready_actors, required_actors }, Message::ActorReady { actor_id }) => {
+            (
+                WaitingForActors {
+                    ready_actors,
+                    required_actors,
+                },
+                Message::ActorReady { actor_id },
+            ) => {
                 let mut new_ready = ready_actors.clone();
                 new_ready.insert(actor_id);
-                
+
                 if required_actors.iter().all(|id| new_ready.contains(id)) {
                     Some(Active)
                 } else {
@@ -529,62 +550,75 @@ impl crate::actors::state_system::StateSystem for Agent {
                     })
                 }
             }
-            
+
             // Plan created by worker - waiting for approval
-            (Active, Message::PlanUpdated(_)) if matches!(&self.behavior, AgentBehavior::Worker(_)) => {
+            (Active, Message::PlanUpdated(_))
+                if matches!(&self.behavior, AgentBehavior::Worker(_)) =>
+            {
                 Some(WaitingForApproval {
                     plan_id: format!("plan_{}", self.task_id.0),
                 })
             }
-            
+
             // Plan approved/rejected - back to active
-            (WaitingForApproval { .. }, Message::AssistantToolCall(tool_call)) 
-                if tool_call.fn_name == "approve_plan" || tool_call.fn_name == "reject_plan" => {
+            (WaitingForApproval { .. }, Message::AssistantToolCall(tool_call))
+                if tool_call.fn_name == "approve_plan" || tool_call.fn_name == "reject_plan" =>
+            {
                 Some(Active)
             }
-            
+
             // Manager spawned agents - track them
-            (Active, Message::AgentSpawned { agent_id, .. }) 
-                if matches!(&self.behavior, AgentBehavior::Manager(_)) => {
+            (Active, Message::AgentSpawned { agent_id, .. })
+                if matches!(&self.behavior, AgentBehavior::Manager(_)) =>
+            {
                 Some(WaitingForSubAgents {
                     agent_ids: vec![agent_id.clone()],
                 })
             }
-            
+
             // More agents spawned while already waiting
             (WaitingForSubAgents { agent_ids }, Message::AgentSpawned { agent_id, .. }) => {
                 let mut new_ids = agent_ids.clone();
                 new_ids.push(agent_id.clone());
                 Some(WaitingForSubAgents { agent_ids: new_ids })
             }
-            
+
             // Sub-agent completed
-            (WaitingForSubAgents { agent_ids }, Message::AgentStatusUpdate { agent_id, status }) 
-                if matches!(status, TaskStatus::Done(_)) => {
+            (
+                WaitingForSubAgents { agent_ids },
+                Message::AgentStatusUpdate { agent_id, status },
+            ) if matches!(status, TaskStatus::Done(_)) => {
                 let mut remaining = agent_ids.clone();
                 remaining.retain(|id| id != agent_id);
-                
+
                 if remaining.is_empty() {
                     Some(Active)
                 } else {
-                    Some(WaitingForSubAgents { agent_ids: remaining })
+                    Some(WaitingForSubAgents {
+                        agent_ids: remaining,
+                    })
                 }
             }
-            
+
             // Task completion
             (Active, Message::AssistantResponse(_)) => {
                 // In a real implementation, we'd check if this response indicates completion
                 None
             }
-            
+
             _ => None,
         };
-        
+
         if let Some(ref new_state) = new_state {
-            tracing::info!("Agent {} state transition: {:?} -> {:?}", self.id().0, self.state, new_state);
+            tracing::info!(
+                "Agent {} state transition: {:?} -> {:?}",
+                self.id().0,
+                self.state,
+                new_state
+            );
             self.state = new_state.clone();
         }
-        
+
         new_state
     }
 }
@@ -595,7 +629,7 @@ mod tests {
     use crate::actors::state_system::StateSystem;
     use crate::actors::state_system::test_utils::*;
     use crate::config::{Config, ParsedConfig};
-    
+
     fn create_test_agent(is_manager: bool) -> Agent {
         let config: ParsedConfig = Config::default().unwrap().try_into().unwrap();
         if is_manager {
@@ -604,20 +638,20 @@ mod tests {
             Agent::new_worker("Test Worker".to_string(), "Test task".to_string(), config)
         }
     }
-    
+
     #[test]
     fn test_agent_creation() {
         let worker = create_test_agent(false);
         assert_eq!(worker.role(), "Test Worker");
         assert!(matches!(worker.behavior, AgentBehavior::Worker(_)));
         assert_eq!(worker.state, AgentState::Initializing);
-        
+
         let manager = create_test_agent(true);
         assert_eq!(manager.role(), "Test Manager");
         assert!(matches!(manager.behavior, AgentBehavior::Manager(_)));
         assert_eq!(manager.state, AgentState::Initializing);
     }
-    
+
     #[test]
     fn test_agent_required_actors() {
         let worker = create_test_agent(false);
@@ -625,29 +659,29 @@ mod tests {
         assert!(worker_actors.contains(&"assistant"));
         assert!(worker_actors.contains(&"command"));
         assert!(!worker_actors.contains(&"spawn_agent"));
-        
+
         let manager = create_test_agent(true);
         let manager_actors = manager.get_required_actors();
         assert!(manager_actors.contains(&"assistant"));
         assert!(manager_actors.contains(&"spawn_agent"));
         assert!(!manager_actors.contains(&"command"));
     }
-    
+
     #[test]
     fn test_agent_state_waiting_for_actors() {
         let mut agent = create_test_agent(false);
         let required = agent.get_required_actors();
-        
+
         // Start in WaitingForActors state
         agent.state = AgentState::WaitingForActors {
             ready_actors: std::collections::HashSet::new(),
             required_actors: required.clone(),
         };
-        
+
         // Add actors one by one
         for (i, actor_id) in required.iter().enumerate() {
             let is_last = i == required.len() - 1;
-            
+
             if is_last {
                 // Last actor should transition to Active
                 assert_state_transition(
@@ -662,18 +696,18 @@ mod tests {
             }
         }
     }
-    
+
     #[test]
     fn test_worker_plan_approval_flow() {
         let mut worker = create_test_agent(false);
         worker.state = AgentState::Active;
-        
+
         // Worker creates a plan
         let plan = crate::actors::tools::planner::TaskPlan {
             title: "Test Plan".to_string(),
             tasks: vec![],
         };
-        
+
         let expected_plan_id = format!("plan_{}", worker.task_id.0);
         assert_state_transition(
             &mut worker,
@@ -683,14 +717,14 @@ mod tests {
             },
         );
     }
-    
+
     #[test]
     fn test_manager_spawning_agents() {
         let mut manager = create_test_agent(true);
         manager.state = AgentState::Active;
-        
+
         let agent_id = AgentId("sub-agent-1".to_string());
-        
+
         assert_state_transition(
             &mut manager,
             Message::AgentSpawned {
@@ -704,18 +738,18 @@ mod tests {
             },
         );
     }
-    
+
     #[test]
     fn test_manager_multiple_sub_agents() {
         let mut manager = create_test_agent(true);
         let agent_id1 = AgentId("sub-1".to_string());
         let agent_id2 = AgentId("sub-2".to_string());
-        
+
         // Start with one sub-agent
         manager.state = AgentState::WaitingForSubAgents {
             agent_ids: vec![agent_id1.clone()],
         };
-        
+
         // Spawn another
         assert_state_transition(
             &mut manager,
@@ -729,7 +763,7 @@ mod tests {
                 agent_ids: vec![agent_id1.clone(), agent_id2.clone()],
             },
         );
-        
+
         // First agent completes
         assert_state_transition(
             &mut manager,
@@ -741,7 +775,7 @@ mod tests {
                 agent_ids: vec![agent_id2.clone()],
             },
         );
-        
+
         // Second agent completes - back to Active
         assert_state_transition(
             &mut manager,
@@ -752,17 +786,18 @@ mod tests {
             AgentState::Active,
         );
     }
-    
+
     #[test]
     fn test_agent_communication_channels() {
         let config: ParsedConfig = Config::default().unwrap().try_into().unwrap();
         let (parent_tx, _) = broadcast::channel(100);
         let (child_tx, _) = broadcast::channel(100);
-        
-        let mut worker = Agent::new_worker("Worker".to_string(), "Task".to_string(), config.clone());
+
+        let mut worker =
+            Agent::new_worker("Worker".to_string(), "Task".to_string(), config.clone());
         worker.parent_tx = Some(parent_tx.clone());
         assert!(worker.parent_tx.is_some());
-        
+
         let mut manager = Agent::new_manager("Manager".to_string(), "Task".to_string(), config);
         manager.child_tx = Some(child_tx.clone());
         assert!(manager.child_tx.is_some());

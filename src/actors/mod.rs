@@ -13,10 +13,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
-use tracing::error;
 
-use crate::config::ParsedConfig;
 use self::agent::{AgentId, TaskId, TaskStatus};
+use crate::config::ParsedConfig;
 
 /// Actions the worker can perform and users can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -106,7 +105,7 @@ pub enum Message {
     #[cfg(feature = "gui")]
     ScreenshotCaptured(Result<String, String>), // Ok(base64) or Err(error message)
     #[cfg(feature = "gui")]
-    ClipboardCaptured(Result<String, String>),  // Ok(text) or Err(error message)
+    ClipboardCaptured(Result<String, String>), // Ok(text) or Err(error message)
 
     // System state update messages
     FileRead {

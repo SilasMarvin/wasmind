@@ -20,7 +20,7 @@ impl RdevToCrosstermConverter {
 
     pub fn handle_key_press(&mut self, key: rdev::Key) -> Option<KeyEvent> {
         use rdev::Key;
-        
+
         match key {
             // Handle modifiers by updating state
             Key::ControlLeft | Key::ControlRight => {
@@ -47,7 +47,7 @@ impl RdevToCrosstermConverter {
                 self.modifiers |= KeyModifiers::SUPER;
                 None
             }
-            
+
             // Handle regular keys - create KeyEvent with current modifiers
             _ => {
                 let key_code = match key {
@@ -124,7 +124,7 @@ impl RdevToCrosstermConverter {
 
                     _ => return None,
                 };
-                
+
                 Some(KeyEvent::new(key_code, self.modifiers))
             }
         }
@@ -132,7 +132,7 @@ impl RdevToCrosstermConverter {
 
     pub fn handle_key_release(&mut self, key: rdev::Key) {
         use rdev::Key;
-        
+
         match key {
             Key::ControlLeft | Key::ControlRight => {
                 self.modifiers.remove(KeyModifiers::CONTROL);
@@ -202,25 +202,25 @@ mod tests {
     #[test]
     fn test_rdev_to_crossterm_basic_keys() {
         let mut converter = RdevToCrosstermConverter::new();
-        
+
         // Test basic letter conversion
         assert_eq!(
             converter.handle_key_press(rdev::Key::KeyA),
             Some(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty()))
         );
-        
+
         // Test number conversion
         assert_eq!(
             converter.handle_key_press(rdev::Key::Num5),
             Some(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::empty()))
         );
-        
+
         // Test special keys
         assert_eq!(
             converter.handle_key_press(rdev::Key::Return),
             Some(KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()))
         );
-        
+
         assert_eq!(
             converter.handle_key_press(rdev::Key::Space),
             Some(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::empty()))
@@ -231,12 +231,12 @@ mod tests {
     #[test]
     fn test_rdev_to_crossterm_modifiers() {
         let mut converter = RdevToCrosstermConverter::new();
-        
+
         // Test that modifiers alone don't generate events
         assert_eq!(converter.handle_key_press(rdev::Key::ControlLeft), None);
         assert_eq!(converter.handle_key_press(rdev::Key::Alt), None);
         assert_eq!(converter.handle_key_press(rdev::Key::ShiftLeft), None);
-        
+
         // Clear first before testing Ctrl+A
         converter.clear();
         converter.handle_key_press(rdev::Key::ControlLeft);
@@ -244,7 +244,7 @@ mod tests {
             converter.handle_key_press(rdev::Key::KeyA),
             Some(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL))
         );
-        
+
         // Test Alt+B (clear state first)
         converter.clear();
         converter.handle_key_press(rdev::Key::Alt);
@@ -257,42 +257,66 @@ mod tests {
     #[test]
     fn test_config_key_parsing_basic() {
         use crate::config::parse_key_combination;
-        
+
         // Test basic key
         let binding = parse_key_combination("a").unwrap();
         assert_eq!(binding.len(), 1);
-        assert_eq!(binding[0], KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty()));
-        
+        assert_eq!(
+            binding[0],
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty())
+        );
+
         // Test special keys
         let binding = parse_key_combination("enter").unwrap();
-        assert_eq!(binding[0], KeyEvent::new(KeyCode::Enter, KeyModifiers::empty()));
-        
+        assert_eq!(
+            binding[0],
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::empty())
+        );
+
         let binding = parse_key_combination("escape").unwrap();
-        assert_eq!(binding[0], KeyEvent::new(KeyCode::Esc, KeyModifiers::empty()));
+        assert_eq!(
+            binding[0],
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::empty())
+        );
     }
 
     #[test]
     fn test_config_key_parsing_with_modifiers() {
         use crate::config::parse_key_combination;
-        
+
         // Test Ctrl+A
         let binding = parse_key_combination("ctrl-a").unwrap();
-        assert_eq!(binding[0], KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
-        
+        assert_eq!(
+            binding[0],
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)
+        );
+
         // Test Alt+B
         let binding = parse_key_combination("alt-b").unwrap();
-        assert_eq!(binding[0], KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT));
-        
+        assert_eq!(
+            binding[0],
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT)
+        );
+
         // Test Shift+C
         let binding = parse_key_combination("shift-c").unwrap();
-        assert_eq!(binding[0], KeyEvent::new(KeyCode::Char('c'), KeyModifiers::SHIFT));
-        
+        assert_eq!(
+            binding[0],
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::SHIFT)
+        );
+
         // Test Meta/Cmd+D
         let binding = parse_key_combination("cmd-d").unwrap();
-        assert_eq!(binding[0], KeyEvent::new(KeyCode::Char('d'), KeyModifiers::SUPER));
-        
+        assert_eq!(
+            binding[0],
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::SUPER)
+        );
+
         let binding = parse_key_combination("meta-e").unwrap();
-        assert_eq!(binding[0], KeyEvent::new(KeyCode::Char('e'), KeyModifiers::SUPER));
+        assert_eq!(
+            binding[0],
+            KeyEvent::new(KeyCode::Char('e'), KeyModifiers::SUPER)
+        );
     }
 
     #[test]
@@ -302,17 +326,19 @@ mod tests {
             vec![KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty())],
             Action::Assist,
         );
-        
+
         let config = ParsedKeyConfig { bindings };
         let mut manager = KeyBindingManager::from(&config);
-        
+
         // Test matching key
-        let actions = manager.handle_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty()));
+        let actions =
+            manager.handle_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty()));
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0], Action::Assist);
-        
+
         // Test non-matching key
-        let actions = manager.handle_event(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::empty()));
+        let actions =
+            manager.handle_event(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::empty()));
         assert_eq!(actions.len(), 0);
     }
 
@@ -323,19 +349,21 @@ mod tests {
             vec![KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)],
             Action::Cancel,
         );
-        
+
         let config = ParsedKeyConfig { bindings };
         let mut manager = KeyBindingManager::from(&config);
-        
+
         // Test Ctrl+S
-        let actions = manager.handle_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        let actions =
+            manager.handle_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0], Action::Cancel);
-        
+
         // Test just S (should not match)
-        let actions = manager.handle_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::empty()));
+        let actions =
+            manager.handle_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::empty()));
         assert_eq!(actions.len(), 0);
-        
+
         // Test S with different modifier (should not match)
         let actions = manager.handle_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::ALT));
         assert_eq!(actions.len(), 0);

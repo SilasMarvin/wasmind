@@ -1,4 +1,4 @@
-use hive::{init_logger, run_main_program, run_headless_program, SResult};
+use hive::{SResult, init_logger, run_headless_program, run_main_program};
 
 fn main() -> SResult<()> {
     use clap::Parser;
@@ -26,7 +26,8 @@ fn main() -> SResult<()> {
             complete,
             config,
         } => {
-            if let Err(e) = hive::prompt_preview::execute_demo(all, empty, files, plan, complete, config)
+            if let Err(e) =
+                hive::prompt_preview::execute_demo(all, empty, files, plan, complete, config)
             {
                 eprintln!("Prompt preview error: {}", e);
                 std::process::exit(1);
