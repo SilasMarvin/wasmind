@@ -55,7 +55,8 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
         // Keep the runtime alive and listen for exit signals
         loop {
             let msg = rx.recv().await.expect("Error receiving in hive");
-            tracing::debug!(name = "hive_received_message", message = ?msg);
+            let message_json = serde_json::to_string(&msg).unwrap_or_else(|_| format!("{:?}", msg));
+            tracing::debug!(name = "hive_received_message", message = %message_json, message_type = std::any::type_name::<Message>());
             if let Message::Action(Action::Exit) = msg {
                 // This is a horrible hack to let the tui restore the terminal first
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;

@@ -18,7 +18,7 @@ use self::agent::{AgentId, TaskId, TaskStatus};
 use crate::config::ParsedConfig;
 
 /// Actions the worker can perform and users can bind keys to
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Action {
     #[cfg(feature = "gui")]
     CaptureWindow,
@@ -49,7 +49,7 @@ impl Action {
 }
 
 /// ToolCall Update
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCallUpdate {
     pub call_id: String,
     pub status: ToolCallStatus,
@@ -66,7 +66,7 @@ pub enum ToolCallType {
 }
 
 /// ToolCall Status
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolCallStatus {
     Received {
         r#type: ToolCallType,
@@ -78,7 +78,7 @@ pub enum ToolCallStatus {
 }
 
 /// The various messages actors can send
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     // User actions from keyboard/TUI
     Action(Action),
@@ -111,11 +111,13 @@ pub enum Message {
     FileRead {
         path: PathBuf,
         content: String,
+        #[serde(skip, default = "std::time::SystemTime::now")]
         last_modified: std::time::SystemTime,
     },
     FileEdited {
         path: PathBuf,
         content: String,
+        #[serde(skip, default = "std::time::SystemTime::now")]
         last_modified: std::time::SystemTime,
     },
     PlanUpdated(crate::actors::tools::planner::TaskPlan),

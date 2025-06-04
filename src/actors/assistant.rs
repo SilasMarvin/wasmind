@@ -54,9 +54,10 @@ impl Assistant {
         let client = self.client.clone();
         let config = self.config.clone();
 
-        error!(
-            "DOING CHAT REQUEST WITH:\n{:?}",
-            serde_json::to_string_pretty(&request).unwrap()
+        // Debug log the full request
+        tracing::debug!(
+            "LLM Request:\n{}",
+            serde_json::to_string_pretty(&request).unwrap_or_else(|e| format!("Failed to serialize request: {}", e))
         );
 
         let handle = tokio::spawn(async move {
@@ -214,7 +215,17 @@ async fn do_assist(
         .await
         .context(crate::GenaiSnafu)?;
 
+    // Debug log the full response
+    tracing::debug!(
+        "LLM Response: content={:?}, reasoning_content={:?}, usage={:?}, model={}",
+        resp.content,
+        resp.reasoning_content,
+        resp.usage,
+        resp.model_iden.model_name
+    );
+
     if let Some(message_content) = resp.content {
+        tracing::debug!("Successfully received content from LLM");
 
         // Note: We don't update chat_request here since it's owned by this function
         // The Assistant struct will handle updating its own chat_request when needed
@@ -224,13 +235,46 @@ async fn do_assist(
 
         // Handle tool calls if any
         if let MessageContent::ToolCalls(tool_calls) = message_content {
+            tracing::debug!("Processing {} tool calls from assistant", tool_calls.len());
             for tool_call in tool_calls {
+                tracing::debug!(
+                    "Sending tool call: id={}, function={}, args={}",
+                    tool_call.call_id,
+                    tool_call.fn_name,
+                    serde_json::to_string(&tool_call.fn_arguments).unwrap_or_else(|_| "invalid".to_string())
+                );
                 tx.send(Message::AssistantToolCall(tool_call.clone()))
                     .expect("Error sending tool call");
             }
         }
     } else {
-        error!("No message content from assistant: {:?}", resp);
+        // Some models (like DeepSeek) may return empty content when they only want to make tool calls
+        // This is not necessarily an error - check if we consumed tokens
+        if let Some(completion_tokens) = resp.usage.completion_tokens {
+            if completion_tokens > 0 {
+                tracing::warn!(
+                    "LLM returned no content but consumed {} completion tokens - this may be a model-specific behavior. Response details: reasoning_content={:?}, usage={:?}, model={}", 
+                    completion_tokens,
+                    resp.reasoning_content, 
+                    resp.usage,
+                    resp.model_iden.model_name
+                );
+            } else {
+                error!("No message content from assistant and no tokens consumed - Response details: content={:?}, reasoning_content={:?}, usage={:?}, model={}", 
+                    resp.content, 
+                    resp.reasoning_content, 
+                    resp.usage,
+                    resp.model_iden.model_name
+                );
+            }
+        } else {
+            error!("No message content from assistant - Response details: content={:?}, reasoning_content={:?}, usage={:?}, model={}", 
+                resp.content, 
+                resp.reasoning_content, 
+                resp.usage,
+                resp.model_iden.model_name
+            );
+        }
     }
 
     Ok(())

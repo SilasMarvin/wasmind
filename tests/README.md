@@ -1,75 +1,62 @@
-# Copilot Testing Framework
+# HIVE Testing Framework
 
-This directory contains comprehensive tests for the Copilot multi-agent AI system, with a focus on safe end-to-end testing and error recovery scenarios.
+This directory contains comprehensive testing for the HIVE multi-agent AI system, with structured log analysis and Docker-based sandbox testing for safe end-to-end workflows.
 
 ## Testing Architecture
 
-### 1. Unit Tests (Existing)
+### 1. Unit Tests
 - **Location**: `src/` directories with `#[cfg(test)]` modules
-- **Coverage**: Agent communication, state management, templates
-- **Status**: ✅ Good coverage for core agent functionality
+- **Coverage**: Agent state management, message handling, configuration
+- **Status**: ✅ Core functionality coverage
 
-### 2. Integration Tests (Existing)
+### 2. Integration Tests
 - **Location**: `tests/hive_integration_tests.rs`
-- **Coverage**: Multi-agent communication, plan workflows
-- **Status**: ✅ Excellent coverage for agent coordination
+- **Coverage**: Multi-agent communication, task delegation
+- **Status**: ✅ Agent coordination workflows
 
-### 3. **Sandboxed End-to-End Tests**
+### 3. **Docker Sandbox Tests**
 - **Location**: `tests/sandboxed_integration_tests.rs`
-- **Coverage**: Complete user workflows in Docker sandbox
-- **Status**: ✅ Safe testing of real tool execution
+- **Coverage**: Complete user workflows with real tool execution
+- **Status**: ✅ Safe end-to-end testing with structured log verification
 
-## Docker Sandbox Testing
+### 4. **Structured Log Analysis**
+- **Location**: `tests/log_parser/mod.rs`, `tests/docker_sandbox/mod.rs`
+- **Coverage**: Type-safe message parsing and workflow verification
+- **Status**: ✅ Message-based log analysis with JSON deserialization
 
-### Why Sandbox Testing?
+## Sandbox Testing
 
-The Copilot system executes real commands and modifies files, making traditional testing dangerous. Our Docker sandbox provides:
-
-- **Safety**: Isolated environment prevents host system damage
-- **Realism**: Tests actual tool execution, not mocks
-- **Consistency**: Reproducible environment across machines
+### Why Docker Sandbox?
+HIVE executes real commands and modifies files. Docker sandbox provides:
+- **Safety**: Isolated environment prevents host damage
+- **Realism**: Tests actual tool execution, not mocks  
+- **Consistency**: Reproducible across machines
 - **Security**: Resource limits and capability restrictions
 
-### Sandbox Architecture
-
+### Sandbox Environment
 ```
 ┌─────────────────────────────────────────┐
 │ Host System                             │
 │  ┌─────────────────────────────────────┐│
 │  │ Docker Container (Ubuntu 22.04)    ││
 │  │  ┌─────────────────────────────────┐││
-│  │  │ Copilot Process                 │││
-│  │  │  - Executes commands safely     │││
-│  │  │  - Modifies files in /workspace │││
-│  │  │  - Limited resources & network  │││
+│  │  │ HIVE Process                    │││
+│  │  │  - JSON structured logging      │││
+│  │  │  - Message serialization        │││
+│  │  │  - Safe tool execution          │││
+│  │  │  - Task completion verification  │││
 │  │  └─────────────────────────────────┘││
-│  │  Available Tools:                   ││
-│  │  - Basic shell utilities            ││
-│  │  - Python, Node.js                  ││
-│  │  - Git, text editors                ││
-│  │  - No dangerous system access       ││
+│  │  Whitelisted Tools:                 ││
+│  │  - Shell utilities (ls, cat, grep)  ││
+│  │  - Dev tools (git, python, node)    ││
+│  │  - File operations (mkdir, touch)   ││
 │  └─────────────────────────────────────┘│
 └─────────────────────────────────────────┘
 ```
 
-### Security Features
-
-- **Non-root user**: All operations run as `testuser`
-- **Resource limits**: CPU, memory, file size constraints
-- **Capability restrictions**: Limited system capabilities
-- **Network isolation**: Controlled network access
-- **File system boundaries**: Operations confined to `/workspace`
-
 ## Running Tests
 
-### Prerequisites
-
-1. **Docker**: Install Docker Desktop or Docker Engine
-2. **Docker Compose**: Usually included with Docker Desktop
-3. **Rust**: Standard Rust toolchain for test execution
-
 ### Quick Start
-
 ```bash
 # Run basic sandbox test
 ./scripts/run-sandbox-tests.sh
@@ -77,255 +64,290 @@ The Copilot system executes real commands and modifies files, making traditional
 # Run all sandbox tests
 ./scripts/run-sandbox-tests.sh --all
 
-# Run specific test category
-./scripts/run-sandbox-tests.sh --test file-reading
+# Run specific workflow
+./scripts/run-sandbox-tests.sh --test file-reading --verbose
 
-# Run with verbose output
-./scripts/run-sandbox-tests.sh --test error-recovery --verbose
+# Manual execution
+cargo test --test sandboxed_integration_tests -- --ignored --nocapture
 ```
 
-### Manual Test Execution
+### Prerequisites
+1. **Docker** with Docker Compose
+2. **Rust** toolchain
+3. **Environment**: `HIVE_LOG=debug` for detailed logging
 
-```bash
-# Build sandbox container
-docker-compose -f tests/docker/docker-compose.test.yml build
+## Test Categories & Verification
 
-# Run sandbox tests (requires Docker)
-cargo test --test sandboxed_integration_tests -- --ignored
-
-# Run traditional integration tests
-cargo test --test hive_integration_tests
-```
-
-## Test Categories
-
-### 1. End-to-End Workflow Tests
+### 1. **End-to-End Workflow Tests**
 
 **File**: `tests/sandboxed_integration_tests.rs`
 
-- ✅ **File Reading**: User prompt → file read → response
-- ✅ **Command Execution**: User prompt → safe command → output
-- ✅ **Multi-Agent Tasks**: Complex workflows with agent coordination
-- ✅ **Error Recovery**: Handling of failing commands gracefully
-- ✅ **Multi-Step Workflows**: Create directory, write file, list contents
-- ✅ **System Lifecycle**: Startup, execution, clean shutdown
+All tests now include **structured log verification** that analyzes actual Message objects:
 
-### 2. Performance Baseline Tests
+#### Test Types:
+- ✅ **File Reading**: `test_sandboxed_file_reading_workflow`
+- ✅ **Command Execution**: `test_sandboxed_command_execution_workflow` 
+- ✅ **Error Recovery**: `test_sandboxed_error_recovery`
+- ✅ **Multi-Step Tasks**: `test_sandboxed_multi_step_workflow`
 
-- **Response Time**: System should complete reasonable tasks within 30 seconds
-- **Resource Usage**: Memory usage under 400MB, reasonable CPU utilization
-- **Concurrent Agents**: System handles multiple agents without degradation
-- **File Operations**: Efficient handling of various file sizes
+#### Verification System:
+```rust
+// Message-based verification (not string matching)
+let verification = sandbox.verify_log_execution(&stdout, &expected_tools)?;
 
-## Test Data
+// Checks 14 different system aspects:
+verification.hive_startup                  // HIVE system initialization
+verification.agent_started                // Agent lifecycle 
+verification.actors_ready_count           // Actor readiness (expect 4+)
+verification.task_delegation              // Manager → Worker delegation
+verification.tool_calls_executed          // AssistantToolCall messages
+verification.complete_tool_called         // Task completion signaling
+verification.task_completed_messages      // TaskCompleted messages
+verification.proper_completion_sequence   // Message flow verification
+```
 
-### Sample Files (`tests/docker/test-data/`)
+### 2. **Structured Log Analysis**
 
-- **`sample-code.py`**: Python code for testing code analysis
-- **`sample-data.csv`**: Structured data for processing tests  
-- **`broken-script.sh`**: Intentionally failing script for error tests
+#### Message Deserialization
+**Parser**: `tests/log_parser/mod.rs`
+- Deserializes actual `Message` and `InterAgentMessage` objects from logs
+- Type-safe analysis using Rust pattern matching
+- No more brittle string matching
 
-### Generated Test Environment
+#### Key Analysis Methods:
+```rust
+// Precise message filtering
+parser.entries_with_task_completed()       // TaskCompleted messages
+parser.entries_with_assistant_tool_calls() // Tool call messages
+parser.entries_with_tool_call("complete")  // Specific tool usage
+parser.contains_message_sequence(["AssistantToolCall", "TaskCompleted"])
 
-Each test run creates:
-- **Temporary workspace**: `/workspace/` with subdirectories
-- **Test files**: Various file types and sizes
-- **Project structure**: Sample project layout
-- **Configuration**: Test-specific copilot config
+// Agent workflow verification  
+parser.entries_with_hive_messages()        // All HIVE messages
+parser.entries_with_inter_agent_messages() // Agent communication
+```
+
+#### Verification Results:
+```
+🔍 Structured Log Verification Results:
+========================================
+📋 System Lifecycle:
+  ✅ HIVE system startup
+  ✅ Agent started  
+  ✅ 5 actors ready (expected >= 4)
+📋 Task Management:
+  ✅ LLM requests
+  ✅ Task delegation
+  ✅ 4 Worker agent references
+📋 Tool Execution:
+  ✅ Tool calls executed
+  ✅ Command execution
+  ✅ File operations
+📋 Task Completion:
+  ✅ Complete tool called - proper task completion
+  ✅ Task completion signaled
+  ✅ TaskCompleted messages
+  ✅ Proper completion sequence
+```
+
+## Task Completion Testing
+
+### Critical Pattern: Complete Tool Usage
+All agents must use the `complete` tool to signal task completion:
+
+```rust
+// Test prompts now include completion instruction:
+let prompt = "Read file /workspace/test.txt. When done, use the complete tool to signal completion.";
+
+// Verification checks for completion patterns:
+result.complete_tool_called         // Debug: complete_tool_call
+result.task_completion_signaled     // Debug: task_completion_signal  
+result.task_completed_messages      // Message: TaskCompleted
+result.proper_completion_sequence   // Flow: ToolCall → TaskCompleted
+```
+
+### Agent System Prompts
+Tests configure agents to require completion:
+```toml
+[hive.main_manager_model]
+system_prompt = "You are a Main Manager. Delegate tasks using spawn_agent_and_assign_task. Use complete tool when done."
+
+[hive.worker_model]
+system_prompt = "You are a Worker. Use tools to complete tasks. MUST call complete tool when finished."
+```
+
+## JSON Logging & Message Analysis
+
+### Structured Logging Format
+**Environment**: `HIVE_LOG=debug` writes structured logs to `log.txt`
+
+**Message Serialization**: All Message objects logged as JSON:
+```json
+{
+  "timestamp": "2024-01-01T12:00:00Z",
+  "level": "DEBUG",
+  "target": "hive::agent", 
+  "message": "{\"TaskCompleted\":{\"summary\":\"File read successfully\",\"success\":true}}",
+  "message_type": "hive::actors::Message"
+}
+```
+
+### Log Analysis Flow
+```
+Raw Logs → JSON Parser → Message Deserialization → Type-Safe Analysis → Verification Results
+```
 
 ## Adding New Tests
 
-### 1. End-to-End Tests
-
+### 1. End-to-End Test Template
 ```rust
 #[tokio::test]
 #[ignore] // Mark as sandbox test
-async fn test_my_new_workflow() {
+async fn test_my_workflow() {
     let mut sandbox = DockerSandbox::new();
     sandbox.start().await.expect("Failed to start sandbox");
     
-    let prompt = "Your test prompt here";
-    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
+    // Include completion instruction in prompt
+    let prompt = "Your specific task here. When done, use the complete tool to signal completion.";
     
-    // Verify log execution
-    let log_verification = sandbox.verify_log_execution(
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 60).await.unwrap();
+    
+    // Use structured verification
+    let verification = sandbox.verify_log_execution(
         &stdout,
-        &["expected_tool_1", "expected_tool_2"],
-    );
-    match log_verification {
-        Ok(success) => assert!(success, "Log verification failed"),
-        Err(e) => panic!("Log verification error: {}", e),
-    }
+        &["expected_tool", "complete"], // Include "complete" in expected tools
+    ).unwrap();
+    
+    // Assert on structured results
+    assert!(verification.is_successful(), "Basic system checks failed");
+    assert!(verification.task_delegation, "Expected task delegation");
+    assert!(verification.is_successful_with_completion(), "Task completion verification failed");
     
     sandbox.stop().await.expect("Failed to stop sandbox");
 }
 ```
 
-## Log Verification & Analysis
-
-### Automated Log Verification
-
-All Docker tests now include comprehensive log verification to ensure HIVE system components executed correctly:
-
-**What Gets Verified:**
-- ✅ HIVE system startup and initialization
-- ✅ Agent creation and actor readiness (4+ actors expected)
-- ✅ LLM interaction and API calls
-- ✅ Tool registration and availability
-- ⚠️ Specific tool usage patterns (depends on prompt effectiveness)
-
-**Using the Log Verification Utility:**
-```bash
-# Analyze any HIVE log file
-python tests/log_verification.py log.txt
-
-# Output shows verification results by category:
-# - System Startup: HIVE initialization, config loading
-# - Agent Lifecycle: Agent creation, actor readiness, state transitions  
-# - Tool Execution: Tool registration, LLM tool usage
-# - LLM Interaction: API requests, network connections
+### 2. Log Analysis Test Template
+```rust
+#[test]
+fn test_message_parsing() {
+    let log_content = r#"
+{"timestamp":"2024-01-01T12:00:00Z","level":"DEBUG","target":"hive::agent","message":"{\"TaskCompleted\":{\"summary\":\"test\",\"success\":true}}"}
+"#;
+    
+    let parser = LogParser::parse_log_content(log_content).unwrap();
+    let task_completed = parser.entries_with_task_completed();
+    assert_eq!(task_completed.len(), 1);
+}
 ```
 
-### Manual Log Analysis
-
-**Key Log Patterns to Look For:**
-```bash
-# System started correctly
-grep "Starting headless HIVE multi-agent system" log.txt
-
-# All actors became ready (expect 4+ for managers)
-grep -c "Actor ready, sending ready signal" log.txt
-
-# Agent reached active state
-grep "All actors ready, starting task" log.txt
-
-# LLM interaction occurred
-grep "Executing LLM chat request" log.txt
-
-# Tool usage (varies by prompt)
-grep -i "command\|file_reader\|planner" log.txt
-```
-
-**Debugging Test Failures:**
-1. **No log output**: Check `HIVE_LOG=debug` is set in test environment
-2. **System startup failed**: Look for config loading or actor initialization errors
-3. **Tools not used**: Verify test prompts are specific enough to trigger tool calls
-4. **Timeouts**: Check for hung actors or missing ready signals
-
-### Understanding Test Results
-
-**Expected Verification Patterns:**
-- ✅ **System Framework Working**: Core HIVE startup, agents, actors all functional
-- ✅ **LLM Integration Active**: API calls happening with tool schemas
-- ⚠️ **Tool Usage Variable**: Depends on prompt specificity and LLM behavior
-
-**Key Insight**: Current tests validate the **framework functionality** rather than specific tool execution. The system works correctly even when showing "tool not found" warnings - this indicates the LLM didn't choose to use specific tools, not that the tools are broken.
-
-## Troubleshooting
+## Debugging & Troubleshooting
 
 ### Common Issues
 
-1. **Docker not running**
-   ```bash
-   # Check Docker status
-   docker info
-   
-   # Start Docker if needed (macOS)
-   open -a Docker
-   ```
+#### 1. **System Startup Failures**
+```bash
+# Check HIVE initialization
+grep "start_headless_hive" log.txt
 
-2. **Permission denied errors**
-   ```bash
-   # Ensure Docker daemon is accessible
-   sudo usermod -aG docker $USER
-   # Then log out and back in
-   ```
+# Verify actor readiness (expect 4+ for managers)
+grep -c "Actor ready, sending ready signal" log.txt
 
-3. **Container fails to start**
-   ```bash
-   # Check container logs
-   docker logs hive-test-sandbox
-   
-   # Rebuild container
-   docker-compose -f tests/docker/docker-compose.test.yml build --no-cache
-   ```
+# Look for agent state transitions
+grep "agent_run" log.txt
+```
 
-4. **Tests timeout or fail verification**
-   ```bash
-   # Check HIVE logs in container
-   docker exec hive-test-sandbox cat /workspace/log.txt
-   
-   # Run verification manually
-   docker exec hive-test-sandbox python /workspace/tests/log_verification.py /workspace/log.txt
-   
-   # Debug interactively
-   docker exec -it hive-test-sandbox bash
-   cd /workspace && HIVE_LOG=debug hive headless "test prompt"
-   ```
+#### 2. **Task Completion Issues**
+```bash
+# Check for completion debug messages
+grep "complete_tool_call" log.txt
 
-5. **Log verification warnings**
-   - ⚠️ "Tool not found" warnings are often expected - they indicate LLM didn't use specific tools
-   - ❌ Critical errors indicate actual system failures
-   - Focus on fixing ❌ errors first, ⚠️ warnings may need better prompts
+# Look for TaskCompleted messages
+grep "TaskCompleted" log.txt
+
+# Verify completion sequence
+grep -A5 -B5 "complete.*tool" log.txt
+```
+
+#### 3. **Tool Execution Problems**
+```bash
+# Check for AssistantToolCall messages
+grep "AssistantToolCall" log.txt
+
+# Look for specific tool usage
+grep "file_reader\|command\|spawn_agent" log.txt
+
+# Verify tool registration
+grep "ToolsAvailable" log.txt
+```
 
 ### Debug Mode
-
 ```bash
-# Run tests with full Docker output and logs
-./scripts/run-sandbox-tests.sh --verbose
-
-# Interactive debugging with log access
+# Interactive debugging
 docker-compose -f tests/docker/docker-compose.test.yml up -d
 docker exec -it hive-test-sandbox bash
 
-# Manual test execution with full logging
+# Manual execution with full logging
 cd /workspace
 HIVE_LOG=debug hive headless --auto-approve-commands "your test prompt"
-cat log.txt  # Review structured logs
-python tests/log_verification.py log.txt  # Verify execution
+
+# Analyze logs with structured parser
+python -c "
+import json
+with open('log.txt') as f:
+    for line in f:
+        if 'TaskCompleted' in line:
+            print(json.loads(line.strip()))
+"
 ```
 
-### Creating Better Test Prompts
+### Test Best Practices
 
-**Prompt Guidelines for Tool Usage:**
-- **File Reading**: "Read the file /workspace/test.txt and summarize its contents"
-- **Command Execution**: "Run the command 'ls -la /workspace' and show the results"  
-- **Multi-step Tasks**: "Create a file called test.txt, write 'hello' to it, then read it back"
-- **Error Handling**: "Try to read a non-existent file /workspace/missing.txt"
+#### Effective Test Prompts
+```rust
+// ✅ Good - Specific, forces tool usage, includes completion
+"Read the file /workspace/test.txt and show its contents. When done, use the complete tool."
 
-**Avoid Generic Prompts:**
-- ❌ "Help me with this task" (too vague)
-- ❌ "Analyze the situation" (no specific action)
-- ✅ "Execute command X and show output" (specific tool action)
+// ✅ Good - Multi-step with clear completion
+"Create file test.txt with content 'hello', then read it back. Use complete tool when finished."
 
-## Future Improvements
+// ❌ Avoid - Too generic, no completion instruction
+"Help me with this file"
 
-### Planned Enhancements
+// ❌ Avoid - No specific tool requirement
+"Analyze the situation"
+```
 
-1. **Performance Testing**: Automated benchmarks and regression detection
-2. **Chaos Engineering**: Random failure injection during tests
-3. **Security Scanning**: Automated vulnerability testing of tool execution
-4. **Multi-Platform**: Test matrix across different OS environments
-5. **Load Testing**: High concurrency and stress testing
-6. **Mock Services**: Controllable external API simulation
+#### Verification Patterns
+```rust
+// Check basic system health
+assert!(result.is_successful(), "System lifecycle failed");
 
-### Test Coverage Goals
+// Verify task delegation (for multi-agent workflows)
+assert!(result.task_delegation, "Expected manager delegation");
 
-- [ ] **Tool Coverage**: Individual tests for each tool actor
-- [ ] **Configuration Testing**: Various config scenarios and validation
-- [ ] **CLI Interface**: Complete command-line interface testing  
-- [ ] **TUI Testing**: Terminal user interface interaction tests
-- [ ] **Audio Processing**: Microphone and speech recognition tests
-- [ ] **Context Capture**: Screenshot and clipboard functionality
+// Check task completion (critical for workflow verification)
+assert!(result.is_successful_with_completion(), "Task completion failed");
 
-## Contributing
+// Specific tool verification
+assert!(!result.expected_tools["file_reader"], "File reader tool not used");
+```
 
-When adding new tests:
+## Architecture Benefits
 
-1. **Safety First**: All potentially dangerous tests must use Docker sandbox
-2. **Isolation**: Tests should not depend on external services when possible
-3. **Cleanup**: Ensure proper resource cleanup in test teardown
-4. **Documentation**: Update this README with new test categories
-5. **CI/CD**: Consider automated test execution in CI pipelines
+### Type-Safe Testing
+- **Before**: Brittle string matching in logs
+- **After**: Structured message object analysis with Rust enums
 
-For questions or contributions, see the main project README.
+### Comprehensive Coverage
+- **System Lifecycle**: Startup, actor readiness, agent states
+- **Message Flow**: Tool calls, responses, completion signals
+- **Task Completion**: Explicit completion verification via `complete` tool
+- **Error Handling**: Proper error detection vs false positives
+
+### Debugging Clarity
+- **Structured Results**: Clear pass/fail for each system component
+- **Message Tracing**: Full workflow visibility through message objects
+- **Root Cause Analysis**: Precise failure point identification
+
+The testing framework now provides **comprehensive verification** of HIVE system behavior through **message-based analysis** rather than fragile log string matching, enabling confident development and debugging of the multi-agent system.

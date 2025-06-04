@@ -91,6 +91,7 @@ pub fn init_logger() {
                 .with_level(true)
                 .with_thread_ids(true)
                 .with_span_events(fmt::format::FmtSpan::ENTER | fmt::format::FmtSpan::EXIT)
+                .with_timer(tracing_subscriber::fmt::time::time())
                 .compact(),
         )
         .init();

@@ -2,239 +2,227 @@
 
 ## Overview
 
-HIVE is a Rust-based multi-agent AI system that enables LLMs to collaborate on complex tasks through a hierarchical agent architecture. The system supports both GUI and headless modes, with Docker-based testing for safe tool execution.
+HIVE is a Rust-based multi-agent AI system that enables LLMs to collaborate on complex tasks through a hierarchical agent architecture. The system supports both GUI and headless modes, with comprehensive Docker-based testing for safe tool execution.
 
-## Core Concepts
+## Core Architecture
 
-### Agent Types
-- **Main Manager**: Top-level agent that breaks down user requests and delegates to sub-agents
-- **Sub-Manager**: Middle-tier agents that manage specific objectives and coordinate workers
-- **Worker**: Execution agents that use tools to complete specific tasks
+### Agent Hierarchy
+- **Main Manager**: Top-level agent that delegates tasks and coordinates sub-agents
+- **Sub-Manager**: Middle-tier agents that manage specific objectives 
+- **Worker**: Execution agents that use tools (file_reader, command, edit_file, complete)
 
 ### Actor System
-The system uses Tokio-based actors that communicate via broadcast channels:
-- **Agent**: Core agent logic (Manager/Worker behavior)
+Tokio-based actors communicate via broadcast channels:
+- **Agent**: Core agent logic with Manager/Worker behavior variants
 - **Assistant**: Handles LLM interactions and chat requests
-- **Tool Actors**: Execute specific capabilities (Command, FileReader, EditFile, MCP, etc.)
+- **Tool Actors**: Execute capabilities (Command, FileReader, EditFile, Complete, MCP, etc.)
 - **Context/Microphone**: GUI-only actors for screen capture and audio (feature-gated)
 
-## Key Files & Directories
+## Key Files & Structure
 
 ### Core System
-- `src/main.rs` - Entry point, CLI argument parsing
-- `src/lib.rs` - Main program runners (GUI/headless), logging setup
-- `src/hive.rs` - HIVE system initialization and lifecycle management
-- `src/config.rs` - Configuration loading, feature-conditional defaults
-- `src/actors/` - Actor implementations and message handling
+- `src/main.rs` - Entry point, CLI parsing
+- `src/lib.rs` - Program runners, **JSON logging setup**
+- `src/hive.rs` - HIVE initialization, message orchestration
+- `src/actors/mod.rs` - **Message types (serializable)**, Actor trait, lifecycle
+- `src/actors/agent.rs` - Agent behavior, **task completion logic**
 
-### Agents & Tools
-- `src/actors/agent.rs` - Agent behavior, state management, actor coordination
-- `src/actors/assistant.rs` - LLM chat interface and response handling
-- `src/actors/tools/` - Tool implementations (command execution, file ops, planning, etc.)
-- `src/actors/mod.rs` - Actor trait definition, message types, lifecycle
+### Agent Tools & Capabilities
+- `src/actors/assistant.rs` - LLM chat interface
+- `src/actors/tools/complete.rs` - **Task completion signaling tool**
+- `src/actors/tools/spawn_agent.rs` - Agent delegation
+- `src/actors/tools/` - Command execution, file operations, planning, MCP
 
 ### Configuration
-- `default_config.toml` - Full-featured config with GUI keybindings
-- `headless_config.toml` - Minimal config for headless builds
-- `src/key_bindings.rs` - Key event parsing and binding management
+- `default_config.toml` - Full GUI config
+- `headless_config.toml` - Minimal headless config
+- `src/config.rs` - Feature-conditional loading
 
-### Testing
-- `tests/README.md` - **READ THIS** for comprehensive testing documentation
-- `tests/sandboxed_integration_tests.rs` - Docker-based integration tests
-- `tests/docker/` - Docker test environment setup
-- `scripts/run-sandbox-tests.sh` - Test runner script
+## Message Architecture
 
-## Architecture Flow
+### Core Message Types (Serializable)
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Message {
+    Action(Action),                    // User actions
+    AssistantToolCall(ToolCall),       // LLM tool calls
+    AssistantResponse(MessageContent), // LLM responses
+    ToolCallUpdate(ToolCallUpdate),    // Tool execution status
+    TaskCompleted { summary: String, success: bool }, // Task completion
+    AgentSpawned/AgentStatusUpdate,    // Agent management
+    // ... other variants
+}
+```
 
-### System Startup
-1. **Config Loading**: Loads user config, merges with appropriate defaults (GUI vs headless)
-2. **HIVE Initialization**: Creates broadcast channels, starts shared actors if needed
-3. **Agent Creation**: Main Manager agent spawned with initial task
-4. **Actor Coordination**: Agent starts required tool actors, waits for ready signals
-5. **Task Processing**: Once all actors ready, agent begins processing user request
+### Agent Communication
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InterAgentMessage {
+    TaskStatusUpdate { task_id, status, from_agent },
+    PlanApproved/PlanRejected,
+    // ... delegation messages
+}
+```
+
+## Task Completion System
+
+### Complete Tool Pattern
+**Critical**: All agents must use the `complete` tool to signal task completion:
+
+```rust
+// In system prompts:
+"When you have finished your assigned task, you MUST call the 'complete' tool to signal completion."
+
+// Tool call:
+complete({
+    "summary": "Task description of what was accomplished",
+    "success": true  // or false if task failed
+})
+```
 
 ### Message Flow
 ```
-User Input → HIVE System → Main Manager Agent → Assistant → LLM API
-                ↓                ↓                ↓
-         Tool Actors ← Agent Coordination ← Tool Calls
+User Input → Main Manager → spawn_agent_and_assign_task → Worker Agent
+                ↓                                            ↓
+        TaskStatusUpdate ← complete tool call ← Task Execution
 ```
 
-### Agent Lifecycle
-```
-Initializing → WaitingForActors → Active → [WaitingForApproval/WaitingForSubAgents] → Terminated
-```
+## Logging & Debugging
 
-## Feature Flags
+### Structured JSON Logging
+**Environment**: `HIVE_LOG=debug` (writes to `log.txt`)
 
-### Build Features
-- `gui` - Enables screen capture, clipboard, context actors
-- `audio` - Enables microphone recording and transcription
-- `headless` - Minimal build for CLI-only usage
-
-### Feature-Conditional Code
-- Context/Microphone actors only exist with appropriate features
-- Config loading adapts to available features
-- Action enum variants are feature-gated
-
-## Configuration System
-
-### Config Hierarchy
-1. User config file (`~/.config/hive/config.toml` or `HIVE_CONFIG_PATH`)
-2. Default config (feature-dependent: `default_config.toml` vs `headless_config.toml`)
-3. CLI overrides (e.g., auto-approve commands)
-
-### Key Binding System
-- String-based key combinations (`"ctrl-c"`, `"cmd-alt-w"`)
-- Action mapping to enum variants
-- Feature-conditional action validation
-- `clear_defaults` option to disable default bindings
-
-## Multi-Agent Coordination
-
-### Task Delegation
-- Managers use `spawn_agent_and_assign_task` tool to create sub-agents
-- Parent-child communication via separate broadcast channels
-- Status updates flow up the hierarchy
-
-### Tool System
-- Each agent type gets specific tools (Manager vs Worker)
-- Tools are actors that register capabilities and handle requests
-- MCP (Model Context Protocol) integration for external tools
-
-## Error Handling & Recovery
-
-### Config Validation
-- Invalid actions for current build features are rejected
-- Binding conflicts detected during parsing
-- Missing environment variables handled gracefully
-
-### Actor Failure Recovery
-- Broadcast channel lag detection and logging
-- Actor lifecycle monitoring via ready/status messages
-- Graceful shutdown on system exit signals
-
-## Logging & Observability
-
-### Structured Tracing System
-The system uses comprehensive structured logging with tracing spans for full observability:
-
-**Key Log Environment Variables:**
-- `HIVE_LOG=debug` - Enables detailed structured logging (writes to `log.txt`)
-- `HIVE_LOG=info` - Standard operational logging
-- `HIVE_LOG=trace` - Maximum verbosity (includes all spans)
-
-**Important Span Hierarchies:**
-```
-start_headless_hive
-├── agent_run (agent_id, role, agent_type)
-│   ├── start_actors (agent_id, role)
-│   │   └── actor_lifecycle (actor_id)
-│   │       ├── tools_available (tools_count)
-│   │       ├── user_input (input_length)
-│   │       │   └── assist_request (tools_count)
-│   │       │       └── llm_request (model, tools_count)
-│   │       └── command_tool_call (call_id, function)
-│   │           └── execute_command (command, args_count)
-│   ├── send_initial_prompt
-│   └── handle_internal_message (message_type)
+**Message Serialization**: All Message and InterAgentMessage objects are logged as JSON:
+```json
+{
+  "timestamp": "2024-01-01T12:00:00Z",
+  "level": "DEBUG", 
+  "target": "hive::agent",
+  "message": "{\"TaskCompleted\":{\"summary\":\"File read\",\"success\":true}}",
+  "message_type": "hive::actors::Message"
+}
 ```
 
-**Critical Logging Patterns:**
-- All actors send `ActorReady` messages when initialized
-- Agent state transitions are logged with full context
-- Tool executions include call IDs and parameters
-- LLM requests show model, tool count, and network activity
-
-### Debugging Workflows
-
-**System Startup Issues:**
-1. Check for "Starting headless HIVE multi-agent system" log entry
-2. Verify all required actors send ready signals (expect 4+ for managers)
-3. Look for "All actors ready, starting task" state transition
-4. Confirm "Executing LLM chat request" appears
-
-**Tool Execution Problems:**
-1. Search logs for tool name patterns (e.g., "command", "file_reader") 
-2. Check for `{tool}_tool_call` spans with proper call IDs
-3. Verify tool registration in `tools_available` spans
-4. Look for tool execution spans with parameters
-
-**Agent Communication Issues:**
-1. Monitor `handle_internal_message` spans for message flow
-2. Check agent state transitions for stuck states
-3. Verify parent-child agent communication patterns
-4. Look for broadcast channel lag warnings
-
-**Configuration Problems:**
-1. Search for config loading entries and feature detection
-2. Verify appropriate default config is loaded (GUI vs headless)
-3. Check for invalid action/binding rejections
-4. Confirm key binding merge logic works correctly
-
-### Log Analysis Tools
-
-**Built-in Verification:**
-- `tests/log_verification.py` - Standalone log analysis utility
-- Docker tests include automatic log verification
-- Use `python tests/log_verification.py log.txt` for post-mortem analysis
-
-**Manual Analysis Patterns:**
-```bash
-# Count actor readiness
-grep "Actor ready" log.txt | wc -l
-
-# Find tool usage
-grep -o "tools_count=[0-9]*" log.txt | sort | uniq -c
-
-# Check agent lifecycle
-grep "agent_run.*enter\|agent_run.*exit" log.txt
-
-# Monitor LLM interactions
-grep "llm_request" log.txt
+### Key Span Patterns
 ```
+start_headless_hive → agent_run → actor_lifecycle → llm_request
+                                 → complete_tool_call → task_completion_signal
+```
+
+### Debug Patterns
+- System startup: `start_headless_hive` span
+- Agent lifecycle: `agent_run` spans with agent_id/role
+- Actor readiness: "Actor ready, sending ready signal" (expect 4+ for managers)
+- Tool execution: `{tool}_tool_call` spans
+- Completion: `complete_tool_call`, `task_completion_signal`, `TaskCompleted` messages
+
+## Testing System
+
+### Docker Integration Tests
+**Location**: `tests/sandboxed_integration_tests.rs`
+**Environment**: Safe Docker sandbox with whitelisted commands
+**Purpose**: End-to-end testing of agent workflows, tool execution, task completion
+
+### Structured Log Analysis
+**Parser**: `tests/log_parser/mod.rs` - Deserializes Message objects from logs
+**Verification**: `tests/docker_sandbox/mod.rs` - Type-safe log analysis
+
+**Key Verification Checks**:
+```rust
+// Message-based verification
+parser.entries_with_task_completed()       // TaskCompleted messages
+parser.entries_with_assistant_tool_calls() // Tool call messages  
+parser.entries_with_tool_call("complete")  // Specific tool usage
+parser.contains_message_sequence(["AssistantToolCall", "TaskCompleted"])
+```
+
+### Test Best Practices
+- Use explicit prompts that force tool usage: "You must use your tools to..."
+- Always instruct agents to use complete tool: "When done, use the complete tool"
+- Test both success and error scenarios
+- Verify proper agent delegation patterns
 
 ## Development Guidelines
 
 ### Adding New Tools
 1. Implement `Actor` trait in `src/actors/tools/`
-2. Add `#[tracing::instrument]` to key methods with relevant fields
-3. Add to agent's required actors list in `get_required_actors()`
-4. Start tool actor in agent's `start_actors()` method
-5. Register tool schema for LLM usage
-6. Update test verification to check for tool usage patterns
+2. Add `Serialize, Deserialize` to any new message types
+3. Register in agent's required actors list
+4. Add JSON logging for tool execution
+5. Update test verification patterns
 
-**Span Best Practices:**
-- Use descriptive span names that match the operation
-- Include relevant fields (IDs, counts, types) but skip large data
-- Add INFO level events for key milestones
-- Use DEBUG for detailed flow information
-- Include enter/exit events for timing analysis
+### Message Type Guidelines
+- All message types must be serializable for logging
+- Use `#[serde(skip)]` for non-serializable fields (like SystemTime)
+- Include message_type in debug logs for filtering
+- Maintain backwards compatibility in message structure
 
-### Testing Guidelines
-- All Docker tests now include automatic log verification
-- Test prompts should be specific enough to trigger tool usage
-- Use log verification to ensure expected system behavior
-- Check both positive cases (tools used) and negative cases (errors handled)
+### Agent Behavior Guidelines
+**Managers**: Must delegate to Workers, use spawn_agent_and_assign_task tool
+**Workers**: Must use tools (file_reader, command, edit_file) AND complete tool
+**Completion**: All agents must signal task completion explicitly
 
-### Common Gotchas
-- Headless builds need immediate Main Manager startup (no shared actors)
-- Config merging must respect feature flags
-- Broadcast channels require proper subscription timing
-- Actor ready messages are crucial for system startup
-- Tool usage requires explicit LLM prompts - generic prompts may not trigger tools
-- Log verification expects specific patterns - update tests when changing log formats
+### Debugging Workflows
 
-## Current Status
+**System Won't Start**:
+1. Check `start_headless_hive` span appears
+2. Verify 4+ "Actor ready" messages  
+3. Look for agent state transitions
 
-The system successfully:
-- ✅ Loads configs correctly for both GUI and headless builds
-- ✅ Starts all required actors and handles ready signaling
-- ✅ Processes user tasks through LLM interactions
-- ✅ Executes tools and handles responses
-- ✅ Builds and runs Docker integration tests
+**Tool Execution Issues**:
+1. Search for `AssistantToolCall` messages in logs
+2. Check tool registration and availability
+3. Verify tool-specific debug spans
 
-Critical fixes completed:
-- Fixed config loading to prevent GUI actions in headless builds
-- Fixed HIVE startup to handle empty shared actor requirements
-- Fixed actor initialization and ready message handling
+**Task Completion Problems**:
+1. Look for `complete_tool_call` debug messages
+2. Check `TaskCompleted` message presence
+3. Verify agent completion sequence patterns
+
+## Feature Flags & Builds
+
+### Build Features
+- `gui` - Screen capture, context actors
+- `audio` - Microphone recording  
+- Default - Headless CLI build
+
+### Feature-Conditional Code
+```rust
+#[cfg(feature = "gui")]
+Context::new(config.clone(), tx.clone()).run();
+```
+
+## Configuration System
+
+### Config Hierarchy
+1. User config (`HIVE_CONFIG_PATH` or `~/.config/hive/config.toml`)
+2. Feature-appropriate defaults (GUI vs headless)
+3. CLI overrides
+
+### Model Configuration
+```toml
+[hive.main_manager_model]
+name = "deepseek-chat"
+system_prompt = "You are a Main Manager. Delegate tasks using spawn_agent_and_assign_task. Use complete tool when done."
+
+[hive.worker_model] 
+system_prompt = "You are a Worker. Use tools to complete tasks. MUST call complete tool when finished."
+```
+
+## Current Status & Critical Fixes
+
+**✅ Completed**:
+- Hierarchical agent system with proper delegation
+- Complete tool implementation and verification
+- Structured JSON logging with message deserialization
+- Docker-based integration testing with log analysis
+- Feature-conditional config loading
+- Type-safe log parsing and verification
+
+**🔑 Key Patterns**:
+- All agents must use complete tool for task signaling
+- Messages are serialized as JSON for precise log analysis  
+- Test verification uses structured message parsing, not string matching
+- Agent hierarchy enforces proper tool usage (Managers delegate, Workers execute)
+
+The system now provides comprehensive observability and testing capabilities for reliable multi-agent task execution.

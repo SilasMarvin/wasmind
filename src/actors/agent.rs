@@ -78,7 +78,7 @@ pub enum TaskStatus {
 }
 
 /// Inter-agent message for communication between agents
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum InterAgentMessage {
     /// Agent reports task status to manager
     TaskStatusUpdate {
@@ -315,7 +315,8 @@ impl Agent {
             tokio::select! {
                 // Handle internal messages from actors
                 Ok(msg) = message_rx.recv() => {
-                    tracing::debug!(name = "agent_received_internal_message", message = ?msg);
+                    let message_json = serde_json::to_string(&msg).unwrap_or_else(|_| format!("{:?}", msg));
+                    tracing::debug!(name = "agent_received_internal_message", message = %message_json, message_type = std::any::type_name::<Message>());
 
                     // First, attempt state transition
                     self.transition(&msg);
@@ -391,7 +392,8 @@ impl Agent {
                         None
                     }
                 } => {
-                    tracing::debug!(name = "agent_received_child_message", message = ?msg);
+                    let message_json = serde_json::to_string(&msg).unwrap_or_else(|_| format!("{:?}", msg));
+                    tracing::debug!(name = "agent_received_child_message", message = %message_json, message_type = std::any::type_name::<InterAgentMessage>());
                     self.handle_child_message(msg).await;
                 }
             }
@@ -413,11 +415,8 @@ impl Agent {
     /// Send the initial prompt to the assistant based on agent type
     #[tracing::instrument(name = "send_initial_prompt", skip(self, message_tx), fields(agent_id = %self.id().0))]
     async fn send_initial_prompt(&self, message_tx: &broadcast::Sender<Message>) {
-        // Send initial message to start the task
-        let _ = message_tx.send(Message::UserTUIInput(
-            "Please analyze your objective and determine the best approach to accomplish it."
-                .to_string(),
-        ));
+        // Send the actual task description to start the task
+        let _ = message_tx.send(Message::UserTUIInput(self.task_description.clone()));
     }
 
     /// Handle internal messages from the agent's actors
