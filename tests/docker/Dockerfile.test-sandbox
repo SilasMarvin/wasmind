@@ -1,6 +1,6 @@
 # Docker Sandbox for Safe LLM Testing
 # This container provides a minimal, safe environment for testing
-# copilot's tool execution without risking the host system
+# hive's tool execution without risking the host system
 
 FROM rust:1.86 as builder
 
@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /build
 COPY . .
 
-# Build copilot binary with headless features only
+# Build hive binary with headless features only
 RUN cargo build --release --no-default-features --features headless
 
 # Create the runtime image
@@ -72,13 +72,13 @@ COPY tests/docker/test-data/ /workspace/test-files/
 # Copy validation script
 COPY tests/docker/validate-tests.py /workspace/validate-tests.py
 
-# Copy copilot binary from builder stage
-COPY --from=builder /build/target/release/copilot /usr/local/bin/copilot
+# Copy hive binary from builder stage
+COPY --from=builder /build/target/release/hive /usr/local/bin/hive
 
 # Fix ownership and permissions
 RUN chown -R testuser:testuser /workspace && \
     chmod +x /workspace/validate-tests.py && \
-    chmod +x /usr/local/bin/copilot
+    chmod +x /usr/local/bin/hive
 
 # Set up Python environment
 RUN pip3 install pytest requests

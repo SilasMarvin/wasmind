@@ -3,7 +3,7 @@ use genai::{
     ServiceTarget,
     resolver::{AuthData, Endpoint, ServiceTargetResolver},
 };
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde::Deserialize;
 use snafu::{ResultExt, Snafu};
 use std::{collections::HashMap, fs, io, path::PathBuf};
@@ -12,7 +12,7 @@ use crate::actors::Action;
 
 const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant.";
 
-pub type KeyBinding = Vec<KeyCode>;
+pub type KeyBinding = Vec<KeyEvent>;
 
 /// Errors while getting the config
 #[derive(Debug, Snafu)]
@@ -36,18 +36,18 @@ pub enum ConfigError {
 }
 
 fn get_config_file_path() -> PathBuf {
-    // Create an instance of Etcetera for your application "giggle".
+    // Create an instance of Etcetera for your application "hive".
     // The etcetera crate will determine the correct base config directory depending on the OS.
     let strategy = choose_app_strategy(AppStrategyArgs {
-        top_level_domain: "org".to_string(), // Change to "com" if that's more appropriate.
-        author: "spilot".to_string(),
-        app_name: "spilot".to_string(),
+        top_level_domain: "com".to_string(),
+        author: "hive".to_string(),
+        app_name: "hive".to_string(),
     })
     .unwrap();
 
     // This returns the complete path to the config file "config.toml".
-    // On Linux/macOS, this will be: $HOME/.config/giggle/config.toml
-    // On Windows, this will typically be: %APPDATA%\giggle\config.toml
+    // On Linux/macOS, this will be: $HOME/.config/hive/config.toml
+    // On Windows, this will typically be: %APPDATA%\hive\config.toml
     strategy.config_dir().join("config.toml")
 }
 
@@ -69,7 +69,14 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Result<Self, ConfigError> {
-        let config_file_path = get_config_file_path();
+        // Check for environment variable first
+        let config_file_path = if let Ok(env_path) = std::env::var("HIVE_CONFIG_PATH") {
+            tracing::debug!("Using config path from HIVE_CONFIG_PATH env var: {}", env_path);
+            PathBuf::from(env_path)
+        } else {
+            get_config_file_path()
+        };
+        
         tracing::debug!("Looking for config file at: {:?}", config_file_path);
         let user_config: Option<Config> = if fs::exists(&config_file_path)? {
             tracing::debug!("Found user config file");
@@ -336,94 +343,95 @@ fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
     }
 }
 
-fn parse_key_combination(input: &str) -> Option<KeyBinding> {
+pub fn parse_key_combination(input: &str) -> Option<KeyBinding> {
     let parts: Vec<&str> = input.split('-').collect();
-    let mut binding = vec![];
+    let mut modifiers = KeyModifiers::empty();
+    let mut key_code = None;
 
-    for key_str in parts {
-        let key = match key_str {
+    for part in parts {
+        match part {
+            // Modifiers
+            "ctrl" => modifiers |= KeyModifiers::CONTROL,
+            "alt" => modifiers |= KeyModifiers::ALT,
+            "meta" | "cmd" | "super" | "win" => modifiers |= KeyModifiers::SUPER,
+            "shift" => modifiers |= KeyModifiers::SHIFT,
+            
             // Letters
-            "a" => KeyCode::Char('a'),
-            "b" => KeyCode::Char('b'),
-            "c" => KeyCode::Char('c'),
-            "d" => KeyCode::Char('d'),
-            "e" => KeyCode::Char('e'),
-            "f" => KeyCode::Char('f'),
-            "g" => KeyCode::Char('g'),
-            "h" => KeyCode::Char('h'),
-            "i" => KeyCode::Char('i'),
-            "j" => KeyCode::Char('j'),
-            "k" => KeyCode::Char('k'),
-            "l" => KeyCode::Char('l'),
-            "m" => KeyCode::Char('m'),
-            "n" => KeyCode::Char('n'),
-            "o" => KeyCode::Char('o'),
-            "p" => KeyCode::Char('p'),
-            "q" => KeyCode::Char('q'),
-            "r" => KeyCode::Char('r'),
-            "s" => KeyCode::Char('s'),
-            "t" => KeyCode::Char('t'),
-            "u" => KeyCode::Char('u'),
-            "v" => KeyCode::Char('v'),
-            "w" => KeyCode::Char('w'),
-            "x" => KeyCode::Char('x'),
-            "y" => KeyCode::Char('y'),
-            "z" => KeyCode::Char('z'),
+            "a" => key_code = Some(KeyCode::Char('a')),
+            "b" => key_code = Some(KeyCode::Char('b')),
+            "c" => key_code = Some(KeyCode::Char('c')),
+            "d" => key_code = Some(KeyCode::Char('d')),
+            "e" => key_code = Some(KeyCode::Char('e')),
+            "f" => key_code = Some(KeyCode::Char('f')),
+            "g" => key_code = Some(KeyCode::Char('g')),
+            "h" => key_code = Some(KeyCode::Char('h')),
+            "i" => key_code = Some(KeyCode::Char('i')),
+            "j" => key_code = Some(KeyCode::Char('j')),
+            "k" => key_code = Some(KeyCode::Char('k')),
+            "l" => key_code = Some(KeyCode::Char('l')),
+            "m" => key_code = Some(KeyCode::Char('m')),
+            "n" => key_code = Some(KeyCode::Char('n')),
+            "o" => key_code = Some(KeyCode::Char('o')),
+            "p" => key_code = Some(KeyCode::Char('p')),
+            "q" => key_code = Some(KeyCode::Char('q')),
+            "r" => key_code = Some(KeyCode::Char('r')),
+            "s" => key_code = Some(KeyCode::Char('s')),
+            "t" => key_code = Some(KeyCode::Char('t')),
+            "u" => key_code = Some(KeyCode::Char('u')),
+            "v" => key_code = Some(KeyCode::Char('v')),
+            "w" => key_code = Some(KeyCode::Char('w')),
+            "x" => key_code = Some(KeyCode::Char('x')),
+            "y" => key_code = Some(KeyCode::Char('y')),
+            "z" => key_code = Some(KeyCode::Char('z')),
 
             // Numbers
-            "0" => KeyCode::Char('0'),
-            "1" => KeyCode::Char('1'),
-            "2" => KeyCode::Char('2'),
-            "3" => KeyCode::Char('3'),
-            "4" => KeyCode::Char('4'),
-            "5" => KeyCode::Char('5'),
-            "6" => KeyCode::Char('6'),
-            "7" => KeyCode::Char('7'),
-            "8" => KeyCode::Char('8'),
-            "9" => KeyCode::Char('9'),
+            "0" => key_code = Some(KeyCode::Char('0')),
+            "1" => key_code = Some(KeyCode::Char('1')),
+            "2" => key_code = Some(KeyCode::Char('2')),
+            "3" => key_code = Some(KeyCode::Char('3')),
+            "4" => key_code = Some(KeyCode::Char('4')),
+            "5" => key_code = Some(KeyCode::Char('5')),
+            "6" => key_code = Some(KeyCode::Char('6')),
+            "7" => key_code = Some(KeyCode::Char('7')),
+            "8" => key_code = Some(KeyCode::Char('8')),
+            "9" => key_code = Some(KeyCode::Char('9')),
 
             // Special keys
-            "enter" => KeyCode::Enter,
-            "escape" | "esc" => KeyCode::Esc,
-            "space" => KeyCode::Char(' '),
-            "tab" => KeyCode::Tab,
-            "backspace" => KeyCode::Backspace,
-            "delete" | "del" => KeyCode::Delete,
-            "insert" => KeyCode::Insert,
-            "home" => KeyCode::Home,
-            "end" => KeyCode::End,
-            "pageup" => KeyCode::PageUp,
-            "pagedown" => KeyCode::PageDown,
-            "up" => KeyCode::Up,
-            "down" => KeyCode::Down,
-            "left" => KeyCode::Left,
-            "right" => KeyCode::Right,
+            "enter" => key_code = Some(KeyCode::Enter),
+            "escape" | "esc" => key_code = Some(KeyCode::Esc),
+            "space" => key_code = Some(KeyCode::Char(' ')),
+            "tab" => key_code = Some(KeyCode::Tab),
+            "backspace" => key_code = Some(KeyCode::Backspace),
+            "delete" | "del" => key_code = Some(KeyCode::Delete),
+            "insert" => key_code = Some(KeyCode::Insert),
+            "home" => key_code = Some(KeyCode::Home),
+            "end" => key_code = Some(KeyCode::End),
+            "pageup" => key_code = Some(KeyCode::PageUp),
+            "pagedown" => key_code = Some(KeyCode::PageDown),
+            "up" => key_code = Some(KeyCode::Up),
+            "down" => key_code = Some(KeyCode::Down),
+            "left" => key_code = Some(KeyCode::Left),
+            "right" => key_code = Some(KeyCode::Right),
 
             // Function keys
-            "f1" => KeyCode::F(1),
-            "f2" => KeyCode::F(2),
-            "f3" => KeyCode::F(3),
-            "f4" => KeyCode::F(4),
-            "f5" => KeyCode::F(5),
-            "f6" => KeyCode::F(6),
-            "f7" => KeyCode::F(7),
-            "f8" => KeyCode::F(8),
-            "f9" => KeyCode::F(9),
-            "f10" => KeyCode::F(10),
-            "f11" => KeyCode::F(11),
-            "f12" => KeyCode::F(12),
-
-            // Note: Modifiers are handled differently in crossterm 
-            // We'll need to handle them in the key binding system
-            "ctrl" | "alt" | "meta" | "cmd" | "super" | "win" | "shift" => {
-                // For now, ignore modifiers in the binding parsing
-                // They'll be handled separately in the key event processing
-                continue;
-            }
+            "f1" => key_code = Some(KeyCode::F(1)),
+            "f2" => key_code = Some(KeyCode::F(2)),
+            "f3" => key_code = Some(KeyCode::F(3)),
+            "f4" => key_code = Some(KeyCode::F(4)),
+            "f5" => key_code = Some(KeyCode::F(5)),
+            "f6" => key_code = Some(KeyCode::F(6)),
+            "f7" => key_code = Some(KeyCode::F(7)),
+            "f8" => key_code = Some(KeyCode::F(8)),
+            "f9" => key_code = Some(KeyCode::F(9)),
+            "f10" => key_code = Some(KeyCode::F(10)),
+            "f11" => key_code = Some(KeyCode::F(11)),
+            "f12" => key_code = Some(KeyCode::F(12)),
 
             _ => return None,
-        };
-        binding.push(key);
+        }
     }
-    Some(binding)
+
+    let key_code = key_code?;
+    let key_event = KeyEvent::new(key_code, modifiers);
+    Some(vec![key_event])
 }

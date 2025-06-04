@@ -1,10 +1,10 @@
 services:
   # Main test sandbox container
-  copilot-test-sandbox:
+  hive-test-sandbox:
     build:
       context: ../../
       dockerfile: tests/docker/Dockerfile.test-sandbox
-    container_name: copilot-test-sandbox
+    container_name: hive-test-sandbox
     
     # Security settings - limit capabilities and resources
     security_opt:
@@ -48,7 +48,7 @@ services:
       - TESTING_MODE=1
       - SANDBOX_ENV=1
       - RUST_LOG=debug
-      - COPILOT_CONFIG_PATH=/workspace/test-config.toml
+      - HIVE_CONFIG_PATH=/workspace/test-config.toml
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
     
     # Keep container running for tests

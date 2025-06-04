@@ -19,7 +19,7 @@ pub struct DockerSandbox {
 impl DockerSandbox {
     pub fn new() -> Self {
         Self {
-            container_name: "copilot-test-sandbox".to_string(),
+            container_name: "hive-test-sandbox".to_string(),
             is_running: false,
         }
     }
@@ -103,8 +103,8 @@ impl DockerSandbox {
         Ok((exit_code, stdout, stderr))
     }
     
-    /// Run copilot in headless mode with a prompt
-    pub async fn run_copilot_headless(&self, prompt: &str, timeout_secs: u64) -> Result<(i32, String, String), String> {
+    /// Run hive in headless mode with a prompt
+    pub async fn run_hive_headless(&self, prompt: &str, timeout_secs: u64) -> Result<(i32, String, String), String> {
         // Create a test config in the sandbox
         let config_content = r#"
 auto_approve_commands = true
@@ -143,10 +143,10 @@ system_prompt = "You are a test worker. Use tools to complete your assigned task
             config_content
         )).await?;
         
-        // Run copilot with the prompt (use printf to handle quotes properly)
+        // Run hive with the prompt (use printf to handle quotes properly)
         let escaped_prompt = prompt.replace("'", "'\"'\"'");
         let cmd = format!(
-            "cd /workspace && COPILOT_CONFIG_PATH=/workspace/test-config.toml timeout {} copilot headless --auto-approve-commands '{}'",
+            "cd /workspace && HIVE_CONFIG_PATH=/workspace/test-config.toml timeout {} hive headless --auto-approve-commands '{}'",
             timeout_secs,
             escaped_prompt
         );
@@ -206,7 +206,7 @@ async fn test_command_tool_failure_recovery() {
     // Test command that will definitely fail
     let prompt = "Execute the command 'nonexistent-command-that-will-fail' and then recover by executing 'echo Recovery successful'";
     
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 30).await.unwrap();
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
     
     println!("Command failure test:");
     println!("Exit code: {}", exit_code);
@@ -237,7 +237,7 @@ async fn test_file_permission_error_recovery() {
     // Try to read the protected file - should fail gracefully
     let prompt = "Read the file /workspace/temp/protected.txt and if that fails, create a new file called /workspace/temp/alternative.txt with content 'Alternative content'";
     
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 30).await.unwrap();
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
     
     println!("Permission error test:");
     println!("Exit code: {}", exit_code);
@@ -271,7 +271,7 @@ async fn test_agent_communication_failure_recovery() {
     
     // Run in background and simulate interruption
     let handle = tokio::spawn(async move {
-        sandbox.run_copilot_headless(&prompt, 45).await
+        sandbox.run_hive_headless(&prompt, 45).await
     });
     
     // Wait a bit then try to interrupt some processes
@@ -279,7 +279,7 @@ async fn test_agent_communication_failure_recovery() {
     
     // Try to interrupt any long-running processes in the container
     let mut sandbox2 = DockerSandbox::new();
-    sandbox2.container_name = "copilot-test-sandbox".to_string();
+    sandbox2.container_name = "hive-test-sandbox".to_string();
     sandbox2.is_running = true;
     
     let _ = sandbox2.exec_command("pkill -f dd").await; // Kill any dd processes
@@ -322,7 +322,7 @@ async fn test_resource_exhaustion_recovery() {
     // Test memory/disk exhaustion scenarios
     let prompt = "Try to create a very large file with 'dd if=/dev/zero of=/workspace/temp/huge.txt bs=1M count=1000' and handle any resource limitations gracefully";
     
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 60).await.unwrap();
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 60).await.unwrap();
     
     println!("Resource exhaustion test:");
     println!("Exit code: {}", exit_code);
@@ -365,7 +365,7 @@ async fn test_invalid_input_handling() {
         };
         println!("Testing invalid input {}: {}", i + 1, display_prompt);
         
-        let (exit_code, _stdout, _stderr) = sandbox.run_copilot_headless(prompt, 10).await.unwrap();
+        let (exit_code, _stdout, _stderr) = sandbox.run_hive_headless(prompt, 10).await.unwrap();
         
         // System should handle invalid inputs gracefully (not crash)
         assert!(exit_code >= 0, "System should handle invalid input {} gracefully", i + 1);
@@ -390,7 +390,7 @@ async fn test_concurrent_operation_conflicts() {
     // Test concurrent file operations that might conflict
     let prompt = "Simultaneously read the file /workspace/temp/shared.txt, append 'new line' to it, and create a backup copy called /workspace/temp/shared_backup.txt";
     
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 30).await.unwrap();
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
     
     println!("Concurrent operations test:");
     println!("Exit code: {}", exit_code);
@@ -419,7 +419,7 @@ async fn test_cleanup_after_failures() {
     // Run operations that create temporary resources and then fail
     let prompt = "Create several temporary files in /workspace/temp/, start a background process, then execute a command that fails, and ensure cleanup happens properly";
     
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 30).await.unwrap();
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
     
     println!("Cleanup test:");
     println!("Exit code: {}", exit_code);
@@ -467,7 +467,7 @@ async fn test_network_isolation_and_security() {
         println!("Security test {}: {}", i + 1, cmd);
         
         let prompt = &format!("Execute the command '{}' and handle any security restrictions appropriately", cmd);
-        let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 15).await.unwrap();
+        let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 15).await.unwrap();
         
         println!("Exit code: {}, Stdout: {}, Stderr: {}", exit_code, stdout, stderr);
         

@@ -1,6 +1,6 @@
 /// Sandboxed Integration Tests
 /// 
-/// These tests run the copilot system in a Docker sandbox for safe testing
+/// These tests run the hive system in a Docker sandbox for safe testing
 /// of tool execution, file operations, and error scenarios without risking
 /// the host system.
 
@@ -20,7 +20,7 @@ pub mod docker_test_utils {
     impl DockerSandbox {
         pub fn new() -> Self {
             Self {
-                container_name: "copilot-test-sandbox".to_string(),
+                container_name: "hive-test-sandbox".to_string(),
                 is_running: false,
             }
         }
@@ -146,8 +146,8 @@ pub mod docker_test_utils {
             }
         }
         
-        /// Run copilot in headless mode with a prompt
-        pub async fn run_copilot_headless(&self, prompt: &str, timeout_secs: u64) -> Result<(i32, String, String), String> {
+        /// Run hive in headless mode with a prompt
+        pub async fn run_hive_headless(&self, prompt: &str, timeout_secs: u64) -> Result<(i32, String, String), String> {
             // Create a test config in the sandbox
             let config_content = r#"
 auto_approve_commands = true
@@ -186,10 +186,10 @@ system_prompt = "You are a test worker. Use tools to complete your assigned task
                 config_content
             )).await?;
             
-            // Run copilot with the prompt (use printf to handle quotes properly)
+            // Run hive with the prompt (use printf to handle quotes properly)
             let escaped_prompt = prompt.replace("'", "'\"'\"'");
             let cmd = format!(
-                "cd /workspace && COPILOT_CONFIG_PATH=/workspace/test-config.toml timeout {} copilot headless --auto-approve-commands '{}'",
+                "cd /workspace && HIVE_CONFIG_PATH=/workspace/test-config.toml timeout {} hive headless --auto-approve-commands '{}'",
                 timeout_secs,
                 escaped_prompt
             );
@@ -275,10 +275,10 @@ async fn test_sandboxed_file_reading_workflow() {
     // Create a test file in the sandbox
     sandbox.exec_command("echo 'Test file content for reading' > /workspace/temp/read_test.txt").await.unwrap();
     
-    // Run copilot to read the file
+    // Run hive to read the file
     let prompt = "Read the contents of the file /workspace/temp/read_test.txt and tell me what it contains";
     
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 30).await.unwrap();
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
     
     println!("Exit code: {}", exit_code);
     println!("Stdout: {}", stdout);
@@ -300,7 +300,7 @@ async fn test_sandboxed_command_execution_workflow() {
     // Test safe command execution
     let prompt = "Execute the command 'ls /workspace/test-files' and show me the results";
     
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 30).await.unwrap();
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
     
     println!("Exit code: {}", exit_code);
     println!("Stdout: {}", stdout);
@@ -321,7 +321,7 @@ async fn test_sandboxed_error_recovery() {
     // Test error handling with a command that will fail
     let prompt = "Execute the command 'cat /nonexistent/file.txt' and handle the error gracefully";
     
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 30).await.unwrap();
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 30).await.unwrap();
     
     println!("Exit code: {}", exit_code);
     println!("Stdout: {}", stdout);
@@ -343,7 +343,7 @@ async fn test_sandboxed_multi_step_workflow() {
     // Test a complex workflow that involves multiple steps
     let prompt = "Create a directory called 'test-project' in /workspace/temp, then create a README.md file in it with the content 'This is a test project', then list the contents of the directory";
     
-    let (exit_code, stdout, stderr) = sandbox.run_copilot_headless(prompt, 45).await.unwrap();
+    let (exit_code, stdout, stderr) = sandbox.run_hive_headless(prompt, 45).await.unwrap();
     
     println!("Exit code: {}", exit_code);
     println!("Stdout: {}", stdout);

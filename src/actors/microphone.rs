@@ -36,7 +36,7 @@ pub enum Error {
 pub type MResult<T> = Result<T, Error>;
 
 // Define the model path as a constant
-const MODEL_PATH: &str = "/Users/silasmarvin/github/copilot/models/ggml-tiny.bin";
+const MODEL_PATH: &str = "/Users/silasmarvin/github/hive/models/ggml-tiny.bin";
 
 // Catch whipser logs so we don't just spam stderr
 extern "C" fn silence_whisper_logger(

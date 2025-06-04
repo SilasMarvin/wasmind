@@ -1,6 +1,6 @@
-use copilot::actors::agent::{Agent, InterAgentMessage, TaskStatus};
-use copilot::actors::state_system::StateSystem;
-use copilot::config::{Config, ParsedConfig};
+use hive::actors::agent::{Agent, InterAgentMessage, TaskStatus};
+use hive::actors::state_system::StateSystem;
+use hive::config::{Config, ParsedConfig};
 use std::time::Duration;
 use tokio::sync::broadcast;
 
@@ -168,16 +168,16 @@ async fn test_plan_approval_flow() {
     let worker_id = worker.id().clone();
 
     // Worker submits plan for approval
-    let plan = copilot::actors::tools::planner::TaskPlan {
+    let plan = hive::actors::tools::planner::TaskPlan {
         title: "Test Plan".to_string(),
         tasks: vec![
-            copilot::actors::tools::planner::Task {
+            hive::actors::tools::planner::Task {
                 description: "Step 1".to_string(),
-                status: copilot::actors::tools::planner::TaskStatus::Pending,
+                status: hive::actors::tools::planner::TaskStatus::Pending,
             },
-            copilot::actors::tools::planner::Task {
+            hive::actors::tools::planner::Task {
                 description: "Step 2".to_string(),
-                status: copilot::actors::tools::planner::TaskStatus::Pending,
+                status: hive::actors::tools::planner::TaskStatus::Pending,
             },
         ],
     };
@@ -186,7 +186,7 @@ async fn test_plan_approval_flow() {
         .send(InterAgentMessage::TaskStatusUpdate {
             task_id: task_id.clone(),
             status: TaskStatus::AwaitingManager(
-                copilot::actors::agent::TaskAwaitingManager::AwaitingPlanApproval(plan),
+                hive::actors::agent::TaskAwaitingManager::AwaitingPlanApproval(plan),
             ),
             from_agent: worker_id.clone(),
         })
@@ -249,19 +249,19 @@ async fn test_hierarchical_agent_structure() {
     // Verify agent types
     assert!(matches!(
         main_manager.behavior,
-        copilot::actors::agent::AgentBehavior::Manager(_)
+        hive::actors::agent::AgentBehavior::Manager(_)
     ));
     assert!(matches!(
         sub_manager.behavior,
-        copilot::actors::agent::AgentBehavior::Manager(_)
+        hive::actors::agent::AgentBehavior::Manager(_)
     ));
     assert!(matches!(
         worker1.behavior,
-        copilot::actors::agent::AgentBehavior::Worker(_)
+        hive::actors::agent::AgentBehavior::Worker(_)
     ));
     assert!(matches!(
         worker2.behavior,
-        copilot::actors::agent::AgentBehavior::Worker(_)
+        hive::actors::agent::AgentBehavior::Worker(_)
     ));
 
     // Verify unique IDs
@@ -389,12 +389,12 @@ async fn test_plan_rejection_flow() {
     let worker_id = worker.id().clone();
     
     // Worker submits plan
-    let plan = copilot::actors::tools::planner::TaskPlan {
+    let plan = hive::actors::tools::planner::TaskPlan {
         title: "Flawed Plan".to_string(),
         tasks: vec![
-            copilot::actors::tools::planner::Task {
+            hive::actors::tools::planner::Task {
                 description: "Invalid step".to_string(),
-                status: copilot::actors::tools::planner::TaskStatus::Pending,
+                status: hive::actors::tools::planner::TaskStatus::Pending,
             },
         ],
     };
@@ -403,7 +403,7 @@ async fn test_plan_rejection_flow() {
         .send(InterAgentMessage::TaskStatusUpdate {
             task_id: task_id.clone(),
             status: TaskStatus::AwaitingManager(
-                copilot::actors::agent::TaskAwaitingManager::AwaitingPlanApproval(plan),
+                hive::actors::agent::TaskAwaitingManager::AwaitingPlanApproval(plan),
             ),
             from_agent: worker_id.clone(),
         })
@@ -457,7 +457,7 @@ async fn test_agent_state_transitions() {
     );
     
     // Verify initial state
-    assert_eq!(*agent.current_state(), copilot::actors::agent::AgentState::Initializing);
+    assert_eq!(*agent.current_state(), hive::actors::agent::AgentState::Initializing);
     
     // Note: In a real test we'd need to run the agent and observe state changes
     // but for integration tests we're focused on inter-agent communication

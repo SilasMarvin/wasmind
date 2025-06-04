@@ -74,7 +74,7 @@ pub type SResult<T> = Result<T, Error>;
 pub fn init_logger() {
     use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
-    let builder = FmtSubscriber::builder().with_env_filter(EnvFilter::from_env("FILLER_NAME"));
+    let builder = FmtSubscriber::builder().with_env_filter(EnvFilter::from_env("HIVE_LOG"));
 
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -94,7 +94,7 @@ pub fn run_main_program() -> SResult<()> {
     use config::{Config, ParsedConfig};
     use key_bindings::KeyBindingManager;
     #[cfg(feature = "gui")]
-    use key_bindings::rdev_key_to_crossterm;
+    use key_bindings::RdevToCrosstermConverter;
     #[cfg(feature = "gui")]
     use rdev::{Event, EventType, listen};
     use snafu::ResultExt;
@@ -116,6 +116,7 @@ pub fn run_main_program() -> SResult<()> {
     #[cfg(feature = "gui")]
     {
         let mut key_binding_manager = KeyBindingManager::from(&parsed_config.keys);
+        let mut rdev_converter = RdevToCrosstermConverter::new();
 
         // Clone the message sender for the callback
         let message_tx = hive_handle.message_tx.clone();
@@ -130,8 +131,8 @@ pub fn run_main_program() -> SResult<()> {
 
         let callback = move |event: Event| match event.event_type {
             EventType::KeyPress(key) => {
-                if let Some(key_code) = rdev_key_to_crossterm(key) {
-                    let actions = key_binding_manager.handle_event(key_code);
+                if let Some(key_event) = rdev_converter.handle_key_press(key) {
+                    let actions = key_binding_manager.handle_event(key_event);
                     for action in actions {
                         if let Err(e) = message_tx.send(actors::Message::Action(action)) {
                             error!("Error sending action to actors: {:?}", e);
@@ -139,8 +140,8 @@ pub fn run_main_program() -> SResult<()> {
                     }
                 }
             }
-            EventType::KeyRelease(_) => {
-                key_binding_manager.clear();
+            EventType::KeyRelease(key) => {
+                rdev_converter.handle_key_release(key);
             }
             _ => (),
         };

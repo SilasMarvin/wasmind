@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "copilot")]
+#[command(name = "hive")]
 #[command(about = "AI-powered assistant with file and plan management")]
 pub struct Cli {
     #[command(subcommand)]
@@ -10,7 +10,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Run the main copilot assistant (default behavior)
+    /// Run the main hive assistant (default behavior)
     Run,
     /// Run in headless mode with an initial prompt
     Headless {
