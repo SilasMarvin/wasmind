@@ -1,0 +1,75 @@
+# Test configuration based on headless_config.toml
+auto_approve_commands = true  # Set to true for testing
+
+whitelisted_commands = [
+    "ls",
+    "pwd",
+    "echo",
+    "cat",
+    "grep",
+    "rg",
+    "find",
+    "git",
+    "cargo",
+    "npm",
+    "node",
+    "python",
+    "pip",
+    "which",
+    "date",
+    "whoami",
+    "uname",
+    "head",
+    "tail",
+    "wc",
+    "sort",
+    "uniq",
+    "diff",
+    "tree"
+]
+
+[model]
+name = "deepseek-chat"
+system_prompt = """You are integrated terminal assistant with access to various tools. 
+
+Use the tools to answer the user's requests. Do not ask to execute tools simply do what is required to answer the request. Use your best judgement on what tool to use."""
+
+[key_bindings]
+clear_defaults = true
+
+[key_bindings.bindings]
+# Only basic actions for headless builds
+"ctrl-c" = "Exit"
+
+# HIVE Multi-Agent System Configuration
+[hive]
+
+# Main Manager configuration
+[hive.main_manager_model]
+name = "deepseek-chat"
+system_prompt = """You are the HIVE Main Manager. Break down tasks and delegate to workers.
+{% if task -%}
+Your assigned task: {{ task }}
+{% endif %}
+
+When done use the `complete` tool."""
+
+# Sub-Manager configuration
+[hive.sub_manager_model]
+name = "deepseek-chat"
+system_prompt = """You are a HIVE Manager Agent. Manage your assigned tasks.
+{% if task -%}
+Your assigned task: {{ task }}
+{% endif %}
+
+When done use the `complete` tool."""
+
+# Worker configuration
+[hive.worker_model]
+name = "deepseek-chat"
+system_prompt = """You are a HIVE Worker Agent. Use tools to complete your assigned task.
+{% if task -%}
+Your assigned task: {{ task }}
+{% endif %}
+
+When done use the `complete` tool."""
