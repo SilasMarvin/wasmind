@@ -40,7 +40,7 @@ chrono = { version = "0.4", features = ["serde"] }
 minijinja = { version = "2.6", features = ["builtins"] }
 clap = { version = "4.0", features = ["derive"] }
 async-trait = "0.1"
-uuid = { version = "1.17.0", features = ["v4"] }
+uuid = { version = "1.17.0", features = ["v4", "serde"] }
 
 # Optional GUI dependencies
 arboard = { version = "3.5.0", optional = true }

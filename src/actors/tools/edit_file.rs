@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast};
 use tracing::info;
+use uuid::Uuid;
 
-use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
+use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
 
 pub const TOOL_NAME: &str = "edit_file";
@@ -361,24 +362,27 @@ impl Default for FileEditor {
 
 /// EditFile actor
 pub struct EditFile {
-    tx: broadcast::Sender<Message>,
+    tx: broadcast::Sender<ActorMessage>,
     #[allow(dead_code)] // TODO: Use for file operation settings, limits
     config: ParsedConfig,
     file_editor: FileEditor,
     file_reader: Arc<Mutex<super::file_reader::FileReader>>,
+    scope: Uuid,
 }
 
 impl EditFile {
-    pub fn with_file_reader(
+    pub fn new(
         config: ParsedConfig,
-        tx: broadcast::Sender<Message>,
+        tx: broadcast::Sender<ActorMessage>,
         file_reader: Arc<Mutex<super::file_reader::FileReader>>,
+        scope: Uuid,
     ) -> Self {
         Self {
             config,
             tx,
             file_editor: FileEditor::new(),
             file_reader,
+            scope,
         }
     }
 
@@ -391,7 +395,7 @@ impl EditFile {
         let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
             Ok(args) => args,
             Err(e) => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!(
                         "Failed to parse arguments: {}",
@@ -406,7 +410,7 @@ impl EditFile {
         let path = match args.get("path").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(
                         "Missing required field: path".to_string()
@@ -420,7 +424,7 @@ impl EditFile {
         let action = match FileEditor::parse_action_from_args(&args) {
             Ok(action) => action,
             Err(e) => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(e.to_string())),
                 }));
@@ -462,7 +466,7 @@ impl EditFile {
             }
         };
 
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::EditFile,
@@ -486,7 +490,7 @@ impl EditFile {
                     if let Ok(content) = file_reader.get_or_read_file_content(&canonical_path) {
                         if let Ok(metadata) = std::fs::metadata(&canonical_path) {
                             if let Ok(last_modified) = metadata.modified() {
-                                let _ = self.tx.send(Message::FileEdited {
+                                let _ = self.broadcast(Message::FileEdited {
                                     path: canonical_path,
                                     content: content.to_string(),
                                     last_modified,
@@ -500,7 +504,7 @@ impl EditFile {
             Err(e) => ToolCallStatus::Finished(Err(e.to_string())),
         };
 
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status,
         }));
@@ -511,21 +515,16 @@ impl EditFile {
 impl Actor for EditFile {
     const ACTOR_ID: &'static str = "edit_file";
 
-    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
-        Self {
-            config,
-            tx: tx.clone(),
-            file_editor: FileEditor::new(),
-            file_reader: Arc::new(Mutex::new(super::file_reader::FileReader::new())),
-        }
-    }
-
-    fn get_rx(&self) -> broadcast::Receiver<Message> {
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
         self.tx.subscribe()
     }
 
-    fn get_tx(&self) -> broadcast::Sender<Message> {
+    fn get_tx(&self) -> broadcast::Sender<ActorMessage> {
         self.tx.clone()
+    }
+
+    fn get_scope(&self) -> &Uuid {
+        &self.scope
     }
 
     async fn on_start(&mut self) {
@@ -537,11 +536,11 @@ impl Actor for EditFile {
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
 
-        let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
+        let _ = self.broadcast(Message::ToolsAvailable(vec![tool]));
     }
 
-    async fn handle_message(&mut self, message: Message) {
-        match message {
+    async fn handle_message(&mut self, message: ActorMessage) {
+        match message.message {
             Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
             _ => (),
         }

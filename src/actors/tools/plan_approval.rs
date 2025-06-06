@@ -2,10 +2,10 @@ use genai::chat::{Tool, ToolCall};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::actors::{
-    Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
-    agent::{InterAgentMessage, TaskId},
+    Actor, ActorMessage, InterAgentMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
 
@@ -14,16 +14,16 @@ pub const APPROVE_TOOL_DESCRIPTION: &str = "Approve a plan submitted by a child 
 pub const APPROVE_TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
-        "task_id": {
+        "agent_id": {
             "type": "string",
-            "description": "The ID of the task whose plan is being approved"
+            "description": "The ID of the agent whose plan is being approved"
         },
         "plan_id": {
             "type": "string",
             "description": "The ID of the plan being approved"
         }
     },
-    "required": ["task_id", "plan_id"]
+    "required": ["agent_id", "plan_id"]
 }"#;
 
 pub const REJECT_TOOL_NAME: &str = "reject_plan";
@@ -31,7 +31,7 @@ pub const REJECT_TOOL_DESCRIPTION: &str = "Reject a plan submitted by a child ag
 pub const REJECT_TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
-        "task_id": {
+        "agnet_id": {
             "type": "string",
             "description": "The ID of the task whose plan is being rejected"
         },
@@ -44,49 +44,37 @@ pub const REJECT_TOOL_INPUT_SCHEMA: &str = r#"{
             "description": "The reason for rejecting the plan"
         }
     },
-    "required": ["task_id", "plan_id", "reason"]
+    "required": ["agnet_id", "plan_id", "reason"]
 }"#;
 
 #[derive(Debug, Deserialize)]
 struct ApprovePlanInput {
-    task_id: String,
+    agent_id: Uuid,
     plan_id: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct RejectPlanInput {
-    task_id: String,
+    agent_id: Uuid,
     plan_id: String,
     reason: String,
 }
 
 /// PlanApproval tool actor for managers to approve/reject plans
 pub struct PlanApproval {
-    tx: broadcast::Sender<Message>,
+    tx: broadcast::Sender<ActorMessage>,
     #[allow(dead_code)] // TODO: Use for approval timeout, channel buffer sizes
     config: ParsedConfig,
-    /// Channel to communicate with child agents
-    child_tx: broadcast::Sender<InterAgentMessage>,
+    scope: Uuid,
 }
 
 impl PlanApproval {
-    pub fn new_with_channel(
-        config: ParsedConfig,
-        tx: broadcast::Sender<Message>,
-        child_tx: broadcast::Sender<InterAgentMessage>,
-    ) -> Self {
-        Self {
-            tx,
-            config,
-            child_tx,
-        }
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+        Self { tx, config, scope }
     }
 
     async fn handle_approve_plan(&mut self, tool_call: ToolCall) {
-        info!("Approve plan tool called with ID: {}", tool_call.call_id);
-
-        // Send received status
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::MCP,
@@ -94,11 +82,10 @@ impl PlanApproval {
             },
         }));
 
-        // Parse input
         let input: ApprovePlanInput = match serde_json::from_value(tool_call.fn_arguments) {
             Ok(input) => input,
             Err(e) => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
                 }));
@@ -106,17 +93,18 @@ impl PlanApproval {
             }
         };
 
-        // Send approval to child
-        let _ = self.child_tx.send(InterAgentMessage::PlanApproved {
-            task_id: TaskId(input.task_id.clone()),
-            plan_id: input.plan_id.clone(),
-        });
+        let _ = self.broadcast(Message::InterAgentMessage(
+            InterAgentMessage::PlanApproved {
+                agent_id: input.agent_id.clone(),
+                plan_id: input.plan_id.clone(),
+            },
+        ));
 
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(format!(
                 "Plan {} for task {} approved",
-                input.plan_id, input.task_id
+                input.plan_id, input.agent_id
             ))),
         }));
     }
@@ -124,8 +112,7 @@ impl PlanApproval {
     async fn handle_reject_plan(&mut self, tool_call: ToolCall) {
         info!("Reject plan tool called with ID: {}", tool_call.call_id);
 
-        // Send received status
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::MCP,
@@ -133,11 +120,10 @@ impl PlanApproval {
             },
         }));
 
-        // Parse input
         let input: RejectPlanInput = match serde_json::from_value(tool_call.fn_arguments) {
             Ok(input) => input,
             Err(e) => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
                 }));
@@ -145,18 +131,19 @@ impl PlanApproval {
             }
         };
 
-        // Send rejection to child
-        let _ = self.child_tx.send(InterAgentMessage::PlanRejected {
-            task_id: TaskId(input.task_id.clone()),
-            plan_id: input.plan_id.clone(),
-            reason: input.reason.clone(),
-        });
+        let _ = self.broadcast(Message::InterAgentMessage(
+            InterAgentMessage::PlanRejected {
+                agent_id: input.agent_id.clone(),
+                plan_id: input.plan_id.clone(),
+                reason: input.reason.clone(),
+            },
+        ));
 
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(format!(
                 "Plan {} for task {} rejected: {}",
-                input.plan_id, input.task_id, input.reason
+                input.plan_id, input.agent_id, input.reason
             ))),
         }));
     }
@@ -174,26 +161,20 @@ impl PlanApproval {
 impl Actor for PlanApproval {
     const ACTOR_ID: &'static str = "plan_approval";
 
-    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
-        // This shouldn't be called directly, use new_with_channel instead
-        let (child_tx, _) = broadcast::channel(1024);
-        Self {
-            tx,
-            config,
-            child_tx,
-        }
-    }
-
-    fn get_rx(&self) -> broadcast::Receiver<Message> {
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
         self.tx.subscribe()
     }
 
-    fn get_tx(&self) -> broadcast::Sender<Message> {
+    fn get_tx(&self) -> broadcast::Sender<ActorMessage> {
         self.tx.clone()
     }
 
-    async fn handle_message(&mut self, message: Message) {
-        match message {
+    fn get_scope(&self) -> &Uuid {
+        &self.scope
+    }
+
+    async fn handle_message(&mut self, message: ActorMessage) {
+        match message.message {
             Message::AssistantToolCall(tool_call) => {
                 self.handle_tool_call(tool_call).await;
             }
@@ -202,8 +183,6 @@ impl Actor for PlanApproval {
     }
 
     async fn on_start(&mut self) {
-        info!("PlanApproval tool actor started");
-
         // Send tool availability
         let approve_tool = Tool {
             name: APPROVE_TOOL_NAME.to_string(),
@@ -217,8 +196,6 @@ impl Actor for PlanApproval {
             schema: Some(serde_json::from_str(REJECT_TOOL_INPUT_SCHEMA).unwrap()),
         };
 
-        let _ = self
-            .tx
-            .send(Message::ToolsAvailable(vec![approve_tool, reject_tool]));
+        let _ = self.broadcast(Message::ToolsAvailable(vec![approve_tool, reject_tool]));
     }
 }

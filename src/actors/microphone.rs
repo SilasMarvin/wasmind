@@ -16,12 +16,15 @@ use rubato::{
 use snafu::Snafu;
 use tokio::sync::broadcast;
 use tracing::error;
+use uuid::Uuid;
 use whisper_rs::{
     FullParams, GGMLLogLevel, SamplingStrategy, WhisperContext, WhisperContextParameters,
 };
 
 use crate::actors::{Action, Actor, Message};
 use crate::config::ParsedConfig;
+
+use super::{ActorMessage, UserContext};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -70,19 +73,30 @@ static WHISPER_CONTEXT: LazyLock<WhisperContext> = LazyLock::new(|| {
 
 /// Microphone actor
 pub struct Microphone {
-    tx: broadcast::Sender<Message>,
+    tx: broadcast::Sender<ActorMessage>,
     #[allow(dead_code)] // TODO: Use for model path, sample rates, audio settings
     config: ParsedConfig,
     recording: Arc<AtomicBool>,
+    scope: Uuid,
 }
 
 impl Microphone {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+        Self {
+            config,
+            tx,
+            recording: Arc::new(AtomicBool::new(false)),
+            scope,
+        }
+    }
+
     async fn handle_toggle_record(&mut self) {
         if !self.recording.load(Ordering::Relaxed) {
             let local_recording = self.recording.clone();
             let local_tx = self.tx.clone();
+            let local_scope = self.scope.clone();
             thread::spawn(move || {
-                if let Err(e) = record_audio(local_recording, local_tx) {
+                if let Err(e) = record_audio(local_recording, local_tx, local_scope) {
                     error!("Error while recording audio: {e:?}");
                 }
             });
@@ -97,32 +111,31 @@ impl Microphone {
 impl Actor for Microphone {
     const ACTOR_ID: &'static str = "microphone";
 
-    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
-        Self {
-            config,
-            tx,
-            recording: Arc::new(AtomicBool::new(false)),
-        }
+    fn get_scope(&self) -> &Uuid {
+        &self.scope
     }
 
-    fn get_rx(&self) -> broadcast::Receiver<Message> {
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
         self.tx.subscribe()
     }
 
-    fn get_tx(&self) -> broadcast::Sender<Message> {
+    fn get_tx(&self) -> broadcast::Sender<ActorMessage> {
         self.tx.clone()
     }
 
-    async fn handle_message(&mut self, message: Message) {
-        match message {
-            Message::MicrophoneToggle => self.handle_toggle_record().await,
+    async fn handle_message(&mut self, message: ActorMessage) {
+        match message.message {
             Message::Action(Action::ToggleRecordMicrophone) => self.handle_toggle_record().await,
             _ => (),
         }
     }
 }
 
-fn record_audio(recording: Arc<AtomicBool>, tx: broadcast::Sender<Message>) -> MResult<()> {
+fn record_audio(
+    recording: Arc<AtomicBool>,
+    tx: broadcast::Sender<ActorMessage>,
+    scope: Uuid,
+) -> MResult<()> {
     let host = cpal::default_host();
     let device = host.default_input_device().unwrap();
     let config = device.default_input_config().unwrap();
@@ -318,7 +331,10 @@ fn record_audio(recording: Arc<AtomicBool>, tx: broadcast::Sender<Message>) -> M
     }
 
     if !full_text.is_empty() {
-        let _ = tx.send(Message::MicrophoneTranscription(full_text));
+        let _ = tx.send(ActorMessage {
+            scope,
+            message: Message::UserContext(UserContext::MicrophoneTranscription(full_text)),
+        });
     }
 
     Ok(())

@@ -2,8 +2,9 @@ use genai::chat::{Tool, ToolCall};
 use std::fmt;
 use tokio::sync::broadcast;
 use tracing::info;
+use uuid::Uuid;
 
-use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
+use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
 
 /// Task status for the planner
@@ -84,13 +85,23 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
 
 /// Planner actor
 pub struct Planner {
-    tx: broadcast::Sender<Message>,
+    tx: broadcast::Sender<ActorMessage>,
     #[allow(dead_code)] // TODO: Use for planning parameters, model settings
     config: ParsedConfig,
     current_task_plan: Option<TaskPlan>,
+    scope: Uuid,
 }
 
 impl Planner {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+        Self {
+            config,
+            tx,
+            current_task_plan: None,
+            scope,
+        }
+    }
+
     pub fn get_current_plan(&self) -> Option<&TaskPlan> {
         self.current_task_plan.as_ref()
     }
@@ -104,7 +115,7 @@ impl Planner {
         let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
             Ok(args) => args,
             Err(e) => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!(
                         "Failed to parse planner arguments: {}",
@@ -118,7 +129,7 @@ impl Planner {
         let action = match args.get("action").and_then(|v| v.as_str()) {
             Some(action) => action,
             None => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err("Missing 'action' field".to_string())),
                 }));
@@ -133,7 +144,7 @@ impl Planner {
                     .await
             }
             _ => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!("Unknown action: {}", action))),
                 }));
@@ -146,7 +157,7 @@ impl Planner {
         let title = match args.get("title").and_then(|v| v.as_str()) {
             Some(title) => title,
             None => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
                     status: ToolCallStatus::Finished(Err(
                         "Missing 'title' field for create action".to_string(),
@@ -159,7 +170,7 @@ impl Planner {
         let tasks = match args.get("tasks").and_then(|v| v.as_array()) {
             Some(tasks) => tasks,
             None => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
                     status: ToolCallStatus::Finished(Err(
                         "Missing 'tasks' field for create action".to_string(),
@@ -180,7 +191,7 @@ impl Planner {
         }
 
         if task_list.is_empty() {
-            let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+            let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call_id.to_string(),
                 status: ToolCallStatus::Finished(Err("Task list cannot be empty".to_string())),
             }));
@@ -193,7 +204,7 @@ impl Planner {
         };
 
         let friendly_command_display = format!("Create task plan: {}", title);
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::Planner,
@@ -205,7 +216,7 @@ impl Planner {
         self.current_task_plan = Some(plan.clone());
 
         // Send system state update
-        let _ = self.tx.send(Message::PlanUpdated(plan.clone()));
+        let _ = self.broadcast(Message::PlanUpdated(plan.clone()));
 
         // Return response with numbered tasks
         let mut response = format!("Created task plan: {}\n", title);
@@ -213,7 +224,7 @@ impl Planner {
             response.push_str(&format!("{}. {}\n", i + 1, task.description));
         }
 
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status: ToolCallStatus::Finished(Ok(response)),
         }));
@@ -225,10 +236,10 @@ impl Planner {
         args: &serde_json::Value,
         tool_call_id: &str,
     ) {
-        let task_plan = match self.current_task_plan.as_mut() {
+        let mut task_plan = match self.current_task_plan.clone() {
             Some(plan) => plan,
             None => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
                     status: ToolCallStatus::Finished(Err(
                         "No active task plan. Create a plan first.".to_string(),
@@ -241,7 +252,7 @@ impl Planner {
         let task_number = match args.get("task_number").and_then(|v| v.as_u64()) {
             Some(num) => num as usize,
             None => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
                     status: ToolCallStatus::Finished(
                         Err("Missing 'task_number' field".to_string()),
@@ -252,7 +263,7 @@ impl Planner {
         };
 
         if task_number == 0 || task_number > task_plan.tasks.len() {
-            let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+            let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call_id.to_string(),
                 status: ToolCallStatus::Finished(Err(format!(
                     "Invalid task number. Must be between 1 and {}",
@@ -272,7 +283,7 @@ impl Planner {
             _ => unreachable!(),
         };
 
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::Planner,
@@ -280,6 +291,7 @@ impl Planner {
             },
         }));
 
+        // Update the task plan
         match action {
             "update" => {
                 if let Some(new_desc) = args.get("new_description").and_then(|v| v.as_str()) {
@@ -297,16 +309,17 @@ impl Planner {
             }
             _ => unreachable!(),
         }
+        self.current_task_plan = Some(task_plan.clone());
 
         // Send system state update
-        let _ = self.tx.send(Message::PlanUpdated(task_plan.clone()));
+        let _ = self.broadcast(Message::PlanUpdated(task_plan.clone()));
 
         // Return response
         let response = format!(
             "Updated task {}: {}",
             task_number, task_plan.tasks[task_index].description
         );
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status: ToolCallStatus::Finished(Ok(response)),
         }));
@@ -317,19 +330,15 @@ impl Planner {
 impl Actor for Planner {
     const ACTOR_ID: &'static str = "planner";
 
-    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
-        Self {
-            config,
-            tx,
-            current_task_plan: None,
-        }
-    }
-
-    fn get_rx(&self) -> broadcast::Receiver<Message> {
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
         self.tx.subscribe()
     }
 
-    fn get_tx(&self) -> broadcast::Sender<Message> {
+    fn get_scope(&self) -> &Uuid {
+        &self.scope
+    }
+
+    fn get_tx(&self) -> broadcast::Sender<ActorMessage> {
         self.tx.clone()
     }
 
@@ -342,11 +351,11 @@ impl Actor for Planner {
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
 
-        let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
+        let _ = self.broadcast(Message::ToolsAvailable(vec![tool]));
     }
 
-    async fn handle_message(&mut self, message: Message) {
-        match message {
+    async fn handle_message(&mut self, message: ActorMessage) {
+        match message.message {
             Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
             _ => (),
         }

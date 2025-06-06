@@ -8,7 +8,9 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{Mutex, broadcast};
 use tracing::info;
+use uuid::Uuid;
 
+use crate::actors::ActorMessage;
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
 
@@ -72,11 +74,6 @@ pub struct FileReader {
 }
 
 impl FileReader {
-    /// Creates a new, empty FileReader.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn read_and_cache_file<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         let path_ref = path.as_ref();
 
@@ -200,22 +197,25 @@ impl FileReader {
 
 /// FileReader actor
 pub struct FileReaderActor {
-    tx: broadcast::Sender<Message>,
+    tx: broadcast::Sender<ActorMessage>,
     #[allow(dead_code)] // TODO: Use for file size limits, timeout settings
     config: ParsedConfig,
     file_reader: Arc<Mutex<FileReader>>,
+    scope: Uuid,
 }
 
 impl FileReaderActor {
-    pub fn with_file_reader(
+    pub fn new(
         config: ParsedConfig,
-        tx: broadcast::Sender<Message>,
+        tx: broadcast::Sender<ActorMessage>,
         file_reader: Arc<Mutex<FileReader>>,
+        scope: Uuid,
     ) -> Self {
         Self {
             config,
             tx,
             file_reader,
+            scope,
         }
     }
 
@@ -229,7 +229,7 @@ impl FileReaderActor {
         let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
             Ok(args) => args,
             Err(e) => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!(
                         "Failed to parse arguments: {}",
@@ -244,7 +244,7 @@ impl FileReaderActor {
         let path = match args.get("path").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(
                         "Missing required field: path".to_string()
@@ -256,7 +256,7 @@ impl FileReaderActor {
 
         let friendly_command_display = format!("Read file: {}", path);
 
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::ReadFile,
@@ -279,7 +279,7 @@ impl FileReaderActor {
                 if let Ok(canonical_path) = std::fs::canonicalize(path) {
                     if let Ok(metadata) = std::fs::metadata(&canonical_path) {
                         if let Ok(last_modified) = metadata.modified() {
-                            let _ = self.tx.send(Message::FileRead {
+                            let _ = self.broadcast(Message::FileRead {
                                 path: canonical_path,
                                 content: content.to_string(),
                                 last_modified,
@@ -292,7 +292,7 @@ impl FileReaderActor {
             Err(e) => ToolCallStatus::Finished(Err(e.to_string())),
         };
 
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status,
         }));
@@ -303,20 +303,16 @@ impl FileReaderActor {
 impl Actor for FileReaderActor {
     const ACTOR_ID: &'static str = "file_reader";
 
-    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
-        Self {
-            config,
-            tx: tx.clone(),
-            file_reader: Arc::new(Mutex::new(FileReader::new())),
-        }
-    }
-
-    fn get_rx(&self) -> broadcast::Receiver<Message> {
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
         self.tx.subscribe()
     }
 
-    fn get_tx(&self) -> broadcast::Sender<Message> {
+    fn get_tx(&self) -> broadcast::Sender<ActorMessage> {
         self.tx.clone()
+    }
+
+    fn get_scope(&self) -> &Uuid {
+        &self.scope
     }
 
     async fn on_start(&mut self) {
@@ -328,11 +324,11 @@ impl Actor for FileReaderActor {
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
 
-        let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
+        let _ = self.broadcast(Message::ToolsAvailable(vec![tool]));
     }
 
-    async fn handle_message(&mut self, message: Message) {
-        match message {
+    async fn handle_message(&mut self, message: ActorMessage) {
+        match message.message {
             Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
             _ => (),
         }

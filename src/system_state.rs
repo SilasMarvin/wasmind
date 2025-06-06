@@ -2,11 +2,10 @@ use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use uuid::Uuid;
 
-use crate::actors::{
-    agent::{AgentId, TaskId, TaskStatus},
-    tools::planner::TaskPlan,
-};
+use crate::actors::tools::planner::TaskPlan;
+use crate::actors::{TaskAwaitingManager, TaskStatus};
 use crate::template::{self, TemplateContext, ToolInfo};
 
 /// Errors that can occur when working with SystemState
@@ -88,25 +87,18 @@ impl std::fmt::Display for FileInfo {
 /// Information about a spawned agent and its assigned task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTaskInfo {
-    pub agent_id: AgentId,
+    pub agent_id: Uuid,
     pub agent_role: String,
-    pub task_id: TaskId,
     pub task_description: String,
     pub status: TaskStatus,
     pub spawned_at: std::time::SystemTime,
 }
 
 impl AgentTaskInfo {
-    pub fn new(
-        agent_id: AgentId,
-        agent_role: String,
-        task_id: TaskId,
-        task_description: String,
-    ) -> Self {
+    pub fn new(agent_id: Uuid, agent_role: String, task_description: String) -> Self {
         Self {
             agent_id,
             agent_role,
-            task_id,
             task_description,
             status: TaskStatus::InProgress,
             spawned_at: std::time::SystemTime::now(),
@@ -129,10 +121,10 @@ impl AgentTaskInfo {
             TaskStatus::Done(Ok(result)) => format!(" - {}", result),
             TaskStatus::Done(Err(error)) => format!(" - Error: {}", error),
             TaskStatus::AwaitingManager(awaiting) => match awaiting {
-                crate::actors::agent::TaskAwaitingManager::AwaitingPlanApproval(_) => {
+                TaskAwaitingManager::AwaitingPlanApproval(_) => {
                     " - Awaiting plan approval".to_string()
                 }
-                crate::actors::agent::TaskAwaitingManager::AwaitingMoreInformation(info) => {
+                TaskAwaitingManager::AwaitingMoreInformation(info) => {
                     format!(" - Needs: {}", info)
                 }
             },
@@ -143,7 +135,7 @@ impl AgentTaskInfo {
             "{} {} ({}): {}{}",
             self.status_icon(),
             self.agent_role,
-            self.agent_id.0,
+            self.agent_id,
             self.task_description,
             details
         )
@@ -158,7 +150,7 @@ pub struct SystemState {
     /// Current task plan if any
     current_plan: Option<TaskPlan>,
     /// Spawned agents and their tasks
-    agents: HashMap<AgentId, AgentTaskInfo>,
+    agents: HashMap<Uuid, AgentTaskInfo>,
     /// Maximum number of lines to show per file in system prompt
     max_file_lines: usize,
     /// Track whether the state has been modified since last check
@@ -227,7 +219,7 @@ impl SystemState {
     }
 
     /// Update an agent's task status
-    pub fn update_agent_status(&mut self, agent_id: &AgentId, status: TaskStatus) {
+    pub fn update_agent_status(&mut self, agent_id: &Uuid, status: TaskStatus) {
         if let Some(agent_info) = self.agents.get_mut(agent_id) {
             agent_info.status = status;
             self.modified = true;
@@ -235,14 +227,14 @@ impl SystemState {
     }
 
     /// Remove an agent (when task is complete)
-    pub fn remove_agent(&mut self, agent_id: &AgentId) {
+    pub fn remove_agent(&mut self, agent_id: &Uuid) {
         if self.agents.remove(agent_id).is_some() {
             self.modified = true;
         }
     }
 
     /// Get all agents
-    pub fn get_agents(&self) -> &HashMap<AgentId, AgentTaskInfo> {
+    pub fn get_agents(&self) -> &HashMap<Uuid, AgentTaskInfo> {
         &self.agents
     }
 
@@ -377,7 +369,12 @@ impl SystemState {
         }
 
         // Build template context with task
-        let context = TemplateContext::with_task(tools.to_vec(), whitelisted_commands, self, task_description);
+        let context = TemplateContext::with_task(
+            tools.to_vec(),
+            whitelisted_commands,
+            self,
+            task_description,
+        );
 
         // Render the template
         template::render_template(prompt_template, &context).context(TemplateRenderFailedSnafu)
@@ -710,8 +707,6 @@ Current plan: active
 
     #[test]
     fn test_agent_tracking() {
-        use crate::actors::agent::{AgentId, TaskId, TaskStatus};
-
         let mut state = SystemState::new();
 
         // Initially no agents
@@ -722,12 +717,10 @@ Current plan: active
         );
 
         // Add an agent
-        let agent_id = AgentId("agent-1".to_string());
-        let task_id = TaskId("task-1".to_string());
+        let agent_id = Uuid::new_v4();
         let agent_info = AgentTaskInfo::new(
             agent_id.clone(),
             "Software Engineer".to_string(),
-            task_id.clone(),
             "Implement user authentication".to_string(),
         );
 
@@ -743,18 +736,16 @@ Current plan: active
         // Update agent status
         state.update_agent_status(
             &agent_id,
-            TaskStatus::Done(Ok("Completed successfully".to_string())),
+            crate::actors::TaskStatus::Done(Ok("Completed successfully".to_string())),
         );
         let section = state.render_agents_section();
         assert!(section.contains("[x] Software Engineer (agent-1): Implement user authentication - Completed successfully"));
 
         // Add another agent
-        let agent_id2 = AgentId("agent-2".to_string());
-        let task_id2 = TaskId("task-2".to_string());
+        let agent_id2 = Uuid::new_v4();
         let agent_info2 = AgentTaskInfo::new(
             agent_id2.clone(),
             "Database Architect".to_string(),
-            task_id2,
             "Design schema for user data".to_string(),
         );
         state.add_agent(agent_info2);
@@ -763,7 +754,7 @@ Current plan: active
         // Update second agent with error
         state.update_agent_status(
             &agent_id2,
-            TaskStatus::Done(Err("Connection timeout".to_string())),
+            crate::actors::TaskStatus::Done(Err("Connection timeout".to_string())),
         );
         let section = state.render_agents_section();
         assert!(section.contains("[!] Database Architect (agent-2): Design schema for user data - Error: Connection timeout"));
@@ -783,15 +774,12 @@ Current plan: active
 
     #[test]
     fn test_agent_template_context() {
-        use crate::actors::agent::{AgentId, TaskId};
-
         let mut state = SystemState::new();
 
         // Add an agent
         let agent_info = AgentTaskInfo::new(
-            AgentId("test-agent".to_string()),
+            Uuid::new_v4(),
             "Project Manager".to_string(),
-            TaskId("test-task".to_string()),
             "Plan sprint tasks".to_string(),
         );
         state.add_agent(agent_info);

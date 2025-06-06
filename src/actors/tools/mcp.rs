@@ -12,8 +12,11 @@ use tokio::process::Command;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
+use uuid::Uuid;
 
-use crate::actors::{Action, Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
+use crate::actors::{
+    Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+};
 use crate::config::ParsedConfig;
 
 #[derive(Debug, Snafu)]
@@ -48,14 +51,26 @@ struct RunningMCPCall {
 
 /// MCP actor
 pub struct MCP {
-    tx: broadcast::Sender<Message>,
+    tx: broadcast::Sender<ActorMessage>,
     config: ParsedConfig,
     servers: HashMap<String, Arc<RunningService<RoleClient, ()>>>,
     func_to_server: HashMap<String, String>,
     running_calls: HashMap<String, RunningMCPCall>,
+    scope: Uuid,
 }
 
 impl MCP {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+        Self {
+            config,
+            tx,
+            servers: HashMap::new(),
+            func_to_server: HashMap::new(),
+            running_calls: HashMap::new(),
+            scope,
+        }
+    }
+
     async fn start_servers(&mut self) -> MResult<()> {
         let mut tools = Vec::new();
 
@@ -122,7 +137,7 @@ impl MCP {
 
         // Broadcast available tools
         if !tools.is_empty() {
-            let _ = self.tx.send(Message::ToolsAvailable(tools));
+            let _ = self.broadcast(Message::ToolsAvailable(tools));
         }
 
         Ok(())
@@ -138,7 +153,7 @@ impl MCP {
             }
         };
 
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::MCP,
@@ -151,12 +166,13 @@ impl MCP {
 
     async fn execute_mcp_tool(&mut self, tool_call: ToolCall, server_name: &str) {
         let tx = self.tx.clone();
+        let scope = self.scope.clone();
 
         // Get the server - we need to clone the Arc for the async task
         let server = match self.servers.get(server_name) {
             Some(server) => Arc::clone(server),
             None => {
-                let _ = tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id.clone(),
                     status: ToolCallStatus::Finished(Err(format!(
                         "Server not found: {}",
@@ -229,10 +245,13 @@ impl MCP {
                 }
             };
 
-            let _ = tx.send(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call_id,
-                status,
-            }));
+            let _ = tx.send(ActorMessage {
+                scope,
+                message: Message::ToolCallUpdate(ToolCallUpdate {
+                    call_id: tool_call_id,
+                    status,
+                }),
+            });
         });
 
         // Store the handle so we can cancel it later if needed
@@ -294,22 +313,16 @@ impl MCP {
 impl Actor for MCP {
     const ACTOR_ID: &'static str = "mcp";
 
-    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
-        Self {
-            config,
-            tx,
-            servers: HashMap::new(),
-            func_to_server: HashMap::new(),
-            running_calls: HashMap::new(),
-        }
-    }
-
-    fn get_rx(&self) -> broadcast::Receiver<Message> {
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
         self.tx.subscribe()
     }
 
-    fn get_tx(&self) -> broadcast::Sender<Message> {
+    fn get_tx(&self) -> broadcast::Sender<ActorMessage> {
         self.tx.clone()
+    }
+
+    fn get_scope(&self) -> &Uuid {
+        &self.scope
     }
 
     async fn on_start(&mut self) {
@@ -324,11 +337,11 @@ impl Actor for MCP {
         self.shutdown_servers().await;
     }
 
-    async fn handle_message(&mut self, message: Message) {
+    async fn handle_message(&mut self, message: ActorMessage) {
         // Cleanup completed calls periodically
         self.cleanup_completed_calls();
 
-        match message {
+        match message.message {
             Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
             Message::Action(Action::Cancel) => {
                 // Cancel all running MCP calls

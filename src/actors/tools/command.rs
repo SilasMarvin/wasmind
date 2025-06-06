@@ -4,8 +4,11 @@ use std::process::Stdio;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
+use uuid::Uuid;
 
-use crate::actors::{Action, Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
+use crate::actors::{
+    Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+};
 use crate::config::ParsedConfig;
 
 const MAX_COMMAND_OUTPUT_CHARS: usize = 16_384;
@@ -39,13 +42,24 @@ pub struct PendingCommand {
 
 /// Command actor
 pub struct Command {
-    tx: broadcast::Sender<Message>,
+    tx: broadcast::Sender<ActorMessage>,
     pending_command: Option<PendingCommand>,
     config: ParsedConfig,
     running_commands: HashMap<String, JoinHandle<()>>,
+    scope: Uuid,
 }
 
 impl Command {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+        Self {
+            config,
+            tx,
+            pending_command: None,
+            running_commands: HashMap::new(),
+            scope,
+        }
+    }
+
     #[tracing::instrument(name = "command_tool_call", skip(self, tool_call), fields(call_id = %tool_call.call_id, function = %tool_call.fn_name))]
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
         if tool_call.fn_name != TOOL_NAME {
@@ -68,7 +82,7 @@ impl Command {
 
         let args_string = args_array.join(" ");
         let friendly_command_display = format!("{command} {args_string}");
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::Command,
@@ -97,13 +111,23 @@ impl Command {
         });
 
         if is_whitelisted {
-            self.execute_command(&command, &args_array, &tool_call.call_id)
-                .await;
+            self.execute_command(
+                &command,
+                &args_array,
+                &tool_call.call_id,
+                self.scope.clone(),
+            )
+            .await;
         } else if self.config.auto_approve_commands {
             // Auto-approve non-whitelisted commands
             info!("Auto-approving non-whitelisted command: {}", command);
-            self.execute_command(&command, &args_array, &tool_call.call_id)
-                .await;
+            self.execute_command(
+                &command,
+                &args_array,
+                &tool_call.call_id,
+                self.scope.clone(),
+            )
+            .await;
         } else {
             // Await user confirmation (traditional behavior)
             self.pending_command = Some(PendingCommand {
@@ -112,15 +136,21 @@ impl Command {
                 tool_call_id: tool_call.call_id.clone(),
             });
 
-            let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+            let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call.call_id,
                 status: ToolCallStatus::AwaitingUserYNConfirmation,
             }));
         }
     }
 
-    #[tracing::instrument(name = "execute_command", skip(self, args, tool_call_id), fields(command = %command, args_count = args.len(), call_id = %tool_call_id))]
-    async fn execute_command(&mut self, command: &str, args: &[String], tool_call_id: &str) {
+    #[tracing::instrument(name = "execute_command", skip(self, args, tool_call_id, scope), fields(command = %command, args_count = args.len(), call_id = %tool_call_id))]
+    async fn execute_command(
+        &mut self,
+        command: &str,
+        args: &[String],
+        tool_call_id: &str,
+        scope: Uuid,
+    ) {
         let command = command.to_string();
         let args = args.to_vec();
         let tool_call_id_clone = tool_call_id.to_string();
@@ -142,10 +172,13 @@ impl Command {
                 Err(e) => {
                     let error_msg = format!("Failed to execute command '{}': {}", command, e);
                     error!("{}", error_msg);
-                    let _ = tx.send(Message::ToolCallUpdate(ToolCallUpdate {
-                        call_id: tool_call_id,
-                        status: ToolCallStatus::Finished(Err(error_msg)),
-                    }));
+                    let _ = tx.send(ActorMessage {
+                        scope,
+                        message: Message::ToolCallUpdate(ToolCallUpdate {
+                            call_id: tool_call_id,
+                            status: ToolCallStatus::Finished(Err(error_msg)),
+                        }),
+                    });
                     return;
                 }
             };
@@ -205,10 +238,13 @@ impl Command {
                 }
             };
 
-            let _ = tx.send(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call_id,
-                status: ToolCallStatus::Finished(result),
-            }));
+            let _ = tx.send(ActorMessage {
+                scope,
+                message: Message::ToolCallUpdate(ToolCallUpdate {
+                    call_id: tool_call_id,
+                    status: ToolCallStatus::Finished(result),
+                }),
+            });
         });
 
         // Store the handle so we can cancel it later if needed
@@ -242,21 +278,16 @@ impl Command {
 impl Actor for Command {
     const ACTOR_ID: &'static str = "command";
 
-    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
-        Self {
-            config,
-            tx,
-            pending_command: None,
-            running_commands: HashMap::new(),
-        }
-    }
-
-    fn get_rx(&self) -> broadcast::Receiver<Message> {
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
         self.tx.subscribe()
     }
 
-    fn get_tx(&self) -> broadcast::Sender<Message> {
+    fn get_tx(&self) -> broadcast::Sender<ActorMessage> {
         self.tx.clone()
+    }
+
+    fn get_scope(&self) -> &Uuid {
+        &self.scope
     }
 
     async fn on_start(&mut self) {
@@ -268,14 +299,14 @@ impl Actor for Command {
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
 
-        let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
+        let _ = self.broadcast(Message::ToolsAvailable(vec![tool]));
     }
 
-    async fn handle_message(&mut self, message: Message) {
+    async fn handle_message(&mut self, message: ActorMessage) {
         // Cleanup completed commands periodically
         self.cleanup_completed_commands();
 
-        match message {
+        match message.message {
             Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
             Message::ToolCallUpdate(update) => match update.status {
                 crate::actors::ToolCallStatus::ReceivedUserYNConfirmation(confirmation) => {
@@ -289,6 +320,7 @@ impl Actor for Command {
                             &pending_command.command,
                             &pending_command.args,
                             &pending_command.tool_call_id,
+                            self.scope.clone(),
                         )
                         .await
                     }

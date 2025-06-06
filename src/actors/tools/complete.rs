@@ -1,9 +1,10 @@
-use crate::actors::{Message, ToolCallStatus, ToolCallUpdate};
+use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallUpdate};
 use crate::config::ParsedConfig;
 use genai::chat::{Tool, ToolCall};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::broadcast;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CompleteInput {
@@ -17,14 +18,15 @@ struct CompleteInput {
 pub struct Complete {
     #[allow(dead_code)]
     config: ParsedConfig,
-    tx: broadcast::Sender<Message>,
+    tx: broadcast::Sender<ActorMessage>,
+    scope: Uuid,
 }
 
 impl Complete {
     const TOOL_NAME: &'static str = "complete";
 
-    pub fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
-        Self { config, tx }
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+        Self { config, tx, scope }
     }
 
     pub fn get_tool_schema() -> Tool {
@@ -54,7 +56,7 @@ impl Complete {
         }
 
         tracing::debug!(
-            name = "complete_tool_call", 
+            name = "complete_tool_call",
             call_id = %tool_call.call_id,
             "Agent called complete tool to signal task completion"
         );
@@ -68,7 +70,7 @@ impl Complete {
                     error = %e,
                     "Failed to parse complete tool arguments"
                 );
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
                 }));
@@ -91,13 +93,13 @@ impl Complete {
         };
 
         // Send tool call completion
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(completion_message.clone())),
         }));
 
         // Send task completion signal
-        let _ = self.tx.send(Message::TaskCompleted {
+        let _ = self.broadcast(Message::TaskCompleted {
             summary: input.summary,
             success: input.success,
         });
@@ -105,23 +107,23 @@ impl Complete {
 }
 
 #[async_trait::async_trait]
-impl crate::actors::Actor for Complete {
+impl Actor for Complete {
     const ACTOR_ID: &'static str = "complete";
 
-    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
-        Self::new(config, tx)
-    }
-
-    fn get_rx(&self) -> broadcast::Receiver<Message> {
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
         self.tx.subscribe()
     }
 
-    fn get_tx(&self) -> broadcast::Sender<Message> {
+    fn get_scope(&self) -> &Uuid {
+        &self.scope
+    }
+
+    fn get_tx(&self) -> broadcast::Sender<ActorMessage> {
         self.tx.clone()
     }
 
-    async fn handle_message(&mut self, message: Message) {
-        match message {
+    async fn handle_message(&mut self, message: ActorMessage) {
+        match message.message {
             Message::AssistantToolCall(tool_call) => {
                 self.handle_tool_call(tool_call).await;
             }
@@ -131,9 +133,6 @@ impl crate::actors::Actor for Complete {
 
     async fn on_start(&mut self) {
         // Broadcast tool availability
-        let _ = self
-            .tx
-            .send(Message::ToolsAvailable(vec![Self::get_tool_schema()]));
+        let _ = self.broadcast(Message::ToolsAvailable(vec![Self::get_tool_schema()]));
     }
 }
-

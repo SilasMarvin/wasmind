@@ -13,11 +13,11 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
+use uuid::Uuid;
 
-use self::agent::{AgentId, TaskId, TaskStatus};
 use crate::config::ParsedConfig;
 
-/// Actions the worker can perform and users can bind keys to
+/// Actions users can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Action {
     #[cfg(feature = "gui")]
@@ -62,6 +62,7 @@ pub enum ToolCallType {
     ReadFile,
     EditFile,
     Planner,
+    TaskCompleted,
     MCP,
 }
 
@@ -77,12 +78,59 @@ pub enum ToolCallStatus {
     Finished(Result<String, String>),
 }
 
+/// Task awaiting manager decision
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TaskAwaitingManager {
+    AwaitingPlanApproval(crate::actors::tools::planner::TaskPlan),
+    AwaitingMoreInformation(String),
+}
+
+/// Task status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TaskStatus {
+    Done(Result<String, String>),
+    InProgress,
+    AwaitingManager(TaskAwaitingManager),
+}
+
+/// Inter-agent message for communication between agents
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InterAgentMessage {
+    /// Agent reports task status to manager
+    TaskStatusUpdate { agent_id: Uuid, status: TaskStatus },
+    /// Manager approves a plan
+    PlanApproved { agent_id: Uuid, plan_id: String },
+    /// Manager rejects a plan
+    PlanRejected {
+        agent_id: Uuid,
+        plan_id: String,
+        reason: String,
+    },
+}
+
+/// Context provided by the user
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum UserContext {
+    UserTUIInput(String),
+    #[cfg(feature = "audio")]
+    MicrophoneTranscription(String),
+    #[cfg(feature = "gui")]
+    ScreenshotCaptured(Result<String, String>), // Ok(base64) or Err(error message)
+    #[cfg(feature = "gui")]
+    ClipboardCaptured(Result<String, String>), // Ok(text) or Err(error message)
+}
+
 /// The various messages actors can send
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     // User actions from keyboard/TUI
     Action(Action),
-    UserTUIInput(String),
+
+    // UserContext
+    UserContext(UserContext),
+
+    // Messages between agents
+    InterAgentMessage(InterAgentMessage),
 
     // Assistant messages
     AssistantToolCall(ToolCall),
@@ -92,20 +140,8 @@ pub enum Message {
     ToolCallUpdate(ToolCallUpdate),
     ToolsAvailable(Vec<genai::chat::Tool>),
 
-    // Microphone messages
-    #[cfg(feature = "audio")]
-    MicrophoneToggle,
-    #[cfg(feature = "audio")]
-    MicrophoneTranscription(String),
-
     // TUI messages
     TUIClearInput,
-
-    // Context messages
-    #[cfg(feature = "gui")]
-    ScreenshotCaptured(Result<String, String>), // Ok(base64) or Err(error message)
-    #[cfg(feature = "gui")]
-    ClipboardCaptured(Result<String, String>), // Ok(text) or Err(error message)
 
     // System state update messages
     FileRead {
@@ -124,17 +160,16 @@ pub enum Message {
 
     // Agent management messages
     AgentSpawned {
-        agent_id: AgentId,
+        agent_id: Uuid,
         agent_role: String,
-        task_id: TaskId,
         task_description: String,
     },
     AgentStatusUpdate {
-        agent_id: AgentId,
+        agent_id: Uuid,
         status: TaskStatus,
     },
     AgentRemoved {
-        agent_id: AgentId,
+        agent_id: Uuid,
     },
 
     // Actor lifecycle messages
@@ -149,17 +184,42 @@ pub enum Message {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActorMessage {
+    // The agent scope this message exists in
+    pub scope: Uuid,
+    pub message: Message,
+}
+
 /// Base trait for all actors in the system
 #[async_trait::async_trait]
 pub trait Actor: Send + Sized + 'static {
     /// Unique identifier for this actor type
     const ACTOR_ID: &'static str;
 
-    /// new
-    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self;
+    /// gets the scope
+    fn get_scope(&self) -> &Uuid;
 
-    /// gets the rx
-    fn get_rx(&self) -> broadcast::Receiver<Message>;
+    /// get scope filters
+    /// Used in the `run` method to filter out messages that are not in the returned scopes
+    /// By default only listen to messages in your current scope
+    fn get_scope_filters(&self) -> Vec<&Uuid> {
+        vec![self.get_scope()]
+    }
+
+    /// Gets the message sender
+    fn get_tx(&self) -> broadcast::Sender<ActorMessage>;
+
+    /// gets the message receiver
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage>;
+
+    /// Sends a message
+    fn broadcast(&self, message: Message) {
+        let _ = self.get_tx().send(ActorMessage {
+            scope: self.get_scope().clone(),
+            message,
+        });
+    }
 
     /// run
     fn run(mut self) {
@@ -172,20 +232,34 @@ pub trait Actor: Send + Sized + 'static {
 
             // Signal that this actor is ready
             tracing::info!("Actor ready, sending ready signal");
-            let _ = tx.send(Message::ActorReady {
-                actor_id: Self::ACTOR_ID.to_string(),
+            let _ = tx.send(ActorMessage {
+                scope: self.get_scope().clone(),
+                message: Message::ActorReady {
+                    actor_id: Self::ACTOR_ID.to_string(),
+                },
             });
 
             let mut rx = self.get_rx();
             loop {
                 match rx.recv().await {
-                    Ok(Message::Action(Action::Exit)) => {
+                    Ok(ActorMessage {
+                        scope: _,
+                        message: Message::Action(Action::Exit),
+                    }) => {
                         tracing::info!("Actor received exit signal");
                         break;
                     }
                     Ok(msg) => {
                         tracing::debug!("Actor handling message");
-                        self.handle_message(msg).await;
+                        let current_scope = self.get_scope();
+                        if self
+                            .get_scope_filters()
+                            .iter()
+                            .find(|scope| **scope == current_scope)
+                            .is_some()
+                        {
+                            self.handle_message(msg).await;
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         tracing::error!("RECEIVER LAGGED BY {} MESSAGES! This was unexpected.", n);
@@ -201,11 +275,8 @@ pub trait Actor: Send + Sized + 'static {
         });
     }
 
-    /// Gets the message sender
-    fn get_tx(&self) -> broadcast::Sender<Message>;
-
     /// Called when a message is broadcasted
-    async fn handle_message(&mut self, message: Message);
+    async fn handle_message(&mut self, message: ActorMessage);
 
     /// Called when the actor starts
     async fn on_start(&mut self) {}

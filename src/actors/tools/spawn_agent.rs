@@ -2,10 +2,11 @@ use genai::chat::{Tool, ToolCall};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::actors::{
-    Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
-    agent::{Agent, AgentSpawnedResponse, InterAgentMessage},
+    Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    agent::{Agent, AgentSpawnedResponse},
 };
 use crate::config::ParsedConfig;
 
@@ -46,23 +47,14 @@ struct SpawnAgentInput {
 
 /// SpawnAgent tool actor for managers to spawn new agents
 pub struct SpawnAgent {
-    tx: broadcast::Sender<Message>,
+    tx: broadcast::Sender<ActorMessage>,
     config: ParsedConfig,
-    /// Channel to communicate with spawned child agents
-    child_tx: broadcast::Sender<InterAgentMessage>,
+    scope: Uuid,
 }
 
 impl SpawnAgent {
-    pub fn new_with_channel(
-        config: ParsedConfig,
-        tx: broadcast::Sender<Message>,
-        child_tx: broadcast::Sender<InterAgentMessage>,
-    ) -> Self {
-        Self {
-            tx,
-            config,
-            child_tx,
-        }
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+        Self { tx, config, scope }
     }
 
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
@@ -71,7 +63,7 @@ impl SpawnAgent {
         }
 
         // Send received status
-        let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::MCP, // Using MCP type for now, we can add a new type later
@@ -83,7 +75,7 @@ impl SpawnAgent {
         let input: SpawnAgentInput = match serde_json::from_value(tool_call.fn_arguments) {
             Ok(input) => input,
             Err(e) => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
                 }));
@@ -94,17 +86,21 @@ impl SpawnAgent {
         // Create the new agent
         let agent = match input.agent_type.as_str() {
             "Worker" => Agent::new_worker(
+                self.tx.clone(),
                 input.agent_role.clone(),
-                input.task_description.clone(),
+                Some(input.task_description.clone()),
                 self.config.clone(),
+                self.scope.clone(),
             ),
             "Manager" => Agent::new_manager(
+                self.tx.clone(),
                 input.agent_role.clone(),
-                input.task_description.clone(),
+                Some(input.task_description.clone()),
                 self.config.clone(),
+                self.scope.clone(),
             ),
             _ => {
-                let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
+                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!(
                         "Invalid agent_type: {}. Must be 'Worker' or 'Manager'",
@@ -116,80 +112,33 @@ impl SpawnAgent {
         };
 
         let agent_id = agent.id().clone();
-        let task_id = agent.task_id.clone();
         let agent_role = agent.role().to_string();
 
-        // Set up the agent's parent communication channel
-        let mut agent = agent;
-        agent.parent_tx = Some(self.child_tx.clone());
-
         // Send AgentSpawned message to update system state
-        let _ = self.tx.send(Message::AgentSpawned {
+        let _ = self.broadcast(Message::AgentSpawned {
             agent_id: agent_id.clone(),
             agent_role: agent_role.clone(),
-            task_id: task_id.clone(),
             task_description: input.task_description.clone(),
         });
 
         // Create response
         let response = AgentSpawnedResponse {
             agent_id: agent_id.clone(),
-            task_id: task_id.clone(),
             agent_role: agent_role.clone(),
         };
 
         let response_json = serde_json::to_string(&response)
-            .unwrap_or_else(|_| format!("Agent spawned with ID: {}", agent_id.0));
+            .unwrap_or_else(|_| format!("Agent spawned for task with ID: {}", agent_id));
 
-        if input.wait {
-            // If wait is true, spawn the agent and wait for completion
-            let mut child_rx = self.child_tx.subscribe();
-            let agent_id_copy = agent_id.clone();
-            let task_id_copy = task_id.clone();
+        // Spawn the agent without waiting
+        tokio::spawn(async move {
+            agent.run().await;
+        });
 
-            // Spawn the agent
-            tokio::spawn(async move {
-                agent.run().await;
-            });
-
-            // Wait for the agent to complete
-            tokio::spawn(async move {
-                loop {
-                    if let Ok(InterAgentMessage::TaskStatusUpdate {
-                        task_id,
-                        status,
-                        from_agent,
-                    }) = child_rx.recv().await
-                    {
-                        if from_agent == agent_id_copy && task_id == task_id_copy {
-                            if let crate::actors::agent::TaskStatus::Done(_result) = status {
-                                // Agent completed, we'll handle this in the manager's message loop
-                                break;
-                            }
-                        }
-                    }
-                }
-            });
-
-            // For now, just return that we're waiting
-            let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call.call_id,
-                status: ToolCallStatus::Finished(Ok(format!(
-                    "{}\nWaiting for agent to complete task...",
-                    response_json
-                ))),
-            }));
-        } else {
-            // Spawn the agent without waiting
-            tokio::spawn(async move {
-                agent.run().await;
-            });
-
-            let _ = self.tx.send(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call.call_id,
-                status: ToolCallStatus::Finished(Ok(response_json)),
-            }));
-        }
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+            call_id: tool_call.call_id,
+            status: ToolCallStatus::Finished(Ok(response_json)),
+        }));
     }
 }
 
@@ -197,26 +146,20 @@ impl SpawnAgent {
 impl Actor for SpawnAgent {
     const ACTOR_ID: &'static str = "spawn_agent";
 
-    fn new(config: ParsedConfig, tx: broadcast::Sender<Message>) -> Self {
-        // This shouldn't be called directly, use new_with_channel instead
-        let (child_tx, _) = broadcast::channel(1024);
-        Self {
-            tx,
-            config,
-            child_tx,
-        }
-    }
-
-    fn get_rx(&self) -> broadcast::Receiver<Message> {
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
         self.tx.subscribe()
     }
 
-    fn get_tx(&self) -> broadcast::Sender<Message> {
+    fn get_tx(&self) -> broadcast::Sender<ActorMessage> {
         self.tx.clone()
     }
 
-    async fn handle_message(&mut self, message: Message) {
-        match message {
+    fn get_scope(&self) -> &Uuid {
+        &self.scope
+    }
+
+    async fn handle_message(&mut self, message: ActorMessage) {
+        match message.message {
             Message::AssistantToolCall(tool_call) => {
                 self.handle_tool_call(tool_call).await;
             }
@@ -234,6 +177,6 @@ impl Actor for SpawnAgent {
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
 
-        let _ = self.tx.send(Message::ToolsAvailable(vec![tool]));
+        let _ = self.broadcast(Message::ToolsAvailable(vec![tool]));
     }
 }

@@ -7,6 +7,8 @@ pub mod prompt_preview;
 pub mod system_state;
 pub mod template;
 
+use actors::Message;
+use hive::ROOT_AGENT_SCOPE;
 use snafu::{Location, Snafu};
 use std::sync::LazyLock;
 use tokio::runtime;
@@ -141,7 +143,10 @@ pub fn run_main_program() -> SResult<()> {
                 if let Some(key_event) = rdev_converter.handle_key_press(key) {
                     let actions = key_binding_manager.handle_event(key_event);
                     for action in actions {
-                        if let Err(e) = message_tx.send(actors::Message::Action(action)) {
+                        if let Err(e) = message_tx.send(actors::ActorMessage {
+                            scope: ROOT_AGENT_SCOPE,
+                            message: Message::Action(action),
+                        }) {
                             error!("Error sending action to actors: {:?}", e);
                         }
                     }
