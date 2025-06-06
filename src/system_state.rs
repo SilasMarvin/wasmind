@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::actors::tools::planner::TaskPlan;
-use crate::actors::{TaskAwaitingManager, TaskStatus};
+use crate::actors::{AgentTaskStatus, TaskAwaitingManager};
 use crate::template::{self, TemplateContext, ToolInfo};
 
 /// Errors that can occur when working with SystemState
@@ -90,7 +90,7 @@ pub struct AgentTaskInfo {
     pub agent_id: Uuid,
     pub agent_role: String,
     pub task_description: String,
-    pub status: TaskStatus,
+    pub status: AgentTaskStatus,
     pub spawned_at: std::time::SystemTime,
 }
 
@@ -100,27 +100,29 @@ impl AgentTaskInfo {
             agent_id,
             agent_role,
             task_description,
-            status: TaskStatus::InProgress,
+            status: AgentTaskStatus::InProgress,
             spawned_at: std::time::SystemTime::now(),
         }
     }
 
     /// Get status icon using same style as planner
+    /// Treat InProgress and Waiting as the same for right now.
     pub fn status_icon(&self) -> &'static str {
         match &self.status {
-            TaskStatus::InProgress => "[~]",
-            TaskStatus::Done(Ok(_)) => "[x]",
-            TaskStatus::Done(Err(_)) => "[!]",
-            TaskStatus::AwaitingManager(_) => "[?]",
+            AgentTaskStatus::InProgress | AgentTaskStatus::Waiting { tool_call_id: _ } => "[~]",
+            AgentTaskStatus::Done(Ok(_)) => "[x]",
+            AgentTaskStatus::Done(Err(_)) => "[!]",
+            AgentTaskStatus::AwaitingManager(_) => "[?]",
         }
     }
 
     /// Format for display in system prompt
+    /// Treat InProgress and Waiting as the same for right now.
     pub fn format_for_prompt(&self) -> String {
         let details = match &self.status {
-            TaskStatus::Done(Ok(result)) => format!(" - {}", result),
-            TaskStatus::Done(Err(error)) => format!(" - Error: {}", error),
-            TaskStatus::AwaitingManager(awaiting) => match awaiting {
+            AgentTaskStatus::Done(Ok(result)) => format!(" - {}", result),
+            AgentTaskStatus::Done(Err(error)) => format!(" - Error: {}", error),
+            AgentTaskStatus::AwaitingManager(awaiting) => match awaiting {
                 TaskAwaitingManager::AwaitingPlanApproval(_) => {
                     " - Awaiting plan approval".to_string()
                 }
@@ -128,7 +130,9 @@ impl AgentTaskInfo {
                     format!(" - Needs: {}", info)
                 }
             },
-            TaskStatus::InProgress => String::new(),
+            AgentTaskStatus::InProgress | AgentTaskStatus::Waiting { tool_call_id: _ } => {
+                String::new()
+            }
         };
 
         format!(
@@ -219,7 +223,7 @@ impl SystemState {
     }
 
     /// Update an agent's task status
-    pub fn update_agent_status(&mut self, agent_id: &Uuid, status: TaskStatus) {
+    pub fn update_agent_status(&mut self, agent_id: &Uuid, status: AgentTaskStatus) {
         if let Some(agent_info) = self.agents.get_mut(agent_id) {
             agent_info.status = status;
             self.modified = true;
@@ -736,7 +740,7 @@ Current plan: active
         // Update agent status
         state.update_agent_status(
             &agent_id,
-            crate::actors::TaskStatus::Done(Ok("Completed successfully".to_string())),
+            crate::actors::AgentTaskStatus::Done(Ok("Completed successfully".to_string())),
         );
         let section = state.render_agents_section();
         assert!(section.contains("[x] Software Engineer (agent-1): Implement user authentication - Completed successfully"));
@@ -754,7 +758,7 @@ Current plan: active
         // Update second agent with error
         state.update_agent_status(
             &agent_id2,
-            crate::actors::TaskStatus::Done(Err("Connection timeout".to_string())),
+            crate::actors::AgentTaskStatus::Done(Err("Connection timeout".to_string())),
         );
         let section = state.render_agents_section();
         assert!(section.contains("[!] Database Architect (agent-2): Design schema for user data - Error: Connection timeout"));

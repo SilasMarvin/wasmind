@@ -197,7 +197,7 @@ pub fn run_headless_program(prompt: String, auto_approve_commands_override: bool
         .expect("Failed to create tokio runtime");
 
     // Start the HIVE system without TUI
-    let hive_handle = hive::start_headless_hive(&runtime, parsed_config, prompt);
+    let hive_handle = hive::start_headless_hive(&runtime, parsed_config, prompt, None);
 
     // Wait for exit signal from HIVE system
     let _ = hive_handle.exit_rx.recv();

@@ -6,7 +6,6 @@
 use std::process::Command;
 
 mod docker_sandbox;
-mod log_parser;
 use docker_sandbox::DockerSandbox;
 
 #[tokio::test]
@@ -72,7 +71,12 @@ async fn test_sandboxed_file_reading_workflow() {
     // Verify log execution shows expected delegation and tool usage patterns, including completion
     let log_verification = sandbox.verify_log_execution(
         &stdout,
-        &["spawn_agent_and_assign_task", "file_reader", "Worker", "complete"],
+        &[
+            "spawn_agent_and_assign_task",
+            "file_reader",
+            "Worker",
+            "complete",
+        ],
     );
     match log_verification {
         Ok(result) => {
@@ -83,7 +87,7 @@ async fn test_sandboxed_file_reading_workflow() {
             // For file reading workflow, we expect delegation and completion
             assert!(result.task_delegation, "Expected task delegation");
             // Note: completion is checked but not required to fail the test yet
-        },
+        }
         Err(e) => panic!("Log verification error: {}", e),
     }
 
@@ -121,7 +125,12 @@ async fn test_sandboxed_command_execution_workflow() {
     // Verify log execution shows expected delegation and command execution patterns, including completion
     let log_verification = sandbox.verify_log_execution(
         &stdout,
-        &["spawn_agent_and_assign_task", "command", "Worker", "complete"],
+        &[
+            "spawn_agent_and_assign_task",
+            "command",
+            "Worker",
+            "complete",
+        ],
     );
     match log_verification {
         Ok(result) => {
@@ -131,7 +140,7 @@ async fn test_sandboxed_command_execution_workflow() {
             );
             // For command execution workflow, we expect delegation
             assert!(result.task_delegation, "Expected task delegation");
-        },
+        }
         Err(e) => panic!("Log verification error: {}", e),
     }
 
@@ -168,7 +177,12 @@ async fn test_sandboxed_error_recovery() {
     // Verify log execution shows system handled the error without crashing and completed properly
     let log_verification = sandbox.verify_log_execution(
         &stdout,
-        &["spawn_agent_and_assign_task", "command", "Worker", "complete"],
+        &[
+            "spawn_agent_and_assign_task",
+            "command",
+            "Worker",
+            "complete",
+        ],
     );
     match log_verification {
         Ok(result) => {
@@ -177,8 +191,11 @@ async fn test_sandboxed_error_recovery() {
                 "Log verification failed - system should handle errors gracefully"
             );
             // For error recovery, we expect delegation but errors are acceptable
-            assert!(result.task_delegation, "Expected task delegation even with errors");
-        },
+            assert!(
+                result.task_delegation,
+                "Expected task delegation even with errors"
+            );
+        }
         Err(e) => panic!("Log verification error: {}", e),
     }
 
@@ -209,7 +226,12 @@ async fn test_sandboxed_multi_step_workflow() {
     // Verify log execution shows expected delegation and multi-step execution patterns, including completion
     let log_verification = sandbox.verify_log_execution(
         &stdout,
-        &["spawn_agent_and_assign_task", "command", "Worker", "complete"],
+        &[
+            "spawn_agent_and_assign_task",
+            "command",
+            "Worker",
+            "complete",
+        ],
     );
     match log_verification {
         Ok(result) => {
@@ -218,16 +240,22 @@ async fn test_sandboxed_multi_step_workflow() {
                 "Log verification failed - basic system checks failed"
             );
             // For multi-step workflow, we definitely expect delegation
-            assert!(result.task_delegation, "Expected task delegation for multi-step workflow");
-            
+            assert!(
+                result.task_delegation,
+                "Expected task delegation for multi-step workflow"
+            );
+
             // Print detailed analysis for multi-step workflow
             println!("📊 Multi-step workflow analysis:");
             println!("  - Task delegation: {}", result.task_delegation);
             println!("  - Tool calls: {}", result.tool_calls_executed);
             println!("  - Command execution: {}", result.command_execution);
             println!("  - Complete tool called: {}", result.complete_tool_called);
-            println!("  - Completion sequence: {}", result.proper_completion_sequence);
-        },
+            println!(
+                "  - Completion sequence: {}",
+                result.proper_completion_sequence
+            );
+        }
         Err(e) => panic!("Log verification error: {}", e),
     }
 
@@ -238,14 +266,17 @@ async fn test_sandboxed_multi_step_workflow() {
         .unwrap();
     if exit_code == 0 {
         assert!(stdout.contains("README.md"), "README.md should be created");
-        
+
         // Verify the file content
         let (exit_code, content, _) = sandbox
             .exec_command("cat /workspace/temp/test-project/README.md")
             .await
             .unwrap();
         if exit_code == 0 {
-            assert!(content.contains("This is a test project"), "README.md should contain expected content");
+            assert!(
+                content.contains("This is a test project"),
+                "README.md should contain expected content"
+            );
         }
     }
 

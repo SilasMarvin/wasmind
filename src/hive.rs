@@ -78,20 +78,19 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
 }
 
 /// Start the HIVE multi-agent system in headless mode
-#[tracing::instrument(name = "start_headless_hive", skip(runtime, config), fields(prompt_length = initial_prompt.len()))]
+#[tracing::instrument(name = "start_headless_hive", skip(runtime, config, tx), fields(prompt_length = initial_prompt.len()))]
 pub fn start_headless_hive(
     runtime: &tokio::runtime::Runtime,
     config: ParsedConfig,
     initial_prompt: String,
+    tx: Option<broadcast::Sender<ActorMessage>>,
 ) -> HiveHandle {
     // Create crossbeam channel for exit notification
     let (exit_tx, exit_rx) = channel::bounded(1);
 
-    // Create broadcast channel for shared actors
-    let (tx, _) = broadcast::channel::<ActorMessage>(1024);
-    let message_tx = tx.clone();
+    let tx = tx.unwrap_or_else(|| broadcast::channel::<ActorMessage>(1024).0);
 
-    // Spawn the HIVE system task
+    let message_tx = tx.clone();
     runtime.spawn(async move {
         let mut rx = tx.subscribe();
 

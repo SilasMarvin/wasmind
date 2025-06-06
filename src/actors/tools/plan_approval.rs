@@ -5,12 +5,13 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::actors::{
-    Actor, ActorMessage, InterAgentMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    Actor, ActorMessage, AgentMessage, AgentMessageType, InterAgentMessage, Message,
+    ToolCallStatus, ToolCallType, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
 
 pub const APPROVE_TOOL_NAME: &str = "approve_plan";
-pub const APPROVE_TOOL_DESCRIPTION: &str = "Approve a plan submitted by a child agent";
+pub const APPROVE_TOOL_DESCRIPTION: &str = "Approve a plan submitted by a spawned agent";
 pub const APPROVE_TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
@@ -93,12 +94,12 @@ impl PlanApproval {
             }
         };
 
-        let _ = self.broadcast(Message::InterAgentMessage(
-            InterAgentMessage::PlanApproved {
-                agent_id: input.agent_id.clone(),
+        let _ = self.broadcast(Message::Agent(AgentMessage {
+            agent_id: self.scope.clone(),
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::PlanApproved {
                 plan_id: input.plan_id.clone(),
-            },
-        ));
+            }),
+        }));
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
@@ -131,13 +132,13 @@ impl PlanApproval {
             }
         };
 
-        let _ = self.broadcast(Message::InterAgentMessage(
-            InterAgentMessage::PlanRejected {
-                agent_id: input.agent_id.clone(),
+        let _ = self.broadcast(Message::Agent(AgentMessage {
+            agent_id: self.scope.clone(),
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::PlanRejected {
                 plan_id: input.plan_id.clone(),
                 reason: input.reason.clone(),
-            },
-        ));
+            }),
+        }));
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,

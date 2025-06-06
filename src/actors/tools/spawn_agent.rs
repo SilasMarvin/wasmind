@@ -4,43 +4,62 @@ use tokio::sync::broadcast;
 use tracing::info;
 use uuid::Uuid;
 
+// Assuming AgentSpawnedResponse is already Serialize.
+// It is imported from crate::actors::agent and used with serde_json::to_string in the original code.
 use crate::actors::{
-    Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskStatus, InterAgentMessage,
+    Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
     agent::{Agent, AgentSpawnedResponse},
 };
 use crate::config::ParsedConfig;
 
-pub const TOOL_NAME: &str = "spawn_agent_and_assign_task";
-pub const TOOL_DESCRIPTION: &str = "Spawn a new agent (Worker or Manager) and assign it a task. The agent will run independently and report back status updates.";
+pub const TOOL_NAME: &str = "spawn_agents";
+pub const TOOL_DESCRIPTION: &str = "Spawns one or more new agents (Worker or Manager), each with a specific task. Spawned agents run independently and report back status updates. Use this tool to delegate work to specialized agents.";
 pub const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
-        "agent_role": {
-            "type": "string",
-            "description": "The role of the agent to spawn (e.g., 'Software Engineer', 'Project Lead Manager')"
-        },
-        "task_description": {
-            "type": "string",
-            "description": "The task or objective to assign to the agent"
-        },
-        "agent_type": {
-            "type": "string",
-            "enum": ["Worker", "Manager"],
-            "description": "Whether to spawn a Worker agent (executes tasks) or Manager agent (delegates tasks)"
+        "agents_to_spawn": {
+            "type": "array",
+            "description": "A list of agents to be created (at least one). Each agent in the list will be configured with its own role, task, and type.",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "agent_role": {
+                        "type": "string",
+                        "description": "The specific role for this agent (e.g., 'Software Engineer', 'QA Tester', 'Project Lead Manager'). This helps define the agent's expertise and focus."
+                    },
+                    "task_description": {
+                        "type": "string",
+                        "description": "A clear and concise description of the task or objective assigned to this agent. This is the primary goal the agent will work towards."
+                    },
+                    "agent_type": {
+                        "type": "string",
+                        "enum": ["Worker", "Manager"],
+                        "description": "Specify 'Worker' if the agent should execute tasks directly. Specify 'Manager' if the agent should delegate or manage tasks, potentially by spawning other agents."
+                    }
+                },
+                "required": ["agent_role", "task_description", "agent_type"]
+            }
         },
         "wait": {
             "type": "boolean",
-            "description": "Whether to wait for the agent to complete before continuing (default: false)"
+            "description": "Set to true to pause your own operations and await status updates or completion signals from the spawned agent(s) before proceeding. Set to false (default) to continue with other actions immediately after spawning."
         }
     },
-    "required": ["agent_role", "task_description", "agent_type"]
+    "required": ["agents_to_spawn"]
 }"#;
 
 #[derive(Debug, Deserialize)]
-struct SpawnAgentInput {
+struct AgentDefinition {
     agent_role: String,
     task_description: String,
     agent_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SpawnAgentsInput {
+    agents_to_spawn: Vec<AgentDefinition>,
     #[serde(default)]
     wait: bool,
 }
@@ -66,74 +85,129 @@ impl SpawnAgent {
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
-                r#type: ToolCallType::MCP, // Using MCP type for now, we can add a new type later
-                friendly_command_display: format!("Spawning {} agent", tool_call.fn_name),
+                r#type: ToolCallType::MCP,
+                friendly_command_display: "Processing request to spawn agents...".to_string(),
             },
         }));
 
         // Parse input
-        let input: SpawnAgentInput = match serde_json::from_value(tool_call.fn_arguments) {
+        let input: SpawnAgentsInput = match serde_json::from_value(tool_call.fn_arguments) {
             Ok(input) => input,
             Err(e) => {
                 let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
-                    status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
+                    status: ToolCallStatus::Finished(Err(format!("Invalid input schema: {}. Ensure 'agents_to_spawn' is a non-empty array of valid agent definitions.", e))),
                 }));
                 return;
             }
         };
 
-        // Create the new agent
-        let agent = match input.agent_type.as_str() {
-            "Worker" => Agent::new_worker(
-                self.tx.clone(),
-                input.agent_role.clone(),
-                Some(input.task_description.clone()),
-                self.config.clone(),
-                self.scope.clone(),
-            ),
-            "Manager" => Agent::new_manager(
-                self.tx.clone(),
-                input.agent_role.clone(),
-                Some(input.task_description.clone()),
-                self.config.clone(),
-                self.scope.clone(),
-            ),
-            _ => {
+        // Schema validation (minItems: 1) should ideally catch this, but an explicit check is good.
+        if input.agents_to_spawn.is_empty() {
+            let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                call_id: tool_call.call_id,
+                status: ToolCallStatus::Finished(Err("No agents specified in 'agents_to_spawn' array. At least one agent must be provided.".to_string())),
+            }));
+            return;
+        }
+
+        // Broadcast the new agent status
+        if input.wait {
+            self.broadcast(Message::Agent(AgentMessage {
+                agent_id: self.scope.clone(),
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                    status: AgentTaskStatus::Waiting {
+                        tool_call_id: tool_call.call_id.clone(),
+                    },
+                }),
+            }))
+        }
+
+        let mut spawned_agents_responses: Vec<AgentSpawnedResponse> = Vec::new();
+        let mut successfully_spawned_agents_details: Vec<String> = Vec::new();
+
+        for agent_def in input.agents_to_spawn {
+            // Create the new agent
+            let agent = match agent_def.agent_type.as_str() {
+                "Worker" => Agent::new_worker(
+                    self.tx.clone(),
+                    agent_def.agent_role.clone(),
+                    Some(agent_def.task_description.clone()),
+                    self.config.clone(),
+                    self.scope.clone(),
+                ),
+                "Manager" => Agent::new_manager(
+                    self.tx.clone(),
+                    agent_def.agent_role.clone(),
+                    Some(agent_def.task_description.clone()),
+                    self.config.clone(),
+                    self.scope.clone(),
+                ),
+                _ => {
+                    let error_msg = format!(
+                        "Invalid agent_type: '{}' for agent role '{}'. Must be 'Worker' or 'Manager'.",
+                        agent_def.agent_type, agent_def.agent_role
+                    );
+                    let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                        call_id: tool_call.call_id.clone(), // Use cloned call_id for subsequent broadcasts
+                        status: ToolCallStatus::Finished(Err(error_msg)),
+                    }));
+                    return; // Fail the entire operation if one agent definition is invalid
+                }
+            };
+
+            let agent_id = agent.id().clone();
+            let agent_role_str = agent.role().to_string(); // Renamed to avoid conflict if agent_role is in scope
+
+            // Send AgentSpawned message to update system state for this agent
+            let _ = self.broadcast(Message::Agent(AgentMessage {
+                agent_id: self.scope.clone(),
+                message: AgentMessageType::AgentSpawned {
+                    agent_role: agent_role_str.clone(),
+                    task_description: agent_def.task_description.clone(),
+                },
+            }));
+
+            // Collect response for this agent
+            spawned_agents_responses.push(AgentSpawnedResponse {
+                agent_id: agent_id.clone(),
+                agent_role: agent_role_str.clone(),
+            });
+            successfully_spawned_agents_details.push(format!(
+                "ID: {}, Role: '{}', Type: {}",
+                agent_id, agent_role_str, agent_def.agent_type
+            ));
+
+            // Spawn the agent task to run asynchronously
+            tokio::spawn(async move {
+                agent.run().await;
+            });
+        }
+
+        // All agents defined in the input have been processed and spawn tasks initiated
+        let response_json = match serde_json::to_string(&spawned_agents_responses) {
+            Ok(json) => json,
+            Err(e) => {
+                // This should not happen if AgentSpawnedResponse is correctly Serialize
+                let error_msg = format!(
+                    "Critical error: Failed to serialize agent spawn responses: {}",
+                    e
+                );
+                info!("{}", error_msg); // Log critical error
                 let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
-                    status: ToolCallStatus::Finished(Err(format!(
-                        "Invalid agent_type: {}. Must be 'Worker' or 'Manager'",
-                        input.agent_type
-                    ))),
+                    status: ToolCallStatus::Finished(Err(error_msg)),
                 }));
                 return;
             }
         };
 
-        let agent_id = agent.id().clone();
-        let agent_role = agent.role().to_string();
-
-        // Send AgentSpawned message to update system state
-        let _ = self.broadcast(Message::AgentSpawned {
-            agent_id: agent_id.clone(),
-            agent_role: agent_role.clone(),
-            task_description: input.task_description.clone(),
-        });
-
-        // Create response
-        let response = AgentSpawnedResponse {
-            agent_id: agent_id.clone(),
-            agent_role: agent_role.clone(),
-        };
-
-        let response_json = serde_json::to_string(&response)
-            .unwrap_or_else(|_| format!("Agent spawned for task with ID: {}", agent_id));
-
-        // Spawn the agent without waiting
-        tokio::spawn(async move {
-            agent.run().await;
-        });
+        info!(
+            "Successfully initiated spawning for {} agent(s): [{}]. Wait flag was: {}.",
+            spawned_agents_responses.len(),
+            successfully_spawned_agents_details.join("; "),
+            input.wait
+        );
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
@@ -144,7 +218,7 @@ impl SpawnAgent {
 
 #[async_trait::async_trait]
 impl Actor for SpawnAgent {
-    const ACTOR_ID: &'static str = "spawn_agent";
+    const ACTOR_ID: &'static str = "spawn_agent"; // Internal actor ID, can remain singular
 
     fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
         self.tx.subscribe()
@@ -168,13 +242,16 @@ impl Actor for SpawnAgent {
     }
 
     async fn on_start(&mut self) {
-        info!("SpawnAgent tool actor started");
+        info!("SpawnAgent (spawn_agents tool) actor started"); // Clarified log
 
         // Send tool availability
         let tool = Tool {
-            name: TOOL_NAME.to_string(),
-            description: Some(TOOL_DESCRIPTION.to_string()),
-            schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
+            name: TOOL_NAME.to_string(),                     // Uses updated TOOL_NAME
+            description: Some(TOOL_DESCRIPTION.to_string()), // Uses updated TOOL_DESCRIPTION
+            schema: Some(
+                serde_json::from_str(TOOL_INPUT_SCHEMA)
+                    .expect("TOOL_INPUT_SCHEMA must be valid JSON"),
+            ), // Uses updated TOOL_INPUT_SCHEMA
         };
 
         let _ = self.broadcast(Message::ToolsAvailable(vec![tool]));

@@ -16,21 +16,27 @@ use crate::{
     template::ToolInfo,
 };
 
-use super::{ActorMessage, UserContext};
+use super::{ActorMessage, AgentMessageType, InterAgentMessage, TaskAwaitingManager, UserContext};
 
 /// States that the Assistant actor can be in
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum AssistantState {
     /// Waiting for actors
-    WaitingForActors,
+    AwaitingActors,
     /// Ready to accept requests, has tools available
     Idle,
     /// Actively processing a user request (making LLM call)
     Processing,
     /// Waiting for tool execution results
-    WaitingForTools { pending_tool_calls: Vec<String> },
+    AwaitingTools { pending_tool_calls: Vec<String> },
     /// Encountered an error during processing
     Error { message: String },
+    /// Waiting for next input from user, sub agent, etc...
+    /// Does not submit a response to the LLM when the tool call with `tool_call_id` returns a
+    /// response. Waits for other input
+    Wait { tool_call_id: String },
+    /// Waiting for manager plan approval
+    AwaitingManager(TaskAwaitingManager),
 }
 
 /// Assistant actor that handles AI interactions
@@ -46,10 +52,45 @@ pub struct Assistant {
     state: AssistantState,
     task_description: Option<String>,
     scope: Uuid,
+    spawned_agents_scope: Vec<Uuid>,
     required_actors: Vec<&'static str>,
 }
 
 impl Assistant {
+    pub fn new(
+        config: ParsedConfig,
+        tx: broadcast::Sender<ActorMessage>,
+        scope: Uuid,
+        required_actors: Vec<&'static str>,
+        task_description: Option<String>,
+    ) -> Self {
+        let client = Client::builder()
+            .with_service_target_resolver(config.model.service_target_resolver.clone())
+            .build();
+
+        let state = if required_actors.is_empty() {
+            AssistantState::Idle
+        } else {
+            AssistantState::AwaitingActors
+        };
+
+        Self {
+            tx,
+            config,
+            client,
+            chat_request: ChatRequest::default(),
+            system_state: SystemState::new(),
+            available_tools: Vec::new(),
+            cancel_handle: Arc::new(Mutex::new(None)),
+            pending_content_parts: Vec::new(),
+            state,
+            task_description: None,
+            scope,
+            required_actors,
+            spawned_agents_scope: vec![],
+        }
+    }
+
     #[tracing::instrument(name = "assist_request", skip(self, request), fields(tools_count = request.tools.as_ref().map_or(0, |tools| tools.len())))]
     async fn handle_assist_request(&mut self, request: ChatRequest) {
         // Cancel any existing request
@@ -258,127 +299,158 @@ impl Actor for Assistant {
         &self.scope
     }
 
+    fn get_scope_filters(&self) -> Vec<&Uuid> {
+        self.spawned_agents_scope
+            .iter()
+            .chain([&self.scope])
+            .collect::<Vec<&Uuid>>()
+    }
+
     async fn on_start(&mut self) {}
 
     async fn handle_message(&mut self, message: ActorMessage) {
         let _ = self.transition(&message.message);
 
-        // TODO: Integrate state into here. handle_message and transtion should probably be meshed
+        // TODO: Integrate state into here. handle_message and transition should probably be meshed
         // together
 
-        match message.message {
-            Message::ToolsAvailable(tools) => self.handle_tools_available(tools).await,
-            Message::ToolCallUpdate(update) => self.handle_tool_call_update(update).await,
+        // Messages from our tools, etc...
+        if message.scope == self.scope {
+            match message.message {
+                Message::ToolsAvailable(tools) => self.handle_tools_available(tools).await,
+                Message::ToolCallUpdate(update) => self.handle_tool_call_update(update).await,
 
-            Message::UserContext(context) => match context {
-                #[cfg(feature = "audio")]
-                UserContext::MicrophoneTranscription(text) => self.handle_user_input(text).await,
-                UserContext::UserTUIInput(text) => self.handle_user_input(text).await,
-                #[cfg(feature = "gui")]
-                UserContext::ScreenshotCaptured(result) => {
-                    if let Ok(base64) = result {
-                        // Add screenshot as an image content part
-                        let content_part =
-                            genai::chat::ContentPart::from_image_base64("image/png", base64);
-                        self.pending_content_parts.push(content_part);
+                Message::UserContext(context) => match context {
+                    #[cfg(feature = "audio")]
+                    UserContext::MicrophoneTranscription(text) => {
+                        self.handle_user_input(text).await
                     }
-                    // Errors are already handled by TUI
-                }
-                #[cfg(feature = "gui")]
-                UserContext::ClipboardCaptured(_result) => {
-                    // Clipboard text is sent as UserTUIInput by the TUI actor when the user hits
-                    // enter so we don't need to handle it here
-                }
-            },
+                    UserContext::UserTUIInput(text) => self.handle_user_input(text).await,
+                    #[cfg(feature = "gui")]
+                    UserContext::ScreenshotCaptured(result) => {
+                        if let Ok(base64) = result {
+                            // Add screenshot as an image content part
+                            let content_part =
+                                genai::chat::ContentPart::from_image_base64("image/png", base64);
+                            self.pending_content_parts.push(content_part);
+                        }
+                        // Errors are already handled by TUI
+                    }
+                    #[cfg(feature = "gui")]
+                    UserContext::ClipboardCaptured(_result) => {
+                        // Clipboard text is sent as UserTUIInput by the TUI actor when the user hits
+                        // enter so we don't need to handle it here
+                    }
+                },
 
-            Message::Action(crate::actors::Action::Assist) => {
-                // Re-send current chat request
-                self.handle_assist_request(self.chat_request.clone()).await;
-            }
-            Message::Action(crate::actors::Action::Cancel) => {
-                // Cancel current request
-                if let Some(handle) = self.cancel_handle.lock().await.take() {
-                    handle.abort();
+                Message::Action(crate::actors::Action::Assist) => {
+                    // Re-send current chat request
+                    self.handle_assist_request(self.chat_request.clone()).await;
                 }
-            }
+                Message::Action(crate::actors::Action::Cancel) => {
+                    // Cancel current request
+                    if let Some(handle) = self.cancel_handle.lock().await.take() {
+                        handle.abort();
+                    }
+                }
 
-            Message::FileRead {
-                path,
-                content,
-                last_modified,
-            } => {
-                self.system_state.update_file(path, content, last_modified);
-            }
-            Message::FileEdited {
-                path,
-                content,
-                last_modified,
-            } => {
-                self.system_state.update_file(path, content, last_modified);
-                self.maybe_rerender_system_prompt().await;
-            }
-            Message::PlanUpdated(plan) => {
-                info!("Updating system state with new plan: {}", plan.title);
-                self.system_state.update_plan(plan);
-            }
-            Message::AssistantResponse(content) => {
-                self.chat_request = self.chat_request.clone().append_message(ChatMessage {
-                    role: ChatRole::Assistant,
+                Message::FileRead {
+                    path,
                     content,
-                    options: None,
-                });
-            }
-            Message::AgentSpawned {
-                agent_id,
-                agent_role,
-                task_description,
-            } => {
-                let agent_info =
-                    crate::system_state::AgentTaskInfo::new(agent_id, agent_role, task_description);
-                self.system_state.add_agent(agent_info);
-            }
-            Message::AgentStatusUpdate { agent_id, status } => {
-                self.system_state.update_agent_status(&agent_id, status);
-            }
-            Message::AgentRemoved { agent_id } => {
-                self.system_state.remove_agent(&agent_id);
-            }
-            _ => {}
-        }
-    }
-}
+                    last_modified,
+                } => {
+                    self.system_state.update_file(path, content, last_modified);
+                }
+                Message::FileEdited {
+                    path,
+                    content,
+                    last_modified,
+                } => {
+                    self.system_state.update_file(path, content, last_modified);
+                    self.maybe_rerender_system_prompt().await;
+                }
+                Message::PlanUpdated(plan) => {
+                    info!("Updating system state with new plan: {}", plan.title);
+                    self.system_state.update_plan(plan);
+                }
 
-impl Assistant {
-    pub fn new(
-        config: ParsedConfig,
-        tx: broadcast::Sender<ActorMessage>,
-        scope: Uuid,
-        required_actors: Vec<&'static str>,
-        task_description: Option<String>,
-    ) -> Self {
-        let client = Client::builder()
-            .with_service_target_resolver(config.model.service_target_resolver.clone())
-            .build();
+                Message::AssistantResponse(content) => {
+                    self.chat_request = self.chat_request.clone().append_message(ChatMessage {
+                        role: ChatRole::Assistant,
+                        content,
+                        options: None,
+                    });
+                }
 
-        let state = if required_actors.is_empty() {
-            AssistantState::Idle
+                Message::Agent(message) => match message.message {
+                    AgentMessageType::AgentSpawned {
+                        agent_role,
+                        task_description,
+                    } => {
+                        let agent_info = crate::system_state::AgentTaskInfo::new(
+                            message.agent_id,
+                            agent_role,
+                            task_description,
+                        );
+                        self.system_state.add_agent(agent_info);
+                    }
+                    AgentMessageType::AgentRemoved => {
+                        self.system_state.remove_agent(&message.agent_id);
+                    }
+                    // These are our own status updates broadcasted from tools, etc...
+                    AgentMessageType::InterAgentMessage(inter_agent_message) => {
+                        match inter_agent_message {
+                            InterAgentMessage::TaskStatusUpdate { status } => {
+                                match &status {
+                                    super::AgentTaskStatus::Done(_) => (),
+                                    super::AgentTaskStatus::InProgress => (),
+                                    super::AgentTaskStatus::AwaitingManager(
+                                        task_awaiting_manager,
+                                    ) => {
+                                        self.state = AssistantState::AwaitingManager(
+                                            task_awaiting_manager.clone(),
+                                        );
+                                    }
+                                    super::AgentTaskStatus::Waiting { tool_call_id } => {
+                                        self.state = AssistantState::Wait {
+                                            tool_call_id: tool_call_id.clone(),
+                                        }
+                                    }
+                                }
+                                self.system_state
+                                    .update_agent_status(&message.agent_id, status);
+                            }
+                            InterAgentMessage::PlanApproved { plan_id: _ } => (),
+                            InterAgentMessage::PlanRejected {
+                                plan_id: _,
+                                reason: _,
+                            } => (),
+                        }
+                    }
+                },
+                _ => {}
+            }
         } else {
-            AssistantState::WaitingForActors
-        };
-
-        Self {
-            tx,
-            config,
-            client,
-            chat_request: ChatRequest::default(),
-            system_state: SystemState::new(),
-            available_tools: Vec::new(),
-            cancel_handle: Arc::new(Mutex::new(None)),
-            pending_content_parts: Vec::new(),
-            state,
-            task_description: None,
-            scope,
-            required_actors,
+            // Messages from our sub agents
+            match message.message {
+                Message::Agent(message) => match message.message {
+                    AgentMessageType::InterAgentMessage(inter_agent_message) => {
+                        match inter_agent_message {
+                            InterAgentMessage::TaskStatusUpdate { status } => {
+                                self.system_state
+                                    .update_agent_status(&message.agent_id, status);
+                            }
+                            InterAgentMessage::PlanApproved { plan_id: _ } => (),
+                            InterAgentMessage::PlanRejected {
+                                plan_id: _,
+                                reason: _,
+                            } => (),
+                        }
+                    }
+                    _ => (),
+                },
+                _ => (),
+            }
         }
     }
 }
@@ -392,7 +464,7 @@ impl StateSystem for Assistant {
 
     fn transition(&mut self, message: &Message) -> Option<Self::State> {
         let new_state = match (&self.state, message) {
-            (AssistantState::WaitingForActors, Message::ActorReady { actor_id }) => {
+            (AssistantState::AwaitingActors, Message::ActorReady { actor_id }) => {
                 self.required_actors = self
                     .required_actors
                     .drain(..)
@@ -416,7 +488,7 @@ impl StateSystem for Assistant {
                 match content {
                     MessageContent::ToolCalls(tool_calls) => {
                         let call_ids = tool_calls.iter().map(|tc| tc.call_id.clone()).collect();
-                        Some(AssistantState::WaitingForTools {
+                        Some(AssistantState::AwaitingTools {
                             pending_tool_calls: call_ids,
                         })
                     }
@@ -427,7 +499,7 @@ impl StateSystem for Assistant {
 
             // From WaitingForTools back to Processing when tool finishes
             (
-                AssistantState::WaitingForTools { pending_tool_calls },
+                AssistantState::AwaitingTools { pending_tool_calls },
                 Message::ToolCallUpdate(update),
             ) => {
                 if let ToolCallStatus::Finished(_) = &update.status {
@@ -441,7 +513,7 @@ impl StateSystem for Assistant {
                             Some(AssistantState::Processing)
                         } else {
                             // Still waiting for more tools
-                            Some(AssistantState::WaitingForTools {
+                            Some(AssistantState::AwaitingTools {
                                 pending_tool_calls: remaining_calls,
                             })
                         }
@@ -456,7 +528,7 @@ impl StateSystem for Assistant {
             // Cancel action can move from Processing or WaitingForTools back to Idle
             (AssistantState::Processing, Message::Action(crate::actors::Action::Cancel))
             | (
-                AssistantState::WaitingForTools { .. },
+                AssistantState::AwaitingTools { .. },
                 Message::Action(crate::actors::Action::Cancel),
             ) => Some(AssistantState::Idle),
 

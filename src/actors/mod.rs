@@ -15,8 +15,6 @@ use std::path::PathBuf;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::config::ParsedConfig;
-
 /// Actions users can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Action {
@@ -87,25 +85,38 @@ pub enum TaskAwaitingManager {
 
 /// Task status
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TaskStatus {
+pub enum AgentTaskStatus {
     Done(Result<String, String>),
     InProgress,
     AwaitingManager(TaskAwaitingManager),
+    Waiting { tool_call_id: String },
 }
 
 /// Inter-agent message for communication between agents
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum InterAgentMessage {
     /// Agent reports task status to manager
-    TaskStatusUpdate { agent_id: Uuid, status: TaskStatus },
+    TaskStatusUpdate { status: AgentTaskStatus },
     /// Manager approves a plan
-    PlanApproved { agent_id: Uuid, plan_id: String },
+    PlanApproved { plan_id: String },
     /// Manager rejects a plan
-    PlanRejected {
-        agent_id: Uuid,
-        plan_id: String,
-        reason: String,
+    PlanRejected { plan_id: String, reason: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentMessage {
+    agent_id: Uuid,
+    message: AgentMessageType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AgentMessageType {
+    AgentSpawned {
+        agent_role: String,
+        task_description: String,
     },
+    AgentRemoved,
+    InterAgentMessage(InterAgentMessage),
 }
 
 /// Context provided by the user
@@ -129,9 +140,6 @@ pub enum Message {
     // UserContext
     UserContext(UserContext),
 
-    // Messages between agents
-    InterAgentMessage(InterAgentMessage),
-
     // Assistant messages
     AssistantToolCall(ToolCall),
     AssistantResponse(genai::chat::MessageContent),
@@ -139,9 +147,6 @@ pub enum Message {
     // Tool messages
     ToolCallUpdate(ToolCallUpdate),
     ToolsAvailable(Vec<genai::chat::Tool>),
-
-    // TUI messages
-    TUIClearInput,
 
     // System state update messages
     FileRead {
@@ -158,19 +163,8 @@ pub enum Message {
     },
     PlanUpdated(crate::actors::tools::planner::TaskPlan),
 
-    // Agent management messages
-    AgentSpawned {
-        agent_id: Uuid,
-        agent_role: String,
-        task_description: String,
-    },
-    AgentStatusUpdate {
-        agent_id: Uuid,
-        status: TaskStatus,
-    },
-    AgentRemoved {
-        agent_id: Uuid,
-    },
+    // Agent messages
+    Agent(AgentMessage),
 
     // Actor lifecycle messages
     ActorReady {
