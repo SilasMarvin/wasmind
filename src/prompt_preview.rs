@@ -8,6 +8,9 @@ use crate::{
     template::{TemplateContext, ToolInfo, is_template, render_template},
 };
 
+// TODO: Our prompt preveiw function should take in the prompt to preview for: either -
+// manager, worker
+
 /// Preview scenarios for system prompt rendering
 pub struct PromptPreviewScenarios {
     config: ParsedConfig,
@@ -202,14 +205,17 @@ file = "app.log"
     fn render_prompt(&self, state: &SystemState) -> Result<String, Box<dyn std::error::Error>> {
         let tools = Self::create_mock_tools();
 
-        if is_template(&self.config.model.system_prompt) {
-            let context =
-                TemplateContext::new(tools, self.config.whitelisted_commands.clone(), state);
+        // TODO: UPDATE THIS
+        // if is_template(&self.config.model.system_prompt) {
+        //     let context =
+        //         TemplateContext::new(tools, self.config.whitelisted_commands.clone(), state);
+        //
+        //     Ok(render_template(&self.config.model.system_prompt, &context)?)
+        // } else {
+        //     Ok(self.config.model.system_prompt.clone())
+        // }
 
-            Ok(render_template(&self.config.model.system_prompt, &context)?)
-        } else {
-            Ok(self.config.model.system_prompt.clone())
-        }
+        todo!()
     }
 
     /// Print a formatted scenario

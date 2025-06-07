@@ -326,8 +326,6 @@ impl Actor for MCP {
     }
 
     async fn on_start(&mut self) {
-        info!("MCP actor starting - initializing servers");
-
         if let Err(e) = self.start_servers().await {
             error!("Failed to start MCP servers: {}", e);
         }

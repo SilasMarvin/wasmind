@@ -1,17 +1,17 @@
 use genai::{
     Client,
-    chat::{ChatMessage, ChatRequest, ChatRole, MessageContent, Tool},
+    chat::{ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool},
 };
 use snafu::ResultExt;
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
     SResult,
-    actors::{Actor, Message, ToolCallStatus, ToolCallUpdate, state_system::StateSystem},
-    config::ParsedConfig,
+    actors::{Actor, Message, ToolCallStatus, ToolCallUpdate},
+    config::ParsedModelConfig,
     system_state::SystemState,
     template::ToolInfo,
 };
@@ -42,13 +42,14 @@ pub enum AssistantState {
 /// Assistant actor that handles AI interactions
 pub struct Assistant {
     tx: broadcast::Sender<ActorMessage>,
-    config: ParsedConfig,
+    config: ParsedModelConfig,
     client: Client,
     chat_request: ChatRequest,
     system_state: SystemState,
     available_tools: Vec<Tool>,
     cancel_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    pending_content_parts: Vec<genai::chat::ContentPart>,
+    pending_user_content_parts: Vec<genai::chat::ContentPart>,
+    pending_tool_responses: Vec<genai::chat::ToolResponse>,
     state: AssistantState,
     task_description: Option<String>,
     scope: Uuid,
@@ -58,14 +59,14 @@ pub struct Assistant {
 
 impl Assistant {
     pub fn new(
-        config: ParsedConfig,
+        config: ParsedModelConfig,
         tx: broadcast::Sender<ActorMessage>,
         scope: Uuid,
         required_actors: Vec<&'static str>,
         task_description: Option<String>,
     ) -> Self {
         let client = Client::builder()
-            .with_service_target_resolver(config.model.service_target_resolver.clone())
+            .with_service_target_resolver(config.service_target_resolver.clone())
             .build();
 
         let state = if required_actors.is_empty() {
@@ -82,20 +83,91 @@ impl Assistant {
             system_state: SystemState::new(),
             available_tools: Vec::new(),
             cancel_handle: Arc::new(Mutex::new(None)),
-            pending_content_parts: Vec::new(),
+            pending_user_content_parts: Vec::new(),
+            pending_tool_responses: Vec::new(),
             state,
-            task_description: None,
+            task_description,
             scope,
             required_actors,
             spawned_agents_scope: vec![],
         }
     }
 
-    #[tracing::instrument(name = "assist_request", skip(self, request), fields(tools_count = request.tools.as_ref().map_or(0, |tools| tools.len())))]
-    async fn handle_assist_request(&mut self, request: ChatRequest) {
+    #[tracing::instrument(name = "tools_available", skip(self, new_tools), fields(tools_count = new_tools.len()))]
+    async fn handle_tools_available(&mut self, new_tools: Vec<Tool>) {
+        // Add new tools to existing tools
+        for new_tool in new_tools {
+            // Remove any existing tool with the same name
+            self.available_tools.retain(|t| t.name != new_tool.name);
+            // Add the new tool
+            self.available_tools.push(new_tool);
+        }
+    }
+
+    async fn handle_tool_call_update(&mut self, update: ToolCallUpdate) {
+        // Check if this is a completion
+        if let ToolCallStatus::Finished(result) = &update.status {
+            // Handle state transition for tool completion
+            if let AssistantState::AwaitingTools { pending_tool_calls } = &self.state {
+                // Only process tool updates for calls we're actually waiting for
+                if pending_tool_calls.contains(&update.call_id) {
+                    let mut remaining_calls = pending_tool_calls.clone();
+                    remaining_calls.retain(|id| id != &update.call_id);
+
+                    // Create tool response and add to chat
+                    let tool_response = genai::chat::ToolResponse {
+                        call_id: update.call_id.clone(),
+                        content: result.clone().unwrap_or_else(|e| format!("Error: {}", e)),
+                    };
+                    self.pending_tool_responses.push(tool_response);
+
+                    if remaining_calls.is_empty() {
+                        // Automatically continue the conversation
+                        self.chat_request = self.chat_request.clone().append_message(ChatMessage {
+                            role: ChatRole::Tool,
+                            content: MessageContent::ToolResponses(std::mem::take(
+                                &mut self.pending_tool_responses,
+                            )),
+                            options: None,
+                        });
+                        self.submit_assist_request().await;
+                    } else {
+                        // Still waiting for more tools
+                        self.state = AssistantState::AwaitingTools {
+                            pending_tool_calls: remaining_calls,
+                        };
+                    }
+                } else {
+                    // Ignore tool updates for calls we're not waiting for
+                    return;
+                }
+            }
+        }
+    }
+
+    fn add_user_pending_part(&mut self, content: ContentPart) {
+        self.pending_user_content_parts.push(content);
+    }
+
+    #[tracing::instrument(name = "assist_request", skip(self))]
+    async fn submit_assist_request(&mut self) {
+        self.chat_request =
+            self.chat_request
+                .clone()
+                .append_message(ChatMessage::user(MessageContent::Parts(std::mem::take(
+                    &mut self.pending_user_content_parts,
+                ))));
+
+        if !self.pending_tool_responses.is_empty() {
+            warn!("Submitting assistant request while pending_tool_responses is not empty");
+        }
+
+        self.state = AssistantState::Processing;
+
         // Cancel any existing request
         if let Some(handle) = self.cancel_handle.lock().await.take() {
             handle.abort();
+            warn!("Implicitly cancelling stale assistant request");
         }
 
         self.maybe_rerender_system_prompt().await;
@@ -104,6 +176,8 @@ impl Assistant {
         let tx = self.tx.clone();
         let client = self.client.clone();
         let config = self.config.clone();
+
+        let request = self.chat_request.clone();
 
         // Debug log the full request
         tracing::debug!(
@@ -122,59 +196,6 @@ impl Assistant {
         *self.cancel_handle.lock().await = Some(handle);
     }
 
-    #[tracing::instrument(name = "tools_available", skip(self, new_tools), fields(tools_count = new_tools.len()))]
-    async fn handle_tools_available(&mut self, new_tools: Vec<Tool>) {
-        // Add new tools to existing tools
-        for new_tool in new_tools {
-            // Remove any existing tool with the same name
-            self.available_tools.retain(|t| t.name != new_tool.name);
-            // Add the new tool
-            self.available_tools.push(new_tool);
-        }
-    }
-
-    async fn handle_tool_call_update(&mut self, update: ToolCallUpdate) {
-        // Check if this is a completion
-        if let ToolCallStatus::Finished(result) = &update.status {
-            // Create tool response and add to chat
-            let tool_response = genai::chat::ToolResponse {
-                call_id: update.call_id.clone(),
-                content: result.clone().unwrap_or_else(|e| format!("Error: {}", e)),
-            };
-
-            self.chat_request = self.chat_request.clone().append_message(ChatMessage {
-                role: ChatRole::Tool,
-                content: MessageContent::ToolResponses(vec![tool_response]),
-                options: None,
-            });
-
-            // Automatically continue the conversation
-            self.handle_assist_request(self.chat_request.clone()).await;
-        }
-    }
-
-    #[tracing::instrument(name = "user_input", skip(self, text), fields(input_length = text.len()))]
-    async fn handle_user_input(&mut self, text: String) {
-        if self.pending_content_parts.is_empty() {
-            // Simple text message
-            self.chat_request = self
-                .chat_request
-                .clone()
-                .append_message(ChatMessage::user(text));
-        } else {
-            // Multi-part message with text and other content
-            let mut parts = vec![genai::chat::ContentPart::Text(text)];
-            parts.append(&mut self.pending_content_parts.clone());
-            self.chat_request = self
-                .chat_request
-                .clone()
-                .append_message(ChatMessage::user(MessageContent::Parts(parts)));
-            self.pending_content_parts.clear();
-        }
-
-        self.handle_assist_request(self.chat_request.clone()).await;
-    }
-
     async fn maybe_rerender_system_prompt(&mut self) {
         if self.system_state.is_modified() {
             // Build tool infos for system prompt
@@ -191,9 +212,9 @@ impl Assistant {
 
             // Render system prompt with tools and task description
             match self.system_state.render_system_prompt_with_task(
-                &self.config.model.system_prompt,
+                &self.config.system_prompt,
                 &tool_infos,
-                self.config.whitelisted_commands.clone(),
+                vec![], // Maybe pass the whitelisted commands to the model as well?
                 self.task_description.clone(),
             ) {
                 Ok(rendered_prompt) => {
@@ -212,18 +233,18 @@ impl Assistant {
     }
 }
 
-#[tracing::instrument(name = "llm_request", skip(tx, client, chat_request, config), fields(model = %config.model.name, tools_count = chat_request.tools.as_ref().map_or(0, |tools| tools.len())))]
+#[tracing::instrument(name = "llm_request", skip(tx, client, chat_request, config), fields(model = %config.name, tools_count = chat_request.tools.as_ref().map_or(0, |tools| tools.len())))]
 async fn do_assist(
     tx: broadcast::Sender<ActorMessage>,
     client: Client,
     chat_request: ChatRequest,
-    config: ParsedConfig,
+    config: ParsedModelConfig,
     scope: Uuid,
 ) -> SResult<()> {
     let request = chat_request;
 
     let resp = client
-        .exec_chat(&config.model.name, request, None)
+        .exec_chat(&config.name, request, None)
         .await
         .context(crate::GenaiSnafu)?;
 
@@ -306,50 +327,92 @@ impl Actor for Assistant {
             .collect::<Vec<&Uuid>>()
     }
 
-    async fn on_start(&mut self) {}
-
     async fn handle_message(&mut self, message: ActorMessage) {
-        let _ = self.transition(&message.message);
-
-        // TODO: Integrate state into here. handle_message and transition should probably be meshed
-        // together. When we would normally transition into idle after getting all tools we should
-        // check if we have a task. If we have a task we should submit that as the first user
-        // message and run the assistant.
+        // Handle state transitions based on the message
 
         // Messages from our tools, etc...
         if message.scope == self.scope {
             match message.message {
+                // Handle ActorReady messages for state transition
+                Message::ActorReady { actor_id } => {
+                    if let AssistantState::AwaitingActors = &self.state {
+                        info!("GOT ACTOR READY: {}", actor_id);
+                        self.required_actors = self
+                            .required_actors
+                            .drain(..)
+                            .filter(|r_id| r_id != &actor_id.as_str())
+                            .collect::<Vec<&'static str>>();
+
+                        info!("REQUIRED ACTORS LEFT: {:?}", self.required_actors);
+
+                        if self.required_actors.is_empty() {
+                            self.state = AssistantState::Idle;
+
+                            // Check if we have a task to execute
+                            if let Some(ref task) = self.task_description {
+                                self.add_user_pending_part(ContentPart::Text(task.clone()));
+                                self.submit_assist_request().await;
+                            }
+                        }
+                    }
+                }
+
                 Message::ToolsAvailable(tools) => self.handle_tools_available(tools).await,
                 Message::ToolCallUpdate(update) => self.handle_tool_call_update(update).await,
 
-                Message::UserContext(context) => match context {
-                    #[cfg(feature = "audio")]
-                    UserContext::MicrophoneTranscription(text) => {
-                        self.handle_user_input(text).await
+                Message::UserContext(context) => {
+                    // State transition: Idle -> Processing when receiving user input
+                    if let AssistantState::Idle = &self.state {
+                        self.state = AssistantState::Processing;
                     }
-                    UserContext::UserTUIInput(text) => self.handle_user_input(text).await,
-                    #[cfg(feature = "gui")]
-                    UserContext::ScreenshotCaptured(result) => {
-                        if let Ok(base64) = result {
-                            // Add screenshot as an image content part
-                            let content_part =
-                                genai::chat::ContentPart::from_image_base64("image/png", base64);
-                            self.pending_content_parts.push(content_part);
+
+                    match (context, &self.state) {
+                        (UserContext::UserTUIInput(text), AssistantState::Idle) => {
+                            self.add_user_pending_part(ContentPart::Text(text));
+                            self.submit_assist_request().await;
                         }
-                        // Errors are already handled by TUI
+                        (UserContext::UserTUIInput(text), _) => {
+                            self.add_user_pending_part(ContentPart::Text(text));
+                        }
+
+                        #[cfg(feature = "audio")]
+                        (UserContext::MicrophoneTranscription(text), _) => {
+                            self.add_user_pending_part(ContentPart::Text(text));
+                        }
+                        #[cfg(feature = "gui")]
+                        (UserContext::ScreenshotCaptured(result), _) => {
+                            if let Ok(base64) = result {
+                                // Add screenshot as an image content part
+                                let content_part = genai::chat::ContentPart::from_image_base64(
+                                    "image/png",
+                                    base64,
+                                );
+                                self.add_user_pending_part(content_part);
+                            }
+                            // Errors are already handled by TUI
+                        }
+                        #[cfg(feature = "gui")]
+                        (UserContext::ClipboardCaptured(_result), _) => {
+                            // Clipboard text is sent as UserTUIInput by the TUI actor when the user hits
+                            // enter so we don't need to handle it here
+                        }
                     }
-                    #[cfg(feature = "gui")]
-                    UserContext::ClipboardCaptured(_result) => {
-                        // Clipboard text is sent as UserTUIInput by the TUI actor when the user hits
-                        // enter so we don't need to handle it here
-                    }
-                },
+                }
 
                 Message::Action(crate::actors::Action::Assist) => {
-                    // Re-send current chat request
-                    self.handle_assist_request(self.chat_request.clone()).await;
+                    // State transition: Idle -> Processing when receiving assist action
+                    if let AssistantState::Idle = &self.state {
+                        self.submit_assist_request().await;
+                    }
                 }
                 Message::Action(crate::actors::Action::Cancel) => {
+                    // State transition: Processing/AwaitingTools -> Idle on cancel
+                    match &self.state {
+                        AssistantState::Processing | AssistantState::AwaitingTools { .. } => {
+                            self.state = AssistantState::Idle;
+                        }
+                        _ => {}
+                    }
                     // Cancel current request
                     if let Some(handle) = self.cancel_handle.lock().await.take() {
                         handle.abort();
@@ -372,11 +435,26 @@ impl Actor for Assistant {
                     self.maybe_rerender_system_prompt().await;
                 }
                 Message::PlanUpdated(plan) => {
-                    info!("Updating system state with new plan: {}", plan.title);
                     self.system_state.update_plan(plan);
                 }
 
                 Message::AssistantResponse(content) => {
+                    // State transition: Processing -> AwaitingTools or Idle based on content
+                    if let AssistantState::Processing = &self.state {
+                        match &content {
+                            MessageContent::ToolCalls(tool_calls) => {
+                                let call_ids =
+                                    tool_calls.iter().map(|tc| tc.call_id.clone()).collect();
+                                self.state = AssistantState::AwaitingTools {
+                                    pending_tool_calls: call_ids,
+                                };
+                            }
+                            _ => {
+                                self.state = AssistantState::Idle;
+                            }
+                        }
+                    }
+
                     self.chat_request = self.chat_request.clone().append_message(ChatMessage {
                         role: ChatRole::Assistant,
                         content,
@@ -457,297 +535,348 @@ impl Actor for Assistant {
     }
 }
 
-impl StateSystem for Assistant {
-    type State = AssistantState;
+#[cfg(test)]
+mod tests {
+    use crate::config::ParsedConfig;
 
-    fn current_state(&self) -> &Self::State {
-        &self.state
+    use super::*;
+    use genai::chat::ToolCall;
+
+    // Assistant State Transitions Documentation
+    // ========================================
+    //
+    // The Assistant actor has the following states:
+    // - AwaitingActors: Initial state when required actors are not ready
+    // - Idle: Ready to accept requests
+    // - Processing: Actively making an LLM call
+    // - AwaitingTools: Waiting for tool execution results
+    // - Error: Error state (currently unused in transitions)
+    // - Wait: Waiting for external input (currently unused in transitions)
+    // - AwaitingManager: Waiting for manager approval (currently unused in transitions)
+    //
+    // Valid State Transitions:
+    // 1. AwaitingActors -> Idle: When all required actors send ActorReady messages
+    //    - Special case: If task_description exists, immediately processes the task
+    // 2. Idle -> Processing: When receiving UserContext (UserTUIInput) or Action::Assist
+    // 3. Processing -> Idle: When AssistantResponse contains no tool calls
+    // 4. Processing -> AwaitingTools: When AssistantResponse contains tool calls
+    // 5. AwaitingTools -> Processing: When all pending tool calls are finished
+    // 6. AwaitingTools -> AwaitingTools: When some tool calls finish but others remain
+    // 7. Processing -> Idle: When Action::Cancel is received
+    // 8. AwaitingTools -> Idle: When Action::Cancel is received
+    //
+    // Messages that don't cause transitions:
+    // - UserContext while in Processing or AwaitingTools states
+    // - ToolCallUpdate for unknown call_id or when not in AwaitingTools state
+    // - ActorReady when not in AwaitingActors state
+    // - Most other messages don't affect state
+
+    fn create_test_assistant(
+        required_actors: Vec<&'static str>,
+        task_description: Option<String>,
+    ) -> Assistant {
+        use crate::config::Config;
+
+        let config = Config::default().unwrap();
+        let parsed_config: ParsedConfig = config.try_into().unwrap();
+        let parsed_config = parsed_config.hive.main_manager_model;
+
+        let (tx, _) = broadcast::channel(10);
+        let scope = Uuid::new_v4();
+        Assistant::new(parsed_config, tx, scope, required_actors, task_description)
     }
 
-    fn transition(&mut self, message: &Message) -> Option<Self::State> {
-        let new_state = match (&self.state, message) {
-            (AssistantState::AwaitingActors, Message::ActorReady { actor_id }) => {
-                self.required_actors = self
-                    .required_actors
-                    .drain(..)
-                    .filter(|r_id| r_id != &actor_id.as_str())
-                    .collect::<Vec<&'static str>>();
+    async fn send_message(assistant: &mut Assistant, message: Message) {
+        let actor_message = ActorMessage {
+            scope: assistant.scope.clone(),
+            message,
+        };
+        assistant.handle_message(actor_message).await;
+    }
 
-                if self.required_actors.is_empty() {
-                    Some(AssistantState::Idle)
-                } else {
-                    None
-                }
+    #[test]
+    fn test_initial_state_with_required_actors() {
+        let assistant = create_test_assistant(vec!["tool1", "tool2"], None);
+        assert!(matches!(assistant.state, AssistantState::AwaitingActors));
+    }
+
+    #[test]
+    fn test_initial_state_without_required_actors() {
+        let assistant = create_test_assistant(vec![], None);
+        assert!(matches!(assistant.state, AssistantState::Idle));
+    }
+
+    #[tokio::test]
+    async fn test_awaiting_actors_to_idle_transition() {
+        let mut assistant = create_test_assistant(vec!["tool1", "tool2"], None);
+
+        // Send first ActorReady
+        send_message(
+            &mut assistant,
+            Message::ActorReady {
+                actor_id: "tool1".to_string(),
+            },
+        )
+        .await;
+        assert!(matches!(assistant.state, AssistantState::AwaitingActors));
+
+        // Send second ActorReady - should transition to Idle
+        send_message(
+            &mut assistant,
+            Message::ActorReady {
+                actor_id: "tool2".to_string(),
+            },
+        )
+        .await;
+        assert!(matches!(assistant.state, AssistantState::Idle));
+    }
+
+    #[tokio::test]
+    async fn test_awaiting_actors_to_idle_with_task_execution() {
+        let mut assistant = create_test_assistant(vec!["tool1"], Some("Test task".to_string()));
+
+        // Verify task is stored
+        assert_eq!(assistant.task_description, Some("Test task".to_string()));
+
+        // Send ActorReady - should transition to Idle and process task
+        send_message(
+            &mut assistant,
+            Message::ActorReady {
+                actor_id: "tool1".to_string(),
+            },
+        )
+        .await;
+
+        // State should transition to Processing because task executes
+        assert!(matches!(assistant.state, AssistantState::Processing));
+
+        // Chat request should contain the task as user message
+        let messages = &assistant.chat_request.messages;
+        println!("{:?}", messages);
+        assert!(!messages.is_empty());
+        let last_message = ChatMessage::user("Test task");
+        assert!(matches!(messages, last_message));
+    }
+
+    #[tokio::test]
+    async fn test_idle_to_processing_on_user_input() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assert!(matches!(assistant.state, AssistantState::Idle));
+
+        send_message(
+            &mut assistant,
+            Message::UserContext(UserContext::UserTUIInput("Hello".to_string())),
+        )
+        .await;
+
+        assert!(matches!(assistant.state, AssistantState::Processing));
+    }
+
+    #[tokio::test]
+    async fn test_idle_to_processing_on_assist_action() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assert!(matches!(assistant.state, AssistantState::Idle));
+
+        send_message(
+            &mut assistant,
+            Message::Action(crate::actors::Action::Assist),
+        )
+        .await;
+
+        assert!(matches!(assistant.state, AssistantState::Processing));
+    }
+
+    #[tokio::test]
+    async fn test_processing_to_idle_on_text_response() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Processing;
+
+        send_message(
+            &mut assistant,
+            Message::AssistantResponse(MessageContent::Text("Response".to_string())),
+        )
+        .await;
+
+        assert!(matches!(assistant.state, AssistantState::Idle));
+    }
+
+    #[tokio::test]
+    async fn test_processing_to_awaiting_tools_on_tool_calls() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Processing;
+
+        let tool_calls = vec![
+            ToolCall {
+                call_id: "call_123".to_string(),
+                fn_name: "test_function".to_string(),
+                fn_arguments: serde_json::json!({}),
+            },
+            ToolCall {
+                call_id: "call_456".to_string(),
+                fn_name: "another_function".to_string(),
+                fn_arguments: serde_json::json!({}),
+            },
+        ];
+
+        send_message(
+            &mut assistant,
+            Message::AssistantResponse(MessageContent::ToolCalls(tool_calls)),
+        )
+        .await;
+
+        match &assistant.state {
+            AssistantState::AwaitingTools { pending_tool_calls } => {
+                assert_eq!(pending_tool_calls.len(), 2);
+                assert!(pending_tool_calls.contains(&"call_123".to_string()));
+                assert!(pending_tool_calls.contains(&"call_456".to_string()));
             }
-            // From Idle to Processing when receiving user input or assist action
-            (AssistantState::Idle, Message::UserContext(UserContext::UserTUIInput(_)))
-            | (AssistantState::Idle, Message::Action(crate::actors::Action::Assist)) => {
-                Some(AssistantState::Processing)
-            }
+            _ => panic!("Expected AwaitingTools state"),
+        }
+    }
 
-            // From Processing to WaitingForTools when assistant makes tool calls
-            (AssistantState::Processing, Message::AssistantResponse(content)) => {
-                match content {
-                    MessageContent::ToolCalls(tool_calls) => {
-                        let call_ids = tool_calls.iter().map(|tc| tc.call_id.clone()).collect();
-                        Some(AssistantState::AwaitingTools {
-                            pending_tool_calls: call_ids,
-                        })
-                    }
-                    // If response has no tool calls, go back to Idle
-                    _ => Some(AssistantState::Idle),
-                }
-            }
-
-            // From WaitingForTools back to Processing when tool finishes
-            (
-                AssistantState::AwaitingTools { pending_tool_calls },
-                Message::ToolCallUpdate(update),
-            ) => {
-                if let ToolCallStatus::Finished(_) = &update.status {
-                    // Only process tool updates for calls we're actually waiting for
-                    if pending_tool_calls.contains(&update.call_id) {
-                        let mut remaining_calls = pending_tool_calls.clone();
-                        remaining_calls.retain(|id| id != &update.call_id);
-
-                        if remaining_calls.is_empty() {
-                            // All tools finished, back to processing for next LLM response
-                            Some(AssistantState::Processing)
-                        } else {
-                            // Still waiting for more tools
-                            Some(AssistantState::AwaitingTools {
-                                pending_tool_calls: remaining_calls,
-                            })
-                        }
-                    } else {
-                        None // Ignore tool updates for calls we're not waiting for
-                    }
-                } else {
-                    None // No state change for non-finished tool updates
-                }
-            }
-
-            // Cancel action can move from Processing or WaitingForTools back to Idle
-            (AssistantState::Processing, Message::Action(crate::actors::Action::Cancel))
-            | (
-                AssistantState::AwaitingTools { .. },
-                Message::Action(crate::actors::Action::Cancel),
-            ) => Some(AssistantState::Idle),
-
-            // Any state can go to Error (though we don't currently track errors explicitly)
-            // This would be used if we wanted to track error states explicitly
-            _ => None, // No state transition
+    #[tokio::test]
+    async fn test_awaiting_tools_to_processing_on_all_tools_finished() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::AwaitingTools {
+            pending_tool_calls: vec!["call_123".to_string()],
         };
 
-        if let Some(ref new_state) = new_state {
-            info!(
-                "Assistant state transition: {:?} -> {:?}",
-                self.state, new_state
-            );
-            self.state = new_state.clone();
-        }
+        let update = ToolCallUpdate {
+            call_id: "call_123".to_string(),
+            status: ToolCallStatus::Finished(Ok("Success".to_string())),
+        };
 
-        new_state
+        send_message(&mut assistant, Message::ToolCallUpdate(update)).await;
+
+        assert!(matches!(assistant.state, AssistantState::Processing));
+    }
+
+    #[tokio::test]
+    async fn test_awaiting_tools_partial_completion() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::AwaitingTools {
+            pending_tool_calls: vec!["call_123".to_string(), "call_456".to_string()],
+        };
+
+        let update = ToolCallUpdate {
+            call_id: "call_123".to_string(),
+            status: ToolCallStatus::Finished(Ok("Success".to_string())),
+        };
+
+        send_message(&mut assistant, Message::ToolCallUpdate(update)).await;
+
+        match &assistant.state {
+            AssistantState::AwaitingTools { pending_tool_calls } => {
+                assert_eq!(pending_tool_calls.len(), 1);
+                assert!(pending_tool_calls.contains(&"call_456".to_string()));
+            }
+            _ => panic!("Expected AwaitingTools state"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cancel_from_processing_to_idle() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Processing;
+
+        send_message(
+            &mut assistant,
+            Message::Action(crate::actors::Action::Cancel),
+        )
+        .await;
+
+        assert!(matches!(assistant.state, AssistantState::Idle));
+    }
+
+    #[tokio::test]
+    async fn test_cancel_from_awaiting_tools_to_idle() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::AwaitingTools {
+            pending_tool_calls: vec!["call_123".to_string()],
+        };
+
+        send_message(
+            &mut assistant,
+            Message::Action(crate::actors::Action::Cancel),
+        )
+        .await;
+
+        assert!(matches!(assistant.state, AssistantState::Idle));
+    }
+
+    #[tokio::test]
+    async fn test_no_transition_user_input_while_processing() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Processing;
+
+        send_message(
+            &mut assistant,
+            Message::UserContext(UserContext::UserTUIInput("Ignored".to_string())),
+        )
+        .await;
+
+        // Should remain in Processing state
+        assert!(matches!(assistant.state, AssistantState::Processing));
+    }
+
+    #[tokio::test]
+    async fn test_no_transition_user_input_while_awaiting_tools() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::AwaitingTools {
+            pending_tool_calls: vec!["call_123".to_string()],
+        };
+
+        send_message(
+            &mut assistant,
+            Message::UserContext(UserContext::UserTUIInput("Ignored".to_string())),
+        )
+        .await;
+
+        // Should remain in AwaitingTools state
+        assert!(matches!(
+            assistant.state,
+            AssistantState::AwaitingTools { .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_no_transition_wrong_tool_call_id() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::AwaitingTools {
+            pending_tool_calls: vec!["call_123".to_string()],
+        };
+
+        let update = ToolCallUpdate {
+            call_id: "wrong_call_id".to_string(),
+            status: ToolCallStatus::Finished(Ok("Success".to_string())),
+        };
+
+        send_message(&mut assistant, Message::ToolCallUpdate(update)).await;
+
+        // Should remain in AwaitingTools state with same pending calls
+        match &assistant.state {
+            AssistantState::AwaitingTools { pending_tool_calls } => {
+                assert_eq!(pending_tool_calls.len(), 1);
+                assert!(pending_tool_calls.contains(&"call_123".to_string()));
+            }
+            _ => panic!("Expected AwaitingTools state"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_no_transition_actor_ready_when_idle() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assert!(matches!(assistant.state, AssistantState::Idle));
+
+        send_message(
+            &mut assistant,
+            Message::ActorReady {
+                actor_id: "unexpected".to_string(),
+            },
+        )
+        .await;
+
+        // Should remain in Idle state
+        assert!(matches!(assistant.state, AssistantState::Idle));
     }
 }
-
-// TODO: Fix these tests
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::actors::state_system::test_utils::*;
-//     use genai::chat::ToolCall;
-//
-//     fn create_test_assistant() -> Assistant {
-//         use crate::config::Config;
-//         let config = Config::default().unwrap().try_into().unwrap();
-//         let (tx, _) = broadcast::channel(10);
-//         Assistant::new(config, tx)
-//     }
-//
-//     #[test]
-//     fn test_assistant_starts_in_idle() {
-//         let assistant = create_test_assistant();
-//         assert_eq!(assistant.current_state(), &AssistantState::Idle);
-//     }
-//
-//     #[test]
-//     fn test_assistant_state_transition_user_input() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::Idle; // Set to Idle state
-//
-//         assert_state_transition(
-//             &mut assistant,
-//             Message::UserTUIInput("Hello".to_string()),
-//             AssistantState::Processing,
-//         );
-//     }
-//
-//     #[test]
-//     fn test_assistant_state_transition_tool_calls() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::Processing;
-//
-//         let tool_calls = vec![ToolCall {
-//             call_id: "call_123".to_string(),
-//             fn_name: "test_function".to_string(),
-//             fn_arguments: serde_json::json!({}),
-//         }];
-//
-//         assert_state_transition(
-//             &mut assistant,
-//             Message::AssistantResponse(MessageContent::ToolCalls(tool_calls)),
-//             AssistantState::WaitingForTools {
-//                 pending_tool_calls: vec!["call_123".to_string()],
-//             },
-//         );
-//     }
-//
-//     #[test]
-//     fn test_assistant_state_transition_tool_finished() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::WaitingForTools {
-//             pending_tool_calls: vec!["call_123".to_string()],
-//         };
-//
-//         let update = ToolCallUpdate {
-//             call_id: "call_123".to_string(),
-//             status: ToolCallStatus::Finished(Ok("Success".to_string())),
-//         };
-//
-//         assert_state_transition(
-//             &mut assistant,
-//             Message::ToolCallUpdate(update),
-//             AssistantState::Processing,
-//         );
-//     }
-//
-//     #[test]
-//     fn test_assistant_no_transition_wrong_message() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::Idle;
-//
-//         // Random message that shouldn't cause transition from Idle
-//         assert_no_state_transition(
-//             &mut assistant,
-//             Message::Action(crate::actors::Action::CaptureWindow),
-//         );
-//     }
-//
-//     #[test]
-//     fn test_user_input_while_processing_dropped() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::Processing;
-//
-//         // User input should be dropped while processing
-//         assert_no_state_transition(
-//             &mut assistant,
-//             Message::UserTUIInput("Another request".to_string()),
-//         );
-//     }
-//
-//     #[test]
-//     fn test_user_input_while_waiting_for_tools_dropped() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::WaitingForTools {
-//             pending_tool_calls: vec!["call_123".to_string()],
-//         };
-//
-//         // User input should be dropped while waiting for tools
-//         assert_no_state_transition(
-//             &mut assistant,
-//             Message::UserTUIInput("Impatient user input".to_string()),
-//         );
-//     }
-//
-//     #[test]
-//     fn test_tool_update_while_not_waiting_dropped() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::Idle;
-//
-//         let update = ToolCallUpdate {
-//             call_id: "unexpected_call".to_string(),
-//             status: ToolCallStatus::Finished(Ok("Success".to_string())),
-//         };
-//
-//         // Tool update should be dropped when not waiting for tools
-//         assert_no_state_transition(&mut assistant, Message::ToolCallUpdate(update));
-//     }
-//
-//     #[test]
-//     fn test_tool_update_while_processing_dropped() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::Processing;
-//
-//         let update = ToolCallUpdate {
-//             call_id: "unexpected_call".to_string(),
-//             status: ToolCallStatus::Finished(Ok("Success".to_string())),
-//         };
-//
-//         // Tool update should be dropped while processing (before tools are called)
-//         assert_no_state_transition(&mut assistant, Message::ToolCallUpdate(update));
-//     }
-//
-//     #[test]
-//     fn test_wrong_tool_call_id_ignored() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::WaitingForTools {
-//             pending_tool_calls: vec!["call_123".to_string()],
-//         };
-//
-//         let update = ToolCallUpdate {
-//             call_id: "call_456".to_string(), // Different call ID
-//             status: ToolCallStatus::Finished(Ok("Success".to_string())),
-//         };
-//
-//         // Tool update with wrong call ID should be ignored
-//         assert_no_state_transition(&mut assistant, Message::ToolCallUpdate(update));
-//     }
-//
-//     #[test]
-//     fn test_multiple_user_inputs_while_processing() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::Processing;
-//
-//         // Multiple user inputs should all be dropped
-//         assert_no_state_transition(
-//             &mut assistant,
-//             Message::UserTUIInput("First request".to_string()),
-//         );
-//
-//         assert_no_state_transition(
-//             &mut assistant,
-//             Message::MicrophoneTranscription("Second request".to_string()),
-//         );
-//
-//         assert_no_state_transition(
-//             &mut assistant,
-//             Message::Action(crate::actors::Action::Assist),
-//         );
-//
-//         // Should still be in Processing state
-//         assert_eq!(assistant.current_state(), &AssistantState::Processing);
-//     }
-//
-//     #[test]
-//     fn test_partial_tool_completion_maintains_waiting_state() {
-//         let mut assistant = create_test_assistant();
-//         assistant.state = AssistantState::WaitingForTools {
-//             pending_tool_calls: vec!["call_123".to_string(), "call_456".to_string()],
-//         };
-//
-//         let update = ToolCallUpdate {
-//             call_id: "call_123".to_string(),
-//             status: ToolCallStatus::Finished(Ok("Success".to_string())),
-//         };
-//
-//         // Should transition to still waiting but with one less pending call
-//         assert_state_transition(
-//             &mut assistant,
-//             Message::ToolCallUpdate(update),
-//             AssistantState::WaitingForTools {
-//                 pending_tool_calls: vec!["call_456".to_string()],
-//             },
-//         );
-//     }
-// }

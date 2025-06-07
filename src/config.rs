@@ -183,13 +183,13 @@ pub struct ModelConfig {
 pub struct HiveConfig {
     /// Model configuration for the main manager agent
     #[serde(default)]
-    pub main_manager_model: Option<ModelConfig>,
+    pub main_manager_model: ModelConfig,
     /// Model configuration for sub-manager agents
     #[serde(default)]
-    pub sub_manager_model: Option<ModelConfig>,
+    pub sub_manager_model: ModelConfig,
     /// Model configuration for worker agents
     #[serde(default)]
-    pub worker_model: Option<ModelConfig>,
+    pub worker_model: ModelConfig,
 }
 
 /// An MCP Config
@@ -224,22 +224,19 @@ impl TryFrom<Config> for ParsedConfig {
             ParsedKeyConfig { bindings }
         };
 
-        let model = parse_model_config(value.model);
-
         let mcp_servers = value.mcp_servers;
 
         let whitelisted_commands = value.whitelisted_commands;
         let auto_approve_commands = value.auto_approve_commands;
 
         let hive = ParsedHiveConfig {
-            main_manager_model: value.hive.main_manager_model.map(parse_model_config),
-            sub_manager_model: value.hive.sub_manager_model.map(parse_model_config),
-            worker_model: value.hive.worker_model.map(parse_model_config),
+            main_manager_model: parse_model_config(value.hive.main_manager_model),
+            sub_manager_model: parse_model_config(value.hive.sub_manager_model),
+            worker_model: parse_model_config(value.hive.worker_model),
         };
 
         Ok(Self {
             keys,
-            model,
             mcp_servers,
             whitelisted_commands,
             auto_approve_commands,
@@ -252,7 +249,6 @@ impl TryFrom<Config> for ParsedConfig {
 #[derive(Debug, Clone)]
 pub struct ParsedConfig {
     pub keys: ParsedKeyConfig,
-    pub model: ParsedModelConfig,
     pub mcp_servers: HashMap<String, McpServerConfig>,
     pub whitelisted_commands: Vec<String>,
     pub auto_approve_commands: bool,
@@ -278,9 +274,9 @@ pub struct ParsedModelConfig {
 /// The parsed and verified HIVE config
 #[derive(Debug, Clone)]
 pub struct ParsedHiveConfig {
-    pub main_manager_model: Option<ParsedModelConfig>,
-    pub sub_manager_model: Option<ParsedModelConfig>,
-    pub worker_model: Option<ParsedModelConfig>,
+    pub main_manager_model: ParsedModelConfig,
+    pub sub_manager_model: ParsedModelConfig,
+    pub worker_model: ParsedModelConfig,
 }
 
 fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {

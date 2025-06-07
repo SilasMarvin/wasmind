@@ -1,3 +1,5 @@
+mod common;
+
 use hive::actors::{ActorMessage, Message, Action, UserContext};
 use hive::config::Config;
 use hive::hive::start_headless_hive;
@@ -7,6 +9,8 @@ use std::fs;
 
 #[tokio::test]
 async fn test_file_read_message_order() {
+    // Initialize test logger
+    common::init_test_logger();
     // Create a test file
     let test_file_path = "/tmp/test_hive_file.txt";
     let test_content = "Hello from the test file!";

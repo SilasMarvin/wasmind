@@ -316,8 +316,6 @@ impl Actor for FileReaderActor {
     }
 
     async fn on_start(&mut self) {
-        info!("FileReader tool starting - broadcasting availability");
-
         let tool = Tool {
             name: TOOL_NAME.to_string(),
             description: Some(TOOL_DESCRIPTION.to_string()),

@@ -82,10 +82,8 @@ fi
 # Run the integration tests
 echo "🧪 Running integration tests..."
 
-DOCKER_ARGS=""
-if [ "$VERBOSE" = true ]; then
-    DOCKER_ARGS="$DOCKER_ARGS -e HIVE_LOG=debug"
-fi
+# Always set debug logging for tests
+DOCKER_ARGS="-e HIVE_LOG=debug"
 
 if [ -n "$TEST_NAME" ]; then
     DOCKER_ARGS="$DOCKER_ARGS -e TEST_NAME=$TEST_NAME"
@@ -108,7 +106,53 @@ if [ -n "$ANTHROPIC_API_KEY" ]; then
     DOCKER_ARGS="$DOCKER_ARGS -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
 fi
 
-# Run the tests
-docker run --rm $DOCKER_ARGS hive-integration-tests
+# Create a logs directory in the project root
+LOG_DIR="$PROJECT_ROOT/test-logs"
+rm -r "$LOG_DIR" || true
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/hive-test-$(date +%Y%m%d-%H%M%S).log"
 
-echo "✅ Integration tests complete"
+echo "📁 Logs will be saved to: $LOG_DIR"
+
+# Run the tests with volume mount for logs
+docker run --rm \
+    -v "$LOG_DIR:/logs" \
+    $DOCKER_ARGS \
+    hive-integration-tests \
+    sh -c 'if [ -n "$TEST_NAME" ]; then cargo test --release --no-default-features --features headless "$TEST_NAME" -- --nocapture; else cargo test --release --no-default-features --features headless -- --nocapture; fi; EXIT_CODE=$?; if [ -f /workspace/log.txt ]; then cp /workspace/log.txt /logs/log.txt; fi; exit $EXIT_CODE'
+
+TEST_EXIT_CODE=$?
+
+# Check if log file was copied
+if [ -f "$LOG_DIR/log.txt" ]; then
+    mv "$LOG_DIR/log.txt" "$LOG_FILE"
+    echo ""
+    echo "📋 TEST LOGS SAVED TO:"
+    echo "   $LOG_FILE"
+    echo ""
+    echo "   File size: $(ls -lh "$LOG_FILE" | awk '{print $5}')"
+    echo "   To view: cat $LOG_FILE"
+    echo ""
+else
+    echo ""
+    echo "⚠️  No log file generated"
+    echo "   - Make sure HIVE_LOG environment variable is set (e.g., HIVE_LOG=debug)"
+    echo "   - Check that tests are calling init_test_logger()"
+    echo ""
+fi
+
+if [ $TEST_EXIT_CODE -eq 0 ]; then
+    echo "✅ Integration tests passed"
+else
+    echo "❌ Integration tests failed with exit code: $TEST_EXIT_CODE"
+fi
+
+# Always show the log file location at the end if it exists
+if [ -f "$LOG_FILE" ]; then
+    echo ""
+    echo "🔍 View test logs with:"
+    echo "   cat $LOG_FILE"
+    echo ""
+fi
+
+exit $TEST_EXIT_CODE

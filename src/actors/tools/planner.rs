@@ -343,8 +343,6 @@ impl Actor for Planner {
     }
 
     async fn on_start(&mut self) {
-        info!("Planner tool starting - broadcasting availability");
-
         let tool = Tool {
             name: TOOL_NAME.to_string(),
             description: Some(TOOL_DESCRIPTION.to_string()),

@@ -168,7 +168,7 @@ impl Default for SystemState {
             current_plan: None,
             agents: HashMap::new(),
             max_file_lines: 50, // Max lines per file
-            modified: false,
+            modified: true,
         }
     }
 }

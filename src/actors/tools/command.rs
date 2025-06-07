@@ -291,8 +291,6 @@ impl Actor for Command {
     }
 
     async fn on_start(&mut self) {
-        info!("Command tool starting - broadcasting availability");
-
         let tool = Tool {
             name: TOOL_NAME.to_string(),
             description: Some(TOOL_DESCRIPTION.to_string()),

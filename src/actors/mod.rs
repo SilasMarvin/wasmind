@@ -218,6 +218,9 @@ pub trait Actor: Send + Sized + 'static {
     /// run
     fn run(mut self) {
         let tx = self.get_tx();
+        // It is essential that we subscribe to the tx before entering the tokio task or we may
+        // miss messages we rely upon. E.G. Message::ActorReady
+        let mut rx = self.get_rx();
         let actor_id = Self::ACTOR_ID;
         let span = tracing::info_span!("actor_lifecycle", actor_id = actor_id);
         tokio::spawn(async move {
@@ -233,7 +236,6 @@ pub trait Actor: Send + Sized + 'static {
                 },
             });
 
-            let mut rx = self.get_rx();
             loop {
                 match rx.recv().await {
                     Ok(ActorMessage {
@@ -244,7 +246,6 @@ pub trait Actor: Send + Sized + 'static {
                         break;
                     }
                     Ok(msg) => {
-                        tracing::debug!("Actor handling message");
                         let current_scope = self.get_scope();
                         if self
                             .get_scope_filters()

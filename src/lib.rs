@@ -74,13 +74,22 @@ pub type SResult<T> = Result<T, Error>;
 
 // Library functions that main.rs can use
 pub fn init_logger() {
+    init_logger_with_path("log.txt");
+}
+
+pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
     use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+    // Create parent directory if it doesn't exist
+    if let Some(parent) = log_path.as_ref().parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
 
     let file = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open("log.txt")
+        .open(log_path)
         .expect("Unable to open log file");
 
     tracing_subscriber::registry()

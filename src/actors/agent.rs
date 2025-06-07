@@ -24,6 +24,7 @@ pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
 /// Agent behavior types
 #[derive(Debug, Clone)]
 pub enum AgentBehavior {
+    MainManager(ManagerLogic),
     Manager(ManagerLogic),
     Worker(WorkerLogic),
 }
@@ -67,7 +68,7 @@ impl Agent {
         tx: Sender<ActorMessage>,
         role: String,
         task_description: Option<String>,
-        mut config: ParsedConfig,
+        config: ParsedConfig,
         parent_scope: Uuid,
     ) -> Self {
         let id = Uuid::new_v4();
@@ -76,17 +77,6 @@ impl Agent {
             id,
             role: role.clone(),
         });
-
-        // Use the appropriate model config based on role
-        if role == MAIN_MANAGER_ROLE {
-            if let Some(main_manager_model) = &config.hive.main_manager_model {
-                config.model = main_manager_model.clone();
-            }
-        } else {
-            if let Some(sub_manager_model) = &config.hive.sub_manager_model {
-                config.model = sub_manager_model.clone();
-            }
-        }
 
         Agent {
             tx,
@@ -103,16 +93,11 @@ impl Agent {
         tx: Sender<ActorMessage>,
         role: String,
         task_description: Option<String>,
-        mut config: ParsedConfig,
+        config: ParsedConfig,
         parent_scope: Uuid,
     ) -> Self {
         let id = Uuid::new_v4();
         let behavior = AgentBehavior::Worker(WorkerLogic { id, role });
-
-        // Use the worker model config if available
-        if let Some(worker_model) = &config.hive.worker_model {
-            config.model = worker_model.clone();
-        }
 
         Agent {
             tx,
@@ -127,6 +112,7 @@ impl Agent {
     /// Get the agent's ID
     pub fn id(&self) -> &Uuid {
         match &self.behavior {
+            AgentBehavior::MainManager(logic) => &logic.id,
             AgentBehavior::Manager(logic) => &logic.id,
             AgentBehavior::Worker(logic) => &logic.id,
         }
@@ -135,6 +121,7 @@ impl Agent {
     /// Get the agent's role
     pub fn role(&self) -> &str {
         match &self.behavior {
+            AgentBehavior::MainManager(logic) => &logic.role,
             AgentBehavior::Manager(logic) => &logic.role,
             AgentBehavior::Worker(logic) => &logic.role,
         }
@@ -143,7 +130,7 @@ impl Agent {
     /// Get the required actors for this agent's assistant type
     pub fn get_required_actors(&self) -> Vec<&'static str> {
         match &self.behavior {
-            AgentBehavior::Manager(_) => {
+            AgentBehavior::Manager(_) | AgentBehavior::MainManager(_) => {
                 let mut actors = vec![
                     Planner::ACTOR_ID,
                     SpawnAgent::ACTOR_ID,
@@ -172,15 +159,21 @@ impl Agent {
 
     /// Run the agent - start their actors
     #[tracing::instrument(name = "agent_run", skip(self), fields(agent_id = %self.id(), role = %self.role(), agent_type = ?self.behavior))]
-    pub async fn run(mut self) {
+    pub async fn run(self) {
         // Create shared file reader
         let file_reader = Arc::new(Mutex::new(FileReader::default()));
 
         match &self.behavior {
-            AgentBehavior::Manager(_) => {
+            AgentBehavior::Manager(_) | AgentBehavior::MainManager(_) => {
+                let config = if matches!(self.behavior, AgentBehavior::MainManager(_)) {
+                    self.config.hive.main_manager_model.clone()
+                } else {
+                    self.config.hive.sub_manager_model.clone()
+                };
+
                 // Managers only get planning and agent management tools
                 Assistant::new(
-                    self.config.clone(),
+                    config,
                     self.tx.clone(),
                     self.scope.clone(),
                     self.get_required_actors(),
@@ -202,7 +195,7 @@ impl Agent {
             AgentBehavior::Worker(_) => {
                 // Workers get all execution tools
                 Assistant::new(
-                    self.config.clone(),
+                    self.config.hive.worker_model.clone(),
                     self.tx.clone(),
                     self.scope.clone(),
                     self.get_required_actors(),
