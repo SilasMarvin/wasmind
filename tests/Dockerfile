@@ -1,21 +1,30 @@
-# Docker image for running integration tests
-# This provides a sandboxed environment for running cargo test
-
+# Optimized Docker build for integration tests
 FROM rust:1.86
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Create working directory
 WORKDIR /workspace
 
-# Copy the entire project (excluding what's in .dockerignore)
-COPY . .
+# Copy dependency files first for better caching
+COPY Cargo.toml Cargo.lock ./
 
-# Set environment variables that might be needed
+# Copy source files
+COPY src/ ./src/
+COPY tests/ ./tests/
+COPY default_config.toml headless_config.toml ./
+
+# Build and cache dependencies by building without running tests
+RUN cargo build --release --no-default-features --features headless
+
+# Build the integration tests (this will reuse cached dependencies)
+RUN cargo test --release --no-default-features --features headless --no-run
+
+# Set environment variables
 ENV RUST_BACKTRACE=1
 
 # Default command runs all integration tests with headless feature

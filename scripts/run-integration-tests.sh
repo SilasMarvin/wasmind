@@ -84,7 +84,7 @@ echo "🧪 Running integration tests..."
 
 DOCKER_ARGS=""
 if [ "$VERBOSE" = true ]; then
-    DOCKER_ARGS="$DOCKER_ARGS -e RUST_LOG=debug"
+    DOCKER_ARGS="$DOCKER_ARGS -e HIVE_LOG=debug"
 fi
 
 if [ -n "$TEST_NAME" ]; then

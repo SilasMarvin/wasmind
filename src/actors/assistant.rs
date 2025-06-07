@@ -312,7 +312,9 @@ impl Actor for Assistant {
         let _ = self.transition(&message.message);
 
         // TODO: Integrate state into here. handle_message and transition should probably be meshed
-        // together
+        // together. When we would normally transition into idle after getting all tools we should
+        // check if we have a task. If we have a task we should submit that as the first user
+        // message and run the assistant.
 
         // Messages from our tools, etc...
         if message.scope == self.scope {
