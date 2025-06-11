@@ -74,7 +74,7 @@ impl Agent {
         let id = Uuid::new_v4();
 
         let behavior = AgentBehavior::Manager(ManagerLogic {
-            id,
+            id: id.clone(),
             role: role.clone(),
         });
 
@@ -84,7 +84,7 @@ impl Agent {
             config,
             task_description,
             parent_scope,
-            scope: Uuid::new_v4(),
+            scope: id,
         }
     }
 
@@ -97,7 +97,10 @@ impl Agent {
         parent_scope: Uuid,
     ) -> Self {
         let id = Uuid::new_v4();
-        let behavior = AgentBehavior::Worker(WorkerLogic { id, role });
+        let behavior = AgentBehavior::Worker(WorkerLogic {
+            id: id.clone(),
+            role,
+        });
 
         Agent {
             tx,
@@ -105,7 +108,7 @@ impl Agent {
             config,
             task_description,
             parent_scope,
-            scope: Uuid::new_v4(),
+            scope: id,
         }
     }
 

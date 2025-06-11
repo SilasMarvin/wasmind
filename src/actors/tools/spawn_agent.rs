@@ -85,7 +85,7 @@ impl SpawnAgent {
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
-                r#type: ToolCallType::MCP,
+                r#type: ToolCallType::SpawnAgent,
                 friendly_command_display: "Processing request to spawn agents...".to_string(),
             },
         }));
@@ -161,10 +161,11 @@ impl SpawnAgent {
 
             // Send AgentSpawned message to update system state for this agent
             let _ = self.broadcast(Message::Agent(AgentMessage {
-                agent_id: self.scope.clone(),
+                agent_id: agent_id.clone(),
                 message: AgentMessageType::AgentSpawned {
                     agent_role: agent_role_str.clone(),
                     task_description: agent_def.task_description.clone(),
+                    tool_call_id: tool_call.call_id.clone(),
                 },
             }));
 

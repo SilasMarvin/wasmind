@@ -65,12 +65,7 @@ async fn test_file_read_message_order() {
                     } else if index == 5 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
                         println!("✓ [{}] Saw complete tool call from worker", index);
                         index += 1;
-                    } else if index == 6 && matches!(msg, Message::TaskCompleted { .. }) {
-                        println!("✓ [{}] Saw TaskCompleted message", index);
-                        index += 1;
-                        // We've seen all expected messages
-                        break;
-                    }
+                    } 
                     // If message doesn't match expected at current index, we just continue
                 }
                 Err(e) => {

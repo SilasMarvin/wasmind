@@ -101,7 +101,6 @@ pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
                 .with_target(true)
                 .with_level(true)
                 .with_thread_ids(true)
-                .with_span_events(fmt::format::FmtSpan::ENTER | fmt::format::FmtSpan::EXIT)
                 .with_timer(tracing_subscriber::fmt::time::time())
                 .compact(),
         )

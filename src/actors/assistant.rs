@@ -3,7 +3,7 @@ use genai::{
     chat::{ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool},
 };
 use snafu::ResultExt;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, broadcast};
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -16,7 +16,10 @@ use crate::{
     template::ToolInfo,
 };
 
-use super::{ActorMessage, AgentMessageType, InterAgentMessage, TaskAwaitingManager, UserContext};
+use super::{
+    Action, ActorMessage, AgentMessageType, AgentTaskResult, AgentTaskResultOk, AgentTaskStatus,
+    InterAgentMessage, TaskAwaitingManager, UserContext,
+};
 
 /// States that the Assistant actor can be in
 #[derive(Debug, Clone)]
@@ -39,6 +42,9 @@ pub enum AssistantState {
     AwaitingManager(TaskAwaitingManager),
 }
 
+// TODO: Add some kind of message queue system for the assistant
+// This will be used when we get messages from sub agents or the user while performing other tasks
+
 /// Assistant actor that handles AI interactions
 pub struct Assistant {
     tx: broadcast::Sender<ActorMessage>,
@@ -55,8 +61,14 @@ pub struct Assistant {
     scope: Uuid,
     spawned_agents_scope: Vec<Uuid>,
     required_actors: Vec<&'static str>,
+    waiting_for_agents: HashMap<Uuid, Option<AgentTaskResult>>,
 }
 
+/// NOTE: The way this is implemented means that we do not support multiple tool calls when the
+/// spawn_agents tool is used. When spawn_agents tool is used the tool_id assigned to the call is
+/// assigned as the state and it overwrites the AwaitingTools status that may have a list of tools
+/// to wait. Basically, we go from a potential list of tools to wait for, to one tool we are
+/// waiting for. State management for which tools to wait for needs to be overhauled.
 impl Assistant {
     pub fn new(
         config: ParsedModelConfig,
@@ -90,6 +102,7 @@ impl Assistant {
             scope,
             required_actors,
             spawned_agents_scope: vec![],
+            waiting_for_agents: HashMap::new(),
         }
     }
 
@@ -105,42 +118,56 @@ impl Assistant {
     }
 
     async fn handle_tool_call_update(&mut self, update: ToolCallUpdate) {
+        // TODO: This needs to be redone. See the note above the impl
         // Check if this is a completion
         if let ToolCallStatus::Finished(result) = &update.status {
-            // Handle state transition for tool completion
-            if let AssistantState::AwaitingTools { pending_tool_calls } = &self.state {
-                // Only process tool updates for calls we're actually waiting for
-                if pending_tool_calls.contains(&update.call_id) {
-                    let mut remaining_calls = pending_tool_calls.clone();
-                    remaining_calls.retain(|id| id != &update.call_id);
+            match &self.state {
+                AssistantState::AwaitingTools { pending_tool_calls } => {
+                    if pending_tool_calls.contains(&update.call_id) {
+                        let mut remaining_calls = pending_tool_calls.clone();
+                        remaining_calls.retain(|id| id != &update.call_id);
 
-                    // Create tool response and add to chat
-                    let tool_response = genai::chat::ToolResponse {
-                        call_id: update.call_id.clone(),
-                        content: result.clone().unwrap_or_else(|e| format!("Error: {}", e)),
-                    };
-                    self.pending_tool_responses.push(tool_response);
+                        // Create tool response and add to chat
+                        let tool_response = genai::chat::ToolResponse {
+                            call_id: update.call_id.clone(),
+                            content: result.clone().unwrap_or_else(|e| format!("Error: {}", e)),
+                        };
+                        self.pending_tool_responses.push(tool_response);
 
-                    if remaining_calls.is_empty() {
-                        // Automatically continue the conversation
+                        if remaining_calls.is_empty() {
+                            // Automatically continue the conversation
+                            self.chat_request =
+                                self.chat_request.clone().append_message(ChatMessage {
+                                    role: ChatRole::Tool,
+                                    content: MessageContent::ToolResponses(std::mem::take(
+                                        &mut self.pending_tool_responses,
+                                    )),
+                                    options: None,
+                                });
+                            self.submit_llm_request().await;
+                        } else {
+                            // Still waiting for more tools
+                            self.state = AssistantState::AwaitingTools {
+                                pending_tool_calls: remaining_calls,
+                            };
+                        }
+                    }
+                }
+                AssistantState::Wait { tool_call_id } => {
+                    error!("WE GOT HERE: {} | {}", tool_call_id, update.call_id);
+                    if tool_call_id == &update.call_id {
+                        let tool_response = genai::chat::ToolResponse {
+                            call_id: update.call_id.clone(),
+                            content: result.clone().unwrap_or_else(|e| format!("Error: {}", e)),
+                        };
                         self.chat_request = self.chat_request.clone().append_message(ChatMessage {
                             role: ChatRole::Tool,
-                            content: MessageContent::ToolResponses(std::mem::take(
-                                &mut self.pending_tool_responses,
-                            )),
+                            content: MessageContent::ToolResponses(vec![tool_response]),
                             options: None,
                         });
-                        self.submit_assist_request().await;
-                    } else {
-                        // Still waiting for more tools
-                        self.state = AssistantState::AwaitingTools {
-                            pending_tool_calls: remaining_calls,
-                        };
                     }
-                } else {
-                    // Ignore tool updates for calls we're not waiting for
-                    return;
                 }
+                _ => (),
             }
         }
     }
@@ -149,7 +176,13 @@ impl Assistant {
         self.pending_user_content_parts.push(content);
     }
 
-    #[tracing::instrument(name = "assist_request", skip(self))]
+    fn add_system_message(&mut self, content: impl Into<MessageContent>) {
+        self.chat_request = self
+            .chat_request
+            .clone()
+            .append_message(ChatMessage::system(content));
+    }
+
     async fn submit_assist_request(&mut self) {
         self.chat_request =
             self.chat_request
@@ -157,7 +190,11 @@ impl Assistant {
                 .append_message(ChatMessage::user(MessageContent::Parts(std::mem::take(
                     &mut self.pending_user_content_parts,
                 ))));
+        self.submit_llm_request().await;
+    }
 
+    #[tracing::instrument(name = "llm_request", skip(self))]
+    async fn submit_llm_request(&mut self) {
         if !self.pending_tool_responses.is_empty() {
             warn!("Submitting assistant request while pending_tool_responses is not empty");
         }
@@ -166,8 +203,10 @@ impl Assistant {
 
         // Cancel any existing request
         if let Some(handle) = self.cancel_handle.lock().await.take() {
-            handle.abort();
-            warn!("Implicitly cancelling stale assistant request");
+            if !handle.is_finished() {
+                handle.abort();
+                warn!("Implicitly cancelling stale assistant request");
+            }
         }
 
         self.maybe_rerender_system_prompt().await;
@@ -327,6 +366,15 @@ impl Actor for Assistant {
             .collect::<Vec<&Uuid>>()
     }
 
+    async fn on_stop(&mut self) {
+        for scope in self.spawned_agents_scope.drain(..) {
+            let _ = self.tx.send(ActorMessage {
+                scope,
+                message: Message::Action(Action::Exit),
+            });
+        }
+    }
+
     async fn handle_message(&mut self, message: ActorMessage) {
         // Handle state transitions based on the message
 
@@ -432,7 +480,6 @@ impl Actor for Assistant {
                     last_modified,
                 } => {
                     self.system_state.update_file(path, content, last_modified);
-                    self.maybe_rerender_system_prompt().await;
                 }
                 Message::PlanUpdated(plan) => {
                     self.system_state.update_plan(plan);
@@ -463,18 +510,30 @@ impl Actor for Assistant {
                 }
 
                 Message::Agent(message) => match message.message {
+                    // We created a sub agent
                     AgentMessageType::AgentSpawned {
                         agent_role,
                         task_description,
+                        tool_call_id,
                     } => {
                         let agent_info = crate::system_state::AgentTaskInfo::new(
-                            message.agent_id,
+                            message.agent_id.clone(),
                             agent_role,
                             task_description,
                         );
                         self.system_state.add_agent(agent_info);
+                        if let AssistantState::Wait {
+                            tool_call_id: waiting_for_tool_call_id,
+                        } = &self.state
+                        {
+                            if waiting_for_tool_call_id == &tool_call_id {
+                                self.waiting_for_agents.insert(message.agent_id, None);
+                            }
+                        }
                     }
+                    // One of our sub agents was removed
                     AgentMessageType::AgentRemoved => {
+                        todo!();
                         self.system_state.remove_agent(&message.agent_id);
                     }
                     // These are our own status updates broadcasted from tools, etc...
@@ -518,7 +577,140 @@ impl Actor for Assistant {
                         match inter_agent_message {
                             InterAgentMessage::TaskStatusUpdate { status } => {
                                 self.system_state
-                                    .update_agent_status(&message.agent_id, status);
+                                    .update_agent_status(&message.agent_id, status.clone());
+                                // TODO: Map out all of the transitions and what should happen here
+                                // Every single one of these needs to be well thought through.
+                                // Adding a message queue is a prerequisite to fully completing
+                                // this.
+                                match (status, &self.state) {
+                                    (
+                                        AgentTaskStatus::Done(agent_task_result),
+                                        AssistantState::AwaitingActors,
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Done(agent_task_result),
+                                        AssistantState::Idle,
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Done(agent_task_result),
+                                        AssistantState::Processing,
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Done(agent_task_result),
+                                        AssistantState::AwaitingTools { pending_tool_calls },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Done(agent_task_result),
+                                        AssistantState::Error { message },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Done(agent_task_result),
+                                        AssistantState::Wait { tool_call_id: _ },
+                                    ) => {
+                                        match self.waiting_for_agents.get_mut(&message.agent_id) {
+                                            Some(opt) => *opt = Some(agent_task_result),
+                                            None => warn!(
+                                                "Received a response from a sub agent we aren't waiting on while actively waiting"
+                                            ),
+                                        }
+                                        if self.waiting_for_agents.values().all(|x| x.is_some()) {
+                                            let text = self.waiting_for_agents.drain().map(|(agent_id, agent_result)| {
+                                                match agent_result.unwrap() {
+                                                    Ok(res) => format!("<agent_response id={agent_id}>status: {}\n\n{}</agent_response>", if res.success { "SUCCESS" } else { "FAILURE" }, res.summary),
+                                                    Err(err) => format!("<agent_response id={agent_id}>status: FAILURE\n\n{err}</agent_response>"),
+                                                }
+                                            }).collect::<Vec<String>>();
+                                            let text = text.join("\n\n");
+                                            self.add_system_message(&text);
+
+                                            self.submit_llm_request().await;
+                                        }
+                                    }
+                                    (
+                                        AgentTaskStatus::Done(agent_task_result),
+                                        AssistantState::AwaitingManager(task_awaiting_manager),
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::InProgress,
+                                        AssistantState::AwaitingActors,
+                                    ) => todo!(),
+                                    (AgentTaskStatus::InProgress, AssistantState::Idle) => todo!(),
+                                    (AgentTaskStatus::InProgress, AssistantState::Processing) => {
+                                        todo!()
+                                    }
+                                    (
+                                        AgentTaskStatus::InProgress,
+                                        AssistantState::AwaitingTools { pending_tool_calls },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::InProgress,
+                                        AssistantState::Error { message },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::InProgress,
+                                        AssistantState::Wait { tool_call_id },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::InProgress,
+                                        AssistantState::AwaitingManager(task_awaiting_manager),
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
+                                        AssistantState::AwaitingActors,
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
+                                        AssistantState::Idle,
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
+                                        AssistantState::Processing,
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
+                                        AssistantState::AwaitingTools { pending_tool_calls },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
+                                        AssistantState::Error { message },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
+                                        AssistantState::Wait { tool_call_id },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
+                                        AssistantState::AwaitingManager(task_awaiting_manager_),
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Waiting { tool_call_id },
+                                        AssistantState::AwaitingActors,
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Waiting { tool_call_id },
+                                        AssistantState::Idle,
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Waiting { tool_call_id },
+                                        AssistantState::Processing,
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Waiting { tool_call_id },
+                                        AssistantState::AwaitingTools { pending_tool_calls },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Waiting { tool_call_id },
+                                        AssistantState::Error { message },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Waiting { tool_call_id },
+                                        AssistantState::Wait { tool_call_id: _ },
+                                    ) => todo!(),
+                                    (
+                                        AgentTaskStatus::Waiting { tool_call_id },
+                                        AssistantState::AwaitingManager(task_awaiting_manager),
+                                    ) => todo!(),
+                                }
                             }
                             InterAgentMessage::PlanApproved { plan_id: _ } => (),
                             InterAgentMessage::PlanRejected {

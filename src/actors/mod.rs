@@ -61,6 +61,7 @@ pub enum ToolCallType {
     EditFile,
     Planner,
     TaskCompleted,
+    SpawnAgent,
     MCP,
 }
 
@@ -83,10 +84,20 @@ pub enum TaskAwaitingManager {
     AwaitingMoreInformation(String),
 }
 
+/// The result of an agent task
+pub type AgentTaskResult = Result<AgentTaskResultOk, String>;
+
+/// The result of an agent task
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTaskResultOk {
+    pub summary: String,
+    pub success: bool,
+}
+
 /// Task status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AgentTaskStatus {
-    Done(Result<String, String>),
+    Done(AgentTaskResult),
     InProgress,
     AwaitingManager(TaskAwaitingManager),
     Waiting { tool_call_id: String },
@@ -114,6 +125,7 @@ pub enum AgentMessageType {
     AgentSpawned {
         agent_role: String,
         task_description: String,
+        tool_call_id: String,
     },
     AgentRemoved,
     InterAgentMessage(InterAgentMessage),
@@ -169,12 +181,6 @@ pub enum Message {
     // Actor lifecycle messages
     ActorReady {
         actor_id: String,
-    },
-
-    // Task completion message
-    TaskCompleted {
-        summary: String,
-        success: bool,
     },
 }
 
@@ -239,11 +245,13 @@ pub trait Actor: Send + Sized + 'static {
             loop {
                 match rx.recv().await {
                     Ok(ActorMessage {
-                        scope: _,
+                        scope,
                         message: Message::Action(Action::Exit),
                     }) => {
-                        tracing::info!("Actor received exit signal");
-                        break;
+                        if &scope == self.get_scope() {
+                            tracing::info!("Actor received exit signal");
+                            break;
+                        }
                     }
                     Ok(msg) => {
                         let current_scope = self.get_scope();

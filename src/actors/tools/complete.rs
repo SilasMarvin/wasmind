@@ -1,18 +1,13 @@
-use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallUpdate};
+use crate::actors::{
+    Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskResultOk,
+    AgentTaskStatus, InterAgentMessage, Message, ToolCallStatus, ToolCallUpdate,
+};
 use crate::config::ParsedConfig;
 use genai::chat::{Tool, ToolCall};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::broadcast;
 use uuid::Uuid;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CompleteInput {
-    /// Summary of what was accomplished
-    summary: String,
-    /// Whether the task was successful
-    success: bool,
-}
 
 /// Tool for agents to explicitly signal task completion
 pub struct Complete {
@@ -62,47 +57,42 @@ impl Complete {
         );
 
         // Parse input
-        let input: CompleteInput = match serde_json::from_value(tool_call.fn_arguments) {
-            Ok(input) => input,
-            Err(e) => {
-                tracing::debug!(
-                    name = "complete_tool_parse_error",
-                    error = %e,
-                    "Failed to parse complete tool arguments"
-                );
-                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
-                    status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
-                }));
-                return;
-            }
-        };
+        let agent_task_result: AgentTaskResultOk =
+            match serde_json::from_value(tool_call.fn_arguments.clone()) {
+                Ok(input) => input,
+                Err(e) => {
+                    tracing::debug!(
+                        name = "complete_tool_parse_error",
+                        error = %e,
+                        "Failed to parse complete tool arguments"
+                    );
+                    let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                        call_id: tool_call.call_id,
+                        status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
+                    }));
+                    return;
+                }
+            };
 
-        tracing::debug!(
-            name = "task_completion_signal",
-            summary = %input.summary,
-            success = input.success,
-            "Agent signaling task completion via complete tool"
-        );
-
-        // Send completion signal
-        let completion_message = if input.success {
-            format!("✅ Task completed successfully: {}", input.summary)
-        } else {
-            format!("❌ Task failed: {}", input.summary)
-        };
-
-        // Send tool call completion
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id,
-            status: ToolCallStatus::Finished(Ok(completion_message.clone())),
+        // Send agent status update
+        let _ = self.broadcast(Message::Agent(AgentMessage {
+            agent_id: self.scope.clone(),
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                status: AgentTaskStatus::Done(Ok(agent_task_result)),
+            }),
         }));
 
-        // Send task completion signal
-        let _ = self.broadcast(Message::TaskCompleted {
-            summary: input.summary,
-            success: input.success,
-        });
+        // When the task is completed we shut down this agent
+        let _ = self.broadcast(Message::Action(Action::Exit));
+
+        // Send tool call completion
+        // This may be used by utilities tracking tool calls, etc...
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+            call_id: tool_call.call_id,
+            status: ToolCallStatus::Finished(Ok(
+                serde_json::to_string(&tool_call.fn_arguments).unwrap()
+            )),
+        }));
     }
 }
 
