@@ -35,6 +35,18 @@ pub struct Task {
     pub status: TaskStatus,
 }
 
+impl Task {
+    /// Get status icon
+    pub fn status_icon(&self) -> &'static str {
+        match self.status {
+            TaskStatus::Pending => "[ ]",
+            TaskStatus::InProgress => "[~]",
+            TaskStatus::Completed => "[x]",
+            TaskStatus::Skipped => "[>>]",
+        }
+    }
+}
+
 /// Task plan managed by the planner tool
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TaskPlan {

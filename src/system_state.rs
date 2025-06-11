@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::actors::AgentTaskStatus;
-use crate::actors::tools::planner::TaskPlan;
+use crate::actors::tools::planner::{TaskPlan, TaskStatus};
 use crate::template::{self, TemplateContext, ToolInfo};
 
 /// Errors that can occur when working with SystemState
@@ -322,17 +322,74 @@ impl SystemState {
 
     /// Generate the complete system state context for templates
     pub fn to_template_context(&self) -> serde_json::Value {
+        // Sort files by path for consistent output
+        let mut sorted_files: Vec<_> = self.files.iter().collect();
+        sorted_files.sort_by_key(|(path, _)| path.as_path());
+
+        // Convert files to a list with path and content
+        let files_list: Vec<serde_json::Value> = sorted_files
+            .into_iter()
+            .map(|(path, file_info)| {
+                serde_json::json!({
+                    "path": path.display().to_string(),
+                    "content": file_info.content,
+                    "lines": file_info.lines,
+                    "preview": file_info.get_preview(self.max_file_lines)
+                })
+            })
+            .collect();
+
+        // Sort agents by spawn time for consistent output
+        let mut sorted_agents: Vec<_> = self.agents.values().collect();
+        sorted_agents.sort_by_key(|agent| agent.spawned_at);
+
+        // Convert agents to a list with individual details
+        let agents_list: Vec<serde_json::Value> = sorted_agents
+            .into_iter()
+            .map(|agent| {
+                serde_json::json!({
+                    "id": agent.agent_id.to_string(),
+                    "role": agent.agent_role,
+                    "task": agent.task_description,
+                    "status": match &agent.status {
+                        AgentTaskStatus::InProgress => "in_progress",
+                        AgentTaskStatus::Waiting { .. } => "waiting",
+                        AgentTaskStatus::Done(Ok(_)) => "completed",
+                        AgentTaskStatus::Done(Err(_)) => "failed",
+                        AgentTaskStatus::AwaitingManager(_) => "awaiting_manager",
+                    },
+                    "status_icon": agent.status_icon(),
+                    "formatted": agent.format_for_prompt()
+                })
+            })
+            .collect();
+
         serde_json::json!({
             "files": {
                 "count": self.file_count(),
+                "list": files_list,
                 "section": self.render_files_section()
             },
             "plan": {
                 "exists": self.current_plan.is_some(),
+                "data": self.current_plan.as_ref().map(|plan| serde_json::json!({
+                    "title": plan.title,
+                    "tasks": plan.tasks.iter().map(|task| serde_json::json!({
+                        "description": task.description,
+                        "status": match task.status {
+                            TaskStatus::Pending => "pending",
+                            TaskStatus::InProgress => "in_progress",
+                            TaskStatus::Completed => "completed",
+                            TaskStatus::Skipped => "skipped",
+                        },
+                        "icon": task.status_icon()
+                    })).collect::<Vec<_>>()
+                })),
                 "section": self.render_plan_section()
             },
             "agents": {
                 "count": self.agent_count(),
+                "list": agents_list,
                 "section": self.render_agents_section()
             }
         })
@@ -546,6 +603,135 @@ mod tests {
     }
 
     #[test]
+    fn test_template_context_with_file_list() {
+        let mut state = SystemState::new();
+        let path1 = PathBuf::from("src/main.rs");
+        let content1 = "fn main() {\n    println!(\"Hello\");\n}".to_string();
+        let path2 = PathBuf::from("src/lib.rs");
+        let content2 = "pub fn hello() {}".to_string();
+        let now = SystemTime::now();
+
+        state.update_file(path1.clone(), content1.clone(), now);
+        state.update_file(path2.clone(), content2.clone(), now);
+
+        let context = state.to_template_context();
+        
+        // Check files count
+        assert_eq!(context["files"]["count"], 2);
+        
+        // Check files list
+        let files_list = context["files"]["list"].as_array().unwrap();
+        assert_eq!(files_list.len(), 2);
+        
+        // Files should be sorted by path
+        assert_eq!(files_list[0]["path"], "src/lib.rs");
+        assert_eq!(files_list[0]["content"], content2);
+        assert_eq!(files_list[0]["lines"], 1);
+        
+        assert_eq!(files_list[1]["path"], "src/main.rs");
+        assert_eq!(files_list[1]["content"], content1);
+        assert_eq!(files_list[1]["lines"], 3);
+    }
+
+    #[test]
+    fn test_template_context_with_plan_data() {
+        let mut state = SystemState::new();
+        let plan = TaskPlan {
+            title: "Test Plan".to_string(),
+            tasks: vec![
+                Task {
+                    description: "Task 1".to_string(),
+                    status: TaskStatus::Completed,
+                },
+                Task {
+                    description: "Task 2".to_string(),
+                    status: TaskStatus::InProgress,
+                },
+                Task {
+                    description: "Task 3".to_string(),
+                    status: TaskStatus::Pending,
+                },
+            ],
+        };
+
+        state.update_plan(plan);
+        let context = state.to_template_context();
+
+        assert_eq!(context["plan"]["exists"], true);
+        
+        let plan_data = &context["plan"]["data"];
+        assert_eq!(plan_data["title"], "Test Plan");
+        
+        let tasks = plan_data["tasks"].as_array().unwrap();
+        assert_eq!(tasks.len(), 3);
+        
+        assert_eq!(tasks[0]["description"], "Task 1");
+        assert_eq!(tasks[0]["status"], "completed");
+        assert_eq!(tasks[0]["icon"], "[x]");
+        
+        assert_eq!(tasks[1]["description"], "Task 2");
+        assert_eq!(tasks[1]["status"], "in_progress");
+        assert_eq!(tasks[1]["icon"], "[~]");
+        
+        assert_eq!(tasks[2]["description"], "Task 3");
+        assert_eq!(tasks[2]["status"], "pending");
+        assert_eq!(tasks[2]["icon"], "[ ]");
+    }
+
+    #[test]
+    fn test_template_context_with_agents_list() {
+        let mut state = SystemState::new();
+        
+        let agent1 = AgentTaskInfo::new(
+            Uuid::new_v4(),
+            "Software Engineer".to_string(),
+            "Implement feature X".to_string(),
+        );
+        let agent1_id = agent1.agent_id;
+        
+        let agent2 = AgentTaskInfo::new(
+            Uuid::new_v4(),
+            "QA Engineer".to_string(),
+            "Test feature X".to_string(),
+        );
+        let agent2_id = agent2.agent_id;
+        
+        state.add_agent(agent1);
+        state.add_agent(agent2);
+        
+        // Update one agent's status
+        state.update_agent_status(&agent1_id, AgentTaskStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+            summary: "Completed".to_string(),
+            success: true,
+        })));
+        
+        let context = state.to_template_context();
+        
+        assert_eq!(context["agents"]["count"], 2);
+        
+        let agents_list = context["agents"]["list"].as_array().unwrap();
+        assert_eq!(agents_list.len(), 2);
+        
+        // Find the completed agent
+        let completed_agent = agents_list.iter()
+            .find(|a| a["status"] == "completed")
+            .unwrap();
+        
+        assert_eq!(completed_agent["role"], "Software Engineer");
+        assert_eq!(completed_agent["task"], "Implement feature X");
+        assert_eq!(completed_agent["status_icon"], "[x]");
+        
+        // Find the in-progress agent
+        let in_progress_agent = agents_list.iter()
+            .find(|a| a["status"] == "in_progress")
+            .unwrap();
+        
+        assert_eq!(in_progress_agent["role"], "QA Engineer");
+        assert_eq!(in_progress_agent["task"], "Test feature X");
+        assert_eq!(in_progress_agent["status_icon"], "[~]");
+    }
+
+    #[test]
     fn test_system_prompt_template_rendering() {
         let template = r#"You are an AI assistant with access to {{ tools|length }} tools.
 
@@ -713,91 +899,102 @@ Current plan: active
         assert!(state.is_modified());
     }
 
-    // #[test]
-    // fn test_agent_tracking() {
-    //     let mut state = SystemState::new();
-    //
-    //     // Initially no agents
-    //     assert_eq!(state.agent_count(), 0);
-    //     assert_eq!(
-    //         state.render_agents_section(),
-    //         "No agents currently spawned."
-    //     );
-    //
-    //     // Add an agent
-    //     let agent_id = Uuid::new_v4();
-    //     let agent_info = AgentTaskInfo::new(
-    //         agent_id.clone(),
-    //         "Software Engineer".to_string(),
-    //         "Implement user authentication".to_string(),
-    //     );
-    //
-    //     state.add_agent(agent_info);
-    //     assert_eq!(state.agent_count(), 1);
-    //     assert!(state.is_modified());
-    //
-    //     // Check rendering
-    //     let section = state.render_agents_section();
-    //     assert!(section.contains("## Spawned Agents and Tasks"));
-    //     assert!(section.contains("[~] Software Engineer (agent-1): Implement user authentication"));
-    //
-    //     // Update agent status
-    //     state.update_agent_status(
-    //         &agent_id,
-    //         crate::actors::AgentTaskStatus::Done(Ok("Completed successfully".to_string())),
-    //     );
-    //     let section = state.render_agents_section();
-    //     assert!(section.contains("[x] Software Engineer (agent-1): Implement user authentication - Completed successfully"));
-    //
-    //     // Add another agent
-    //     let agent_id2 = Uuid::new_v4();
-    //     let agent_info2 = AgentTaskInfo::new(
-    //         agent_id2.clone(),
-    //         "Database Architect".to_string(),
-    //         "Design schema for user data".to_string(),
-    //     );
-    //     state.add_agent(agent_info2);
-    //     assert_eq!(state.agent_count(), 2);
-    //
-    //     // Update second agent with error
-    //     state.update_agent_status(
-    //         &agent_id2,
-    //         crate::actors::AgentTaskStatus::Done(Err("Connection timeout".to_string())),
-    //     );
-    //     let section = state.render_agents_section();
-    //     assert!(section.contains("[!] Database Architect (agent-2): Design schema for user data - Error: Connection timeout"));
-    //
-    //     // Remove first agent
-    //     state.remove_agent(&agent_id);
-    //     assert_eq!(state.agent_count(), 1);
-    //
-    //     // Remove second agent
-    //     state.remove_agent(&agent_id2);
-    //     assert_eq!(state.agent_count(), 0);
-    //     assert_eq!(
-    //         state.render_agents_section(),
-    //         "No agents currently spawned."
-    //     );
-    // }
-    //
-    // #[test]
-    // fn test_agent_template_context() {
-    //     let mut state = SystemState::new();
-    //
-    //     // Add an agent
-    //     let agent_info = AgentTaskInfo::new(
-    //         Uuid::new_v4(),
-    //         "Project Manager".to_string(),
-    //         "Plan sprint tasks".to_string(),
-    //     );
-    //     state.add_agent(agent_info);
-    //
-    //     // Get template context
-    //     let context = state.to_template_context();
-    //     assert_eq!(context["agents"]["count"], 1);
-    //
-    //     let agents_section = context["agents"]["section"].as_str().unwrap();
-    //     assert!(agents_section.contains("## Spawned Agents and Tasks"));
-    //     assert!(agents_section.contains("Project Manager"));
-    // }
+    #[test]
+    fn test_xml_style_template_rendering() {
+        use std::path::PathBuf;
+        use std::time::SystemTime;
+
+        // Create a template that uses XML tags
+        let xml_template = r#"You are an AI assistant.
+
+{% if files.count > 0 -%}
+<read_and_edited_files>
+{% for file in files.list -%}
+<file path="{{ file.path }}">{{ file.content }}</file>
+{% endfor %}
+</read_and_edited_files>
+{% endif %}
+
+{% if plan.exists -%}
+<plan title="{{ plan.data.title }}">
+{% for task in plan.data.tasks -%}
+<task status="{{ task.status }}">{{ task.description }}</task>
+{% endfor %}
+</plan>
+{% endif %}
+
+{% if agents.count > 0 -%}
+<spawned_agents>
+{% for agent in agents.list -%}
+<agent id="{{ agent.id }}" role="{{ agent.role }}" status="{{ agent.status }}">
+<task>{{ agent.task }}</task>
+</agent>
+{% endfor %}
+</spawned_agents>
+{% endif %}"#;
+
+        let mut state = SystemState::new();
+        
+        // Add files
+        state.update_file(
+            PathBuf::from("src/main.rs"),
+            "fn main() {\n    println!(\"Hello\");\n}".to_string(),
+            SystemTime::now(),
+        );
+        state.update_file(
+            PathBuf::from("src/lib.rs"),
+            "pub fn hello() {}".to_string(),
+            SystemTime::now(),
+        );
+        
+        // Add plan
+        state.update_plan(TaskPlan {
+            title: "Sprint 1".to_string(),
+            tasks: vec![
+                Task {
+                    description: "Setup project".to_string(),
+                    status: TaskStatus::Completed,
+                },
+                Task {
+                    description: "Implement feature".to_string(),
+                    status: TaskStatus::InProgress,
+                },
+            ],
+        });
+        
+        // Add agents
+        let agent1 = AgentTaskInfo::new(
+            Uuid::new_v4(),
+            "Developer".to_string(),
+            "Build the API".to_string(),
+        );
+        let agent1_id = agent1.agent_id;
+        state.add_agent(agent1);
+        state.update_agent_status(&agent1_id, AgentTaskStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+            summary: "Done".to_string(),
+            success: true,
+        })));
+        
+        // Render the template
+        let result = state.render_system_prompt(xml_template, &[], vec![]).unwrap();
+        
+        // Verify XML structure for files
+        assert!(result.contains("<read_and_edited_files>"));
+        assert!(result.contains("</read_and_edited_files>"));
+        assert!(result.contains("<file path=\"src/lib.rs\">pub fn hello() {}</file>"));
+        assert!(result.contains("<file path=\"src/main.rs\">fn main() {\n    println!(\"Hello\");\n}</file>"));
+        
+        // Verify XML structure for plan
+        assert!(result.contains("<plan title=\"Sprint 1\">"));
+        assert!(result.contains("</plan>"));
+        assert!(result.contains("<task status=\"completed\">Setup project</task>"));
+        assert!(result.contains("<task status=\"in_progress\">Implement feature</task>"));
+        
+        // Verify XML structure for agents
+        assert!(result.contains("<spawned_agents>"));
+        assert!(result.contains("</spawned_agents>"));
+        assert!(result.contains("role=\"Developer\""));
+        assert!(result.contains("status=\"completed\""));
+        assert!(result.contains("<task>Build the API</task>"));
+    }
 }

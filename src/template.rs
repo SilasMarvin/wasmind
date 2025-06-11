@@ -103,6 +103,7 @@ pub fn render_template(
         whitelisted_commands => &context.whitelisted_commands,
         files => &context.system_state["files"],
         plan => &context.system_state["plan"],
+        agents => &context.system_state["agents"],
         task => &context.task,
     };
 
@@ -244,5 +245,111 @@ Working directory: {{ cwd }}"#;
         assert!(!result.contains("unknown"));
         assert!(result.contains("Current directory: "));
         assert!(result.len() > "Current directory: ".len());
+    }
+
+    #[test]
+    fn test_xml_template_with_files_list() {
+        use crate::system_state::SystemState;
+        use std::path::PathBuf;
+        use std::time::SystemTime;
+
+        let mut system_state = SystemState::new();
+        system_state.update_file(
+            PathBuf::from("config.toml"),
+            "[settings]\nvalue = 42".to_string(),
+            SystemTime::now(),
+        );
+        system_state.update_file(
+            PathBuf::from("data.json"),
+            r#"{"key": "value"}"#.to_string(),
+            SystemTime::now(),
+        );
+
+        let context = TemplateContext::new(vec![], vec![], &system_state);
+
+        let template = r#"Files:
+{% for file in files.list -%}
+<file path="{{ file.path }}">
+{{ file.content }}
+</file>
+{% endfor %}"#;
+
+        let result = render_template(template, &context).unwrap();
+
+        // Check both files are rendered with XML tags
+        assert!(result.contains("<file path=\"config.toml\">"));
+        assert!(result.contains("[settings]\nvalue = 42"));
+        assert!(result.contains("</file>"));
+        
+        assert!(result.contains("<file path=\"data.json\">"));
+        assert!(result.contains(r#"{"key": "value"}"#));
+    }
+
+    #[test]
+    fn test_agents_list_template() {
+        use crate::system_state::{SystemState, AgentTaskInfo};
+        use crate::actors::AgentTaskStatus;
+        use uuid::Uuid;
+
+        let mut system_state = SystemState::new();
+        
+        let agent1 = AgentTaskInfo::new(
+            Uuid::new_v4(),
+            "Backend Developer".to_string(),
+            "Create REST API".to_string(),
+        );
+        let agent1_id = agent1.agent_id;
+        
+        system_state.add_agent(agent1);
+        system_state.update_agent_status(&agent1_id, AgentTaskStatus::InProgress);
+
+        let context = TemplateContext::new(vec![], vec![], &system_state);
+
+        let template = r#"Active Agents:
+{% for agent in agents.list -%}
+- {{ agent.role }} ({{ agent.status }}): {{ agent.task }}
+{% endfor %}"#;
+
+        let result = render_template(template, &context).unwrap();
+
+        assert!(result.contains("Active Agents:"));
+        assert!(result.contains("- Backend Developer (in_progress): Create REST API"));
+    }
+
+    #[test]
+    fn test_plan_data_template() {
+        use crate::system_state::SystemState;
+        use crate::actors::tools::planner::{TaskPlan, Task, TaskStatus};
+
+        let mut system_state = SystemState::new();
+        system_state.update_plan(TaskPlan {
+            title: "Q1 Goals".to_string(),
+            tasks: vec![
+                Task {
+                    description: "Launch v2.0".to_string(),
+                    status: TaskStatus::Completed,
+                },
+                Task {
+                    description: "Add monitoring".to_string(),
+                    status: TaskStatus::Pending,
+                },
+            ],
+        });
+
+        let context = TemplateContext::new(vec![], vec![], &system_state);
+
+        let template = r#"{% if plan.exists -%}
+Current Plan: {{ plan.data.title }}
+Tasks:
+{% for task in plan.data.tasks -%}
+{{ task.icon }} {{ task.description }} ({{ task.status }})
+{% endfor %}
+{% endif %}"#;
+
+        let result = render_template(template, &context).unwrap();
+
+        assert!(result.contains("Current Plan: Q1 Goals"));
+        assert!(result.contains("[x] Launch v2.0 (completed)"));
+        assert!(result.contains("[ ] Add monitoring (pending)"));
     }
 }

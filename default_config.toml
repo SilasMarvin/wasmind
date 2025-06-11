@@ -63,19 +63,27 @@ Working directory: {{ cwd }}
 
 {% if files.count > 0 -%}
 <read_and_edited_files>
-{{ files.section }}
+{% for file in files.list -%}
+<file path="{{ file.path }}">{{ file.content }}</file>
+{% endfor %}
 </read_and_edited_files>
 {% endif %}
 
 {% if plan.exists -%}
-<plan>
-{{ plan.section }}
+<plan title="{{ plan.data.title }}">
+{% for task in plan.data.tasks -%}
+<task status="{{ task.status }}">{{ task.description }}</task>
+{% endfor %}
 </plan>
 {% endif %}
 
 {% if agents.count > 0 -%}
 <spawned_agents>
-{{ agents.section }}
+{% for agent in agents.list -%}
+<agent id="{{ agent.id }}" role="{{ agent.role }}" status="{{ agent.status }}">
+<task>{{ agent.task }}</task>
+</agent>
+{% endfor %}
 </spawned_agents>
 {% endif %}"""
 
