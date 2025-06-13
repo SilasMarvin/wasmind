@@ -116,14 +116,22 @@ pub enum InterAgentMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentMessage {
-    agent_id: Uuid,
-    message: AgentMessageType,
+    pub agent_id: Uuid,
+    pub message: AgentMessageType,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentType {
+    MainManager,
+    SubManager,
+    Worker,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AgentMessageType {
     AgentSpawned {
-        agent_role: String,
+        agent_type: AgentType,
+        role: String,
         task_description: String,
         tool_call_id: String,
     },
@@ -228,53 +236,56 @@ pub trait Actor: Send + Sized + 'static {
         // miss messages we rely upon. E.G. Message::ActorReady
         let mut rx = self.get_rx();
         let actor_id = Self::ACTOR_ID;
-        let span = tracing::info_span!("actor_lifecycle", actor_id = actor_id);
-        tokio::spawn(async move {
-            let _guard = span.enter();
-            self.on_start().await;
+        tracing::info_span!("actor_lifecycle", actor_id = actor_id).in_scope(move || {
+            tokio::spawn(async move {
+                self.on_start().await;
 
-            // Signal that this actor is ready
-            tracing::info!("Actor ready, sending ready signal");
-            let _ = tx.send(ActorMessage {
-                scope: self.get_scope().clone(),
-                message: Message::ActorReady {
-                    actor_id: Self::ACTOR_ID.to_string(),
-                },
-            });
+                // Signal that this actor is ready
+                tracing::info!("Actor ready, sending ready signal");
+                let _ = tx.send(ActorMessage {
+                    scope: self.get_scope().clone(),
+                    message: Message::ActorReady {
+                        actor_id: Self::ACTOR_ID.to_string(),
+                    },
+                });
 
-            loop {
-                match rx.recv().await {
-                    Ok(ActorMessage {
-                        scope,
-                        message: Message::Action(Action::Exit),
-                    }) => {
-                        if &scope == self.get_scope() {
-                            tracing::info!("Actor received exit signal");
-                            break;
+                loop {
+                    match rx.recv().await {
+                        Ok(ActorMessage {
+                            scope,
+                            message: Message::Action(Action::Exit),
+                        }) => {
+                            if &scope == self.get_scope() {
+                                tracing::info!("Actor received exit signal");
+                                break;
+                            }
                         }
-                    }
-                    Ok(msg) => {
-                        let current_scope = self.get_scope();
-                        if self
-                            .get_scope_filters()
-                            .iter()
-                            .find(|scope| **scope == current_scope)
-                            .is_some()
-                        {
-                            self.handle_message(msg).await;
+                        Ok(msg) => {
+                            let current_scope = self.get_scope();
+                            if self
+                                .get_scope_filters()
+                                .iter()
+                                .find(|scope| **scope == current_scope)
+                                .is_some()
+                            {
+                                self.handle_message(msg).await;
+                            }
                         }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::error!("RECEIVER LAGGED BY {} MESSAGES! This was unexpected.", n);
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        tracing::error!("Channel closed");
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::error!(
+                                "RECEIVER LAGGED BY {} MESSAGES! This was unexpected.",
+                                n
+                            );
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            tracing::error!("Channel closed");
+                        }
                     }
                 }
-            }
 
-            tracing::info!("Actor stopping");
-            self.on_stop().await;
+                tracing::info!("Actor stopping");
+                self.on_stop().await;
+            });
         });
     }
 

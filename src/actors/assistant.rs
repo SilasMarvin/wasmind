@@ -154,7 +154,6 @@ impl Assistant {
                     }
                 }
                 AssistantState::Wait { tool_call_id } => {
-                    error!("WE GOT HERE: {} | {}", tool_call_id, update.call_id);
                     if tool_call_id == &update.call_id {
                         let tool_response = genai::chat::ToolResponse {
                             call_id: update.call_id.clone(),
@@ -272,7 +271,6 @@ impl Assistant {
     }
 }
 
-#[tracing::instrument(name = "llm_request", skip(tx, client, chat_request, config), fields(model = %config.name, tools_count = chat_request.tools.as_ref().map_or(0, |tools| tools.len())))]
 async fn do_assist(
     tx: broadcast::Sender<ActorMessage>,
     client: Client,
@@ -512,13 +510,15 @@ impl Actor for Assistant {
                 Message::Agent(message) => match message.message {
                     // We created a sub agent
                     AgentMessageType::AgentSpawned {
-                        agent_role,
+                        agent_type,
+                        role,
                         task_description,
                         tool_call_id,
                     } => {
                         let agent_info = crate::system_state::AgentTaskInfo::new(
                             message.agent_id.clone(),
-                            agent_role,
+                            agent_type,
+                            role,
                             task_description,
                         );
                         self.system_state.add_agent(agent_info);
@@ -595,10 +595,13 @@ impl Actor for Assistant {
                                         AgentTaskStatus::Done(agent_task_result),
                                         AssistantState::Processing,
                                     ) => todo!(),
+                                    // This call happens when the complete tool is used
+                                    // We are waiting for the complete tool call and the complete
+                                    // tool call updates our AgentTaskStatus to Done
                                     (
                                         AgentTaskStatus::Done(agent_task_result),
                                         AssistantState::AwaitingTools { pending_tool_calls },
-                                    ) => todo!(),
+                                    ) => (),
                                     (
                                         AgentTaskStatus::Done(agent_task_result),
                                         AssistantState::Error { message },

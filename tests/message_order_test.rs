@@ -1,6 +1,6 @@
 mod common;
 
-use hive::actors::{ActorMessage, Message, Action, UserContext};
+use hive::actors::{ActorMessage, Message, ToolCallStatus, ToolCallType};
 use hive::config::Config;
 use hive::hive::start_headless_hive;
 use tokio::sync::broadcast;
@@ -27,7 +27,7 @@ async fn test_file_read_message_order() {
     
     // Start hive with a file reading prompt
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let prompt = format!("What are the contents of the file {}?", test_file_path);
+    let prompt = format!("What are the contents of the file {}? Use a sub agent and `wait` on it.", test_file_path);
     let _handle = start_headless_hive(
         &runtime,
         config,
@@ -39,34 +39,42 @@ async fn test_file_read_message_order() {
     let mut index = 0;
     
     // Listen for messages with timeout
-    let result = timeout(Duration::from_secs(30), async {
+    let result = timeout(Duration::from_secs(45), async {
         loop {
             match rx.recv().await {
                 Ok(actor_msg) => {
                     let msg = &actor_msg.message;
                     println!("Received message at index {}: {:?}", index, msg);
-                    
+
                     // Check expected messages in order
-                    if index == 0 && matches!(msg, Message::Action(Action::Assist)) {
-                        println!("✓ [{}] Saw Assist action", index);
+                    // 1. MainManager calls spawn_agents fn
+                    // 2. spawn_agents fn broadcasts Received
+                    // 3. spawn_agents fn broadcasts InterAgentMessage task status update to Waiting for MainManager
+                    // 4. spawn_agents fn is finished
+                    // 5. Worker sub agent calls read_file tool
+                    // 6. read_file tool broadcasts finished
+                    // 7. Worker sub agent calls complete fn
+                    // 8. complete fn broadcasts InterAgentMessage task status update to Done for
+                    //    MainManager
+                    if index == 0 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "spawn_agents") {
+                        println!("✓ [{}] Saw Manager's spawn_agents tool call", index);
                         index += 1;
-                    } else if index == 1 && matches!(msg, Message::UserContext(UserContext::UserTUIInput(input)) if input == &prompt) {
-                        println!("✓ [{}] Saw correct user input", index);
+                    } else if index == 1 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Received {r#type: ToolCallType::SpawnAgent, friendly_command_display: _ })) {
                         index += 1;
                     } else if index == 2 && matches!(msg, Message::Agent(_)) {
-                        println!("✓ [{}] Saw agent message", index);
                         index += 1;
-                    } else if index == 3 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "spawn_agent_and_assign_task") {
-                        println!("✓ [{}] Saw spawn_agent_and_assign_task tool call", index);
+                    } else if index == 3 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished(Ok(_)))) {
                         index += 1;
-                    } else if index == 4 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "file_reader") {
-                        println!("✓ [{}] Saw file_reader tool call", index);
+                    } else if index == 4 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "read_file") {
                         index += 1;
-                    } else if index == 5 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
-                        println!("✓ [{}] Saw complete tool call from worker", index);
+                    } else if index == 5 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished(Ok(_)))) {
                         index += 1;
+                    } else if index == 6 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
+                        index += 1;
+                    } else if index == 7 && matches!(msg, Message::Agent(_)) {
+                        index += 1;
+                        break;
                     } 
-                    // If message doesn't match expected at current index, we just continue
                 }
                 Err(e) => {
                     eprintln!("Error receiving message: {}", e);
@@ -84,11 +92,11 @@ async fn test_file_read_message_order() {
     // Check results
     match result {
         Ok(final_index) => {
-            assert_eq!(final_index, 7, "Expected to see all 7 messages in order, but only saw {}", final_index);
+            assert_eq!(final_index, 8, "Expected to see all 8 messages in order, but only saw {}", final_index);
             println!("\n✅ All expected messages were seen in the correct order!");
         }
         Err(_) => {
-            panic!("Test timed out waiting for messages. Got to index {} out of 7", index);
+            panic!("Test timed out waiting for messages. Got to index {} out of 8", index);
         }
     }
 }

@@ -117,6 +117,8 @@ pub fn is_template(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::actors::AgentType;
+
     use super::*;
 
     #[test]
@@ -280,26 +282,27 @@ Working directory: {{ cwd }}"#;
         assert!(result.contains("<file path=\"config.toml\">"));
         assert!(result.contains("[settings]\nvalue = 42"));
         assert!(result.contains("</file>"));
-        
+
         assert!(result.contains("<file path=\"data.json\">"));
         assert!(result.contains(r#"{"key": "value"}"#));
     }
 
     #[test]
     fn test_agents_list_template() {
-        use crate::system_state::{SystemState, AgentTaskInfo};
         use crate::actors::AgentTaskStatus;
+        use crate::system_state::{AgentTaskInfo, SystemState};
         use uuid::Uuid;
 
         let mut system_state = SystemState::new();
-        
+
         let agent1 = AgentTaskInfo::new(
             Uuid::new_v4(),
+            AgentType::Worker,
             "Backend Developer".to_string(),
             "Create REST API".to_string(),
         );
         let agent1_id = agent1.agent_id;
-        
+
         system_state.add_agent(agent1);
         system_state.update_agent_status(&agent1_id, AgentTaskStatus::InProgress);
 
@@ -318,8 +321,8 @@ Working directory: {{ cwd }}"#;
 
     #[test]
     fn test_plan_data_template() {
+        use crate::actors::tools::planner::{Task, TaskPlan, TaskStatus};
         use crate::system_state::SystemState;
-        use crate::actors::tools::planner::{TaskPlan, Task, TaskStatus};
 
         let mut system_state = SystemState::new();
         system_state.update_plan(TaskPlan {

@@ -4,7 +4,6 @@ use crate::actors::{
 };
 use crate::config::ParsedConfig;
 use genai::chat::{Tool, ToolCall};
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::broadcast;
 use uuid::Uuid;
@@ -50,22 +49,11 @@ impl Complete {
             return;
         }
 
-        tracing::debug!(
-            name = "complete_tool_call",
-            call_id = %tool_call.call_id,
-            "Agent called complete tool to signal task completion"
-        );
-
         // Parse input
         let agent_task_result: AgentTaskResultOk =
             match serde_json::from_value(tool_call.fn_arguments.clone()) {
                 Ok(input) => input,
                 Err(e) => {
-                    tracing::debug!(
-                        name = "complete_tool_parse_error",
-                        error = %e,
-                        "Failed to parse complete tool arguments"
-                    );
                     let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                         call_id: tool_call.call_id,
                         status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
@@ -76,22 +64,26 @@ impl Complete {
 
         // Send agent status update
         let _ = self.broadcast(Message::Agent(AgentMessage {
-            agent_id: self.scope.clone(),
+            agent_id: self.get_scope().clone(),
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                status: AgentTaskStatus::Done(Ok(agent_task_result)),
+                status: AgentTaskStatus::Done(Ok(agent_task_result.clone())),
             }),
         }));
 
         // When the task is completed we shut down this agent
         let _ = self.broadcast(Message::Action(Action::Exit));
 
-        // Send tool call completion
-        // This may be used by utilities tracking tool calls, etc...
+        // Send tool call completion with concise message
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
-            status: ToolCallStatus::Finished(Ok(
-                serde_json::to_string(&tool_call.fn_arguments).unwrap()
-            )),
+            status: ToolCallStatus::Finished(Ok(format!(
+                "Task completed{}",
+                if agent_task_result.success {
+                    " successfully"
+                } else {
+                    " with failures"
+                }
+            ))),
         }));
     }
 }
@@ -122,7 +114,6 @@ impl Actor for Complete {
     }
 
     async fn on_start(&mut self) {
-        // Broadcast tool availability
         let _ = self.broadcast(Message::ToolsAvailable(vec![Self::get_tool_schema()]));
     }
 }

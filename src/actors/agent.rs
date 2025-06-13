@@ -16,32 +16,10 @@ use crate::{
     config::ParsedConfig,
 };
 
-use super::{ActorMessage, tools::file_reader::FileReader};
+use super::{ActorMessage, AgentType, tools::file_reader::FileReader};
 
 /// Role name for the main manager agent
 pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
-
-/// Agent behavior types
-#[derive(Debug, Clone)]
-pub enum AgentBehavior {
-    MainManager(ManagerLogic),
-    Manager(ManagerLogic),
-    Worker(WorkerLogic),
-}
-
-/// Manager agent logic
-#[derive(Debug, Clone)]
-pub struct ManagerLogic {
-    pub id: Uuid,
-    pub role: String,
-}
-
-/// Worker agent logic
-#[derive(Debug, Clone)]
-pub struct WorkerLogic {
-    pub id: Uuid,
-    pub role: String,
-}
 
 /// Response when spawning a new agent
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,13 +31,14 @@ pub struct AgentSpawnedResponse {
 /// Agent instance that can be either a Manager or Worker
 pub struct Agent {
     tx: Sender<ActorMessage>,
-    pub behavior: AgentBehavior,
+    pub r#type: AgentType,
     pub config: ParsedConfig,
     pub task_description: Option<String>,
+    pub role: String,
     /// Parent scope
-    parent_scope: Uuid,
+    pub parent_scope: Uuid,
     /// Agent scope
-    scope: Uuid,
+    pub scope: Uuid,
 }
 
 impl Agent {
@@ -73,18 +52,14 @@ impl Agent {
     ) -> Self {
         let id = Uuid::new_v4();
 
-        let behavior = AgentBehavior::Manager(ManagerLogic {
-            id: id.clone(),
-            role: role.clone(),
-        });
-
         Agent {
             tx,
-            behavior,
+            r#type: AgentType::SubManager,
             config,
             task_description,
             parent_scope,
             scope: id,
+            role,
         }
     }
 
@@ -97,43 +72,22 @@ impl Agent {
         parent_scope: Uuid,
     ) -> Self {
         let id = Uuid::new_v4();
-        let behavior = AgentBehavior::Worker(WorkerLogic {
-            id: id.clone(),
-            role,
-        });
 
         Agent {
             tx,
-            behavior,
+            r#type: AgentType::Worker,
             config,
             task_description,
             parent_scope,
             scope: id,
-        }
-    }
-
-    /// Get the agent's ID
-    pub fn id(&self) -> &Uuid {
-        match &self.behavior {
-            AgentBehavior::MainManager(logic) => &logic.id,
-            AgentBehavior::Manager(logic) => &logic.id,
-            AgentBehavior::Worker(logic) => &logic.id,
-        }
-    }
-
-    /// Get the agent's role
-    pub fn role(&self) -> &str {
-        match &self.behavior {
-            AgentBehavior::MainManager(logic) => &logic.role,
-            AgentBehavior::Manager(logic) => &logic.role,
-            AgentBehavior::Worker(logic) => &logic.role,
+            role,
         }
     }
 
     /// Get the required actors for this agent's assistant type
     pub fn get_required_actors(&self) -> Vec<&'static str> {
-        match &self.behavior {
-            AgentBehavior::Manager(_) | AgentBehavior::MainManager(_) => {
+        match &self.r#type {
+            AgentType::SubManager | AgentType::MainManager => {
                 let mut actors = vec![
                     Planner::ACTOR_ID,
                     SpawnAgent::ACTOR_ID,
@@ -141,13 +95,13 @@ impl Agent {
                 ];
 
                 // Add complete tool for sub-managers or Main Manager in headless mode
-                if self.role() != MAIN_MANAGER_ROLE || cfg!(not(feature = "gui")) {
+                if self.r#type == AgentType::SubManager || cfg!(not(feature = "gui")) {
                     actors.push(Complete::ACTOR_ID);
                 }
 
                 actors
             }
-            AgentBehavior::Worker(_) => {
+            AgentType::Worker => {
                 vec![
                     Command::ACTOR_ID,
                     FileReaderActor::ACTOR_ID,
@@ -161,14 +115,14 @@ impl Agent {
     }
 
     /// Run the agent - start their actors
-    #[tracing::instrument(name = "agent_run", skip(self), fields(agent_id = %self.id(), role = %self.role(), agent_type = ?self.behavior))]
+    #[tracing::instrument(name = "agent_run", skip(self), fields(agent_id = %self.scope, type = ?self.r#type, role = %self.role))]
     pub async fn run(self) {
         // Create shared file reader
         let file_reader = Arc::new(Mutex::new(FileReader::default()));
 
-        match &self.behavior {
-            AgentBehavior::Manager(_) | AgentBehavior::MainManager(_) => {
-                let config = if matches!(self.behavior, AgentBehavior::MainManager(_)) {
+        match &self.r#type {
+            AgentType::SubManager | AgentType::MainManager => {
+                let config = if self.r#type == AgentType::MainManager {
                     self.config.hive.main_manager_model.clone()
                 } else {
                     self.config.hive.sub_manager_model.clone()
@@ -186,7 +140,7 @@ impl Agent {
                 Planner::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
 
                 // Add complete tool for sub-managers or Main Manager in headless mode
-                if self.role() != MAIN_MANAGER_ROLE || cfg!(not(feature = "gui")) {
+                if self.r#type == AgentType::SubManager || cfg!(not(feature = "gui")) {
                     Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 }
 
@@ -195,7 +149,7 @@ impl Agent {
 
                 PlanApproval::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
             }
-            AgentBehavior::Worker(_) => {
+            AgentType::Worker => {
                 // Workers get all execution tools
                 Assistant::new(
                     self.config.hive.worker_model.clone(),

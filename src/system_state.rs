@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-use crate::actors::AgentTaskStatus;
 use crate::actors::tools::planner::{TaskPlan, TaskStatus};
+use crate::actors::{AgentTaskStatus, AgentType};
 use crate::template::{self, TemplateContext, ToolInfo};
 
 /// Errors that can occur when working with SystemState
@@ -95,7 +95,12 @@ pub struct AgentTaskInfo {
 }
 
 impl AgentTaskInfo {
-    pub fn new(agent_id: Uuid, agent_role: String, task_description: String) -> Self {
+    pub fn new(
+        agent_id: Uuid,
+        agent_type: AgentType,
+        agent_role: String,
+        task_description: String,
+    ) -> Self {
         Self {
             agent_id,
             agent_role,
@@ -615,19 +620,19 @@ mod tests {
         state.update_file(path2.clone(), content2.clone(), now);
 
         let context = state.to_template_context();
-        
+
         // Check files count
         assert_eq!(context["files"]["count"], 2);
-        
+
         // Check files list
         let files_list = context["files"]["list"].as_array().unwrap();
         assert_eq!(files_list.len(), 2);
-        
+
         // Files should be sorted by path
         assert_eq!(files_list[0]["path"], "src/lib.rs");
         assert_eq!(files_list[0]["content"], content2);
         assert_eq!(files_list[0]["lines"], 1);
-        
+
         assert_eq!(files_list[1]["path"], "src/main.rs");
         assert_eq!(files_list[1]["content"], content1);
         assert_eq!(files_list[1]["lines"], 3);
@@ -658,21 +663,21 @@ mod tests {
         let context = state.to_template_context();
 
         assert_eq!(context["plan"]["exists"], true);
-        
+
         let plan_data = &context["plan"]["data"];
         assert_eq!(plan_data["title"], "Test Plan");
-        
+
         let tasks = plan_data["tasks"].as_array().unwrap();
         assert_eq!(tasks.len(), 3);
-        
+
         assert_eq!(tasks[0]["description"], "Task 1");
         assert_eq!(tasks[0]["status"], "completed");
         assert_eq!(tasks[0]["icon"], "[x]");
-        
+
         assert_eq!(tasks[1]["description"], "Task 2");
         assert_eq!(tasks[1]["status"], "in_progress");
         assert_eq!(tasks[1]["icon"], "[~]");
-        
+
         assert_eq!(tasks[2]["description"], "Task 3");
         assert_eq!(tasks[2]["status"], "pending");
         assert_eq!(tasks[2]["icon"], "[ ]");
@@ -681,51 +686,58 @@ mod tests {
     #[test]
     fn test_template_context_with_agents_list() {
         let mut state = SystemState::new();
-        
+
         let agent1 = AgentTaskInfo::new(
             Uuid::new_v4(),
+            AgentType::Worker,
             "Software Engineer".to_string(),
             "Implement feature X".to_string(),
         );
         let agent1_id = agent1.agent_id;
-        
+
         let agent2 = AgentTaskInfo::new(
             Uuid::new_v4(),
+            AgentType::Worker,
             "QA Engineer".to_string(),
             "Test feature X".to_string(),
         );
         let agent2_id = agent2.agent_id;
-        
+
         state.add_agent(agent1);
         state.add_agent(agent2);
-        
+
         // Update one agent's status
-        state.update_agent_status(&agent1_id, AgentTaskStatus::Done(Ok(crate::actors::AgentTaskResultOk {
-            summary: "Completed".to_string(),
-            success: true,
-        })));
-        
+        state.update_agent_status(
+            &agent1_id,
+            AgentTaskStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+                summary: "Completed".to_string(),
+                success: true,
+            })),
+        );
+
         let context = state.to_template_context();
-        
+
         assert_eq!(context["agents"]["count"], 2);
-        
+
         let agents_list = context["agents"]["list"].as_array().unwrap();
         assert_eq!(agents_list.len(), 2);
-        
+
         // Find the completed agent
-        let completed_agent = agents_list.iter()
+        let completed_agent = agents_list
+            .iter()
             .find(|a| a["status"] == "completed")
             .unwrap();
-        
+
         assert_eq!(completed_agent["role"], "Software Engineer");
         assert_eq!(completed_agent["task"], "Implement feature X");
         assert_eq!(completed_agent["status_icon"], "[x]");
-        
+
         // Find the in-progress agent
-        let in_progress_agent = agents_list.iter()
+        let in_progress_agent = agents_list
+            .iter()
             .find(|a| a["status"] == "in_progress")
             .unwrap();
-        
+
         assert_eq!(in_progress_agent["role"], "QA Engineer");
         assert_eq!(in_progress_agent["task"], "Test feature X");
         assert_eq!(in_progress_agent["status_icon"], "[~]");
@@ -934,7 +946,7 @@ Current plan: active
 {% endif %}"#;
 
         let mut state = SystemState::new();
-        
+
         // Add files
         state.update_file(
             PathBuf::from("src/main.rs"),
@@ -946,7 +958,7 @@ Current plan: active
             "pub fn hello() {}".to_string(),
             SystemTime::now(),
         );
-        
+
         // Add plan
         state.update_plan(TaskPlan {
             title: "Sprint 1".to_string(),
@@ -961,35 +973,43 @@ Current plan: active
                 },
             ],
         });
-        
+
         // Add agents
         let agent1 = AgentTaskInfo::new(
             Uuid::new_v4(),
+            AgentType::Worker,
             "Developer".to_string(),
             "Build the API".to_string(),
         );
         let agent1_id = agent1.agent_id;
         state.add_agent(agent1);
-        state.update_agent_status(&agent1_id, AgentTaskStatus::Done(Ok(crate::actors::AgentTaskResultOk {
-            summary: "Done".to_string(),
-            success: true,
-        })));
-        
+        state.update_agent_status(
+            &agent1_id,
+            AgentTaskStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+                summary: "Done".to_string(),
+                success: true,
+            })),
+        );
+
         // Render the template
-        let result = state.render_system_prompt(xml_template, &[], vec![]).unwrap();
-        
+        let result = state
+            .render_system_prompt(xml_template, &[], vec![])
+            .unwrap();
+
         // Verify XML structure for files
         assert!(result.contains("<read_and_edited_files>"));
         assert!(result.contains("</read_and_edited_files>"));
         assert!(result.contains("<file path=\"src/lib.rs\">pub fn hello() {}</file>"));
-        assert!(result.contains("<file path=\"src/main.rs\">fn main() {\n    println!(\"Hello\");\n}</file>"));
-        
+        assert!(result.contains(
+            "<file path=\"src/main.rs\">fn main() {\n    println!(\"Hello\");\n}</file>"
+        ));
+
         // Verify XML structure for plan
         assert!(result.contains("<plan title=\"Sprint 1\">"));
         assert!(result.contains("</plan>"));
         assert!(result.contains("<task status=\"completed\">Setup project</task>"));
         assert!(result.contains("<task status=\"in_progress\">Implement feature</task>"));
-        
+
         // Verify XML structure for agents
         assert!(result.contains("<spawned_agents>"));
         assert!(result.contains("</spawned_agents>"));

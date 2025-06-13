@@ -54,7 +54,6 @@ fn get_config_file_path() -> PathBuf {
 /// The config we deserialize directly from toml
 #[derive(Deserialize)]
 pub struct Config {
-    model: ModelConfig,
     #[serde(default)]
     key_bindings: KeyConfig,
     #[serde(default)]

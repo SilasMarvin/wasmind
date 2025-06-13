@@ -2,7 +2,10 @@ use crossbeam::channel;
 use tokio::sync::broadcast;
 
 use crate::{
-    actors::{Action, Actor, ActorMessage, Message, agent::Agent},
+    actors::{
+        Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskStatus,
+        InterAgentMessage, Message, agent::Agent,
+    },
     config::ParsedConfig,
 };
 
@@ -120,7 +123,28 @@ pub fn start_headless_hive(
             tracing::debug!(name = "hive_message", message = %message_json, message_type = std::any::type_name::<Message>());
 
             match msg.message {
-                Message::Action(Action::Exit) => {
+                Message::Action(Action::Exit) if msg.scope == ROOT_AGENT_SCOPE => {
+                    let _ = exit_tx.send(());
+                    break;
+                }
+                Message::Agent(AgentMessage {
+                    agent_id,
+                    message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                        status: AgentTaskStatus::Done(res),
+                    })
+                }) if agent_id == ROOT_AGENT_SCOPE => { 
+                    match res {
+                        Ok(agent_task_result) => {
+                            if agent_task_result.success {
+                                println!("Success: {}", agent_task_result.summary);
+                            } else {
+                                eprintln!("Failed: {}", agent_task_result.summary);
+                            }
+                        },
+                        Err(error_message) => {
+                            eprintln!("Errored: {error_message}");
+                        },
+                    }
                     let _ = exit_tx.send(());
                     break;
                 }

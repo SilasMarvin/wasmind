@@ -23,11 +23,14 @@ fn main() -> SResult<()> {
             empty,
             files,
             plan,
+            agents,
             complete,
+            full,
+            agent_types,
             config,
         } => {
             if let Err(e) =
-                hive::prompt_preview::execute_demo(all, empty, files, plan, complete, config)
+                hive::prompt_preview::execute_demo(all, empty, files, plan, agents, complete, full, agent_types, config)
             {
                 eprintln!("Prompt preview error: {}", e);
                 std::process::exit(1);

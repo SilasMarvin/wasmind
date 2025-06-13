@@ -149,21 +149,19 @@ impl SpawnAgent {
                         agent_def.agent_type, agent_def.agent_role
                     );
                     let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                        call_id: tool_call.call_id.clone(), // Use cloned call_id for subsequent broadcasts
+                        call_id: tool_call.call_id.clone(),
                         status: ToolCallStatus::Finished(Err(error_msg)),
                     }));
-                    return; // Fail the entire operation if one agent definition is invalid
+                    return;
                 }
             };
 
-            let agent_id = agent.id().clone();
-            let agent_role_str = agent.role().to_string(); // Renamed to avoid conflict if agent_role is in scope
-
             // Send AgentSpawned message to update system state for this agent
             let _ = self.broadcast(Message::Agent(AgentMessage {
-                agent_id: agent_id.clone(),
+                agent_id: agent.scope.clone(),
                 message: AgentMessageType::AgentSpawned {
-                    agent_role: agent_role_str.clone(),
+                    agent_type: agent.r#type,
+                    role: agent.role.clone(),
                     task_description: agent_def.task_description.clone(),
                     tool_call_id: tool_call.call_id.clone(),
                 },
@@ -171,12 +169,14 @@ impl SpawnAgent {
 
             // Collect response for this agent
             spawned_agents_responses.push(AgentSpawnedResponse {
-                agent_id: agent_id.clone(),
-                agent_role: agent_role_str.clone(),
+                agent_id: agent.scope.clone(),
+                agent_role: agent.role.clone(),
             });
             successfully_spawned_agents_details.push(format!(
                 "ID: {}, Role: '{}', Type: {}",
-                agent_id, agent_role_str, agent_def.agent_type
+                agent.scope.clone(),
+                agent.role.clone(),
+                agent_def.agent_type
             ));
 
             // Spawn the agent task to run asynchronously
@@ -186,22 +186,6 @@ impl SpawnAgent {
         }
 
         // All agents defined in the input have been processed and spawn tasks initiated
-        let response_json = match serde_json::to_string(&spawned_agents_responses) {
-            Ok(json) => json,
-            Err(e) => {
-                // This should not happen if AgentSpawnedResponse is correctly Serialize
-                let error_msg = format!(
-                    "Critical error: Failed to serialize agent spawn responses: {}",
-                    e
-                );
-                info!("{}", error_msg); // Log critical error
-                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
-                    status: ToolCallStatus::Finished(Err(error_msg)),
-                }));
-                return;
-            }
-        };
 
         info!(
             "Successfully initiated spawning for {} agent(s): [{}]. Wait flag was: {}.",
@@ -210,9 +194,25 @@ impl SpawnAgent {
             input.wait
         );
 
+        // Return concise response
+        let response = format!(
+            "Spawned {} agent{}: {}",
+            spawned_agents_responses.len(),
+            if spawned_agents_responses.len() == 1 {
+                ""
+            } else {
+                "s"
+            },
+            spawned_agents_responses
+                .iter()
+                .map(|r| format!("{} ({})", r.agent_role, r.agent_id))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
-            status: ToolCallStatus::Finished(Ok(response_json)),
+            status: ToolCallStatus::Finished(Ok(response)),
         }));
     }
 }

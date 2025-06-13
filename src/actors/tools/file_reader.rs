@@ -287,7 +287,7 @@ impl FileReaderActor {
                         }
                     }
                 }
-                ToolCallStatus::Finished(Ok(content.to_string()))
+                ToolCallStatus::Finished(Ok(format!("Read file: {}", path)))
             }
             Err(e) => ToolCallStatus::Finished(Err(e.to_string())),
         };

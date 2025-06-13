@@ -230,11 +230,8 @@ impl Planner {
         // Send system state update
         let _ = self.broadcast(Message::PlanUpdated(plan.clone()));
 
-        // Return response with numbered tasks
-        let mut response = format!("Created task plan: {}\n", title);
-        for (i, task) in plan.tasks.iter().enumerate() {
-            response.push_str(&format!("{}. {}\n", i + 1, task.description));
-        }
+        // Return concise response
+        let response = format!("Created task plan: {} with {} tasks", title, plan.tasks.len());
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
@@ -326,11 +323,14 @@ impl Planner {
         // Send system state update
         let _ = self.broadcast(Message::PlanUpdated(task_plan.clone()));
 
-        // Return response
-        let response = format!(
-            "Updated task {}: {}",
-            task_number, task_plan.tasks[task_index].description
-        );
+        // Return concise response
+        let response = match action {
+            "update" => format!("Updated task {}", task_number),
+            "complete" => format!("Completed task {}", task_number),
+            "start" => format!("Started task {}", task_number),
+            "skip" => format!("Skipped task {}", task_number),
+            _ => unreachable!(),
+        };
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status: ToolCallStatus::Finished(Ok(response)),
