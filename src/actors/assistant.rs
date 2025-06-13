@@ -32,8 +32,6 @@ pub enum AssistantState {
     Processing,
     /// Waiting for tool execution results
     AwaitingTools { pending_tool_calls: Vec<String> },
-    /// Encountered an error during processing
-    Error { message: String },
     /// Waiting for next input from user, sub agent, etc...
     /// Does not submit a response to the LLM when the tool call with `tool_call_id` returns a
     /// response. Waits for other input
@@ -219,7 +217,7 @@ impl Assistant {
 
         // Debug log the full request
         tracing::debug!(
-            "LLM Request:\n{}",
+            "LLM Request:\n{}\n",
             serde_json::to_string_pretty(&request)
                 .unwrap_or_else(|e| format!("Failed to serialize request: {}", e))
         );
@@ -287,7 +285,7 @@ async fn do_assist(
 
     // Debug log the full response
     tracing::debug!(
-        "LLM Response: content={:?}, reasoning_content={:?}, usage={:?}, model={}",
+        "LLM Response for agent: {scope} | content={:?}, reasoning_content={:?}, usage={:?}, model={}",
         resp.content,
         resp.reasoning_content,
         resp.usage,
@@ -382,14 +380,11 @@ impl Actor for Assistant {
                 // Handle ActorReady messages for state transition
                 Message::ActorReady { actor_id } => {
                     if let AssistantState::AwaitingActors = &self.state {
-                        info!("GOT ACTOR READY: {}", actor_id);
                         self.required_actors = self
                             .required_actors
                             .drain(..)
                             .filter(|r_id| r_id != &actor_id.as_str())
                             .collect::<Vec<&'static str>>();
-
-                        info!("REQUIRED ACTORS LEFT: {:?}", self.required_actors);
 
                         if self.required_actors.is_empty() {
                             self.state = AssistantState::Idle;
@@ -515,6 +510,7 @@ impl Actor for Assistant {
                         task_description,
                         tool_call_id,
                     } => {
+                        self.spawned_agents_scope.push(message.agent_id.clone());
                         let agent_info = crate::system_state::AgentTaskInfo::new(
                             message.agent_id.clone(),
                             agent_type,
@@ -583,14 +579,16 @@ impl Actor for Assistant {
                                 // Adding a message queue is a prerequisite to fully completing
                                 // this.
                                 match (status, &self.state) {
+                                    // This should never happen
                                     (
                                         AgentTaskStatus::Done(agent_task_result),
                                         AssistantState::AwaitingActors,
-                                    ) => todo!(),
+                                    ) => unreachable!(),
                                     (
                                         AgentTaskStatus::Done(agent_task_result),
                                         AssistantState::Idle,
                                     ) => todo!(),
+                                    // Add the system message into the message queue
                                     (
                                         AgentTaskStatus::Done(agent_task_result),
                                         AssistantState::Processing,
@@ -604,12 +602,9 @@ impl Actor for Assistant {
                                     ) => (),
                                     (
                                         AgentTaskStatus::Done(agent_task_result),
-                                        AssistantState::Error { message },
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::Done(agent_task_result),
                                         AssistantState::Wait { tool_call_id: _ },
                                     ) => {
+                                        error!("GOT SUB AGENT UPDATE WHILE WAITING");
                                         match self.waiting_for_agents.get_mut(&message.agent_id) {
                                             Some(opt) => *opt = Some(agent_task_result),
                                             None => warn!(
@@ -647,10 +642,6 @@ impl Actor for Assistant {
                                     ) => todo!(),
                                     (
                                         AgentTaskStatus::InProgress,
-                                        AssistantState::Error { message },
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::InProgress,
                                         AssistantState::Wait { tool_call_id },
                                     ) => todo!(),
                                     (
@@ -675,10 +666,6 @@ impl Actor for Assistant {
                                     ) => todo!(),
                                     (
                                         AgentTaskStatus::AwaitingManager(task_awaiting_manager),
-                                        AssistantState::Error { message },
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
                                         AssistantState::Wait { tool_call_id },
                                     ) => todo!(),
                                     (
@@ -700,10 +687,6 @@ impl Actor for Assistant {
                                     (
                                         AgentTaskStatus::Waiting { tool_call_id },
                                         AssistantState::AwaitingTools { pending_tool_calls },
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::Waiting { tool_call_id },
-                                        AssistantState::Error { message },
                                     ) => todo!(),
                                     (
                                         AgentTaskStatus::Waiting { tool_call_id },

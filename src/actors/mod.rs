@@ -242,11 +242,8 @@ pub trait Actor: Send + Sized + 'static {
 
                 // Signal that this actor is ready
                 tracing::info!("Actor ready, sending ready signal");
-                let _ = tx.send(ActorMessage {
-                    scope: self.get_scope().clone(),
-                    message: Message::ActorReady {
-                        actor_id: Self::ACTOR_ID.to_string(),
-                    },
+                self.broadcast(Message::ActorReady {
+                    actor_id: Self::ACTOR_ID.to_string(),
                 });
 
                 loop {
@@ -261,11 +258,10 @@ pub trait Actor: Send + Sized + 'static {
                             }
                         }
                         Ok(msg) => {
-                            let current_scope = self.get_scope();
                             if self
                                 .get_scope_filters()
                                 .iter()
-                                .find(|scope| **scope == current_scope)
+                                .find(|scope| **scope == &msg.scope)
                                 .is_some()
                             {
                                 self.handle_message(msg).await;
@@ -273,8 +269,7 @@ pub trait Actor: Send + Sized + 'static {
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                             tracing::error!(
-                                "RECEIVER LAGGED BY {} MESSAGES! This was unexpected.",
-                                n
+                                "RECEIVER LAGGED BY {n} MESSAGES! This was unexpected.",
                             );
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {

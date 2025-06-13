@@ -58,6 +58,7 @@ fn test_file_read_message_order() {
                     // 7. Worker sub agent calls complete fn
                     // 8. complete fn broadcasts InterAgentMessage task status update to Done for
                     //    MainManager
+                    // 9. MainManager calls complete fn
                     if index == 0 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "spawn_agents") {
                         println!("✓ [{}] Saw Manager's spawn_agents tool call", index);
                         index += 1;
@@ -74,6 +75,8 @@ fn test_file_read_message_order() {
                     } else if index == 6 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
                         index += 1;
                     } else if index == 7 && matches!(msg, Message::Agent(_)) {
+                        index += 1;
+                    } else if index == 8 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
                         index += 1;
                         break;
                     }
@@ -94,11 +97,11 @@ fn test_file_read_message_order() {
     // Check results
     match result {
         Ok(final_index) => {
-            assert_eq!(final_index, 8, "Expected to see all 8 messages in order, but only saw {}", final_index);
+            assert_eq!(final_index, 9, "Expected to see all 9 messages in order, but only saw {}", final_index);
             println!("\n✅ All expected messages were seen in the correct order!");
         }
         Err(_) => {
-            panic!("Test timed out waiting for messages. Got to index {} out of 8", index);
+            panic!("Test timed out waiting for messages. Got to index {} out of 9", index);
         }
     }
     });
