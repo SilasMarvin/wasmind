@@ -3,41 +3,43 @@ mod common;
 use hive::actors::{ActorMessage, Message, ToolCallStatus, ToolCallType};
 use hive::config::Config;
 use hive::hive::start_headless_hive;
-use tokio::sync::broadcast;
-use tokio::time::{timeout, Duration};
 use std::fs;
+use tokio::sync::broadcast;
+use tokio::time::{Duration, timeout};
 
-#[tokio::test]
-async fn test_file_read_message_order() {
+#[test]
+fn test_file_read_message_order() {
     // Initialize test logger
     common::init_test_logger();
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
     // Create a test file
     let test_file_path = "/tmp/test_hive_file.txt";
     let test_content = "Hello from the test file!";
     fs::write(test_file_path, test_content).expect("Failed to write test file");
-    
+
     // Create broadcast channel for testing
     let (tx, mut rx) = broadcast::channel::<ActorMessage>(1024);
-    
+
     // Load test config using Config::from_file
     let config = Config::from_file("tests/test_config.toml")
         .expect("Failed to load test config")
         .try_into()
         .expect("Failed to parse test config");
-    
+
     // Start hive with a file reading prompt
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let prompt = format!("What are the contents of the file {}? Use a sub agent and `wait` on it.", test_file_path);
-    let _handle = start_headless_hive(
-        &runtime,
-        config,
-        prompt.clone(),
-        Some(tx.clone()),
+    let prompt = format!(
+        "What are the contents of the file {}? Use a sub agent and `wait` on it.",
+        test_file_path
     );
-    
+    let _handle = start_headless_hive(&runtime, config, prompt.clone(), Some(tx.clone()));
+
+    runtime.block_on(async move {
+
     // Track our position in expected message sequence
     let mut index = 0;
-    
+
     // Listen for messages with timeout
     let result = timeout(Duration::from_secs(45), async {
         loop {
@@ -74,7 +76,7 @@ async fn test_file_read_message_order() {
                     } else if index == 7 && matches!(msg, Message::Agent(_)) {
                         index += 1;
                         break;
-                    } 
+                    }
                 }
                 Err(e) => {
                     eprintln!("Error receiving message: {}", e);
@@ -82,13 +84,13 @@ async fn test_file_read_message_order() {
                 }
             }
         }
-        
+
         index
     }).await;
-    
+
     // Clean up test file
     let _ = fs::remove_file(test_file_path);
-    
+
     // Check results
     match result {
         Ok(final_index) => {
@@ -99,4 +101,5 @@ async fn test_file_read_message_order() {
             panic!("Test timed out waiting for messages. Got to index {} out of 8", index);
         }
     }
+    });
 }

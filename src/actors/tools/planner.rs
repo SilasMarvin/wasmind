@@ -231,7 +231,11 @@ impl Planner {
         let _ = self.broadcast(Message::PlanUpdated(plan.clone()));
 
         // Return concise response
-        let response = format!("Created task plan: {} with {} tasks", title, plan.tasks.len());
+        let response = format!(
+            "Created task plan: {} with {} tasks",
+            title,
+            plan.tasks.len()
+        );
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),

@@ -132,7 +132,7 @@ pub fn start_headless_hive(
                     message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
                         status: AgentTaskStatus::Done(res),
                     })
-                }) if agent_id == ROOT_AGENT_SCOPE => { 
+                }) if agent_id == ROOT_AGENT_SCOPE => {
                     match res {
                         Ok(agent_task_result) => {
                             if agent_task_result.success {

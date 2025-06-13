@@ -110,7 +110,6 @@ fi
 LOG_DIR="$PROJECT_ROOT/test-logs"
 rm -r "$LOG_DIR" || true
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/hive-test-$(date +%Y%m%d-%H%M%S).log"
 
 echo "📁 Logs will be saved to: $LOG_DIR"
 
@@ -125,13 +124,11 @@ TEST_EXIT_CODE=$?
 
 # Check if log file was copied
 if [ -f "$LOG_DIR/log.txt" ]; then
-    mv "$LOG_DIR/log.txt" "$LOG_FILE"
-    echo ""
     echo "📋 TEST LOGS SAVED TO:"
-    echo "   $LOG_FILE"
+    echo "   $LOG_DIR/log.txt"
     echo ""
-    echo "   File size: $(ls -lh "$LOG_FILE" | awk '{print $5}')"
-    echo "   To view: cat $LOG_FILE"
+    echo "   File size: $(ls -lh "$LOG_DIR/log.txt" | awk '{print $5}')"
+    echo "   To view: cat $LOG_DIR/log.txt"
     echo ""
 else
     echo ""
@@ -145,14 +142,6 @@ if [ $TEST_EXIT_CODE -eq 0 ]; then
     echo "✅ Integration tests passed"
 else
     echo "❌ Integration tests failed with exit code: $TEST_EXIT_CODE"
-fi
-
-# Always show the log file location at the end if it exists
-if [ -f "$LOG_FILE" ]; then
-    echo ""
-    echo "🔍 View test logs with:"
-    echo "   cat $LOG_FILE"
-    echo ""
 fi
 
 exit $TEST_EXIT_CODE
