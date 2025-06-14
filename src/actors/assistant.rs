@@ -40,8 +40,64 @@ pub enum AssistantState {
     AwaitingManager(TaskAwaitingManager),
 }
 
-// TODO: Add some kind of message queue system for the assistant
-// This will be used when we get messages from sub agents or the user while performing other tasks
+/// Pending message that accumulates user input and system messages
+/// to be submitted to the LLM when appropriate
+#[derive(Debug, Clone, Default)]
+pub struct PendingMessage {
+    /// Optional user content part (only one at a time, new input replaces old)
+    user_content: Option<genai::chat::ContentPart>,
+    /// System message parts that accumulate from sub-agents
+    system_parts: Vec<String>,
+}
+
+impl PendingMessage {
+    /// Create a new empty pending message
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Check if the pending message has any content
+    pub fn has_content(&self) -> bool {
+        self.user_content.is_some() || !self.system_parts.is_empty()
+    }
+
+    /// Add or replace user content
+    pub fn set_user_content(&mut self, content: genai::chat::ContentPart) {
+        self.user_content = Some(content);
+    }
+
+    /// Add a system message part
+    pub fn add_system_part(&mut self, message: String) {
+        self.system_parts.push(message);
+    }
+
+    /// Convert to Vec<ChatMessage> for LLM submission
+    /// System messages come first, then user message
+    /// Returns empty vec if no content exists
+    pub fn to_chat_messages(&self) -> Vec<ChatMessage> {
+        let mut messages = Vec::new();
+
+        // Add system messages first
+        for system_part in &self.system_parts {
+            messages.push(ChatMessage::system(system_part.clone()));
+        }
+
+        // Add user message last if present
+        if let Some(ref user_content) = self.user_content {
+            messages.push(ChatMessage::user(MessageContent::Parts(vec![
+                user_content.clone(),
+            ])));
+        }
+
+        messages
+    }
+
+    /// Clear all content
+    pub fn clear(&mut self) {
+        self.user_content = None;
+        self.system_parts.clear();
+    }
+}
 
 /// Assistant actor that handles AI interactions
 pub struct Assistant {
@@ -52,7 +108,7 @@ pub struct Assistant {
     system_state: SystemState,
     available_tools: Vec<Tool>,
     cancel_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    pending_user_content_parts: Vec<genai::chat::ContentPart>,
+    pending_message: PendingMessage,
     pending_tool_responses: Vec<genai::chat::ToolResponse>,
     state: AssistantState,
     task_description: Option<String>,
@@ -93,7 +149,7 @@ impl Assistant {
             system_state: SystemState::new(),
             available_tools: Vec::new(),
             cancel_handle: Arc::new(Mutex::new(None)),
-            pending_user_content_parts: Vec::new(),
+            pending_message: PendingMessage::new(),
             pending_tool_responses: Vec::new(),
             state,
             task_description,
@@ -133,7 +189,7 @@ impl Assistant {
                         self.pending_tool_responses.push(tool_response);
 
                         if remaining_calls.is_empty() {
-                            // Automatically continue the conversation
+                            // All tool calls complete - add tool responses to chat
                             self.chat_request =
                                 self.chat_request.clone().append_message(ChatMessage {
                                     role: ChatRole::Tool,
@@ -142,6 +198,20 @@ impl Assistant {
                                     )),
                                     options: None,
                                 });
+
+                            // Check if we should transition to Wait state or continue normally
+                            // TODO: Handle transitions to Wait and AwaitingManager states here based on tool responses
+
+                            // If we have pending message content, append it before submitting
+                            if self.pending_message.has_content() {
+                                let messages = self.pending_message.to_chat_messages();
+                                self.pending_message.clear();
+                                for message in messages {
+                                    self.chat_request =
+                                        self.chat_request.clone().append_message(message);
+                                }
+                            }
+
                             self.submit_llm_request().await;
                         } else {
                             // Still waiting for more tools
@@ -169,8 +239,12 @@ impl Assistant {
         }
     }
 
-    fn add_user_pending_part(&mut self, content: ContentPart) {
-        self.pending_user_content_parts.push(content);
+    fn add_user_content(&mut self, content: ContentPart) {
+        self.pending_message.set_user_content(content);
+    }
+
+    fn add_system_message_part(&mut self, message: String) {
+        self.pending_message.add_system_part(message);
     }
 
     fn add_system_message(&mut self, content: impl Into<MessageContent>) {
@@ -180,13 +254,18 @@ impl Assistant {
             .append_message(ChatMessage::system(content));
     }
 
-    async fn submit_assist_request(&mut self) {
-        self.chat_request =
-            self.chat_request
-                .clone()
-                .append_message(ChatMessage::user(MessageContent::Parts(std::mem::take(
-                    &mut self.pending_user_content_parts,
-                ))));
+    async fn submit_pending_message(&mut self) {
+        if !self.pending_message.has_content() {
+            return;
+        }
+
+        let messages = self.pending_message.to_chat_messages();
+        self.pending_message.clear();
+
+        for message in messages {
+            self.chat_request = self.chat_request.clone().append_message(message);
+        }
+
         self.submit_llm_request().await;
     }
 
@@ -391,8 +470,8 @@ impl Actor for Assistant {
 
                             // Check if we have a task to execute
                             if let Some(ref task) = self.task_description {
-                                self.add_user_pending_part(ContentPart::Text(task.clone()));
-                                self.submit_assist_request().await;
+                                self.add_user_content(ContentPart::Text(task.clone()));
+                                self.submit_pending_message().await;
                             }
                         }
                     }
@@ -409,16 +488,16 @@ impl Actor for Assistant {
 
                     match (context, &self.state) {
                         (UserContext::UserTUIInput(text), AssistantState::Idle) => {
-                            self.add_user_pending_part(ContentPart::Text(text));
-                            self.submit_assist_request().await;
+                            self.add_user_content(ContentPart::Text(text));
+                            self.submit_pending_message().await;
                         }
                         (UserContext::UserTUIInput(text), _) => {
-                            self.add_user_pending_part(ContentPart::Text(text));
+                            self.add_user_content(ContentPart::Text(text));
                         }
 
                         #[cfg(feature = "audio")]
                         (UserContext::MicrophoneTranscription(text), _) => {
-                            self.add_user_pending_part(ContentPart::Text(text));
+                            self.add_user_content(ContentPart::Text(text));
                         }
                         #[cfg(feature = "gui")]
                         (UserContext::ScreenshotCaptured(result), _) => {
@@ -428,7 +507,7 @@ impl Actor for Assistant {
                                     "image/png",
                                     base64,
                                 );
-                                self.add_user_pending_part(content_part);
+                                self.add_user_content(content_part);
                             }
                             // Errors are already handled by TUI
                         }
@@ -443,7 +522,7 @@ impl Actor for Assistant {
                 Message::Action(crate::actors::Action::Assist) => {
                     // State transition: Idle -> Processing when receiving assist action
                     if let AssistantState::Idle = &self.state {
-                        self.submit_assist_request().await;
+                        self.submit_pending_message().await;
                     }
                 }
                 Message::Action(crate::actors::Action::Cancel) => {
@@ -451,6 +530,10 @@ impl Actor for Assistant {
                     match &self.state {
                         AssistantState::Processing | AssistantState::AwaitingTools { .. } => {
                             self.state = AssistantState::Idle;
+                            // If we have pending message content, submit it immediately
+                            if self.pending_message.has_content() {
+                                self.submit_pending_message().await;
+                            }
                         }
                         _ => {}
                     }
@@ -491,6 +574,10 @@ impl Actor for Assistant {
                             }
                             _ => {
                                 self.state = AssistantState::Idle;
+                                // If we have pending message content, submit it immediately
+                                if self.pending_message.has_content() {
+                                    self.submit_pending_message().await;
+                                }
                             }
                         }
                     }
@@ -574,128 +661,168 @@ impl Actor for Assistant {
                             InterAgentMessage::TaskStatusUpdate { status } => {
                                 self.system_state
                                     .update_agent_status(&message.agent_id, status.clone());
-                                // TODO: Map out all of the transitions and what should happen here
-                                // Every single one of these needs to be well thought through.
-                                // Adding a message queue is a prerequisite to fully completing
-                                // this.
-                                match (status, &self.state) {
-                                    // This should never happen
-                                    (
-                                        AgentTaskStatus::Done(agent_task_result),
-                                        AssistantState::AwaitingActors,
-                                    ) => unreachable!(),
-                                    (
-                                        AgentTaskStatus::Done(agent_task_result),
-                                        AssistantState::Idle,
-                                    ) => todo!(),
-                                    // Add the system message into the message queue
-                                    (
-                                        AgentTaskStatus::Done(agent_task_result),
-                                        AssistantState::Processing,
-                                    ) => todo!(),
-                                    // This call happens when the complete tool is used
-                                    // We are waiting for the complete tool call and the complete
-                                    // tool call updates our AgentTaskStatus to Done
-                                    (
-                                        AgentTaskStatus::Done(agent_task_result),
-                                        AssistantState::AwaitingTools { pending_tool_calls },
-                                    ) => (),
+                                match (&status, &self.state) {
+                                    // ERROR: Should never receive sub-agent messages in AwaitingActors
+                                    (_, AssistantState::AwaitingActors) => {
+                                        error!(
+                                            "Received sub-agent status update while awaiting actors - this should not happen"
+                                        );
+                                    }
+
+                                    // Sub-agent Done status handling
                                     (
                                         AgentTaskStatus::Done(agent_task_result),
                                         AssistantState::Wait { tool_call_id: _ },
                                     ) => {
-                                        error!("GOT SUB AGENT UPDATE WHILE WAITING");
+                                        // We're waiting for this agent - track completion
                                         match self.waiting_for_agents.get_mut(&message.agent_id) {
-                                            Some(opt) => *opt = Some(agent_task_result),
+                                            Some(opt) => *opt = Some(agent_task_result.clone()),
                                             None => warn!(
-                                                "Received a response from a sub agent we aren't waiting on while actively waiting"
+                                                "Received completion from sub-agent we aren't waiting for: {}",
+                                                message.agent_id
                                             ),
                                         }
+
+                                        // Check if all agents we're waiting for are done
                                         if self.waiting_for_agents.values().all(|x| x.is_some()) {
-                                            let text = self.waiting_for_agents.drain().map(|(agent_id, agent_result)| {
+                                            // All agents done - compile their responses
+                                            let agent_summaries = self.waiting_for_agents.drain().map(|(agent_id, agent_result)| {
                                                 match agent_result.unwrap() {
-                                                    Ok(res) => format!("<agent_response id={agent_id}>status: {}\n\n{}</agent_response>", if res.success { "SUCCESS" } else { "FAILURE" }, res.summary),
+                                                    Ok(res) => format!("<agent_response id={agent_id}>status: {}\n\n{}</agent_response>", 
+                                                        if res.success { "SUCCESS" } else { "FAILURE" }, res.summary),
                                                     Err(err) => format!("<agent_response id={agent_id}>status: FAILURE\n\n{err}</agent_response>"),
                                                 }
                                             }).collect::<Vec<String>>();
-                                            let text = text.join("\n\n");
-                                            self.add_system_message(&text);
+                                            let summary_text = agent_summaries.join("\n\n");
 
-                                            self.submit_llm_request().await;
+                                            // Add to pending message and submit
+                                            self.add_system_message_part(summary_text);
+                                            self.state = AssistantState::Processing;
+                                            self.submit_pending_message().await;
+                                        } else {
+                                            // Still waiting for other agents - add this completion to pending
+                                            let summary = match agent_task_result {
+                                                Ok(res) => format!(
+                                                    "<agent_response id={}>status: {}\n\n{}</agent_response>",
+                                                    message.agent_id,
+                                                    if res.success { "SUCCESS" } else { "FAILURE" },
+                                                    res.summary
+                                                ),
+                                                Err(err) => format!(
+                                                    "<agent_response id={}>status: FAILURE\n\n{err}</agent_response>",
+                                                    message.agent_id
+                                                ),
+                                            };
+                                            self.add_system_message_part(summary);
                                         }
                                     }
+
                                     (
                                         AgentTaskStatus::Done(agent_task_result),
-                                        AssistantState::AwaitingManager(task_awaiting_manager),
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::InProgress,
-                                        AssistantState::AwaitingActors,
-                                    ) => todo!(),
-                                    (AgentTaskStatus::InProgress, AssistantState::Idle) => todo!(),
-                                    (AgentTaskStatus::InProgress, AssistantState::Processing) => {
-                                        todo!()
+                                        AssistantState::Idle,
+                                    ) => {
+                                        // Add completion summary to pending message and submit
+                                        let summary = match agent_task_result {
+                                            Ok(res) => format!(
+                                                "<agent_response id={}>status: {}\n\n{}</agent_response>",
+                                                message.agent_id,
+                                                if res.success { "SUCCESS" } else { "FAILURE" },
+                                                res.summary
+                                            ),
+                                            Err(err) => format!(
+                                                "<agent_response id={}>status: FAILURE\n\n{err}</agent_response>",
+                                                message.agent_id
+                                            ),
+                                        };
+                                        self.add_system_message_part(summary);
+                                        self.submit_pending_message().await;
                                     }
+
                                     (
-                                        AgentTaskStatus::InProgress,
-                                        AssistantState::AwaitingTools { pending_tool_calls },
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::InProgress,
-                                        AssistantState::Wait { tool_call_id },
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::InProgress,
-                                        AssistantState::AwaitingManager(task_awaiting_manager),
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
-                                        AssistantState::AwaitingActors,
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
-                                        AssistantState::Idle,
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
-                                        AssistantState::Processing,
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
-                                        AssistantState::AwaitingTools { pending_tool_calls },
-                                    ) => todo!(),
+                                        AgentTaskStatus::Done(agent_task_result),
+                                        AssistantState::Processing
+                                        | AssistantState::AwaitingTools { .. }
+                                        | AssistantState::AwaitingManager(_),
+                                    ) => {
+                                        // Add completion summary to pending message for later submission
+                                        let summary = match agent_task_result {
+                                            Ok(res) => format!(
+                                                "<agent_response id={}>status: {}\n\n{}</agent_response>",
+                                                message.agent_id,
+                                                if res.success { "SUCCESS" } else { "FAILURE" },
+                                                res.summary
+                                            ),
+                                            Err(err) => format!(
+                                                "<agent_response id={}>status: FAILURE\n\n{err}</agent_response>",
+                                                message.agent_id
+                                            ),
+                                        };
+                                        self.add_system_message_part(summary);
+                                    }
+
+                                    // Sub-agent AwaitingManager status handling
                                     (
                                         AgentTaskStatus::AwaitingManager(task_awaiting_manager),
-                                        AssistantState::Wait { tool_call_id },
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
-                                        AssistantState::AwaitingManager(task_awaiting_manager_),
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::Waiting { tool_call_id },
-                                        AssistantState::AwaitingActors,
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::Waiting { tool_call_id },
-                                        AssistantState::Idle,
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::Waiting { tool_call_id },
-                                        AssistantState::Processing,
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::Waiting { tool_call_id },
-                                        AssistantState::AwaitingTools { pending_tool_calls },
-                                    ) => todo!(),
-                                    (
-                                        AgentTaskStatus::Waiting { tool_call_id },
                                         AssistantState::Wait { tool_call_id: _ },
-                                    ) => todo!(),
+                                    ) => {
+                                        // Urgent: Plan approval needed - transition out of Wait and submit immediately
+                                        let approval_request = format!(
+                                            "<plan_approval_request agent_id={}>\n{}</plan_approval_request>",
+                                            message.agent_id,
+                                            serde_json::to_string_pretty(task_awaiting_manager)
+                                                .unwrap_or_else(
+                                                    |_| "Failed to serialize plan".to_string()
+                                                )
+                                        );
+                                        self.add_system_message_part(approval_request);
+                                        self.state = AssistantState::Processing;
+                                        self.submit_pending_message().await;
+                                    }
+
                                     (
-                                        AgentTaskStatus::Waiting { tool_call_id },
-                                        AssistantState::AwaitingManager(task_awaiting_manager),
-                                    ) => todo!(),
+                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
+                                        AssistantState::Idle,
+                                    ) => {
+                                        // Add plan approval request to pending message and submit
+                                        let approval_request = format!(
+                                            "<plan_approval_request agent_id={}>\n{}</plan_approval_request>",
+                                            message.agent_id,
+                                            serde_json::to_string_pretty(task_awaiting_manager)
+                                                .unwrap_or_else(
+                                                    |_| "Failed to serialize plan".to_string()
+                                                )
+                                        );
+                                        self.add_system_message_part(approval_request);
+                                        self.submit_pending_message().await;
+                                    }
+
+                                    (
+                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
+                                        AssistantState::Processing
+                                        | AssistantState::AwaitingTools { .. }
+                                        | AssistantState::AwaitingManager(_),
+                                    ) => {
+                                        // Add plan approval request to pending message for later submission
+                                        let approval_request = format!(
+                                            "<plan_approval_request agent_id={}>\n{}</plan_approval_request>",
+                                            message.agent_id,
+                                            serde_json::to_string_pretty(task_awaiting_manager)
+                                                .unwrap_or_else(
+                                                    |_| "Failed to serialize plan".to_string()
+                                                )
+                                        );
+                                        self.add_system_message_part(approval_request);
+                                    }
+
+                                    // Sub-agent InProgress status - just update system state, no action
+                                    (AgentTaskStatus::InProgress, _) => {
+                                        // Update system state only - no pending message needed
+                                    }
+
+                                    // Sub-agent Waiting status - update system state only
+                                    (AgentTaskStatus::Waiting { .. }, _) => {
+                                        // Update system state only - no pending message needed
+                                    }
                                 }
                             }
                             InterAgentMessage::PlanApproved { plan_id: _ } => (),
@@ -720,34 +847,106 @@ mod tests {
     use super::*;
     use genai::chat::ToolCall;
 
-    // Assistant State Transitions Documentation
-    // ========================================
+    // Assistant State Transitions and Message Handling Documentation
+    // ============================================================
     //
     // The Assistant actor has the following states:
-    // - AwaitingActors: Initial state when required actors are not ready
+    // - AwaitingActors: Initial state when required actors are not ready (brief, ~1 second)
     // - Idle: Ready to accept requests
     // - Processing: Actively making an LLM call
     // - AwaitingTools: Waiting for tool execution results
-    // - Error: Error state (currently unused in transitions)
-    // - Wait: Waiting for external input (currently unused in transitions)
-    // - AwaitingManager: Waiting for manager approval (currently unused in transitions)
+    // - Wait: Waiting for spawned sub-agents to complete (tool_call_id tracks the tool that caused wait)
+    // - AwaitingManager: WE are waiting for OUR manager's approval on OUR plan
     //
-    // Valid State Transitions:
-    // 1. AwaitingActors -> Idle: When all required actors send ActorReady messages
-    //    - Special case: If task_description exists, immediately processes the task
-    // 2. Idle -> Processing: When receiving UserContext (UserTUIInput) or Action::Assist
-    // 3. Processing -> Idle: When AssistantResponse contains no tool calls
-    // 4. Processing -> AwaitingTools: When AssistantResponse contains tool calls
-    // 5. AwaitingTools -> Processing: When all pending tool calls are finished
-    // 6. AwaitingTools -> AwaitingTools: When some tool calls finish but others remain
-    // 7. Processing -> Idle: When Action::Cancel is received
-    // 8. AwaitingTools -> Idle: When Action::Cancel is received
+    // Pending Message System:
+    // The assistant maintains a pending message with:
+    // - One optional user content part
+    // - A vector of system message parts
+    // This message is submitted to the LLM when conditions are met.
     //
-    // Messages that don't cause transitions:
-    // - UserContext while in Processing or AwaitingTools states
-    // - ToolCallUpdate for unknown call_id or when not in AwaitingTools state
-    // - ActorReady when not in AwaitingActors state
-    // - Most other messages don't affect state
+    // STATE TRANSITIONS THAT PERFORM ACTIONS:
+    //
+    // 1. AwaitingActors -> Idle (on ActorReady when all actors ready):
+    //    - Transition to Idle state
+    //    - If task_description exists: add to pending message and submit immediately (-> Processing)
+    //    - ERROR if sub-agent messages received in this state
+    //
+    // 2. Idle -> Processing (on UserContext or Action::Assist):
+    //    - UserContext: Add to pending message, submit LLM request
+    //    - Action::Assist: Submit pending message to LLM (if any content exists)
+    //
+    // 3. Processing -> Idle (on AssistantResponse with no tool calls):
+    //    - Add response to chat history
+    //    - Transition to Idle
+    //    - If pending message exists: submit immediately (-> Processing)
+    //
+    // 4. Processing -> AwaitingTools (on AssistantResponse with tool calls):
+    //    - Add response to chat history
+    //    - Extract tool call IDs for tracking
+    //    - Transition to AwaitingTools state
+    //
+    // 5. AwaitingTools -> Processing (when all tool calls complete):
+    //    - Add all tool responses to chat history
+    //    - Submit LLM request with tool responses
+    //    - Transition to Processing
+    //
+    // 6. AwaitingTools -> AwaitingTools (when some tool calls complete):
+    //    - Add completed tool response to pending responses
+    //    - Update pending tool calls list
+    //    - Remain in AwaitingTools
+    //
+    // 7. AwaitingTools -> Wait (when tool completes and sets wait state):
+    //    - Add tool response to chat history
+    //    - Track spawned agents for completion
+    //    - Transition to Wait state with tool_call_id
+    //
+    // 8. AwaitingTools -> AwaitingManager (when tool completes and sets awaiting manager state):
+    //    - Add tool response to chat history
+    //    - Transition to AwaitingManager
+    //    - Wait for our manager's approval/rejection
+    //
+    // 9. Processing/AwaitingTools -> Idle (on Action::Cancel):
+    //    - Cancel current LLM request
+    //    - Transition to Idle
+    //    - If pending message exists: submit immediately (-> Processing)
+    //
+    // 10. Wait -> Processing (on sub-agent Done status when no more agents waiting):
+    //     - Add agent completion summary to pending message (system part)
+    //     - Submit LLM request immediately
+    //     - Transition to Processing
+    //
+    // 11. Wait -> Wait (on sub-agent Done status when still waiting on other agents):
+    //     - Add agent completion summary to pending message (system part)
+    //     - Update waiting agents tracking
+    //     - Remain in Wait state
+    //
+    // 12. Any state (on sub-agent Done status, not in Wait):
+    //     - Add agent completion summary to pending message (system part)
+    //     - If currently Idle: submit immediately (-> Processing)
+    //     - If currently Processing/AwaitingTools: will submit after current operation completes
+    //     - State remains unchanged
+    //
+    // 13. Any state (on sub-agent AwaitingManager status):
+    //     - Add plan approval request to pending message (system part) for US to review as manager
+    //     - If currently Idle: submit immediately (-> Processing)
+    //     - If currently Processing/AwaitingTools: will submit after current operation completes
+    //     - If currently Wait: submit immediately (-> Processing) and transition out of Wait
+    //     - Other states remain unchanged (WE don't transition to AwaitingManager - they are awaiting US)
+    //
+    // NON-TRANSITIONING ACTIONS:
+    // - UserContext while Processing/AwaitingTools/Wait: Add to pending message for later submission
+    // - File/Plan updates: Update system state, mark for re-rendering
+    // - Tool availability updates: Update available tools list
+    // - Agent spawned: Track spawned agent scope, update system state
+    // - Sub-agent InProgress status: Update system state only, no action needed
+    //
+    // CRITICAL CONSTRAINTS:
+    // - Tool call messages MUST be followed by tool response messages
+    // - When in AwaitingTools, pending messages wait until all tools complete
+    // - Pending message is submitted immediately when appropriate state transitions occur
+    // - Only one pending message exists at a time (new content appends to existing)
+    // - Sub-agent messages in AwaitingActors state should cause an error
+    // - WE are the manager when receiving sub-agent status updates
 
     fn create_test_assistant(
         required_actors: Vec<&'static str>,
@@ -832,8 +1031,22 @@ mod tests {
         let messages = &assistant.chat_request.messages;
         println!("{:?}", messages);
         assert!(!messages.is_empty());
-        let last_message = ChatMessage::user("Test task");
-        assert!(matches!(messages, last_message));
+
+        // Check that the last message is a user message with "Test task"
+        let last_message = messages.last().unwrap();
+        assert!(matches!(last_message.role, ChatRole::User));
+
+        // Check the content
+        if let MessageContent::Parts(parts) = &last_message.content {
+            assert_eq!(parts.len(), 1);
+            if let ContentPart::Text(text) = &parts[0] {
+                assert_eq!(text, "Test task");
+            } else {
+                panic!("Expected text content part");
+            }
+        } else {
+            panic!("Expected Parts content");
+        }
     }
 
     #[tokio::test]
@@ -855,6 +1068,9 @@ mod tests {
         let mut assistant = create_test_assistant(vec![], None);
         assert!(matches!(assistant.state, AssistantState::Idle));
 
+        // Add some content to the pending message first
+        assistant.add_user_content(ContentPart::Text("Hello".to_string()));
+
         send_message(
             &mut assistant,
             Message::Action(crate::actors::Action::Assist),
@@ -862,6 +1078,21 @@ mod tests {
         .await;
 
         assert!(matches!(assistant.state, AssistantState::Processing));
+    }
+
+    #[tokio::test]
+    async fn test_assist_action_with_no_content() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assert!(matches!(assistant.state, AssistantState::Idle));
+
+        send_message(
+            &mut assistant,
+            Message::Action(crate::actors::Action::Assist),
+        )
+        .await;
+
+        // Should remain in Idle state since there's no content to submit
+        assert!(matches!(assistant.state, AssistantState::Idle));
     }
 
     #[tokio::test]
@@ -1056,5 +1287,341 @@ mod tests {
 
         // Should remain in Idle state
         assert!(matches!(assistant.state, AssistantState::Idle));
+    }
+
+    // Tests for the new PendingMessage system
+    #[test]
+    fn test_pending_message_empty() {
+        let msg = PendingMessage::new();
+        assert!(!msg.has_content());
+        assert!(msg.to_chat_messages().is_empty());
+    }
+
+    #[test]
+    fn test_pending_message_user_content_only() {
+        let mut msg = PendingMessage::new();
+        msg.set_user_content(ContentPart::Text("Hello".to_string()));
+
+        assert!(msg.has_content());
+        let chat_messages = msg.to_chat_messages();
+        assert_eq!(chat_messages.len(), 1);
+        assert!(matches!(chat_messages[0].role, ChatRole::User));
+    }
+
+    #[test]
+    fn test_pending_message_system_parts_only() {
+        let mut msg = PendingMessage::new();
+        msg.add_system_part("System message 1".to_string());
+        msg.add_system_part("System message 2".to_string());
+
+        assert!(msg.has_content());
+        let chat_messages = msg.to_chat_messages();
+        assert_eq!(chat_messages.len(), 2);
+        assert!(matches!(chat_messages[0].role, ChatRole::System));
+        assert!(matches!(chat_messages[1].role, ChatRole::System));
+    }
+
+    #[test]
+    fn test_pending_message_mixed_content() {
+        let mut msg = PendingMessage::new();
+        msg.add_system_part("System message 1".to_string());
+        msg.add_system_part("System message 2".to_string());
+        msg.set_user_content(ContentPart::Text("User message".to_string()));
+
+        assert!(msg.has_content());
+        let chat_messages = msg.to_chat_messages();
+        assert_eq!(chat_messages.len(), 3);
+
+        // System messages come first
+        assert!(matches!(chat_messages[0].role, ChatRole::System));
+        assert!(matches!(chat_messages[1].role, ChatRole::System));
+        // User message comes last
+        assert!(matches!(chat_messages[2].role, ChatRole::User));
+    }
+
+    #[test]
+    fn test_pending_message_user_content_replacement() {
+        let mut msg = PendingMessage::new();
+        msg.set_user_content(ContentPart::Text("First user message".to_string()));
+        msg.set_user_content(ContentPart::Text("Second user message".to_string()));
+
+        let chat_messages = msg.to_chat_messages();
+        assert_eq!(chat_messages.len(), 1);
+
+        // Should contain the second message only
+        if let MessageContent::Parts(ref parts) = chat_messages[0].content {
+            if let ContentPart::Text(ref text) = parts[0] {
+                assert_eq!(text, "Second user message");
+            } else {
+                panic!("Expected text content part");
+            }
+        } else {
+            panic!("Expected Parts content");
+        }
+    }
+
+    #[test]
+    fn test_pending_message_clear() {
+        let mut msg = PendingMessage::new();
+        msg.set_user_content(ContentPart::Text("User message".to_string()));
+        msg.add_system_part("System message".to_string());
+
+        assert!(msg.has_content());
+
+        msg.clear();
+        assert!(!msg.has_content());
+        assert!(msg.to_chat_messages().is_empty());
+    }
+
+    // Helper function to create agent messages
+    fn create_agent_message(agent_id: Uuid, status: AgentTaskStatus) -> ActorMessage {
+        ActorMessage {
+            scope: agent_id,
+            message: Message::Agent(crate::actors::AgentMessage {
+                agent_id,
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                    status,
+                }),
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_done_in_idle_state() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Idle;
+
+        let agent_id = Uuid::new_v4();
+        let task_result = Ok(crate::actors::AgentTaskResultOk {
+            success: true,
+            summary: "Task completed".to_string(),
+        });
+
+        let agent_message = create_agent_message(agent_id, AgentTaskStatus::Done(task_result));
+        assistant.handle_message(agent_message).await;
+
+        // Should transition to Processing after receiving sub-agent completion
+        assert!(matches!(assistant.state, AssistantState::Processing));
+
+        // The pending message should have been cleared after submission to LLM
+        assert!(!assistant.pending_message.has_content());
+
+        // Verify that the chat request now contains the agent response
+        let messages = &assistant.chat_request.messages;
+        assert!(!messages.is_empty());
+        // Should have system message containing agent response
+        let last_message = messages.last().unwrap();
+        assert!(matches!(last_message.role, ChatRole::System));
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_done_while_processing() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Processing;
+
+        let agent_id = Uuid::new_v4();
+        let task_result = Ok(crate::actors::AgentTaskResultOk {
+            success: true,
+            summary: "Task completed".to_string(),
+        });
+
+        let agent_message = create_agent_message(agent_id, AgentTaskStatus::Done(task_result));
+        assistant.handle_message(agent_message).await;
+
+        // Should remain in Processing state
+        assert!(matches!(assistant.state, AssistantState::Processing));
+
+        // Should have added system message to pending message for later submission
+        assert!(!assistant.pending_message.system_parts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_awaiting_manager_in_idle() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Idle;
+
+        let agent_id = Uuid::new_v4();
+        let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("test plan".to_string());
+
+        let agent_message =
+            create_agent_message(agent_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+        assistant.handle_message(agent_message).await;
+
+        // Should transition to Processing for plan approval
+        assert!(matches!(assistant.state, AssistantState::Processing));
+
+        // The pending message should have been cleared after submission to LLM
+        assert!(!assistant.pending_message.has_content());
+
+        // Verify that the chat request now contains the plan approval request
+        let messages = &assistant.chat_request.messages;
+        assert!(!messages.is_empty());
+        let last_message = messages.last().unwrap();
+        assert!(matches!(last_message.role, ChatRole::System));
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_awaiting_manager_while_waiting() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Wait {
+            tool_call_id: "tool123".to_string(),
+        };
+
+        let agent_id = Uuid::new_v4();
+        let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("test plan".to_string());
+
+        let agent_message =
+            create_agent_message(agent_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+        assistant.handle_message(agent_message).await;
+
+        // Should transition out of Wait to Processing for urgent plan approval
+        assert!(matches!(assistant.state, AssistantState::Processing));
+
+        // The pending message should have been cleared after submission to LLM
+        assert!(!assistant.pending_message.has_content());
+
+        // Verify that the chat request now contains the plan approval request
+        let messages = &assistant.chat_request.messages;
+        assert!(!messages.is_empty());
+        let last_message = messages.last().unwrap();
+        assert!(matches!(last_message.role, ChatRole::System));
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_done_while_waiting_single_agent() {
+        let mut assistant = create_test_assistant(vec![], None);
+        let agent_id = Uuid::new_v4();
+
+        // Set up Wait state with one agent
+        assistant.state = AssistantState::Wait {
+            tool_call_id: "tool123".to_string(),
+        };
+        assistant.waiting_for_agents.insert(agent_id, None);
+
+        let task_result = Ok(crate::actors::AgentTaskResultOk {
+            success: true,
+            summary: "Task completed".to_string(),
+        });
+
+        let agent_message = create_agent_message(agent_id, AgentTaskStatus::Done(task_result));
+        assistant.handle_message(agent_message).await;
+
+        // Should transition to Processing since all agents are done
+        assert!(matches!(assistant.state, AssistantState::Processing));
+
+        // waiting_for_agents should be cleared
+        assert!(assistant.waiting_for_agents.is_empty());
+
+        // The pending message should have been cleared after submission to LLM
+        assert!(!assistant.pending_message.has_content());
+
+        // Verify that the chat request now contains the agent response
+        let messages = &assistant.chat_request.messages;
+        assert!(!messages.is_empty());
+        let last_message = messages.last().unwrap();
+        assert!(matches!(last_message.role, ChatRole::System));
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_done_while_waiting_multiple_agents() {
+        let mut assistant = create_test_assistant(vec![], None);
+        let agent1_id = Uuid::new_v4();
+        let agent2_id = Uuid::new_v4();
+
+        // Set up Wait state with two agents
+        assistant.state = AssistantState::Wait {
+            tool_call_id: "tool123".to_string(),
+        };
+        assistant.waiting_for_agents.insert(agent1_id, None);
+        assistant.waiting_for_agents.insert(agent2_id, None);
+
+        let task_result = Ok(crate::actors::AgentTaskResultOk {
+            success: true,
+            summary: "Agent 1 completed".to_string(),
+        });
+
+        // First agent completes
+        let agent_message = create_agent_message(agent1_id, AgentTaskStatus::Done(task_result));
+        assistant.handle_message(agent_message).await;
+
+        // Should remain in Wait state since agent2 is still pending
+        assert!(matches!(assistant.state, AssistantState::Wait { .. }));
+
+        // Should have one completed agent and one pending
+        assert_eq!(assistant.waiting_for_agents.len(), 2);
+        assert!(
+            assistant
+                .waiting_for_agents
+                .get(&agent1_id)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            assistant
+                .waiting_for_agents
+                .get(&agent2_id)
+                .unwrap()
+                .is_none()
+        );
+
+        // Should have added partial response to pending message
+        assert!(!assistant.pending_message.system_parts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_in_progress_no_action() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Idle;
+
+        let agent_id = Uuid::new_v4();
+        let agent_message = create_agent_message(agent_id, AgentTaskStatus::InProgress);
+        assistant.handle_message(agent_message).await;
+
+        // Should remain in same state
+        assert!(matches!(assistant.state, AssistantState::Idle));
+
+        // Should not add anything to pending message
+        assert!(!assistant.pending_message.has_content());
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_waiting_no_action() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Idle;
+
+        let agent_id = Uuid::new_v4();
+        let agent_message = create_agent_message(
+            agent_id,
+            AgentTaskStatus::Waiting {
+                tool_call_id: "tool123".to_string(),
+            },
+        );
+        assistant.handle_message(agent_message).await;
+
+        // Should remain in same state
+        assert!(matches!(assistant.state, AssistantState::Idle));
+
+        // Should not add anything to pending message
+        assert!(!assistant.pending_message.has_content());
+    }
+
+    #[tokio::test]
+    async fn test_user_input_accumulates_in_pending_message() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AssistantState::Processing;
+
+        // Add user input while processing
+        send_message(
+            &mut assistant,
+            Message::UserContext(UserContext::UserTUIInput("Hello".to_string())),
+        )
+        .await;
+
+        // Should remain in Processing state
+        assert!(matches!(assistant.state, AssistantState::Processing));
+
+        // Should accumulate in pending message
+        assert!(assistant.pending_message.has_content());
+        assert!(assistant.pending_message.user_content.is_some());
     }
 }
