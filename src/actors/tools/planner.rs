@@ -4,7 +4,10 @@ use tokio::sync::broadcast;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
+use crate::actors::{
+    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskStatus, AgentType, 
+    InterAgentMessage, Message, TaskAwaitingManager, ToolCallStatus, ToolCallType, ToolCallUpdate
+};
 use crate::config::ParsedConfig;
 
 /// Task status for the planner
@@ -102,15 +105,17 @@ pub struct Planner {
     config: ParsedConfig,
     current_task_plan: Option<TaskPlan>,
     scope: Uuid,
+    agent_type: AgentType,
 }
 
 impl Planner {
-    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid, agent_type: AgentType) -> Self {
         Self {
             config,
             tx,
             current_task_plan: None,
             scope,
+            agent_type,
         }
     }
 
@@ -230,11 +235,22 @@ impl Planner {
         // Send system state update
         let _ = self.broadcast(Message::PlanUpdated(plan.clone()));
 
+        // For Worker agents, broadcast AwaitingManager status to request plan approval
+        if self.agent_type == AgentType::Worker {
+            let _ = self.broadcast(Message::Agent(AgentMessage {
+                agent_id: self.scope.clone(),
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                    status: AgentTaskStatus::AwaitingManager(TaskAwaitingManager::AwaitingPlanApproval(plan.clone())),
+                }),
+            }));
+        }
+
         // Return concise response
         let response = format!(
-            "Created task plan: {} with {} tasks",
+            "Created task plan: {} with {} tasks{}",
             title,
-            plan.tasks.len()
+            plan.tasks.len(),
+            if self.agent_type == AgentType::Worker { " (awaiting manager approval)" } else { "" }
         );
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
