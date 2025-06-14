@@ -137,7 +137,13 @@ impl Agent {
                     self.task_description.clone(),
                 )
                 .run();
-                Planner::new(self.config.clone(), self.tx.clone(), self.scope.clone(), self.r#type).run();
+                Planner::new(
+                    self.config.clone(),
+                    self.tx.clone(),
+                    self.scope.clone(),
+                    self.r#type,
+                )
+                .run();
 
                 // Add complete tool for sub-managers or Main Manager in headless mode
                 if self.r#type == AgentType::SubManager || cfg!(not(feature = "gui")) {
@@ -174,7 +180,13 @@ impl Agent {
                     self.scope.clone(),
                 )
                 .run();
-                Planner::new(self.config.clone(), self.tx.clone(), self.scope.clone(), self.r#type).run();
+                Planner::new(
+                    self.config.clone(),
+                    self.tx.clone(),
+                    self.scope.clone(),
+                    self.r#type,
+                )
+                .run();
                 MCP::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
             }
