@@ -18,10 +18,6 @@ pub const APPROVE_TOOL_INPUT_SCHEMA: &str = r#"{
         "agent_id": {
             "type": "string",
             "description": "The ID of the agent whose plan is being approved"
-        },
-        "plan_id": {
-            "type": "string",
-            "description": "The ID of the plan being approved"
         }
     },
     "required": ["agent_id", "plan_id"]
@@ -36,10 +32,6 @@ pub const REJECT_TOOL_INPUT_SCHEMA: &str = r#"{
             "type": "string",
             "description": "The ID of the task whose plan is being rejected"
         },
-        "plan_id": {
-            "type": "string",
-            "description": "The ID of the plan being rejected"
-        },
         "reason": {
             "type": "string",
             "description": "The reason for rejecting the plan"
@@ -51,7 +43,6 @@ pub const REJECT_TOOL_INPUT_SCHEMA: &str = r#"{
 #[derive(Debug, Deserialize)]
 struct ApprovePlanInput {
     agent_id: Uuid,
-    plan_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,18 +85,19 @@ impl PlanApproval {
             }
         };
 
-        let _ = self.broadcast(Message::Agent(AgentMessage {
-            agent_id: self.scope.clone(),
-            message: AgentMessageType::InterAgentMessage(InterAgentMessage::PlanApproved {
-                plan_id: input.plan_id.clone(),
+        let _ = self.broadcast_with_scope(
+            &input.agent_id,
+            Message::Agent(AgentMessage {
+                agent_id: input.agent_id,
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::PlanApproved),
             }),
-        }));
+        );
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(format!(
-                "Plan {} for task {} approved",
-                input.plan_id, input.agent_id
+                "Plan for agent {} approved",
+                input.agent_id
             ))),
         }));
     }
@@ -132,19 +124,21 @@ impl PlanApproval {
             }
         };
 
-        let _ = self.broadcast(Message::Agent(AgentMessage {
-            agent_id: self.scope.clone(),
-            message: AgentMessageType::InterAgentMessage(InterAgentMessage::PlanRejected {
-                plan_id: input.plan_id.clone(),
-                reason: input.reason.clone(),
+        let _ = self.broadcast_with_scope(
+            &input.agent_id,
+            Message::Agent(AgentMessage {
+                agent_id: input.agent_id.clone(),
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::PlanRejected {
+                    reason: input.reason.clone(),
+                }),
             }),
-        }));
+        );
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(format!(
-                "Plan {} for task {} rejected: {}",
-                input.plan_id, input.agent_id, input.reason
+                "Plan for agent {} rejected: {}",
+                input.agent_id, input.reason
             ))),
         }));
     }

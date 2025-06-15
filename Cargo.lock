@@ -958,6 +958,7 @@ dependencies = [
  "crossterm_winapi",
  "derive_more 2.0.1",
  "document-features",
+ "futures-core",
  "mio",
  "parking_lot",
  "rustix 1.0.7",
@@ -4259,6 +4260,8 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
+ "hashbrown 0.15.3",
  "pin-project-lite",
  "tokio",
 ]
@@ -4414,11 +4417,15 @@ version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29607ee819f733f15c6bbad6aa760ed3d52b345588130003399bd792bfc6b0a8"
 dependencies = [
+ "async-trait",
  "bitflags 2.9.0",
  "crossterm 0.29.0",
+ "futures-util",
  "lazy-regex",
  "ratatui 0.29.0",
  "thiserror 2.0.12",
+ "tokio",
+ "tokio-util",
  "tuirealm_derive",
 ]
 

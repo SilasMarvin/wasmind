@@ -153,7 +153,9 @@ When you have completed your assigned task, you MUST use the `complete` tool to 
 # Worker configuration
 [hive.worker_model]
 name = "deepseek-chat"
-system_prompt = """You are a HIVE Worker Agent. You can use available tools to accomplish your assigned task. If the task is complex, you can propose a plan to your Manager for approval.
+system_prompt = """You are a HIVE Worker Agent. You can use available tools to accomplish your assigned task. 
+
+If the task is complex create a plan using the `planner` tool. Plans will be automatically sent to your manager for approval.
 
 {% if task -%}
 <assigned_task>

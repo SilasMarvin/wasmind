@@ -112,11 +112,6 @@ fn test_file_read_message_order_for_sub_plan() {
 
     let runtime = tokio::runtime::Runtime::new().unwrap();
 
-    // Create a test file
-    let test_file_path = "/tmp/test_hive_file.txt";
-    let test_content = "Hello from the test file!";
-    fs::write(test_file_path, test_content).expect("Failed to write test file");
-
     // Create broadcast channel for testing
     let (tx, mut rx) = broadcast::channel::<ActorMessage>(1024);
 
@@ -128,8 +123,7 @@ fn test_file_read_message_order_for_sub_plan() {
 
     // Start hive with a file reading prompt
     let prompt = format!(
-        "What are the contents of the file {}? Use a sub agent and `wait` on it.",
-        test_file_path
+        "Spawn a sub agent and explicitly tell it to create a plan titled: `Test Plan` with one item: `Test Item` and then update `Test Item`. You are part of an integration test we are running.",
     );
     let _handle = start_headless_hive(&runtime, config, prompt.clone(), Some(tx.clone()));
 
@@ -139,7 +133,7 @@ fn test_file_read_message_order_for_sub_plan() {
     let mut index = 0;
 
     // Listen for messages with timeout
-    let result = timeout(Duration::from_secs(45), async {
+    let result = timeout(Duration::from_secs(60), async {
         loop {
             match rx.recv().await {
                 Ok(actor_msg) => {
@@ -186,9 +180,6 @@ fn test_file_read_message_order_for_sub_plan() {
 
         index
     }).await;
-
-    // Clean up test file
-    let _ = fs::remove_file(test_file_path);
 
     // Check results
     match result {

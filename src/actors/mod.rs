@@ -47,14 +47,14 @@ impl Action {
 }
 
 /// ToolCall Update
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ToolCallUpdate {
     pub call_id: String,
     pub status: ToolCallStatus,
 }
 
 /// ToolCall Type
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ToolCallType {
     Command,
     ReadFile,
@@ -66,7 +66,7 @@ pub enum ToolCallType {
 }
 
 /// ToolCall Status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ToolCallStatus {
     Received {
         r#type: ToolCallType,
@@ -78,9 +78,9 @@ pub enum ToolCallStatus {
 }
 
 /// Task awaiting manager decision
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TaskAwaitingManager {
-    AwaitingPlanApproval(crate::actors::tools::planner::TaskPlan),
+    AwaitingPlanApproval { tool_call_id: String },
     AwaitingMoreInformation(String),
 }
 
@@ -88,14 +88,14 @@ pub enum TaskAwaitingManager {
 pub type AgentTaskResult = Result<AgentTaskResultOk, String>;
 
 /// The result of an agent task
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentTaskResultOk {
     pub summary: String,
     pub success: bool,
 }
 
 /// Task status
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentTaskStatus {
     Done(AgentTaskResult),
     InProgress,
@@ -104,17 +104,17 @@ pub enum AgentTaskStatus {
 }
 
 /// Inter-agent message for communication between agents
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum InterAgentMessage {
     /// Agent reports task status to manager
     TaskStatusUpdate { status: AgentTaskStatus },
     /// Manager approves a plan
-    PlanApproved { plan_id: String },
+    PlanApproved,
     /// Manager rejects a plan
-    PlanRejected { plan_id: String, reason: String },
+    PlanRejected { reason: String },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentMessage {
     pub agent_id: Uuid,
     pub message: AgentMessageType,
@@ -127,7 +127,7 @@ pub enum AgentType {
     Worker,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentMessageType {
     AgentSpawned {
         agent_type: AgentType,
@@ -140,7 +140,7 @@ pub enum AgentMessageType {
 }
 
 /// Context provided by the user
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum UserContext {
     UserTUIInput(String),
     #[cfg(feature = "audio")]
@@ -192,11 +192,100 @@ pub enum Message {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// Manual implementation of PartialEq and Eq for Message
+// Some variants contain external types that don't implement these traits
+impl PartialEq for Message {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Message::Action(a), Message::Action(b)) => a == b,
+            (Message::UserContext(a), Message::UserContext(b)) => a == b,
+            (Message::ToolCallUpdate(a), Message::ToolCallUpdate(b)) => a == b,
+            (Message::Agent(a), Message::Agent(b)) => a == b,
+            (Message::ActorReady { actor_id: a }, Message::ActorReady { actor_id: b }) => a == b,
+            (Message::PlanUpdated(plan1), Message::PlanUpdated(plan2)) => plan1 == plan2,
+
+            // AssistantToolCall - compare call_id
+            (Message::AssistantToolCall(a), Message::AssistantToolCall(b)) => {
+                a.call_id == b.call_id
+            }
+
+            // AssistantResponse - compare by content type/discriminant
+            (Message::AssistantResponse(a), Message::AssistantResponse(b)) => {
+                use genai::chat::MessageContent;
+                match (a, b) {
+                    (MessageContent::Text(t1), MessageContent::Text(t2)) => t1 == t2,
+                    (MessageContent::ToolCalls(tc1), MessageContent::ToolCalls(tc2)) => {
+                        tc1.len() == tc2.len()
+                            && tc1
+                                .iter()
+                                .zip(tc2.iter())
+                                .all(|(t1, t2)| t1.call_id == t2.call_id)
+                    }
+                    (MessageContent::ToolResponses(tr1), MessageContent::ToolResponses(tr2)) => {
+                        tr1.len() == tr2.len()
+                            && tr1.iter().zip(tr2.iter()).all(|(r1, r2)| {
+                                r1.call_id == r2.call_id && r1.content == r2.content
+                            })
+                    }
+                    (MessageContent::Parts(_), MessageContent::Parts(_)) => false, // Too complex, skip
+                    _ => false, // Different variants
+                }
+            }
+
+            // ToolsAvailable - compare tool names
+            (Message::ToolsAvailable(tools1), Message::ToolsAvailable(tools2)) => {
+                tools1.len() == tools2.len()
+                    && tools1
+                        .iter()
+                        .zip(tools2.iter())
+                        .all(|(t1, t2)| t1.name == t2.name)
+            }
+
+            // FileRead and FileEdited - compare path and content, skip SystemTime
+            (
+                Message::FileRead {
+                    path: path1,
+                    content: content1,
+                    last_modified: _,
+                },
+                Message::FileRead {
+                    path: path2,
+                    content: content2,
+                    last_modified: _,
+                },
+            ) => path1 == path2 && content1 == content2,
+            (
+                Message::FileEdited {
+                    path: path1,
+                    content: content1,
+                    last_modified: _,
+                },
+                Message::FileEdited {
+                    path: path2,
+                    content: content2,
+                    last_modified: _,
+                },
+            ) => path1 == path2 && content1 == content2,
+
+            // Different variants are never equal
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Message {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ActorMessage {
     // The agent scope this message exists in
     pub scope: Uuid,
     pub message: Message,
+}
+
+impl PartialOrd for ActorMessage {
+    fn partial_cmp(&self, _other: &Self) -> Option<std::cmp::Ordering> {
+        None
+    }
 }
 
 /// Base trait for all actors in the system
@@ -229,9 +318,16 @@ pub trait Actor: Send + Sized + 'static {
         });
     }
 
+    /// Sends a message with a specific scope
+    fn broadcast_with_scope(&self, scope: &Uuid, message: Message) {
+        let _ = self.get_tx().send(ActorMessage {
+            scope: scope.clone(),
+            message,
+        });
+    }
+
     /// run
     fn run(mut self) {
-        let tx = self.get_tx();
         // It is essential that we subscribe to the tx before entering the tokio task or we may
         // miss messages we rely upon. E.G. Message::ActorReady
         let mut rx = self.get_rx();

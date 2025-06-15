@@ -11,7 +11,7 @@ use crate::actors::{
 use crate::config::ParsedConfig;
 
 /// Task status for the planner
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TaskStatus {
     Pending,
     InProgress,
@@ -32,7 +32,7 @@ impl fmt::Display for TaskStatus {
 }
 
 /// Individual task in the plan
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Task {
     pub description: String,
     pub status: TaskStatus,
@@ -51,7 +51,7 @@ impl Task {
 }
 
 /// Task plan managed by the planner tool
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct TaskPlan {
     pub title: String,
     pub tasks: Vec<Task>,
@@ -246,7 +246,9 @@ impl Planner {
                 agent_id: self.scope.clone(),
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
                     status: AgentTaskStatus::AwaitingManager(
-                        TaskAwaitingManager::AwaitingPlanApproval(plan.clone()),
+                        TaskAwaitingManager::AwaitingPlanApproval {
+                            tool_call_id: tool_call_id.to_string(),
+                        },
                     ),
                 }),
             }));
