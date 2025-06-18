@@ -1,6 +1,6 @@
 mod common;
 
-use hive::actors::{ActorMessage, Message, ToolCallStatus, ToolCallType};
+use hive::actors::{ActorMessage, AgentMessageType, AgentTaskStatus, InterAgentMessage, Message, ToolCallStatus, ToolCallType};
 use hive::config::Config;
 use hive::hive::start_headless_hive;
 use std::fs;
@@ -123,7 +123,7 @@ fn test_file_read_message_order_for_sub_plan() {
 
     // Start hive with a file reading prompt
     let prompt = format!(
-        "Spawn a sub agent and explicitly tell it to create a plan titled: `Test Plan` with one item: `Test Item` and then update `Test Item`. You are part of an integration test we are running.",
+        "Spawn a sub agent and explicitly tell it to create a plan titled: `Test Plan` with one item: `Test Item` and then update `Test Item` to complete. When prompted approve its plan. Complete once the agent has created and updated its plan. NOTE: you are part of an integration test we are running it is essential you follow these directions exactly.",
     );
     let _handle = start_headless_hive(&runtime, config, prompt.clone(), Some(tx.clone()));
 
@@ -142,31 +142,43 @@ fn test_file_read_message_order_for_sub_plan() {
                     // Check expected messages in order
                     // 1. MainManager calls spawn_agents fn
                     // 2. spawn_agents fn broadcasts Received
-                    // 3. spawn_agents fn broadcasts InterAgentMessage task status update to Waiting for MainManager
+                    // 3. spawn_agents fn broadcasts InterAgentMessage task status update to Waiting for Manager
                     // 4. spawn_agents fn is finished
-                    // 5. Worker sub agent calls read_file tool
-                    // 6. read_file tool broadcasts finished
-                    // 7. Worker sub agent calls complete fn
-                    // 8. complete fn broadcasts InterAgentMessage task status update to Done for
+                    // 5. Worker sub agent calls planner tool
+                    // 6. planner tool broadcasts InterAgentMessage task status to Waiting for
+                        //    Manager
+                    // 7. MainManager gets woken up and approves the plan
+                    // 8. MainManager goes back to waiting after the plan approval (We can't
+                        //    actually check for this)
+                    // 9. Worker sub agent receives InterAgentMessage of PlanApproved
+                    // 10. Worker sub agent marks the first plan item as complete
+                    // 11. Worker sub agent uses the complete fn
+                    // 12. complete fn broadcasts InterAgentMessage task status update to Done for
                     //    MainManager
-                    // 9. MainManager calls complete fn
+                    // 13. MainManager calls complete fn
                     if index == 0 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "spawn_agents") {
                         index += 1;
                     } else if index == 1 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Received {r#type: ToolCallType::SpawnAgent, friendly_command_display: _ })) {
                         index += 1;
-                    } else if index == 2 && matches!(msg, Message::Agent(_)) {
+                    } else if index == 2 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate { status: AgentTaskStatus::Waiting { .. } }))) {
                         index += 1;
                     } else if index == 3 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished(Ok(_)))) {
                         index += 1;
-                    } else if index == 4 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "read_file") {
+                    } else if index == 4 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "planner") {
                         index += 1;
-                    } else if index == 5 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished(Ok(_)))) {
+                    } else if index == 5 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate { status: AgentTaskStatus::AwaitingManager(_) }))) {
                         index += 1;
-                    } else if index == 6 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
+                    } else if index == 6 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "approve_plan") {
                         index += 1;
-                    } else if index == 7 && matches!(msg, Message::Agent(_)) {
+                    } else if index == 7 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::PlanApproved))) {
                         index += 1;
-                    } else if index == 8 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
+                    } else if index == 8 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "planner") {
+                        index += 1;
+                    } else if index == 9 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
+                        index += 1;
+                    } else if index == 10 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate { status: AgentTaskStatus::Done(_) }))) {
+                        index += 1;
+                    } else if index == 11 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
                         index += 1;
                         break;
                     }
@@ -184,11 +196,11 @@ fn test_file_read_message_order_for_sub_plan() {
     // Check results
     match result {
         Ok(final_index) => {
-            assert_eq!(final_index, 9, "Expected to see all 9 messages in order, but only saw {}", final_index);
+            assert_eq!(final_index, 12, "Expected to see all 12 messages in order, but only saw {}", final_index);
             println!("\n✅ All expected messages were seen in the correct order!");
         }
         Err(_) => {
-            panic!("Test timed out waiting for messages. Got to index {} out of 9", index);
+            panic!("Test timed out waiting for messages. Got to index {} out of 12", index);
         }
     }
     });

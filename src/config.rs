@@ -63,7 +63,7 @@ pub struct Config {
     #[serde(default)]
     auto_approve_commands: bool,
     #[serde(default)]
-    hive: HiveConfig,
+    pub hive: HiveConfig,
 }
 
 impl Config {
@@ -170,11 +170,11 @@ struct KeyConfig {
 /// The model configuration we deserialize directly from toml
 #[derive(Deserialize, Default, Debug, Clone)]
 pub struct ModelConfig {
-    name: String,
-    system_prompt: Option<String>,
-    endpoint: Option<String>,
-    auth: Option<String>,
-    adapter: Option<String>,
+    pub name: String,
+    pub system_prompt: Option<String>,
+    pub endpoint: Option<String>,
+    pub auth: Option<String>,
+    pub adapter: Option<String>,
 }
 
 /// HIVE multi-agent configuration
