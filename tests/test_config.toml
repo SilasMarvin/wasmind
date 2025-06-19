@@ -28,12 +28,6 @@ whitelisted_commands = [
     "tree"
 ]
 
-[model]
-name = "deepseek-chat"
-system_prompt = """You are integrated terminal assistant with access to various tools. 
-
-Use the tools to answer the user's requests. Do not ask to execute tools simply do what is required to answer the request. Use your best judgement on what tool to use."""
-
 [key_bindings]
 clear_defaults = true
 

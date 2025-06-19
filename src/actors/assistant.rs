@@ -5,7 +5,7 @@ use genai::{
 use snafu::ResultExt;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, broadcast};
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    Action, ActorMessage, AgentMessageType, AgentTaskResult, AgentTaskResultOk, AgentTaskStatus,
+    Action, ActorMessage, AgentMessageType, AgentTaskResult, AgentTaskStatus,
     InterAgentMessage, TaskAwaitingManager, UserContext,
 };
 
@@ -126,6 +126,8 @@ pub struct Assistant {
     required_actors: Vec<&'static str>,
     /// Context for returning to Wait state after temporary Processing
     wait_context: Option<WaitContext>,
+    /// Whitelisted commands for the system prompt
+    whitelisted_commands: Vec<String>,
 }
 
 /// NOTE: The way this is implemented means that we do not support multiple tool calls when the
@@ -140,6 +142,7 @@ impl Assistant {
         scope: Uuid,
         required_actors: Vec<&'static str>,
         task_description: Option<String>,
+        whitelisted_commands: Vec<String>,
     ) -> Self {
         let client = Client::builder()
             .with_service_target_resolver(config.service_target_resolver.clone())
@@ -167,6 +170,7 @@ impl Assistant {
             required_actors,
             spawned_agents_scope: vec![],
             wait_context: None,
+            whitelisted_commands,
         }
     }
 
@@ -416,7 +420,7 @@ impl Assistant {
             match self.system_state.render_system_prompt_with_task(
                 &self.config.system_prompt,
                 &tool_infos,
-                vec![], // Maybe pass the whitelisted commands to the model as well?
+                self.whitelisted_commands.clone(),
                 self.task_description.clone(),
             ) {
                 Ok(rendered_prompt) => {
@@ -1120,7 +1124,7 @@ mod tests {
 
         let (tx, _) = broadcast::channel(10);
         let scope = Uuid::new_v4();
-        Assistant::new(parsed_config, tx, scope, required_actors, task_description)
+        Assistant::new(parsed_config, tx, scope, required_actors, task_description, vec![])
     }
 
     fn create_agent_message(agent_id: Uuid, status: AgentTaskStatus) -> ActorMessage {

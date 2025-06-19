@@ -912,6 +912,46 @@ Current plan: active
     }
 
     #[test]
+    fn test_render_system_prompt_with_task() {
+        let template = r#"You are an AI assistant.
+
+{% if task -%}
+Your assigned task: {{ task }}
+{% else -%}
+No specific task assigned.
+{% endif %}
+
+Available tools: {{ tools|length }}"#;
+
+        let state = SystemState::new();
+        let tools = vec![
+            ToolInfo {
+                name: "test_tool".to_string(),
+                description: "A test tool".to_string(),
+            },
+        ];
+
+        // Test without task
+        let result = state
+            .render_system_prompt_with_task(template, &tools, vec![], None)
+            .unwrap();
+        assert!(result.contains("No specific task assigned"));
+        assert!(result.contains("Available tools: 1"));
+
+        // Test with task
+        let result = state
+            .render_system_prompt_with_task(
+                template,
+                &tools,
+                vec![],
+                Some("Implement user authentication".to_string()),
+            )
+            .unwrap();
+        assert!(result.contains("Your assigned task: Implement user authentication"));
+        assert!(!result.contains("No specific task assigned"));
+    }
+
+    #[test]
     fn test_xml_style_template_rendering() {
         use std::path::PathBuf;
         use std::time::SystemTime;

@@ -42,40 +42,19 @@ pub struct Agent {
 }
 
 impl Agent {
-    /// Create a new Manager agent with a task
-    pub fn new_manager(
+    pub fn new(
         tx: Sender<ActorMessage>,
         role: String,
         task_description: Option<String>,
         config: ParsedConfig,
         parent_scope: Uuid,
+        r#type: AgentType,
     ) -> Self {
         let id = Uuid::new_v4();
 
-        Agent {
+        Self {
             tx,
-            r#type: AgentType::SubManager,
-            config,
-            task_description,
-            parent_scope,
-            scope: id,
-            role,
-        }
-    }
-
-    /// Create a new Worker agent with a task
-    pub fn new_worker(
-        tx: Sender<ActorMessage>,
-        role: String,
-        task_description: Option<String>,
-        config: ParsedConfig,
-        parent_scope: Uuid,
-    ) -> Self {
-        let id = Uuid::new_v4();
-
-        Agent {
-            tx,
-            r#type: AgentType::Worker,
+            r#type,
             config,
             task_description,
             parent_scope,
@@ -135,6 +114,7 @@ impl Agent {
                     self.scope.clone(),
                     self.get_required_actors(),
                     self.task_description.clone(),
+                    self.config.whitelisted_commands.clone(),
                 )
                 .run();
                 Planner::new(
@@ -163,6 +143,7 @@ impl Agent {
                     self.scope.clone(),
                     self.get_required_actors(),
                     self.task_description.clone(),
+                    self.config.whitelisted_commands.clone(),
                 )
                 .run();
                 Command::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();

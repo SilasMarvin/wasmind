@@ -288,6 +288,91 @@ Working directory: {{ cwd }}"#;
     }
 
     #[test]
+    fn test_template_error_handling() {
+        use crate::system_state::SystemState;
+
+        let system_state = SystemState::new();
+        let context = TemplateContext::new(vec![], vec![], &system_state);
+
+        // Test invalid template syntax
+        let invalid_template = "Hello {{ name";  // Missing closing braces
+        let result = render_template(invalid_template, &context);
+        assert!(result.is_err());
+
+        // Test undefined variable - minijinja might be configured to not error
+        let undefined_var_template = "Value: {{ undefined_variable }}";
+        let result = render_template(undefined_var_template, &context);
+        // Check if it errors or renders as empty/undefined
+        match result {
+            Ok(rendered) => {
+                // If it doesn't error, it should at least not contain the variable name
+                assert!(!rendered.contains("undefined_variable"));
+            }
+            Err(_) => {
+                // This is also acceptable - undefined variables cause errors
+            }
+        }
+
+        // Test invalid filter
+        let invalid_filter = "{{ tools|invalid_filter }}";
+        let result = render_template(invalid_filter, &context);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_template_with_optional_variables() {
+        use crate::system_state::SystemState;
+
+        let system_state = SystemState::new();
+        let context = TemplateContext::new(vec![], vec![], &system_state);
+
+        // Test template that gracefully handles missing data
+        let template = r#"System State Report:
+===================
+
+Tools: {{ tools|length }} available
+{% if tools|length > 0 -%}
+Tool List:
+{% for tool in tools -%}
+  - {{ tool.name }}
+{% endfor %}
+{% endif %}
+
+Files: {{ files.count }} loaded
+{% if files.count > 0 -%}
+File Paths:
+{% for file in files.list -%}
+  - {{ file.path }}
+{% endfor %}
+{% endif %}
+
+Plan: {% if plan.exists %}Active - "{{ plan.data.title }}"{% else %}No active plan{% endif %}
+
+Agents: {{ agents.count }} spawned
+{% if agents.count > 0 -%}
+Agent List:
+{% for agent in agents.list -%}
+  - {{ agent.role }} ({{ agent.status }})
+{% endfor %}
+{% endif %}
+
+Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
+
+        // Should render successfully even with all empty/missing data
+        let result = render_template(template, &context).unwrap();
+        assert!(result.contains("Tools: 0 available"));
+        assert!(result.contains("Files: 0 loaded"));
+        assert!(result.contains("Plan: No active plan"));
+        assert!(result.contains("Agents: 0 spawned"));
+        assert!(result.contains("Task: No specific task"));
+        
+        // Verify that conditional sections are not rendered
+        assert!(!result.contains("Tool List:"));
+        assert!(!result.contains("File Paths:"));
+        assert!(!result.contains("Agent List:"));
+    }
+
+    #[test]
     fn test_agents_list_template() {
         use crate::actors::AgentTaskStatus;
         use crate::system_state::{AgentTaskInfo, SystemState};
@@ -317,6 +402,50 @@ Working directory: {{ cwd }}"#;
 
         assert!(result.contains("Active Agents:"));
         assert!(result.contains("- Backend Developer (in_progress): Create REST API"));
+    }
+
+    #[test]
+    fn test_whitelisted_commands_template() {
+        use crate::system_state::SystemState;
+
+        let system_state = SystemState::new();
+        let commands = vec!["ls".to_string(), "git".to_string(), "cargo".to_string()];
+        let context = TemplateContext::new(vec![], commands, &system_state);
+
+        // Test template with whitelisted_commands
+        let template = r#"Allowed commands:
+{% if whitelisted_commands -%}
+{% for cmd in whitelisted_commands -%}
+- {{ cmd }}
+{% endfor %}
+Total: {{ whitelisted_commands|length }} commands
+{% else -%}
+No commands whitelisted
+{% endif %}"#;
+
+        let result = render_template(template, &context).unwrap();
+        assert!(result.contains("- ls"));
+        assert!(result.contains("- git"));
+        assert!(result.contains("- cargo"));
+        assert!(result.contains("Total: 3 commands"));
+    }
+
+    #[test]
+    fn test_empty_whitelisted_commands() {
+        use crate::system_state::SystemState;
+
+        let system_state = SystemState::new();
+        let context = TemplateContext::new(vec![], vec![], &system_state);
+
+        let template = r#"{% if whitelisted_commands and whitelisted_commands|length > 0 -%}
+Commands: {{ whitelisted_commands|join(", ") }}
+{% else -%}
+No whitelisted commands available
+{% endif %}"#;
+
+        let result = render_template(template, &context).unwrap();
+        assert!(result.contains("No whitelisted commands available"));
+        assert!(!result.contains("Commands:"));
     }
 
     #[test]

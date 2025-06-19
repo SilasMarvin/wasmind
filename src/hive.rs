@@ -3,7 +3,7 @@ use tokio::sync::broadcast;
 
 use crate::{
     actors::{
-        Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskStatus,
+        Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskStatus, AgentType,
         InterAgentMessage, Message, agent::Agent, tui::TuiActor,
     },
     config::ParsedConfig,
@@ -46,12 +46,13 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
         Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE.clone()).run();
 
         // Create the Main Manager agent
-        let main_manager = Agent::new_manager(
+        let main_manager = Agent::new(
             tx.clone(),
             crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
             None,
             config.clone(),
-            ROOT_AGENT_SCOPE.clone()
+            ROOT_AGENT_SCOPE.clone(),
+            AgentType::MainManager
         );
 
         // Start the Main Manager in its own task
@@ -107,12 +108,13 @@ pub fn start_headless_hive(
         #[cfg(feature = "audio")]
         Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE.clone()).run();
 
-        let main_manager = Agent::new_manager(
+        let main_manager = Agent::new(
             tx.clone(),
             crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
             Some(initial_prompt),
             config.clone(),
-            ROOT_AGENT_SCOPE
+            ROOT_AGENT_SCOPE,
+            AgentType::MainManager
         );
 
         // Start the Main Manager in its own task

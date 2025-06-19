@@ -7,8 +7,8 @@ use uuid::Uuid;
 // Assuming AgentSpawnedResponse is already Serialize.
 // It is imported from crate::actors::agent and used with serde_json::to_string in the original code.
 use crate::actors::{
-    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskStatus, InterAgentMessage,
-    Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskStatus, AgentType,
+    InterAgentMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
     agent::{Agent, AgentSpawnedResponse},
 };
 use crate::config::ParsedConfig;
@@ -129,19 +129,21 @@ impl SpawnAgent {
         for agent_def in input.agents_to_spawn {
             // Create the new agent
             let agent = match agent_def.agent_type.as_str() {
-                "Worker" => Agent::new_worker(
+                "Worker" => Agent::new(
                     self.tx.clone(),
                     agent_def.agent_role.clone(),
                     Some(agent_def.task_description.clone()),
                     self.config.clone(),
                     self.scope.clone(),
+                    AgentType::Worker,
                 ),
-                "Manager" => Agent::new_manager(
+                "Manager" => Agent::new(
                     self.tx.clone(),
                     agent_def.agent_role.clone(),
                     Some(agent_def.task_description.clone()),
                     self.config.clone(),
                     self.scope.clone(),
+                    AgentType::SubManager,
                 ),
                 _ => {
                     let error_msg = format!(
