@@ -1,6 +1,6 @@
 use crate::actors::{
-    Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskResultOk,
-    AgentTaskStatus, InterAgentMessage, Message, ToolCallStatus, ToolCallUpdate,
+    Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentTaskResultOk,
+    InterAgentMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
 use genai::chat::{Tool, ToolCall};
@@ -62,18 +62,16 @@ impl Complete {
                 }
             };
 
-        // Send agent status upda ffte
-        let _ = self.broadcast(Message::Agent(AgentMessage {
-            agent_id: self.get_scope().clone(),
-            message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                status: AgentTaskStatus::Done(Ok(agent_task_result.clone())),
-            }),
+        // First send received status
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+            call_id: tool_call.call_id.clone(),
+            status: ToolCallStatus::Received {
+                r#type: ToolCallType::TaskCompleted,
+                friendly_command_display: format!("Complete task: {}", agent_task_result.summary),
+            },
         }));
 
-        // When the task is completed we shut down this agent
-        let _ = self.broadcast(Message::Action(Action::Exit));
-
-        // Send tool call completion with concise message
+        // Then send tool call completion
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(format!(
@@ -85,6 +83,17 @@ impl Complete {
                 }
             ))),
         }));
+
+        // Then send agent status update
+        let _ = self.broadcast(Message::Agent(AgentMessage {
+            agent_id: self.get_scope().clone(),
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                status: AgentStatus::Done(Ok(agent_task_result.clone())),
+            }),
+        }));
+
+        // When the task is completed we shut down this agent
+        let _ = self.broadcast(Message::Action(Action::Exit));
     }
 }
 

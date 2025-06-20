@@ -17,28 +17,9 @@ use crate::{
 };
 
 use super::{
-    Action, ActorMessage, AgentMessageType, AgentTaskResult, AgentTaskStatus,
+    Action, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentTaskResult,
     InterAgentMessage, TaskAwaitingManager, UserContext,
 };
-
-/// States that the Assistant actor can be in
-#[derive(Debug, Clone)]
-pub enum AssistantState {
-    /// Waiting for actors
-    AwaitingActors,
-    /// Ready to accept requests, has tools available
-    Idle,
-    /// Actively processing a user request (making LLM call)
-    Processing,
-    /// Waiting for tool execution results
-    AwaitingTools { pending_tool_calls: Vec<String> },
-    /// Waiting for next input from user, sub agent, etc...
-    /// Does not submit a response to the LLM when the tool call with `tool_call_id` returns a
-    /// response. Waits for other input
-    Wait { tool_call_id: String },
-    /// Waiting for manager plan approval
-    AwaitingManager(TaskAwaitingManager),
-}
 
 /// Pending message that accumulates user input and system messages
 /// to be submitted to the LLM when appropriate
@@ -119,7 +100,7 @@ pub struct Assistant {
     cancel_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     pending_message: PendingMessage,
     pending_tool_responses: Vec<genai::chat::ToolResponse>,
-    state: AssistantState,
+    pub state: AgentStatus,
     task_description: Option<String>,
     scope: Uuid,
     spawned_agents_scope: Vec<Uuid>,
@@ -149,9 +130,9 @@ impl Assistant {
             .build();
 
         let state = if required_actors.is_empty() {
-            AssistantState::Idle
+            AgentStatus::Idle
         } else {
-            AssistantState::AwaitingActors
+            AgentStatus::AwaitingActors
         };
 
         Self {
@@ -191,7 +172,7 @@ impl Assistant {
 
             // It is common for tools to transition our state out of AwaitingTools before broadcasting ToolCallStatus::Finished
             match &self.state {
-                AssistantState::AwaitingTools { pending_tool_calls } => {
+                AgentStatus::AwaitingTools { pending_tool_calls } => {
                     if pending_tool_calls.contains(&update.call_id) {
                         let mut remaining_calls = pending_tool_calls.clone();
                         remaining_calls.retain(|id| id != &update.call_id);
@@ -228,13 +209,13 @@ impl Assistant {
                             }
                         } else {
                             // Still waiting for more tools
-                            self.state = AssistantState::AwaitingTools {
+                            self.set_state(AgentStatus::AwaitingTools {
                                 pending_tool_calls: remaining_calls,
-                            };
+                            });
                         }
                     }
                 }
-                AssistantState::AwaitingManager(awaiting_manager) => match awaiting_manager {
+                AgentStatus::AwaitingManager(awaiting_manager) => match awaiting_manager {
                     TaskAwaitingManager::AwaitingPlanApproval { tool_call_id } => {
                         if tool_call_id == &update.call_id {
                             let tool_response = genai::chat::ToolResponse {
@@ -251,7 +232,7 @@ impl Assistant {
                     }
                     TaskAwaitingManager::AwaitingMoreInformation(_) => todo!(),
                 },
-                AssistantState::Wait { tool_call_id } => {
+                AgentStatus::Wait { tool_call_id } => {
                     if tool_call_id == &update.call_id {
                         let tool_response = genai::chat::ToolResponse {
                             call_id: update.call_id.clone(),
@@ -334,10 +315,10 @@ impl Assistant {
                     return false;
                 } else {
                     // No user input - return to Wait state with only system messages
-                    self.state = AssistantState::Wait {
+                    self.wait_context = Some(wait_context.clone());
+                    self.set_state(AgentStatus::Wait {
                         tool_call_id: wait_context.original_tool_call_id.clone(),
-                    };
-                    self.wait_context = Some(wait_context);
+                    });
                     return true;
                 }
             } else {
@@ -361,13 +342,29 @@ impl Assistant {
         false
     }
 
+    /// Broadcast state change to other actors
+    fn broadcast_state_change(&self) {
+        self.broadcast(Message::Agent(AgentMessage {
+            agent_id: self.scope.clone(),
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                status: self.state.clone(),
+            }),
+        }));
+    }
+
+    /// Update state and broadcast the change
+    fn set_state(&mut self, new_state: AgentStatus) {
+        self.state = new_state;
+        self.broadcast_state_change();
+    }
+
     #[tracing::instrument(name = "llm_request", skip(self))]
     async fn submit_llm_request(&mut self) {
         if !self.pending_tool_responses.is_empty() {
             warn!("Submitting assistant request while pending_tool_responses is not empty");
         }
 
-        self.state = AssistantState::Processing;
+        self.set_state(AgentStatus::Processing);
 
         // Cancel any existing request
         if let Some(handle) = self.cancel_handle.lock().await.take() {
@@ -549,7 +546,7 @@ impl Actor for Assistant {
             match message.message {
                 // Handle ActorReady messages for state transition
                 Message::ActorReady { actor_id } => {
-                    if let AssistantState::AwaitingActors = &self.state {
+                    if let AgentStatus::AwaitingActors = &self.state {
                         self.required_actors = self
                             .required_actors
                             .drain(..)
@@ -557,7 +554,7 @@ impl Actor for Assistant {
                             .collect::<Vec<&'static str>>();
 
                         if self.required_actors.is_empty() {
-                            self.state = AssistantState::Idle;
+                            self.set_state(AgentStatus::Idle);
 
                             // Check if we have a task to execute
                             if let Some(ref task) = self.task_description {
@@ -573,7 +570,7 @@ impl Actor for Assistant {
 
                 Message::UserContext(context) => {
                     match (context, &self.state) {
-                        (UserContext::UserTUIInput(text), AssistantState::Idle) => {
+                        (UserContext::UserTUIInput(text), AgentStatus::Idle) => {
                             self.add_user_content(ContentPart::Text(text));
                             self.submit_pending_message().await;
                         }
@@ -608,7 +605,7 @@ impl Actor for Assistant {
 
                 Message::Action(crate::actors::Action::Assist) => {
                     // State transition: Idle -> Processing when receiving assist action
-                    if let AssistantState::Idle = &self.state {
+                    if let AgentStatus::Idle = &self.state {
                         self.submit_pending_message().await;
                     } else {
                         error!("Receiving assist request in assistant when state is not Idle");
@@ -617,16 +614,16 @@ impl Actor for Assistant {
                 Message::Action(crate::actors::Action::Cancel) => {
                     // State transition: Processing/AwaitingTools/Wait -> Idle on cancel
                     match &self.state {
-                        AssistantState::Processing | AssistantState::AwaitingTools { .. } => {
-                            self.state = AssistantState::Idle;
+                        AgentStatus::Processing | AgentStatus::AwaitingTools { .. } => {
+                            self.set_state(AgentStatus::Idle);
                             // If we have pending message content, submit it immediately
                             if self.pending_message.has_content() {
                                 self.submit_pending_message().await;
                             }
                         }
-                        AssistantState::Wait { .. } => {
+                        AgentStatus::Wait { .. } => {
                             // Cancel waiting for agents - transition to Idle
-                            self.state = AssistantState::Idle;
+                            self.set_state(AgentStatus::Idle);
                             // Clear wait context
                             self.wait_context = None;
                             // If we have pending message content, submit it immediately
@@ -658,7 +655,7 @@ impl Actor for Assistant {
 
                 Message::AssistantResponse(content) => {
                     // State transition: Processing -> AwaitingTools or Idle/Wait based on content
-                    if let AssistantState::Processing = &self.state {
+                    if let AgentStatus::Processing = &self.state {
                         self.chat_request = self.chat_request.clone().append_message(ChatMessage {
                             role: ChatRole::Assistant,
                             content: content.clone(),
@@ -668,15 +665,15 @@ impl Actor for Assistant {
                             MessageContent::ToolCalls(tool_calls) => {
                                 let call_ids =
                                     tool_calls.iter().map(|tc| tc.call_id.clone()).collect();
-                                self.state = AssistantState::AwaitingTools {
+                                self.set_state(AgentStatus::AwaitingTools {
                                     pending_tool_calls: call_ids,
-                                };
+                                });
                             }
                             _ => {
                                 // Check if we should return to Wait state
                                 if !self.maybe_return_to_wait() {
                                     // No wait context, go to Idle
-                                    self.state = AssistantState::Idle;
+                                    self.set_state(AgentStatus::Idle);
 
                                     // If we have pending message content, submit it immediately when Idle
                                     if self.pending_message.has_content() {
@@ -704,7 +701,7 @@ impl Actor for Assistant {
                             task_description,
                         );
                         self.system_state.add_agent(agent_info);
-                        if let AssistantState::Wait {
+                        if let AgentStatus::Wait {
                             tool_call_id: waiting_for_tool_call_id,
                         } = &self.state
                         {
@@ -735,26 +732,48 @@ impl Actor for Assistant {
                     AgentMessageType::InterAgentMessage(inter_agent_message) => {
                         match inter_agent_message {
                             InterAgentMessage::TaskStatusUpdate { status } => {
-                                // Done and InProgress don't require us to udpate any state
+                                // We only care about AwaitingManager and Wait states from our tools
                                 match &status {
-                                    super::AgentTaskStatus::Done(_) => (),
-                                    super::AgentTaskStatus::InProgress => (),
-                                    super::AgentTaskStatus::AwaitingManager(
-                                        task_awaiting_manager,
-                                    ) => {
-                                        self.state = AssistantState::AwaitingManager(
-                                            task_awaiting_manager.clone(),
-                                        );
+                                    super::AgentStatus::AwaitingManager(task_awaiting_manager) => {
+                                        // Only update if not already awaiting manager
+                                        if !matches!(self.state, AgentStatus::AwaitingManager(_)) {
+                                            self.state = AgentStatus::AwaitingManager(
+                                                task_awaiting_manager.clone(),
+                                            );
+                                        }
                                     }
-                                    super::AgentTaskStatus::Waiting { tool_call_id } => {
-                                        self.state = AssistantState::Wait {
-                                            tool_call_id: tool_call_id.clone(),
-                                        };
-                                        // Initialize wait context when entering Wait state
-                                        self.wait_context = Some(WaitContext {
-                                            original_tool_call_id: tool_call_id.clone(),
-                                            waiting_for_agents: HashMap::new(),
-                                        });
+                                    super::AgentStatus::Wait { tool_call_id } => {
+                                        // Only update if not already in Wait state for the same tool call
+                                        match &self.state {
+                                            AgentStatus::Wait {
+                                                tool_call_id: current_id,
+                                            } => {
+                                                if tool_call_id != current_id {
+                                                    // Different tool call, update state and context
+                                                    self.state = AgentStatus::Wait {
+                                                        tool_call_id: tool_call_id.clone(),
+                                                    };
+                                                    self.wait_context = Some(WaitContext {
+                                                        original_tool_call_id: tool_call_id.clone(),
+                                                        waiting_for_agents: HashMap::new(),
+                                                    });
+                                                }
+                                                // Same tool call, preserve existing wait context
+                                            }
+                                            _ => {
+                                                // Not in Wait state, transition to it
+                                                self.state = AgentStatus::Wait {
+                                                    tool_call_id: tool_call_id.clone(),
+                                                };
+                                                self.wait_context = Some(WaitContext {
+                                                    original_tool_call_id: tool_call_id.clone(),
+                                                    waiting_for_agents: HashMap::new(),
+                                                });
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        // Ignore all other state updates
                                     }
                                 }
                                 self.system_state
@@ -792,7 +811,7 @@ impl Actor for Assistant {
                                     .update_agent_status(&message.agent_id, status.clone());
                                 match (&status, &self.state) {
                                     // ERROR: Should never receive sub-agent messages in AwaitingActors
-                                    (_, AssistantState::AwaitingActors) => {
+                                    (_, AgentStatus::AwaitingActors) => {
                                         error!(
                                             "Received sub-agent status update while awaiting actors - this should not happen"
                                         );
@@ -800,8 +819,8 @@ impl Actor for Assistant {
 
                                     // Sub-agent Done status handling
                                     (
-                                        AgentTaskStatus::Done(agent_task_result),
-                                        AssistantState::Wait { tool_call_id: _ },
+                                        AgentStatus::Done(agent_task_result),
+                                        AgentStatus::Wait { tool_call_id: _ },
                                     ) => {
                                         // We're waiting for this agent - track completion in wait_context
                                         if let Some(ref mut wait_context) = self.wait_context {
@@ -863,10 +882,7 @@ impl Actor for Assistant {
                                         }
                                     }
 
-                                    (
-                                        AgentTaskStatus::Done(agent_task_result),
-                                        AssistantState::Idle,
-                                    ) => {
+                                    (AgentStatus::Done(agent_task_result), AgentStatus::Idle) => {
                                         // Add completion summary to pending message and submit
                                         let summary = match agent_task_result {
                                             Ok(res) => format!(
@@ -885,10 +901,10 @@ impl Actor for Assistant {
                                     }
 
                                     (
-                                        AgentTaskStatus::Done(agent_task_result),
-                                        AssistantState::Processing
-                                        | AssistantState::AwaitingTools { .. }
-                                        | AssistantState::AwaitingManager(_),
+                                        AgentStatus::Done(agent_task_result),
+                                        AgentStatus::Processing
+                                        | AgentStatus::AwaitingTools { .. }
+                                        | AgentStatus::AwaitingManager(_),
                                     ) => {
                                         // Update wait_context if it exists (we might be temporarily out of Wait state)
                                         if let Some(ref mut wait_context) = self.wait_context {
@@ -918,8 +934,8 @@ impl Actor for Assistant {
 
                                     // Sub-agent AwaitingManager status handling
                                     (
-                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
-                                        AssistantState::Wait { tool_call_id },
+                                        AgentStatus::AwaitingManager(task_awaiting_manager),
+                                        AgentStatus::Wait { tool_call_id },
                                     ) => {
                                         // Urgent: Plan approval needed - save wait context and transition to Processing
 
@@ -942,8 +958,8 @@ impl Actor for Assistant {
                                     }
 
                                     (
-                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
-                                        AssistantState::Idle,
+                                        AgentStatus::AwaitingManager(task_awaiting_manager),
+                                        AgentStatus::Idle,
                                     ) => {
                                         // Add plan approval request to pending message and submit
                                         let approval_request = format!(
@@ -959,10 +975,10 @@ impl Actor for Assistant {
                                     }
 
                                     (
-                                        AgentTaskStatus::AwaitingManager(task_awaiting_manager),
-                                        AssistantState::Processing
-                                        | AssistantState::AwaitingTools { .. }
-                                        | AssistantState::AwaitingManager(_),
+                                        AgentStatus::AwaitingManager(task_awaiting_manager),
+                                        AgentStatus::Processing
+                                        | AgentStatus::AwaitingTools { .. }
+                                        | AgentStatus::AwaitingManager(_),
                                     ) => {
                                         // Add plan approval request to pending message for later submission
                                         let approval_request = format!(
@@ -977,12 +993,17 @@ impl Actor for Assistant {
                                     }
 
                                     // Sub-agent InProgress status - just update system state, no action
-                                    (AgentTaskStatus::InProgress, _) => {
+                                    (AgentStatus::InProgress, _) => {
                                         // Update system state only - no pending message needed
                                     }
 
                                     // Sub-agent Waiting status - update system state only
-                                    (AgentTaskStatus::Waiting { .. }, _) => {
+                                    (AgentStatus::Wait { .. }, _) => {
+                                        // Update system state only - no pending message needed
+                                    }
+
+                                    // Other status combinations that might occur but require no action
+                                    _ => {
                                         // Update system state only - no pending message needed
                                     }
                                 }
@@ -1124,10 +1145,17 @@ mod tests {
 
         let (tx, _) = broadcast::channel(10);
         let scope = Uuid::new_v4();
-        Assistant::new(parsed_config, tx, scope, required_actors, task_description, vec![])
+        Assistant::new(
+            parsed_config,
+            tx,
+            scope,
+            required_actors,
+            task_description,
+            vec![],
+        )
     }
 
-    fn create_agent_message(agent_id: Uuid, status: AgentTaskStatus) -> ActorMessage {
+    fn create_agent_message(agent_id: Uuid, status: AgentStatus) -> ActorMessage {
         ActorMessage {
             scope: agent_id,
             message: Message::Agent(crate::actors::AgentMessage {
@@ -1158,13 +1186,13 @@ mod tests {
     #[test]
     fn test_initial_state_with_required_actors() {
         let assistant = create_test_assistant(vec!["tool1", "tool2"], None);
-        assert!(matches!(assistant.state, AssistantState::AwaitingActors));
+        assert!(matches!(assistant.state, AgentStatus::AwaitingActors));
     }
 
     #[test]
     fn test_initial_state_without_required_actors() {
         let assistant = create_test_assistant(vec![], None);
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
     }
 
     #[tokio::test]
@@ -1179,7 +1207,7 @@ mod tests {
             },
         )
         .await;
-        assert!(matches!(assistant.state, AssistantState::AwaitingActors));
+        assert!(matches!(assistant.state, AgentStatus::AwaitingActors));
 
         // Send second ActorReady - should transition to Idle
         send_message(
@@ -1189,7 +1217,7 @@ mod tests {
             },
         )
         .await;
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
     }
 
     #[tokio::test]
@@ -1209,7 +1237,7 @@ mod tests {
         .await;
 
         // State should transition to Processing because task executes
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // Chat request should contain the task as user message
         let messages = &assistant.chat_request.messages;
@@ -1236,7 +1264,7 @@ mod tests {
     #[tokio::test]
     async fn test_idle_to_processing_on_user_input() {
         let mut assistant = create_test_assistant(vec![], None);
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
 
         send_message(
             &mut assistant,
@@ -1244,13 +1272,13 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
     }
 
     #[tokio::test]
     async fn test_idle_to_processing_on_assist_action() {
         let mut assistant = create_test_assistant(vec![], None);
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
 
         // Add some content to the pending message first
         assistant.add_user_content(ContentPart::Text("Hello".to_string()));
@@ -1261,13 +1289,13 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
     }
 
     #[tokio::test]
     async fn test_assist_action_with_no_content() {
         let mut assistant = create_test_assistant(vec![], None);
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
 
         send_message(
             &mut assistant,
@@ -1276,13 +1304,13 @@ mod tests {
         .await;
 
         // Should remain in Idle state since there's no content to submit
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
     }
 
     #[tokio::test]
     async fn test_processing_to_idle_on_text_response() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Processing;
+        assistant.state = AgentStatus::Processing;
 
         send_message(
             &mut assistant,
@@ -1290,13 +1318,13 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
     }
 
     #[tokio::test]
     async fn test_processing_to_awaiting_tools_on_tool_calls() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Processing;
+        assistant.state = AgentStatus::Processing;
 
         let tool_calls = vec![
             ToolCall {
@@ -1318,7 +1346,7 @@ mod tests {
         .await;
 
         match &assistant.state {
-            AssistantState::AwaitingTools { pending_tool_calls } => {
+            AgentStatus::AwaitingTools { pending_tool_calls } => {
                 assert_eq!(pending_tool_calls.len(), 2);
                 assert!(pending_tool_calls.contains(&"call_123".to_string()));
                 assert!(pending_tool_calls.contains(&"call_456".to_string()));
@@ -1330,7 +1358,7 @@ mod tests {
     #[tokio::test]
     async fn test_awaiting_tools_to_processing_on_all_tools_finished() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::AwaitingTools {
+        assistant.state = AgentStatus::AwaitingTools {
             pending_tool_calls: vec!["call_123".to_string()],
         };
 
@@ -1341,13 +1369,13 @@ mod tests {
 
         send_message(&mut assistant, Message::ToolCallUpdate(update)).await;
 
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
     }
 
     #[tokio::test]
     async fn test_awaiting_tools_partial_completion() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::AwaitingTools {
+        assistant.state = AgentStatus::AwaitingTools {
             pending_tool_calls: vec!["call_123".to_string(), "call_456".to_string()],
         };
 
@@ -1359,7 +1387,7 @@ mod tests {
         send_message(&mut assistant, Message::ToolCallUpdate(update)).await;
 
         match &assistant.state {
-            AssistantState::AwaitingTools { pending_tool_calls } => {
+            AgentStatus::AwaitingTools { pending_tool_calls } => {
                 assert_eq!(pending_tool_calls.len(), 1);
                 assert!(pending_tool_calls.contains(&"call_456".to_string()));
             }
@@ -1370,7 +1398,7 @@ mod tests {
     #[tokio::test]
     async fn test_cancel_from_processing_to_idle() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Processing;
+        assistant.state = AgentStatus::Processing;
 
         send_message(
             &mut assistant,
@@ -1378,13 +1406,13 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
     }
 
     #[tokio::test]
     async fn test_cancel_from_awaiting_tools_to_idle() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::AwaitingTools {
+        assistant.state = AgentStatus::AwaitingTools {
             pending_tool_calls: vec!["call_123".to_string()],
         };
 
@@ -1394,13 +1422,13 @@ mod tests {
         )
         .await;
 
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
     }
 
     #[tokio::test]
     async fn test_no_transition_user_input_while_processing() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Processing;
+        assistant.state = AgentStatus::Processing;
 
         assert!(!assistant.pending_message.has_content());
 
@@ -1413,13 +1441,13 @@ mod tests {
         // Should remain in Processing state but should have a pending message
         assert!(assistant.pending_message.has_content());
         assert!(assistant.pending_message.user_content.is_some());
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
     }
 
     #[tokio::test]
     async fn test_no_transition_user_input_while_awaiting_tools() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::AwaitingTools {
+        assistant.state = AgentStatus::AwaitingTools {
             pending_tool_calls: vec!["call_123".to_string()],
         };
 
@@ -1434,16 +1462,13 @@ mod tests {
         // Should remain in AwaitingTools state but should have a pending message
         assert!(assistant.pending_message.has_content());
         assert!(assistant.pending_message.user_content.is_some());
-        assert!(matches!(
-            assistant.state,
-            AssistantState::AwaitingTools { .. }
-        ));
+        assert!(matches!(assistant.state, AgentStatus::AwaitingTools { .. }));
     }
 
     #[tokio::test]
     async fn test_no_transition_wrong_tool_call_id() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::AwaitingTools {
+        assistant.state = AgentStatus::AwaitingTools {
             pending_tool_calls: vec!["call_123".to_string()],
         };
 
@@ -1456,7 +1481,7 @@ mod tests {
 
         // Should remain in AwaitingTools state with same pending calls
         match &assistant.state {
-            AssistantState::AwaitingTools { pending_tool_calls } => {
+            AgentStatus::AwaitingTools { pending_tool_calls } => {
                 assert_eq!(pending_tool_calls.len(), 1);
                 assert!(pending_tool_calls.contains(&"call_123".to_string()));
             }
@@ -1467,7 +1492,7 @@ mod tests {
     #[tokio::test]
     async fn test_no_transition_actor_ready_when_idle() {
         let mut assistant = create_test_assistant(vec![], None);
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
 
         send_message(
             &mut assistant,
@@ -1478,7 +1503,7 @@ mod tests {
         .await;
 
         // Should remain in Idle state
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
     }
 
     // Tests for the new PendingMessage system
@@ -1568,7 +1593,7 @@ mod tests {
     #[tokio::test]
     async fn test_sub_agent_done_in_idle_state() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Idle;
+        assistant.state = AgentStatus::Idle;
 
         let agent_id = Uuid::new_v4();
         let task_result = Ok(crate::actors::AgentTaskResultOk {
@@ -1576,11 +1601,11 @@ mod tests {
             summary: "Task completed".to_string(),
         });
 
-        let agent_message = create_agent_message(agent_id, AgentTaskStatus::Done(task_result));
+        let agent_message = create_agent_message(agent_id, AgentStatus::Done(task_result));
         assistant.handle_message(agent_message).await;
 
         // Should transition to Processing after receiving sub-agent completion
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // The pending message should have been cleared after submission to LLM
         assert!(!assistant.pending_message.has_content());
@@ -1596,7 +1621,7 @@ mod tests {
     #[tokio::test]
     async fn test_sub_agent_done_while_processing() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Processing;
+        assistant.state = AgentStatus::Processing;
 
         let agent_id = Uuid::new_v4();
         let task_result = Ok(crate::actors::AgentTaskResultOk {
@@ -1604,11 +1629,11 @@ mod tests {
             summary: "Task completed".to_string(),
         });
 
-        let agent_message = create_agent_message(agent_id, AgentTaskStatus::Done(task_result));
+        let agent_message = create_agent_message(agent_id, AgentStatus::Done(task_result));
         assistant.handle_message(agent_message).await;
 
         // Should remain in Processing state
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // Should have added system message to pending message for later submission
         assert!(!assistant.pending_message.system_parts.is_empty());
@@ -1617,17 +1642,17 @@ mod tests {
     #[tokio::test]
     async fn test_sub_agent_awaiting_manager_in_idle() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Idle;
+        assistant.state = AgentStatus::Idle;
 
         let agent_id = Uuid::new_v4();
         let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("test plan".to_string());
 
         let agent_message =
-            create_agent_message(agent_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+            create_agent_message(agent_id, AgentStatus::AwaitingManager(task_awaiting));
         assistant.handle_message(agent_message).await;
 
         // Should transition to Processing for plan approval
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // The pending message should have been cleared after submission to LLM
         assert!(!assistant.pending_message.has_content());
@@ -1642,7 +1667,7 @@ mod tests {
     #[tokio::test]
     async fn test_sub_agent_awaiting_manager_while_waiting() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Wait {
+        assistant.state = AgentStatus::Wait {
             tool_call_id: "tool123".to_string(),
         };
 
@@ -1650,11 +1675,11 @@ mod tests {
         let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("test plan".to_string());
 
         let agent_message =
-            create_agent_message(agent_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+            create_agent_message(agent_id, AgentStatus::AwaitingManager(task_awaiting));
         assistant.handle_message(agent_message).await;
 
         // Should transition out of Wait to Processing for urgent plan approval
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // The pending message should have been cleared after submission to LLM
         assert!(!assistant.pending_message.has_content());
@@ -1672,7 +1697,7 @@ mod tests {
         let agent_id = Uuid::new_v4();
 
         // Set up Wait state with one agent
-        assistant.state = AssistantState::Wait {
+        assistant.state = AgentStatus::Wait {
             tool_call_id: "tool123".to_string(),
         };
         let mut waiting_for_agents = HashMap::new();
@@ -1687,11 +1712,11 @@ mod tests {
             summary: "Task completed".to_string(),
         });
 
-        let agent_message = create_agent_message(agent_id, AgentTaskStatus::Done(task_result));
+        let agent_message = create_agent_message(agent_id, AgentStatus::Done(task_result));
         assistant.handle_message(agent_message).await;
 
         // Should transition to Processing since all agents are done
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // wait_context should be cleared (we transitioned out of Wait)
         assert!(assistant.wait_context.is_none());
@@ -1713,7 +1738,7 @@ mod tests {
         let agent2_id = Uuid::new_v4();
 
         // Set up Wait state with two agents
-        assistant.state = AssistantState::Wait {
+        assistant.state = AgentStatus::Wait {
             tool_call_id: "tool123".to_string(),
         };
         let mut waiting_for_agents = HashMap::new();
@@ -1730,11 +1755,11 @@ mod tests {
         });
 
         // First agent completes
-        let agent_message = create_agent_message(agent1_id, AgentTaskStatus::Done(task_result));
+        let agent_message = create_agent_message(agent1_id, AgentStatus::Done(task_result));
         assistant.handle_message(agent_message).await;
 
         // Should remain in Wait state since agent2 is still pending
-        assert!(matches!(assistant.state, AssistantState::Wait { .. }));
+        assert!(matches!(assistant.state, AgentStatus::Wait { .. }));
 
         // Check wait_context for agent tracking
         assert!(assistant.wait_context.is_some());
@@ -1762,14 +1787,14 @@ mod tests {
     #[tokio::test]
     async fn test_sub_agent_in_progress_no_action() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Idle;
+        assistant.state = AgentStatus::Idle;
 
         let agent_id = Uuid::new_v4();
-        let agent_message = create_agent_message(agent_id, AgentTaskStatus::InProgress);
+        let agent_message = create_agent_message(agent_id, AgentStatus::InProgress);
         assistant.handle_message(agent_message).await;
 
         // Should remain in same state
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
 
         // Should not add anything to pending message
         assert!(!assistant.pending_message.has_content());
@@ -1778,19 +1803,19 @@ mod tests {
     #[tokio::test]
     async fn test_sub_agent_waiting_no_action() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Idle;
+        assistant.state = AgentStatus::Idle;
 
         let agent_id = Uuid::new_v4();
         let agent_message = create_agent_message(
             agent_id,
-            AgentTaskStatus::Waiting {
+            AgentStatus::Wait {
                 tool_call_id: "tool123".to_string(),
             },
         );
         assistant.handle_message(agent_message).await;
 
         // Should remain in same state
-        assert!(matches!(assistant.state, AssistantState::Idle));
+        assert!(matches!(assistant.state, AgentStatus::Idle));
 
         // Should not add anything to pending message
         assert!(!assistant.pending_message.has_content());
@@ -1799,7 +1824,7 @@ mod tests {
     #[tokio::test]
     async fn test_user_input_accumulates_in_pending_message() {
         let mut assistant = create_test_assistant(vec![], None);
-        assistant.state = AssistantState::Processing;
+        assistant.state = AgentStatus::Processing;
 
         // Add user input while processing
         send_message(
@@ -1809,7 +1834,7 @@ mod tests {
         .await;
 
         // Should remain in Processing state
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // Should accumulate in pending message
         assert!(assistant.pending_message.has_content());
@@ -1823,7 +1848,7 @@ mod tests {
         let agent2_id = Uuid::new_v4();
 
         // Set up Wait state with two agents
-        assistant.state = AssistantState::Wait {
+        assistant.state = AgentStatus::Wait {
             tool_call_id: "spawn_agents_123".to_string(),
         };
         let mut waiting_for_agents = HashMap::new();
@@ -1837,11 +1862,11 @@ mod tests {
         // Agent1 requests plan approval
         let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("Agent1 plan".to_string());
         let agent_message =
-            create_agent_message(agent1_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+            create_agent_message(agent1_id, AgentStatus::AwaitingManager(task_awaiting));
         assistant.handle_message(agent_message).await;
 
         // Should transition to Processing for plan approval
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // Wait context should be saved
         assert!(assistant.wait_context.is_some());
@@ -1857,8 +1882,8 @@ mod tests {
         .await;
 
         // Should return to Wait state since agent2 is still pending
-        assert!(matches!(assistant.state, AssistantState::Wait { .. }));
-        if let AssistantState::Wait { tool_call_id } = &assistant.state {
+        assert!(matches!(assistant.state, AgentStatus::Wait { .. }));
+        if let AgentStatus::Wait { tool_call_id } = &assistant.state {
             assert_eq!(tool_call_id, "spawn_agents_123");
         }
 
@@ -1873,7 +1898,7 @@ mod tests {
         let agent2_id = Uuid::new_v4();
 
         // Set up Wait state with two agents
-        assistant.state = AssistantState::Wait {
+        assistant.state = AgentStatus::Wait {
             tool_call_id: "spawn_agents_123".to_string(),
         };
         let mut waiting_for_agents = HashMap::new();
@@ -1887,22 +1912,22 @@ mod tests {
         // Agent1 requests plan approval
         let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("Agent1 plan".to_string());
         let agent_message =
-            create_agent_message(agent1_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+            create_agent_message(agent1_id, AgentStatus::AwaitingManager(task_awaiting));
         assistant.handle_message(agent_message).await;
 
         // Should transition to Processing
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // While processing, agent2 completes
         let task_result = Ok(crate::actors::AgentTaskResultOk {
             success: true,
             summary: "Agent2 completed".to_string(),
         });
-        let agent_message = create_agent_message(agent2_id, AgentTaskStatus::Done(task_result));
+        let agent_message = create_agent_message(agent2_id, AgentStatus::Done(task_result));
         assistant.handle_message(agent_message).await;
 
         // Should remain in Processing
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // But wait_context should be updated
         assert!(assistant.wait_context.is_some());
@@ -1926,7 +1951,7 @@ mod tests {
         let agent2_id = Uuid::new_v4();
 
         // Set up Wait state with two agents
-        assistant.state = AssistantState::Wait {
+        assistant.state = AgentStatus::Wait {
             tool_call_id: "spawn_agents_123".to_string(),
         };
         let mut waiting_for_agents = HashMap::new();
@@ -1940,7 +1965,7 @@ mod tests {
         // Agent1 requests plan approval
         let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("Agent1 plan".to_string());
         let agent_message =
-            create_agent_message(agent1_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+            create_agent_message(agent1_id, AgentStatus::AwaitingManager(task_awaiting));
         assistant.handle_message(agent_message).await;
 
         // Both agents complete while processing
@@ -1948,18 +1973,18 @@ mod tests {
             success: true,
             summary: "Agent1 completed".to_string(),
         });
-        let agent_message1 = create_agent_message(agent1_id, AgentTaskStatus::Done(task_result1));
+        let agent_message1 = create_agent_message(agent1_id, AgentStatus::Done(task_result1));
         assistant.handle_message(agent_message1).await;
 
         let task_result2 = Ok(crate::actors::AgentTaskResultOk {
             success: true,
             summary: "Agent2 completed".to_string(),
         });
-        let agent_message2 = create_agent_message(agent2_id, AgentTaskStatus::Done(task_result2));
+        let agent_message2 = create_agent_message(agent2_id, AgentStatus::Done(task_result2));
         assistant.handle_message(agent_message2).await;
 
         // Still in Processing
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // Simulate LLM response
         send_message(
@@ -1969,7 +1994,7 @@ mod tests {
         .await;
 
         // Should go to Processing since we're submitting the agent completions
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
 
         // Pending message should be cleared since it was submitted
         assert!(!assistant.pending_message.has_content());
@@ -1983,7 +2008,7 @@ mod tests {
         let agent3_id = Uuid::new_v4();
 
         // Set up Wait state with three agents
-        assistant.state = AssistantState::Wait {
+        assistant.state = AgentStatus::Wait {
             tool_call_id: "spawn_agents_123".to_string(),
         };
         let mut waiting_for_agents = HashMap::new();
@@ -1998,7 +2023,7 @@ mod tests {
         // Agent1 requests plan approval
         let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("Agent1 plan".to_string());
         let agent_message =
-            create_agent_message(agent1_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+            create_agent_message(agent1_id, AgentStatus::AwaitingManager(task_awaiting));
         assistant.handle_message(agent_message).await;
 
         // Agent2 completes while processing agent1's plan
@@ -2006,7 +2031,7 @@ mod tests {
             success: true,
             summary: "Agent2 completed".to_string(),
         });
-        let agent_message = create_agent_message(agent2_id, AgentTaskStatus::Done(task_result));
+        let agent_message = create_agent_message(agent2_id, AgentStatus::Done(task_result));
         assistant.handle_message(agent_message).await;
 
         // Finish plan approval
@@ -2017,12 +2042,12 @@ mod tests {
         .await;
 
         // Should return to Wait state (agent1 and agent3 still pending)
-        assert!(matches!(assistant.state, AssistantState::Wait { .. }));
+        assert!(matches!(assistant.state, AgentStatus::Wait { .. }));
 
         // Agent3 requests plan approval
         let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("Agent3 plan".to_string());
         let agent_message =
-            create_agent_message(agent3_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+            create_agent_message(agent3_id, AgentStatus::AwaitingManager(task_awaiting));
         assistant.handle_message(agent_message).await;
 
         // Finish plan approval
@@ -2035,29 +2060,29 @@ mod tests {
         .await;
 
         // Should return to Wait state since agent1 and agent3 are still not done
-        assert!(matches!(assistant.state, AssistantState::Wait { .. }));
+        assert!(matches!(assistant.state, AgentStatus::Wait { .. }));
 
         // Agent1 completes
         let task_result = Ok(crate::actors::AgentTaskResultOk {
             success: true,
             summary: "Agent1 completed".to_string(),
         });
-        let agent_message = create_agent_message(agent1_id, AgentTaskStatus::Done(task_result));
+        let agent_message = create_agent_message(agent1_id, AgentStatus::Done(task_result));
         assistant.handle_message(agent_message).await;
 
         // Still waiting for agent3
-        assert!(matches!(assistant.state, AssistantState::Wait { .. }));
+        assert!(matches!(assistant.state, AgentStatus::Wait { .. }));
 
         // Agent3 completes
         let task_result = Ok(crate::actors::AgentTaskResultOk {
             success: true,
             summary: "Agent3 completed".to_string(),
         });
-        let agent_message = create_agent_message(agent3_id, AgentTaskStatus::Done(task_result));
+        let agent_message = create_agent_message(agent3_id, AgentStatus::Done(task_result));
         assistant.handle_message(agent_message).await;
 
         // Should transition to Processing to report all completions
-        assert!(matches!(assistant.state, AssistantState::Processing));
+        assert!(matches!(assistant.state, AgentStatus::Processing));
     }
 
     // // Additional edge case tests
@@ -2068,7 +2093,7 @@ mod tests {
     //     let agent_id = Uuid::new_v4();
     //
     //     // Set up Wait state with one agent
-    //     assistant.state = AssistantState::Wait {
+    //     assistant.state = AgentStatus::Wait {
     //         tool_call_id: "tool123".to_string(),
     //     };
     //     let mut waiting_for_agents = HashMap::new();
@@ -2086,7 +2111,7 @@ mod tests {
     //     .await;
     //
     //     // Should transition to Idle after cancel
-    //     assert!(matches!(assistant.state, AssistantState::Idle));
+    //     assert!(matches!(assistant.state, AgentStatus::Idle));
     //
     //     // Wait context should be cleared
     //     assert!(assistant.wait_context.is_none());
@@ -2099,7 +2124,7 @@ mod tests {
     //     let agent2_id = Uuid::new_v4();
     //
     //     // Set up Wait state with two agents
-    //     assistant.state = AssistantState::Wait {
+    //     assistant.state = AgentStatus::Wait {
     //         tool_call_id: "spawn_agents_123".to_string(),
     //     };
     //     let mut waiting_for_agents = HashMap::new();
@@ -2113,7 +2138,7 @@ mod tests {
     //     // Agent1 requests plan approval (creates wait_context)
     //     let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("Agent1 plan".to_string());
     //     let agent_message =
-    //         create_agent_message(agent1_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+    //         create_agent_message(agent1_id, AgentStatus::AwaitingManager(task_awaiting));
     //     assistant.handle_message(agent_message).await;
     //
     //     // User input arrives while processing plan approval
@@ -2133,7 +2158,7 @@ mod tests {
     //     .await;
     //
     //     // Should NOT return to Wait state because user input takes priority
-    //     assert!(matches!(assistant.state, AssistantState::Processing));
+    //     assert!(matches!(assistant.state, AgentStatus::Processing));
     //
     //     // CURRENT BEHAVIOR: User content is cleared when submit_pending_message() is called
     //     // The pending message should have been submitted to LLM and cleared
@@ -2155,32 +2180,32 @@ mod tests {
     //     let agent3_id = Uuid::new_v4();
     //
     //     // Start in Processing state
-    //     assistant.state = AssistantState::Processing;
+    //     assistant.state = AgentStatus::Processing;
     //
     //     // Multiple agents complete rapidly
     //     let task_result1 = Ok(crate::actors::AgentTaskResultOk {
     //         success: true,
     //         summary: "Agent1 completed".to_string(),
     //     });
-    //     let agent_message1 = create_agent_message(agent1_id, AgentTaskStatus::Done(task_result1));
+    //     let agent_message1 = create_agent_message(agent1_id, AgentStatus::Done(task_result1));
     //     assistant.handle_message(agent_message1).await;
     //
     //     let task_result2 = Ok(crate::actors::AgentTaskResultOk {
     //         success: true,
     //         summary: "Agent2 completed".to_string(),
     //     });
-    //     let agent_message2 = create_agent_message(agent2_id, AgentTaskStatus::Done(task_result2));
+    //     let agent_message2 = create_agent_message(agent2_id, AgentStatus::Done(task_result2));
     //     assistant.handle_message(agent_message2).await;
     //
     //     let task_result3 = Ok(crate::actors::AgentTaskResultOk {
     //         success: false,
     //         summary: "Agent3 failed".to_string(),
     //     });
-    //     let agent_message3 = create_agent_message(agent3_id, AgentTaskStatus::Done(task_result3));
+    //     let agent_message3 = create_agent_message(agent3_id, AgentStatus::Done(task_result3));
     //     assistant.handle_message(agent_message3).await;
     //
     //     // Should remain in Processing state
-    //     assert!(matches!(assistant.state, AssistantState::Processing));
+    //     assert!(matches!(assistant.state, AgentStatus::Processing));
     //
     //     // All agent completions should accumulate in pending message
     //     assert_eq!(assistant.pending_message.system_parts.len(), 3);
@@ -2207,7 +2232,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_large_pending_message_accumulation() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::Processing;
+    //     assistant.state = AgentStatus::Processing;
     //
     //     // Add many system parts to test accumulation
     //     for i in 0..100 {
@@ -2219,7 +2244,7 @@ mod tests {
     //                 i
     //             ),
     //         });
-    //         let agent_message = create_agent_message(agent_id, AgentTaskStatus::Done(task_result));
+    //         let agent_message = create_agent_message(agent_id, AgentStatus::Done(task_result));
     //         assistant.handle_message(agent_message).await;
     //     }
     //
@@ -2227,7 +2252,7 @@ mod tests {
     //     assert_eq!(assistant.pending_message.system_parts.len(), 100);
     //
     //     // Should still be in Processing state
-    //     assert!(matches!(assistant.state, AssistantState::Processing));
+    //     assert!(matches!(assistant.state, AgentStatus::Processing));
     //
     //     // Test that conversion to chat messages works with large content
     //     let chat_messages = assistant.pending_message.to_chat_messages();
@@ -2237,7 +2262,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_agent_awaiting_manager_status_transitions() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::Idle;
+    //     assistant.state = AgentStatus::Idle;
     //
     //     let agent_id = Uuid::new_v4();
     //
@@ -2256,7 +2281,7 @@ mod tests {
     //         message: Message::Agent(crate::actors::AgentMessage {
     //             agent_id: assistant.scope.clone(),
     //             message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-    //                 status: AgentTaskStatus::AwaitingManager(
+    //                 status: AgentStatus::AwaitingManager(
     //                     TaskAwaitingManager::AwaitingPlanApproval(mock_plan.clone()),
     //                 ),
     //             }),
@@ -2267,11 +2292,11 @@ mod tests {
     //     // Should transition to AwaitingManager state
     //     assert!(matches!(
     //         assistant.state,
-    //         AssistantState::AwaitingManager(_)
+    //         AgentStatus::AwaitingManager(_)
     //     ));
     //
     //     // Verify the task awaiting manager data
-    //     if let AssistantState::AwaitingManager(task_awaiting) = &assistant.state {
+    //     if let AgentStatus::AwaitingManager(task_awaiting) = &assistant.state {
     //         assert!(matches!(
     //             task_awaiting,
     //             TaskAwaitingManager::AwaitingPlanApproval(_)
@@ -2282,7 +2307,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_agent_waiting_status_transitions() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::Idle;
+    //     assistant.state = AgentStatus::Idle;
     //
     //     // Test: Our own agent status update for Waiting should transition us to Wait state
     //     let agent_message = ActorMessage {
@@ -2290,7 +2315,7 @@ mod tests {
     //         message: Message::Agent(crate::actors::AgentMessage {
     //             agent_id: assistant.scope.clone(),
     //             message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-    //                 status: AgentTaskStatus::Waiting {
+    //                 status: AgentStatus::Wait {
     //                     tool_call_id: "spawn_agents_123".to_string(),
     //                 },
     //             }),
@@ -2299,10 +2324,10 @@ mod tests {
     //     assistant.handle_message(agent_message).await;
     //
     //     // Should transition to Wait state
-    //     assert!(matches!(assistant.state, AssistantState::Wait { .. }));
+    //     assert!(matches!(assistant.state, AgentStatus::Wait { .. }));
     //
     //     // Verify the tool call ID
-    //     if let AssistantState::Wait { tool_call_id } = &assistant.state {
+    //     if let AgentStatus::Wait { tool_call_id } = &assistant.state {
     //         assert_eq!(tool_call_id, "spawn_agents_123");
     //     }
     // }
@@ -2312,7 +2337,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_sub_agent_done_while_awaiting_tools() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::AwaitingTools {
+    //     assistant.state = AgentStatus::AwaitingTools {
     //         pending_tool_calls: vec!["tool_123".to_string()],
     //     };
     //
@@ -2322,13 +2347,13 @@ mod tests {
     //         summary: "Agent completed while waiting for tools".to_string(),
     //     });
     //
-    //     let agent_message = create_agent_message(agent_id, AgentTaskStatus::Done(task_result));
+    //     let agent_message = create_agent_message(agent_id, AgentStatus::Done(task_result));
     //     assistant.handle_message(agent_message).await;
     //
     //     // Should remain in AwaitingTools state
     //     assert!(matches!(
     //         assistant.state,
-    //         AssistantState::AwaitingTools { .. }
+    //         AgentStatus::AwaitingTools { .. }
     //     ));
     //
     //     // Should have added agent completion to pending message
@@ -2347,7 +2372,7 @@ mod tests {
     //         tasks: vec![],
     //     };
     //     assistant.state =
-    //         AssistantState::AwaitingManager(TaskAwaitingManager::AwaitingPlanApproval(mock_plan));
+    //         AgentStatus::AwaitingManager(TaskAwaitingManager::AwaitingPlanApproval(mock_plan));
     //
     //     let agent_id = Uuid::new_v4();
     //     let task_result = Ok(crate::actors::AgentTaskResultOk {
@@ -2355,13 +2380,13 @@ mod tests {
     //         summary: "Agent failed while we await manager".to_string(),
     //     });
     //
-    //     let agent_message = create_agent_message(agent_id, AgentTaskStatus::Done(task_result));
+    //     let agent_message = create_agent_message(agent_id, AgentStatus::Done(task_result));
     //     assistant.handle_message(agent_message).await;
     //
     //     // Should remain in AwaitingManager state
     //     assert!(matches!(
     //         assistant.state,
-    //         AssistantState::AwaitingManager(_)
+    //         AgentStatus::AwaitingManager(_)
     //     ));
     //
     //     // Should have added agent completion to pending message
@@ -2376,7 +2401,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_sub_agent_awaiting_manager_while_awaiting_tools() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::AwaitingTools {
+    //     assistant.state = AgentStatus::AwaitingTools {
     //         pending_tool_calls: vec!["tool_123".to_string()],
     //     };
     //
@@ -2386,13 +2411,13 @@ mod tests {
     //     );
     //
     //     let agent_message =
-    //         create_agent_message(agent_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+    //         create_agent_message(agent_id, AgentStatus::AwaitingManager(task_awaiting));
     //     assistant.handle_message(agent_message).await;
     //
     //     // Should remain in AwaitingTools state
     //     assert!(matches!(
     //         assistant.state,
-    //         AssistantState::AwaitingTools { .. }
+    //         AgentStatus::AwaitingTools { .. }
     //     ));
     //
     //     // Should have added plan approval request to pending message
@@ -2407,7 +2432,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_sub_agent_awaiting_manager_while_processing() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::Processing;
+    //     assistant.state = AgentStatus::Processing;
     //
     //     let agent_id = Uuid::new_v4();
     //     let mock_plan = crate::actors::tools::planner::TaskPlan {
@@ -2417,11 +2442,11 @@ mod tests {
     //     let task_awaiting = TaskAwaitingManager::AwaitingPlanApproval(mock_plan);
     //
     //     let agent_message =
-    //         create_agent_message(agent_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+    //         create_agent_message(agent_id, AgentStatus::AwaitingManager(task_awaiting));
     //     assistant.handle_message(agent_message).await;
     //
     //     // Should remain in Processing state
-    //     assert!(matches!(assistant.state, AssistantState::Processing));
+    //     assert!(matches!(assistant.state, AgentStatus::Processing));
     //
     //     // Should have added plan approval request to pending message
     //     assert!(!assistant.pending_message.system_parts.is_empty());
@@ -2437,7 +2462,7 @@ mod tests {
     //         tasks: vec![],
     //     };
     //     assistant.state =
-    //         AssistantState::AwaitingManager(TaskAwaitingManager::AwaitingPlanApproval(our_plan));
+    //         AgentStatus::AwaitingManager(TaskAwaitingManager::AwaitingPlanApproval(our_plan));
     //
     //     let agent_id = Uuid::new_v4();
     //     let sub_agent_plan = crate::actors::tools::planner::TaskPlan {
@@ -2447,13 +2472,13 @@ mod tests {
     //     let task_awaiting = TaskAwaitingManager::AwaitingPlanApproval(sub_agent_plan);
     //
     //     let agent_message =
-    //         create_agent_message(agent_id, AgentTaskStatus::AwaitingManager(task_awaiting));
+    //         create_agent_message(agent_id, AgentStatus::AwaitingManager(task_awaiting));
     //     assistant.handle_message(agent_message).await;
     //
     //     // Should remain in AwaitingManager state
     //     assert!(matches!(
     //         assistant.state,
-    //         AssistantState::AwaitingManager(_)
+    //         AgentStatus::AwaitingManager(_)
     //     ));
     //
     //     // Should have added plan approval request to pending message for later processing
@@ -2466,7 +2491,7 @@ mod tests {
     // async fn test_sub_agent_message_while_awaiting_actors() {
     //     let mut assistant = create_test_assistant(vec!["tool1", "tool2"], None);
     //     // Should start in AwaitingActors state due to required actors
-    //     assert!(matches!(assistant.state, AssistantState::AwaitingActors));
+    //     assert!(matches!(assistant.state, AgentStatus::AwaitingActors));
     //
     //     let agent_id = Uuid::new_v4();
     //     let task_result = Ok(crate::actors::AgentTaskResultOk {
@@ -2476,11 +2501,11 @@ mod tests {
     //
     //     // This should trigger an error log since we shouldn't receive sub-agent messages
     //     // while awaiting actors
-    //     let agent_message = create_agent_message(agent_id, AgentTaskStatus::Done(task_result));
+    //     let agent_message = create_agent_message(agent_id, AgentStatus::Done(task_result));
     //     assistant.handle_message(agent_message).await;
     //
     //     // Should remain in AwaitingActors state (no state change)
-    //     assert!(matches!(assistant.state, AssistantState::AwaitingActors));
+    //     assert!(matches!(assistant.state, AgentStatus::AwaitingActors));
     //
     //     // System state should still be updated even though it's an error condition
     //     // This tests that the error case doesn't prevent system state updates
@@ -2491,7 +2516,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_awaiting_tools_to_processing_on_error() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::AwaitingTools {
+    //     assistant.state = AgentStatus::AwaitingTools {
     //         pending_tool_calls: vec!["call_123".to_string()],
     //     };
     //
@@ -2503,7 +2528,7 @@ mod tests {
     //     send_message(&mut assistant, Message::ToolCallUpdate(update)).await;
     //
     //     // Should transition to Processing even on error
-    //     assert!(matches!(assistant.state, AssistantState::Processing));
+    //     assert!(matches!(assistant.state, AgentStatus::Processing));
     //
     //     // Should have added error response to chat
     //     let messages = &assistant.chat_request.messages;
@@ -2523,7 +2548,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_awaiting_tools_partial_error() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::AwaitingTools {
+    //     assistant.state = AgentStatus::AwaitingTools {
     //         pending_tool_calls: vec!["call_123".to_string(), "call_456".to_string()],
     //     };
     //
@@ -2537,7 +2562,7 @@ mod tests {
     //
     //     // Should still be waiting for second tool
     //     match &assistant.state {
-    //         AssistantState::AwaitingTools { pending_tool_calls } => {
+    //         AgentStatus::AwaitingTools { pending_tool_calls } => {
     //             assert_eq!(pending_tool_calls.len(), 1);
     //             assert!(pending_tool_calls.contains(&"call_456".to_string()));
     //         }
@@ -2553,13 +2578,13 @@ mod tests {
     //     send_message(&mut assistant, Message::ToolCallUpdate(update)).await;
     //
     //     // Should transition to Processing with both responses
-    //     assert!(matches!(assistant.state, AssistantState::Processing));
+    //     assert!(matches!(assistant.state, AgentStatus::Processing));
     // }
     //
     // #[tokio::test]
     // async fn test_awaiting_tools_all_errors() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::AwaitingTools {
+    //     assistant.state = AgentStatus::AwaitingTools {
     //         pending_tool_calls: vec!["call_123".to_string(), "call_456".to_string()],
     //     };
     //
@@ -2577,7 +2602,7 @@ mod tests {
     //     send_message(&mut assistant, Message::ToolCallUpdate(update2)).await;
     //
     //     // Should still transition to Processing
-    //     assert!(matches!(assistant.state, AssistantState::Processing));
+    //     assert!(matches!(assistant.state, AgentStatus::Processing));
     //
     //     // Chat should contain both error responses
     //     let messages = &assistant.chat_request.messages;
@@ -2607,7 +2632,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_awaiting_tools_to_wait_state_transition() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::AwaitingTools {
+    //     assistant.state = AgentStatus::AwaitingTools {
     //         pending_tool_calls: vec!["spawn_agents_123".to_string()],
     //     };
     //
@@ -2619,7 +2644,7 @@ mod tests {
     //     send_message(&mut assistant, Message::ToolCallUpdate(update)).await;
     //
     //     // Tool completion triggers Processing state (tool response submitted to LLM)
-    //     assert!(matches!(assistant.state, AssistantState::Processing));
+    //     assert!(matches!(assistant.state, AgentStatus::Processing));
     //
     //     // Now simulate the agent's own status update to Wait
     //     let agent_message = ActorMessage {
@@ -2627,7 +2652,7 @@ mod tests {
     //         message: Message::Agent(crate::actors::AgentMessage {
     //             agent_id: assistant.scope.clone(),
     //             message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-    //                 status: AgentTaskStatus::Waiting {
+    //                 status: AgentStatus::Wait {
     //                     tool_call_id: "spawn_agents_123".to_string(),
     //                 },
     //             }),
@@ -2636,8 +2661,8 @@ mod tests {
     //     assistant.handle_message(agent_message).await;
     //
     //     // Should transition to Wait state
-    //     assert!(matches!(assistant.state, AssistantState::Wait { .. }));
-    //     if let AssistantState::Wait { tool_call_id } = &assistant.state {
+    //     assert!(matches!(assistant.state, AgentStatus::Wait { .. }));
+    //     if let AgentStatus::Wait { tool_call_id } = &assistant.state {
     //         assert_eq!(tool_call_id, "spawn_agents_123");
     //     }
     //
@@ -2651,7 +2676,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_awaiting_tools_to_awaiting_manager_transition() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::AwaitingTools {
+    //     assistant.state = AgentStatus::AwaitingTools {
     //         pending_tool_calls: vec!["planner_123".to_string()],
     //     };
     //
@@ -2663,7 +2688,7 @@ mod tests {
     //     send_message(&mut assistant, Message::ToolCallUpdate(update)).await;
     //
     //     // Tool completion triggers Processing state
-    //     assert!(matches!(assistant.state, AssistantState::Processing));
+    //     assert!(matches!(assistant.state, AgentStatus::Processing));
     //
     //     // Now simulate the agent's own status update to AwaitingManager
     //     let mock_plan = crate::actors::tools::planner::TaskPlan {
@@ -2679,7 +2704,7 @@ mod tests {
     //         message: Message::Agent(crate::actors::AgentMessage {
     //             agent_id: assistant.scope.clone(),
     //             message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-    //                 status: AgentTaskStatus::AwaitingManager(
+    //                 status: AgentStatus::AwaitingManager(
     //                     TaskAwaitingManager::AwaitingPlanApproval(mock_plan),
     //                 ),
     //             }),
@@ -2690,14 +2715,14 @@ mod tests {
     //     // Should transition to AwaitingManager state
     //     assert!(matches!(
     //         assistant.state,
-    //         AssistantState::AwaitingManager(_)
+    //         AgentStatus::AwaitingManager(_)
     //     ));
     // }
     //
     // #[tokio::test]
     // async fn test_awaiting_tools_non_finished_status() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::AwaitingTools {
+    //     assistant.state = AgentStatus::AwaitingTools {
     //         pending_tool_calls: vec!["call_123".to_string()],
     //     };
     //
@@ -2714,7 +2739,7 @@ mod tests {
     //
     //     // Should remain in AwaitingTools state
     //     match &assistant.state {
-    //         AssistantState::AwaitingTools { pending_tool_calls } => {
+    //         AgentStatus::AwaitingTools { pending_tool_calls } => {
     //             assert_eq!(pending_tool_calls.len(), 1);
     //             assert!(pending_tool_calls.contains(&"call_123".to_string()));
     //         }
@@ -2734,7 +2759,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_awaiting_tools_mixed_statuses() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     assistant.state = AssistantState::AwaitingTools {
+    //     assistant.state = AgentStatus::AwaitingTools {
     //         pending_tool_calls: vec![
     //             "call_1".to_string(),
     //             "call_2".to_string(),
@@ -2767,7 +2792,7 @@ mod tests {
     //
     //     // Should still be waiting for tools 1 and 3
     //     match &assistant.state {
-    //         AssistantState::AwaitingTools { pending_tool_calls } => {
+    //         AgentStatus::AwaitingTools { pending_tool_calls } => {
     //             assert_eq!(pending_tool_calls.len(), 2);
     //             assert!(pending_tool_calls.contains(&"call_1".to_string()));
     //             assert!(pending_tool_calls.contains(&"call_3".to_string()));
@@ -2787,7 +2812,7 @@ mod tests {
     //
     //     // Still waiting for tool 3
     //     match &assistant.state {
-    //         AssistantState::AwaitingTools { pending_tool_calls } => {
+    //         AgentStatus::AwaitingTools { pending_tool_calls } => {
     //             assert_eq!(pending_tool_calls.len(), 1);
     //             assert!(pending_tool_calls.contains(&"call_3".to_string()));
     //         }
@@ -2805,6 +2830,6 @@ mod tests {
     //     .await;
     //
     //     // Now should transition to Processing
-    //     assert!(matches!(assistant.state, AssistantState::Processing));
+    //     assert!(matches!(assistant.state, AgentStatus::Processing));
     // }
 }

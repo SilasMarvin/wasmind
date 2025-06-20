@@ -7,7 +7,7 @@ use uuid::Uuid;
 // Assuming AgentSpawnedResponse is already Serialize.
 // It is imported from crate::actors::agent and used with serde_json::to_string in the original code.
 use crate::actors::{
-    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskStatus, AgentType,
+    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
     InterAgentMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
     agent::{Agent, AgentSpawnedResponse},
 };
@@ -116,7 +116,7 @@ impl SpawnAgent {
             self.broadcast(Message::Agent(AgentMessage {
                 agent_id: self.scope.clone(),
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                    status: AgentTaskStatus::Waiting {
+                    status: AgentStatus::Wait {
                         tool_call_id: tool_call.call_id.clone(),
                     },
                 }),

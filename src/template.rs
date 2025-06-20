@@ -374,7 +374,7 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
 
     #[test]
     fn test_agents_list_template() {
-        use crate::actors::AgentTaskStatus;
+        use crate::actors::AgentStatus;
         use crate::system_state::{AgentTaskInfo, SystemState};
         use uuid::Uuid;
 
@@ -389,7 +389,7 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
         let agent1_id = agent1.agent_id;
 
         system_state.add_agent(agent1);
-        system_state.update_agent_status(&agent1_id, AgentTaskStatus::InProgress);
+        system_state.update_agent_status(&agent1_id, AgentStatus::InProgress);
 
         let context = TemplateContext::new(vec![], vec![], &system_state);
 

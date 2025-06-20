@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::actors::tools::planner::{TaskPlan, TaskStatus};
-use crate::actors::{AgentTaskStatus, AgentType};
+use crate::actors::{AgentStatus, AgentType};
 use crate::template::{self, TemplateContext, ToolInfo};
 
 /// Errors that can occur when working with SystemState
@@ -90,7 +90,7 @@ pub struct AgentTaskInfo {
     pub agent_id: Uuid,
     pub agent_role: String,
     pub task_description: String,
-    pub status: AgentTaskStatus,
+    pub status: AgentStatus,
     pub spawned_at: std::time::SystemTime,
 }
 
@@ -105,7 +105,7 @@ impl AgentTaskInfo {
             agent_id,
             agent_role,
             task_description,
-            status: AgentTaskStatus::InProgress,
+            status: AgentStatus::InProgress,
             spawned_at: std::time::SystemTime::now(),
         }
     }
@@ -114,10 +114,14 @@ impl AgentTaskInfo {
     /// Treat InProgress and Waiting as the same for right now.
     pub fn status_icon(&self) -> &'static str {
         match &self.status {
-            AgentTaskStatus::InProgress | AgentTaskStatus::Waiting { tool_call_id: _ } => "[~]",
-            AgentTaskStatus::Done(Ok(_)) => "[x]",
-            AgentTaskStatus::Done(Err(_)) => "[!]",
-            AgentTaskStatus::AwaitingManager(_) => "[?]",
+            AgentStatus::InProgress | AgentStatus::Wait { tool_call_id: _ } => "[~]",
+            AgentStatus::Done(Ok(_)) => "[x]",
+            AgentStatus::Done(Err(_)) => "[!]",
+            AgentStatus::AwaitingManager(_) => "[?]",
+            AgentStatus::AwaitingActors => "[...]",
+            AgentStatus::Idle => "[ ]",
+            AgentStatus::Processing => "[>]",
+            AgentStatus::AwaitingTools { .. } => "[*]",
         }
     }
 
@@ -128,9 +132,9 @@ impl AgentTaskInfo {
         // Is this where we want to put all agent information?
         // What are the pros and cons of putting it here over putting it in normal messages?
         // let details = match &self.status {
-        //     AgentTaskStatus::Done(Ok(result)) => format!(" - {}", result),
-        //     AgentTaskStatus::Done(Err(error)) => format!(" - Error: {}", error),
-        //     AgentTaskStatus::AwaitingManager(awaiting) => match awaiting {
+        //     AgentStatus::Done(Ok(result)) => format!(" - {}", result),
+        //     AgentStatus::Done(Err(error)) => format!(" - Error: {}", error),
+        //     AgentStatus::AwaitingManager(awaiting) => match awaiting {
         //         TaskAwaitingManager::AwaitingPlanApproval(_) => {
         //             " - Awaiting plan approval".to_string()
         //         }
@@ -138,7 +142,7 @@ impl AgentTaskInfo {
         //             format!(" - Needs: {}", info)
         //         }
         //     },
-        //     AgentTaskStatus::InProgress | AgentTaskStatus::Waiting { tool_call_id: _ } => {
+        //     AgentStatus::InProgress | AgentStatus::Wait { tool_call_id: _ } => {
         //         String::new()
         //     }
         // };
@@ -232,7 +236,7 @@ impl SystemState {
     }
 
     /// Update an agent's task status
-    pub fn update_agent_status(&mut self, agent_id: &Uuid, status: AgentTaskStatus) {
+    pub fn update_agent_status(&mut self, agent_id: &Uuid, status: AgentStatus) {
         if let Some(agent_info) = self.agents.get_mut(agent_id) {
             agent_info.status = status;
             self.modified = true;
@@ -357,11 +361,15 @@ impl SystemState {
                     "role": agent.agent_role,
                     "task": agent.task_description,
                     "status": match &agent.status {
-                        AgentTaskStatus::InProgress => "in_progress",
-                        AgentTaskStatus::Waiting { .. } => "waiting",
-                        AgentTaskStatus::Done(Ok(_)) => "completed",
-                        AgentTaskStatus::Done(Err(_)) => "failed",
-                        AgentTaskStatus::AwaitingManager(_) => "awaiting_manager",
+                        AgentStatus::InProgress => "in_progress",
+                        AgentStatus::Wait { .. } => "waiting",
+                        AgentStatus::Done(Ok(_)) => "completed",
+                        AgentStatus::Done(Err(_)) => "failed",
+                        AgentStatus::AwaitingManager(_) => "awaiting_manager",
+                        AgentStatus::AwaitingActors => "awaiting_actors",
+                        AgentStatus::Idle => "idle",
+                        AgentStatus::Processing => "processing",
+                        AgentStatus::AwaitingTools { .. } => "awaiting_tools",
                     },
                     "status_icon": agent.status_icon(),
                     "formatted": agent.format_for_prompt()
@@ -709,7 +717,7 @@ mod tests {
         // Update one agent's status
         state.update_agent_status(
             &agent1_id,
-            AgentTaskStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+            AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
                 summary: "Completed".to_string(),
                 success: true,
             })),
@@ -1025,7 +1033,7 @@ Available tools: {{ tools|length }}"#;
         state.add_agent(agent1);
         state.update_agent_status(
             &agent1_id,
-            AgentTaskStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+            AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
                 summary: "Done".to_string(),
                 success: true,
             })),

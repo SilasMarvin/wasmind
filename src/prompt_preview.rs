@@ -198,7 +198,7 @@ file = "app.log"
         let mut state = SystemState::new();
 
         // Add some agents in different states
-        use crate::actors::AgentTaskStatus;
+        use crate::actors::AgentStatus;
         use crate::system_state::AgentTaskInfo;
         use uuid::Uuid;
 
@@ -221,7 +221,7 @@ file = "app.log"
         state.add_agent(agent2);
         state.update_agent_status(
             &agent2_id,
-            AgentTaskStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+            AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
                 summary: "Database schema completed successfully".to_string(),
                 success: true,
             })),
@@ -305,7 +305,7 @@ file = "app.log"
         state.update_plan(plan);
 
         // Add agents
-        use crate::actors::AgentTaskStatus;
+        use crate::actors::AgentStatus;
         use crate::system_state::AgentTaskInfo;
         use uuid::Uuid;
 
@@ -335,7 +335,7 @@ file = "app.log"
         state.add_agent(db_agent);
         state.update_agent_status(
             &db_agent_id,
-            AgentTaskStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+            AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
                 summary: "Database optimization completed with 40% performance improvement"
                     .to_string(),
                 success: true,
@@ -422,11 +422,11 @@ file = "app.log"
             let agents = state.get_agents();
             let completed = agents
                 .values()
-                .filter(|a| matches!(a.status, crate::actors::AgentTaskStatus::Done(_)))
+                .filter(|a| matches!(a.status, crate::actors::AgentStatus::Done(_)))
                 .count();
             let in_progress = agents
                 .values()
-                .filter(|a| matches!(a.status, crate::actors::AgentTaskStatus::InProgress))
+                .filter(|a| matches!(a.status, crate::actors::AgentStatus::InProgress))
                 .count();
             println!("    {} completed, {} in progress", completed, in_progress);
         }

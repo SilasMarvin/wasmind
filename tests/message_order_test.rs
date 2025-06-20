@@ -1,6 +1,9 @@
 mod common;
 
-use hive::actors::{ActorMessage, AgentMessageType, AgentTaskStatus, InterAgentMessage, Message, ToolCallStatus, ToolCallType};
+use hive::actors::{
+    ActorMessage, AgentMessageType, AgentStatus, InterAgentMessage, Message, ToolCallStatus,
+    ToolCallType,
+};
 use hive::config::Config;
 use hive::hive::start_headless_hive;
 use std::fs;
@@ -160,13 +163,13 @@ fn test_file_read_message_order_for_sub_plan() {
                         index += 1;
                     } else if index == 1 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Received {r#type: ToolCallType::SpawnAgent, friendly_command_display: _ })) {
                         index += 1;
-                    } else if index == 2 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate { status: AgentTaskStatus::Waiting { .. } }))) {
+                    } else if index == 2 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate { status: AgentStatus::Wait { .. } }))) {
                         index += 1;
                     } else if index == 3 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished(Ok(_)))) {
                         index += 1;
                     } else if index == 4 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "planner") {
                         index += 1;
-                    } else if index == 5 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate { status: AgentTaskStatus::AwaitingManager(_) }))) {
+                    } else if index == 5 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate { status: AgentStatus::AwaitingManager(_) }))) {
                         index += 1;
                     } else if index == 6 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "approve_plan") {
                         index += 1;
@@ -176,7 +179,7 @@ fn test_file_read_message_order_for_sub_plan() {
                         index += 1;
                     } else if index == 9 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
                         index += 1;
-                    } else if index == 10 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate { status: AgentTaskStatus::Done(_) }))) {
+                    } else if index == 10 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate { status: AgentStatus::Done(_) }))) {
                         index += 1;
                     } else if index == 11 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
                         index += 1;

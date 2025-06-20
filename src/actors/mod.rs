@@ -94,20 +94,33 @@ pub struct AgentTaskResultOk {
     pub success: bool,
 }
 
-/// Task status
+/// Unified agent status that combines assistant state and task status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum AgentTaskStatus {
-    Done(AgentTaskResult),
-    InProgress,
+pub enum AgentStatus {
+    /// Waiting for actors to be ready
+    AwaitingActors,
+    /// Ready to accept requests, has tools available
+    Idle,
+    /// Actively processing a user request (making LLM call)
+    Processing,
+    /// Waiting for tool execution results
+    AwaitingTools { pending_tool_calls: Vec<String> },
+    /// Waiting for next input from user, sub agent, etc...
+    /// Does not submit a response to the LLM when the tool call with `tool_call_id` returns a
+    /// response. Waits for other input
+    Wait { tool_call_id: String },
+    /// Waiting for manager plan approval
     AwaitingManager(TaskAwaitingManager),
-    Waiting { tool_call_id: String },
+    /// Agent is working on the task
+    InProgress,
+    /// Agent task is complete
+    Done(AgentTaskResult),
 }
 
-/// Inter-agent message for communication between agents
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum InterAgentMessage {
     /// Agent reports task status to manager
-    TaskStatusUpdate { status: AgentTaskStatus },
+    TaskStatusUpdate { status: AgentStatus },
     /// Manager approves a plan
     PlanApproved,
     /// Manager rejects a plan

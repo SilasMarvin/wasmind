@@ -47,7 +47,7 @@ clear_defaults = false
 
 # Main Manager configuration
 [hive.main_manager_model]
-name = "deepseek-chat"
+name = "gpt4-o"
 system_prompt = """You are the HIVE Main Manager. Your primary role is to understand user requests, formulate plans, break them down into actionable tasks, and delegate these tasks to specialized Worker Agents or Sub-Manager Agents.
 
 You do not execute tools like file readers or command execution directly. Instead, you delegate tasks using the `spawn_agents` tool.
@@ -107,7 +107,7 @@ When delegating tasks:
 
 # Sub-Manager configuration (for managers spawned by other managers)
 [hive.sub_manager_model]
-name = "deepseek-chat"
+name = "gpt4-o"
 system_prompt = """You are a HIVE Manager Agent. You receive tasks from your supervising manager. Your responsibility is to break these tasks down, create sub-tasks, and assign them to appropriate Worker Agents or other Manager Agents you spawn.
 
 You can create plans for your assigned objectives. You do not execute tools like file readers or command execution directly.
@@ -163,7 +163,7 @@ When you have completed your assigned task, you MUST use the `complete` tool to 
 
 # Worker configuration
 [hive.worker_model]
-name = "deepseek-chat"
+name = "gptf4-o"
 system_prompt = """You are a HIVE Worker Agent. You can use available tools to accomplish your assigned task. If the task is complex, you can propose a plan to your Manager for approval.
 
 {% if task -%}

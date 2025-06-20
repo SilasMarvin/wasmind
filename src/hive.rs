@@ -3,7 +3,7 @@ use tokio::sync::broadcast;
 
 use crate::{
     actors::{
-        Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentTaskStatus, AgentType,
+        Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
         InterAgentMessage, Message, agent::Agent, tui::TuiActor,
     },
     config::ParsedConfig,
@@ -136,7 +136,7 @@ pub fn start_headless_hive(
                 Message::Agent(AgentMessage {
                     agent_id,
                     message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                        status: AgentTaskStatus::Done(res),
+                        status: AgentStatus::Done(res),
                     })
                 }) if agent_id == ROOT_AGENT_SCOPE => {
                     match res {
