@@ -1,6 +1,6 @@
 use crate::actors::{
     Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentTaskResultOk,
-    InterAgentMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    InterAgentMessage, Message, ToolCallStatus, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
 use genai::chat::{Tool, ToolCall};
@@ -62,16 +62,18 @@ impl Complete {
                 }
             };
 
-        // First send received status
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id.clone(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::TaskCompleted,
-                friendly_command_display: format!("Complete task: {}", agent_task_result.summary),
-            },
+        // Send agent status update first to stop LLM processing
+        let _ = self.broadcast(Message::Agent(AgentMessage {
+            agent_id: self.get_scope().clone(),
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                status: AgentStatus::Done(Ok(agent_task_result.clone())),
+            }),
         }));
 
-        // Then send tool call completion
+        // When the task is completed we shut down this agent
+        let _ = self.broadcast(Message::Action(Action::Exit));
+
+        // Send tool call completion after Done status
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(format!(
@@ -83,17 +85,6 @@ impl Complete {
                 }
             ))),
         }));
-
-        // Then send agent status update
-        let _ = self.broadcast(Message::Agent(AgentMessage {
-            agent_id: self.get_scope().clone(),
-            message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                status: AgentStatus::Done(Ok(agent_task_result.clone())),
-            }),
-        }));
-
-        // When the task is completed we shut down this agent
-        let _ = self.broadcast(Message::Action(Action::Exit));
     }
 }
 

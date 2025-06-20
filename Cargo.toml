@@ -17,6 +17,7 @@ default = ["gui", "audio"]
 gui = ["dep:arboard", "dep:rdev", "dep:xcap"]
 audio = ["dep:whisper-rs", "dep:cpal", "dep:hound", "dep:rubato"]
 headless = []
+test-utils = []
 
 [dependencies]
 base64 = "0.22.1"
