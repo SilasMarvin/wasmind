@@ -8,11 +8,11 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{Mutex, broadcast};
 use tracing::info;
-use uuid::Uuid;
 
 use crate::actors::ActorMessage;
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
+use crate::scope::Scope;
 
 pub const TOOL_NAME: &str = "read_file";
 pub const TOOL_DESCRIPTION: &str = "Read file contents";
@@ -201,7 +201,7 @@ pub struct FileReaderActor {
     #[allow(dead_code)] // TODO: Use for file size limits, timeout settings
     config: ParsedConfig,
     file_reader: Arc<Mutex<FileReader>>,
-    scope: Uuid,
+    scope: Scope,
 }
 
 impl FileReaderActor {
@@ -209,7 +209,7 @@ impl FileReaderActor {
         config: ParsedConfig,
         tx: broadcast::Sender<ActorMessage>,
         file_reader: Arc<Mutex<FileReader>>,
-        scope: Uuid,
+        scope: Scope,
     ) -> Self {
         Self {
             config,
@@ -311,7 +311,7 @@ impl Actor for FileReaderActor {
         self.tx.clone()
     }
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 

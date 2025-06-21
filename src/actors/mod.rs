@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
-use uuid::Uuid;
+use crate::scope::Scope;
 
 /// Actions users can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -129,7 +129,7 @@ pub enum InterAgentMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentMessage {
-    pub agent_id: Uuid,
+    pub agent_id: Scope,
     pub message: AgentMessageType,
 }
 
@@ -291,7 +291,7 @@ impl Eq for Message {}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ActorMessage {
     // The agent scope this message exists in
-    pub scope: Uuid,
+    pub scope: Scope,
     pub message: Message,
 }
 
@@ -308,12 +308,12 @@ pub trait Actor: Send + Sized + 'static {
     const ACTOR_ID: &'static str;
 
     /// gets the scope
-    fn get_scope(&self) -> &Uuid;
+    fn get_scope(&self) -> &Scope;
 
     /// get scope filters
     /// Used in the `run` method to filter out messages that are not in the returned scopes
     /// By default only listen to messages in your current scope
-    fn get_scope_filters(&self) -> Vec<&Uuid> {
+    fn get_scope_filters(&self) -> Vec<&Scope> {
         vec![self.get_scope()]
     }
 
@@ -326,15 +326,15 @@ pub trait Actor: Send + Sized + 'static {
     /// Sends a message
     fn broadcast(&self, message: Message) {
         let _ = self.get_tx().send(ActorMessage {
-            scope: self.get_scope().clone(),
+            scope: *self.get_scope(),
             message,
         });
     }
 
     /// Sends a message with a specific scope
-    fn broadcast_with_scope(&self, scope: &Uuid, message: Message) {
+    fn broadcast_with_scope(&self, scope: &Scope, message: Message) {
         let _ = self.get_tx().send(ActorMessage {
-            scope: scope.clone(),
+            scope: *scope,
             message,
         });
     }

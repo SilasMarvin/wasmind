@@ -6,12 +6,12 @@ use snafu::ResultExt;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, broadcast};
 use tracing::{error, warn};
-use uuid::Uuid;
 
 use crate::{
     SResult,
     actors::{Actor, Message, ToolCallStatus, ToolCallUpdate},
     config::ParsedModelConfig,
+    scope::Scope,
     system_state::SystemState,
     template::ToolInfo,
 };
@@ -86,7 +86,7 @@ pub struct WaitContext {
     /// The original tool_call_id that put us in Wait state
     original_tool_call_id: String,
     /// Agents we're still waiting for (those without results yet)
-    waiting_for_agents: HashMap<Uuid, Option<AgentTaskResult>>,
+    waiting_for_agents: HashMap<Scope, Option<AgentTaskResult>>,
 }
 
 /// Assistant actor that handles AI interactions
@@ -102,8 +102,8 @@ pub struct Assistant {
     pending_tool_responses: Vec<genai::chat::ToolResponse>,
     pub state: AgentStatus,
     task_description: Option<String>,
-    scope: Uuid,
-    spawned_agents_scope: Vec<Uuid>,
+    scope: Scope,
+    spawned_agents_scope: Vec<Scope>,
     required_actors: Vec<&'static str>,
     /// Context for returning to Wait state after temporary Processing
     wait_context: Option<WaitContext>,
@@ -120,7 +120,7 @@ impl Assistant {
     pub fn new(
         config: ParsedModelConfig,
         tx: broadcast::Sender<ActorMessage>,
-        scope: Uuid,
+        scope: Scope,
         required_actors: Vec<&'static str>,
         task_description: Option<String>,
         whitelisted_commands: Vec<String>,
@@ -419,6 +419,7 @@ impl Assistant {
                 &tool_infos,
                 self.whitelisted_commands.clone(),
                 self.task_description.clone(),
+                self.scope,
             ) {
                 Ok(rendered_prompt) => {
                     self.chat_request = self
@@ -441,12 +442,10 @@ async fn do_assist(
     client: Client,
     chat_request: ChatRequest,
     config: ParsedModelConfig,
-    scope: Uuid,
+    scope: Scope,
 ) -> SResult<()> {
-    let request = chat_request;
-
     let resp = client
-        .exec_chat(&config.name, request, None)
+        .exec_chat(&config.name, chat_request, None)
         .await
         .context(crate::GenaiSnafu)?;
 
@@ -518,15 +517,15 @@ impl Actor for Assistant {
         self.tx.clone()
     }
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 
-    fn get_scope_filters(&self) -> Vec<&Uuid> {
+    fn get_scope_filters(&self) -> Vec<&Scope> {
         self.spawned_agents_scope
             .iter()
             .chain([&self.scope])
-            .collect::<Vec<&Uuid>>()
+            .collect::<Vec<&Scope>>()
     }
 
     async fn on_stop(&mut self) {
@@ -1144,7 +1143,7 @@ mod tests {
         let parsed_config = parsed_config.hive.main_manager_model;
 
         let (tx, _) = broadcast::channel(10);
-        let scope = Uuid::new_v4();
+        let scope = Scope::new();
         Assistant::new(
             parsed_config,
             tx,
@@ -1155,7 +1154,7 @@ mod tests {
         )
     }
 
-    fn create_agent_message(agent_id: Uuid, status: AgentStatus) -> ActorMessage {
+    fn create_agent_message(agent_id: Scope, status: AgentStatus) -> ActorMessage {
         ActorMessage {
             scope: agent_id,
             message: Message::Agent(crate::actors::AgentMessage {
@@ -1175,9 +1174,9 @@ mod tests {
         assistant.handle_message(actor_message).await;
     }
 
-    async fn send_message_with_scope(scope: &Uuid, assistant: &mut Assistant, message: Message) {
+    async fn send_message_with_scope(scope: &Scope, assistant: &mut Assistant, message: Message) {
         let actor_message = ActorMessage {
-            scope: scope.clone(),
+            scope: *scope,
             message,
         };
         assistant.handle_message(actor_message).await;
@@ -1595,7 +1594,7 @@ mod tests {
         let mut assistant = create_test_assistant(vec![], None);
         assistant.state = AgentStatus::Idle;
 
-        let agent_id = Uuid::new_v4();
+        let agent_id = Scope::new();
         let task_result = Ok(crate::actors::AgentTaskResultOk {
             success: true,
             summary: "Task completed".to_string(),
@@ -1623,7 +1622,7 @@ mod tests {
         let mut assistant = create_test_assistant(vec![], None);
         assistant.state = AgentStatus::Processing;
 
-        let agent_id = Uuid::new_v4();
+        let agent_id = Scope::new();
         let task_result = Ok(crate::actors::AgentTaskResultOk {
             success: true,
             summary: "Task completed".to_string(),
@@ -1644,7 +1643,7 @@ mod tests {
         let mut assistant = create_test_assistant(vec![], None);
         assistant.state = AgentStatus::Idle;
 
-        let agent_id = Uuid::new_v4();
+        let agent_id = Scope::new();
         let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("test plan".to_string());
 
         let agent_message =
@@ -1671,7 +1670,7 @@ mod tests {
             tool_call_id: "tool123".to_string(),
         };
 
-        let agent_id = Uuid::new_v4();
+        let agent_id = Scope::new();
         let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation("test plan".to_string());
 
         let agent_message =
@@ -1694,7 +1693,7 @@ mod tests {
     #[tokio::test]
     async fn test_sub_agent_done_while_waiting_single_agent() {
         let mut assistant = create_test_assistant(vec![], None);
-        let agent_id = Uuid::new_v4();
+        let agent_id = Scope::new();
 
         // Set up Wait state with one agent
         assistant.state = AgentStatus::Wait {
@@ -1734,8 +1733,8 @@ mod tests {
     #[tokio::test]
     async fn test_sub_agent_done_while_waiting_multiple_agents() {
         let mut assistant = create_test_assistant(vec![], None);
-        let agent1_id = Uuid::new_v4();
-        let agent2_id = Uuid::new_v4();
+        let agent1_id = Scope::new();
+        let agent2_id = Scope::new();
 
         // Set up Wait state with two agents
         assistant.state = AgentStatus::Wait {
@@ -1789,7 +1788,7 @@ mod tests {
         let mut assistant = create_test_assistant(vec![], None);
         assistant.state = AgentStatus::Idle;
 
-        let agent_id = Uuid::new_v4();
+        let agent_id = Scope::new();
         let agent_message = create_agent_message(agent_id, AgentStatus::InProgress);
         assistant.handle_message(agent_message).await;
 
@@ -1805,7 +1804,7 @@ mod tests {
         let mut assistant = create_test_assistant(vec![], None);
         assistant.state = AgentStatus::Idle;
 
-        let agent_id = Uuid::new_v4();
+        let agent_id = Scope::new();
         let agent_message = create_agent_message(
             agent_id,
             AgentStatus::Wait {
@@ -1844,8 +1843,8 @@ mod tests {
     #[tokio::test]
     async fn test_wait_state_recovery_after_plan_approval() {
         let mut assistant = create_test_assistant(vec![], None);
-        let agent1_id = Uuid::new_v4();
-        let agent2_id = Uuid::new_v4();
+        let agent1_id = Scope::new();
+        let agent2_id = Scope::new();
 
         // Set up Wait state with two agents
         assistant.state = AgentStatus::Wait {
@@ -1894,8 +1893,8 @@ mod tests {
     #[tokio::test]
     async fn test_agent_completes_while_approving_plan() {
         let mut assistant = create_test_assistant(vec![], None);
-        let agent1_id = Uuid::new_v4();
-        let agent2_id = Uuid::new_v4();
+        let agent1_id = Scope::new();
+        let agent2_id = Scope::new();
 
         // Set up Wait state with two agents
         assistant.state = AgentStatus::Wait {
@@ -1947,8 +1946,8 @@ mod tests {
     #[tokio::test]
     async fn test_all_agents_complete_while_processing_returns_to_idle() {
         let mut assistant = create_test_assistant(vec![], None);
-        let agent1_id = Uuid::new_v4();
-        let agent2_id = Uuid::new_v4();
+        let agent1_id = Scope::new();
+        let agent2_id = Scope::new();
 
         // Set up Wait state with two agents
         assistant.state = AgentStatus::Wait {
@@ -2003,9 +2002,9 @@ mod tests {
     #[tokio::test]
     async fn test_wait_context_preserved_across_multiple_transitions() {
         let mut assistant = create_test_assistant(vec![], None);
-        let agent1_id = Uuid::new_v4();
-        let agent2_id = Uuid::new_v4();
-        let agent3_id = Uuid::new_v4();
+        let agent1_id = Scope::new();
+        let agent2_id = Scope::new();
+        let agent3_id = Scope::new();
 
         // Set up Wait state with three agents
         assistant.state = AgentStatus::Wait {
@@ -2090,7 +2089,7 @@ mod tests {
     // #[tokio::test]
     // async fn test_cancel_while_in_wait_state() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     let agent_id = Uuid::new_v4();
+    //     let agent_id = Scope::new();
     //
     //     // Set up Wait state with one agent
     //     assistant.state = AgentStatus::Wait {
@@ -2120,8 +2119,8 @@ mod tests {
     // #[tokio::test]
     // async fn test_user_input_overrides_wait_state_recovery() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     let agent1_id = Uuid::new_v4();
-    //     let agent2_id = Uuid::new_v4();
+    //     let agent1_id = Scope::new();
+    //     let agent2_id = Scope::new();
     //
     //     // Set up Wait state with two agents
     //     assistant.state = AgentStatus::Wait {
@@ -2175,9 +2174,9 @@ mod tests {
     // #[tokio::test]
     // async fn test_multiple_agent_completions_during_processing() {
     //     let mut assistant = create_test_assistant(vec![], None);
-    //     let agent1_id = Uuid::new_v4();
-    //     let agent2_id = Uuid::new_v4();
-    //     let agent3_id = Uuid::new_v4();
+    //     let agent1_id = Scope::new();
+    //     let agent2_id = Scope::new();
+    //     let agent3_id = Scope::new();
     //
     //     // Start in Processing state
     //     assistant.state = AgentStatus::Processing;
@@ -2236,7 +2235,7 @@ mod tests {
     //
     //     // Add many system parts to test accumulation
     //     for i in 0..100 {
-    //         let agent_id = Uuid::new_v4();
+    //         let agent_id = Scope::new();
     //         let task_result = Ok(crate::actors::AgentTaskResultOk {
     //             success: i % 2 == 0, // Alternate success/failure
     //             summary: format!(
@@ -2264,7 +2263,7 @@ mod tests {
     //     let mut assistant = create_test_assistant(vec![], None);
     //     assistant.state = AgentStatus::Idle;
     //
-    //     let agent_id = Uuid::new_v4();
+    //     let agent_id = Scope::new();
     //
     //     // Create a mock task plan for AwaitingPlanApproval
     //     let mock_plan = crate::actors::tools::planner::TaskPlan {
@@ -2341,7 +2340,7 @@ mod tests {
     //         pending_tool_calls: vec!["tool_123".to_string()],
     //     };
     //
-    //     let agent_id = Uuid::new_v4();
+    //     let agent_id = Scope::new();
     //     let task_result = Ok(crate::actors::AgentTaskResultOk {
     //         success: true,
     //         summary: "Agent completed while waiting for tools".to_string(),
@@ -2374,7 +2373,7 @@ mod tests {
     //     assistant.state =
     //         AgentStatus::AwaitingManager(TaskAwaitingManager::AwaitingPlanApproval(mock_plan));
     //
-    //     let agent_id = Uuid::new_v4();
+    //     let agent_id = Scope::new();
     //     let task_result = Ok(crate::actors::AgentTaskResultOk {
     //         success: false,
     //         summary: "Agent failed while we await manager".to_string(),
@@ -2405,7 +2404,7 @@ mod tests {
     //         pending_tool_calls: vec!["tool_123".to_string()],
     //     };
     //
-    //     let agent_id = Uuid::new_v4();
+    //     let agent_id = Scope::new();
     //     let task_awaiting = TaskAwaitingManager::AwaitingMoreInformation(
     //         "Agent needs help while we wait for tools".to_string(),
     //     );
@@ -2434,7 +2433,7 @@ mod tests {
     //     let mut assistant = create_test_assistant(vec![], None);
     //     assistant.state = AgentStatus::Processing;
     //
-    //     let agent_id = Uuid::new_v4();
+    //     let agent_id = Scope::new();
     //     let mock_plan = crate::actors::tools::planner::TaskPlan {
     //         title: "Sub-agent Plan".to_string(),
     //         tasks: vec![],
@@ -2464,7 +2463,7 @@ mod tests {
     //     assistant.state =
     //         AgentStatus::AwaitingManager(TaskAwaitingManager::AwaitingPlanApproval(our_plan));
     //
-    //     let agent_id = Uuid::new_v4();
+    //     let agent_id = Scope::new();
     //     let sub_agent_plan = crate::actors::tools::planner::TaskPlan {
     //         title: "Sub-agent Plan".to_string(),
     //         tasks: vec![],
@@ -2493,7 +2492,7 @@ mod tests {
     //     // Should start in AwaitingActors state due to required actors
     //     assert!(matches!(assistant.state, AgentStatus::AwaitingActors));
     //
-    //     let agent_id = Uuid::new_v4();
+    //     let agent_id = Scope::new();
     //     let task_result = Ok(crate::actors::AgentTaskResultOk {
     //         success: true,
     //         summary: "This should not happen".to_string(),

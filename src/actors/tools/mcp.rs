@@ -12,12 +12,12 @@ use tokio::process::Command;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
-use uuid::Uuid;
 
 use crate::actors::{
     Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
+use crate::scope::Scope;
 
 #[derive(Debug, Snafu)]
 enum MCPError {
@@ -56,11 +56,11 @@ pub struct MCP {
     servers: HashMap<String, Arc<RunningService<RoleClient, ()>>>,
     func_to_server: HashMap<String, String>,
     running_calls: HashMap<String, RunningMCPCall>,
-    scope: Uuid,
+    scope: Scope,
 }
 
 impl MCP {
-    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self {
             config,
             tx,
@@ -321,7 +321,7 @@ impl Actor for MCP {
         self.tx.clone()
     }
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 

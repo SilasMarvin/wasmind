@@ -191,6 +191,7 @@ Working directory: {{ cwd }}
 Available template variables:
 - `tools`, `task`, `current_datetime`, `os`, `arch`, `cwd`
 - `whitelisted_commands`, `files`, `plan`, `agents`
+- `id` - The unique identifier (scope) of the current agent
 
 ## Configuration System
 

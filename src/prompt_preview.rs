@@ -200,10 +200,10 @@ file = "app.log"
         // Add some agents in different states
         use crate::actors::AgentStatus;
         use crate::system_state::AgentTaskInfo;
-        use uuid::Uuid;
+        use crate::scope::Scope;
 
         let agent1 = AgentTaskInfo::new(
-            Uuid::new_v4(),
+            Scope::new(),
             AgentType::Worker,
             "Software Engineer".to_string(),
             "Implement user authentication system".to_string(),
@@ -212,7 +212,7 @@ file = "app.log"
         state.add_agent(agent1);
 
         let agent2 = AgentTaskInfo::new(
-            Uuid::new_v4(),
+            Scope::new(),
             AgentType::Worker,
             "Database Architect".to_string(),
             "Design and optimize database schema".to_string(),
@@ -228,7 +228,7 @@ file = "app.log"
         );
 
         let agent3 = AgentTaskInfo::new(
-            Uuid::new_v4(),
+            Scope::new(),
             AgentType::Worker,
             "Frontend Developer".to_string(),
             "Create responsive user interface".to_string(),
@@ -307,10 +307,10 @@ file = "app.log"
         // Add agents
         use crate::actors::AgentStatus;
         use crate::system_state::AgentTaskInfo;
-        use uuid::Uuid;
+        use crate::scope::Scope;
 
         let backend_agent = AgentTaskInfo::new(
-            Uuid::new_v4(),
+            Scope::new(),
             AgentType::Worker,
             "Backend Developer".to_string(),
             "Implement REST API endpoints with authentication".to_string(),
@@ -318,7 +318,7 @@ file = "app.log"
         state.add_agent(backend_agent);
 
         let frontend_agent = AgentTaskInfo::new(
-            Uuid::new_v4(),
+            Scope::new(),
             AgentType::Worker,
             "Frontend Developer".to_string(),
             "Build React components for user dashboard".to_string(),
@@ -326,7 +326,7 @@ file = "app.log"
         state.add_agent(frontend_agent);
 
         let db_agent = AgentTaskInfo::new(
-            Uuid::new_v4(),
+            Scope::new(),
             AgentType::Worker,
             "Database Administrator".to_string(),
             "Optimize database queries and setup indexing".to_string(),
@@ -363,6 +363,7 @@ file = "app.log"
                     system_prompt,
                     &tools,
                     self.config.whitelisted_commands.clone(),
+                    crate::scope::Scope::new(), // Preview scope - dummy ID
                 )
                 .context(RenderFailedSnafu)?;
             Ok(rendered)

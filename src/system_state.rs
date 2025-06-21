@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use uuid::Uuid;
 
 use crate::actors::tools::planner::{TaskPlan, TaskStatus};
 use crate::actors::{AgentStatus, AgentType};
+use crate::scope::Scope;
 use crate::template::{self, TemplateContext, ToolInfo};
 
 /// Errors that can occur when working with SystemState
@@ -87,7 +87,7 @@ impl std::fmt::Display for FileInfo {
 /// Information about a spawned agent and its assigned task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTaskInfo {
-    pub agent_id: Uuid,
+    pub agent_id: Scope,
     pub agent_role: String,
     pub task_description: String,
     pub status: AgentStatus,
@@ -96,7 +96,7 @@ pub struct AgentTaskInfo {
 
 impl AgentTaskInfo {
     pub fn new(
-        agent_id: Uuid,
+        agent_id: Scope,
         agent_type: AgentType,
         agent_role: String,
         task_description: String,
@@ -167,7 +167,7 @@ pub struct SystemState {
     /// Current task plan if any
     current_plan: Option<TaskPlan>,
     /// Spawned agents and their tasks
-    agents: HashMap<Uuid, AgentTaskInfo>,
+    agents: HashMap<Scope, AgentTaskInfo>,
     /// Maximum number of lines to show per file in system prompt
     max_file_lines: usize,
     /// Track whether the state has been modified since last check
@@ -236,7 +236,7 @@ impl SystemState {
     }
 
     /// Update an agent's task status
-    pub fn update_agent_status(&mut self, agent_id: &Uuid, status: AgentStatus) {
+    pub fn update_agent_status(&mut self, agent_id: &Scope, status: AgentStatus) {
         if let Some(agent_info) = self.agents.get_mut(agent_id) {
             agent_info.status = status;
             self.modified = true;
@@ -244,14 +244,14 @@ impl SystemState {
     }
 
     /// Remove an agent (when task is complete)
-    pub fn remove_agent(&mut self, agent_id: &Uuid) {
+    pub fn remove_agent(&mut self, agent_id: &Scope) {
         if self.agents.remove(agent_id).is_some() {
             self.modified = true;
         }
     }
 
     /// Get all agents
-    pub fn get_agents(&self) -> &HashMap<Uuid, AgentTaskInfo> {
+    pub fn get_agents(&self) -> &HashMap<Scope, AgentTaskInfo> {
         &self.agents
     }
 
@@ -429,8 +429,9 @@ impl SystemState {
         prompt_template: &str,
         tools: &[ToolInfo],
         whitelisted_commands: Vec<String>,
+        agent_id: Scope,
     ) -> Result<String> {
-        self.render_system_prompt_with_task(prompt_template, tools, whitelisted_commands, None)
+        self.render_system_prompt_with_task(prompt_template, tools, whitelisted_commands, None, agent_id)
     }
 
     /// Render the system prompt with the given template, tools, and task description
@@ -440,6 +441,7 @@ impl SystemState {
         tools: &[ToolInfo],
         whitelisted_commands: Vec<String>,
         task_description: Option<String>,
+        agent_id: Scope,
     ) -> Result<String> {
         // Check if it's a template
         if !template::is_template(prompt_template) {
@@ -452,6 +454,7 @@ impl SystemState {
             whitelisted_commands,
             self,
             task_description,
+            agent_id,
         );
 
         // Render the template
@@ -696,7 +699,7 @@ mod tests {
         let mut state = SystemState::new();
 
         let agent1 = AgentTaskInfo::new(
-            Uuid::new_v4(),
+            Scope::new(),
             AgentType::Worker,
             "Software Engineer".to_string(),
             "Implement feature X".to_string(),
@@ -704,7 +707,7 @@ mod tests {
         let agent1_id = agent1.agent_id;
 
         let agent2 = AgentTaskInfo::new(
-            Uuid::new_v4(),
+            Scope::new(),
             AgentType::Worker,
             "QA Engineer".to_string(),
             "Test feature X".to_string(),
@@ -789,6 +792,7 @@ Whitelisted commands: {{ whitelisted_commands|join(', ') }}
             ],
             vec!["ls".to_string(), "cat".to_string(), "git".to_string()],
             &system_state,
+            Scope::new(),
         );
 
         let result = template::render_template(template, &context).unwrap();
@@ -825,7 +829,7 @@ Whitelisted commands: {{ whitelisted_commands|join(', ') }}
     fn test_non_template_passthrough() {
         let plain_prompt = "You are a helpful assistant.";
         let system_state = SystemState::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state);
+        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         // Should return the same string if it's not a template
         assert!(!template::is_template(plain_prompt));
@@ -850,7 +854,7 @@ Current plan: active
         let mut state = SystemState::new();
 
         // Test with no files or plan
-        let result = state.render_system_prompt(template, &[], vec![]).unwrap();
+        let result = state.render_system_prompt(template, &[], vec![], Scope::new()).unwrap();
         assert!(result.contains("You are an AI assistant."));
         assert!(!result.contains("Currently loaded files"));
         assert!(!result.contains("Current plan"));
@@ -862,7 +866,7 @@ Current plan: active
             SystemTime::now(),
         );
 
-        let result = state.render_system_prompt(template, &[], vec![]).unwrap();
+        let result = state.render_system_prompt(template, &[], vec![], Scope::new()).unwrap();
         assert!(result.contains("Currently loaded files: 1"));
         assert!(!result.contains("Current plan"));
 
@@ -872,7 +876,7 @@ Current plan: active
             tasks: vec![],
         });
 
-        let result = state.render_system_prompt(template, &[], vec![]).unwrap();
+        let result = state.render_system_prompt(template, &[], vec![], Scope::new()).unwrap();
         assert!(result.contains("Currently loaded files: 1"));
         assert!(result.contains("Current plan: active"));
     }
@@ -941,7 +945,7 @@ Available tools: {{ tools|length }}"#;
 
         // Test without task
         let result = state
-            .render_system_prompt_with_task(template, &tools, vec![], None)
+            .render_system_prompt_with_task(template, &tools, vec![], None, Scope::new())
             .unwrap();
         assert!(result.contains("No specific task assigned"));
         assert!(result.contains("Available tools: 1"));
@@ -953,6 +957,7 @@ Available tools: {{ tools|length }}"#;
                 &tools,
                 vec![],
                 Some("Implement user authentication".to_string()),
+                Scope::new(),
             )
             .unwrap();
         assert!(result.contains("Your assigned task: Implement user authentication"));
@@ -1024,7 +1029,7 @@ Available tools: {{ tools|length }}"#;
 
         // Add agents
         let agent1 = AgentTaskInfo::new(
-            Uuid::new_v4(),
+            Scope::new(),
             AgentType::Worker,
             "Developer".to_string(),
             "Build the API".to_string(),
@@ -1041,7 +1046,7 @@ Available tools: {{ tools|length }}"#;
 
         // Render the template
         let result = state
-            .render_system_prompt(xml_template, &[], vec![])
+            .render_system_prompt(xml_template, &[], vec![], Scope::new())
             .unwrap();
 
         // Verify XML structure for files

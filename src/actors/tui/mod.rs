@@ -3,12 +3,11 @@ use std::thread;
 use model::Model;
 use tokio::sync::broadcast::{Receiver, Sender};
 use tuirealm::{PollStrategy, Update};
-use uuid::Uuid;
 
 mod components;
 mod model;
 
-use crate::config::ParsedConfig;
+use crate::{config::ParsedConfig, scope::Scope};
 
 use super::{Actor, ActorMessage};
 
@@ -16,11 +15,11 @@ pub struct TuiActor {
     #[allow(dead_code)]
     config: ParsedConfig,
     tx: Sender<ActorMessage>,
-    scope: Uuid,
+    scope: Scope,
 }
 
 impl TuiActor {
-    pub fn new(config: ParsedConfig, tx: Sender<ActorMessage>, scope: Uuid) -> Self {
+    pub fn new(config: ParsedConfig, tx: Sender<ActorMessage>, scope: Scope) -> Self {
         let local_tx = tx.clone();
         thread::spawn(|| start_model(local_tx));
 
@@ -32,7 +31,7 @@ impl TuiActor {
 impl Actor for TuiActor {
     const ACTOR_ID: &'static str = "tui";
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 

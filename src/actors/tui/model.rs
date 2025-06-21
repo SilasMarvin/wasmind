@@ -5,11 +5,11 @@ use tuirealm::listener::{ListenerResult, Poll};
 use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, EventListenerCfg, ListenerError, Update};
-use uuid::Uuid;
 
 use crate::actors::ActorMessage;
 use crate::actors::tui::components::llm_textarea::LLMTextAreaComponent;
 use crate::hive::ROOT_AGENT_SCOPE;
+use crate::scope::Scope;
 
 struct PollBroadcastWrapper {
     rx: Receiver<ActorMessage>,
@@ -41,7 +41,7 @@ where
     T: TerminalAdapter,
 {
     /// Application
-    pub app: Application<Uuid, TuiMessage, ActorMessage>,
+    pub app: Application<Scope, TuiMessage, ActorMessage>,
     /// Indicates that the application must quit
     pub quit: bool,
     /// Tells whether to redraw interface
@@ -92,13 +92,13 @@ where
         );
     }
 
-    pub fn init_app(rx: Receiver<ActorMessage>) -> Application<Uuid, TuiMessage, ActorMessage> {
+    pub fn init_app(rx: Receiver<ActorMessage>) -> Application<Scope, TuiMessage, ActorMessage> {
         // Setup application
         // NOTE: NoUserEvent is a shorthand to tell tui-realm we're not going to use any custom user event
         // NOTE: the event listener is configured to use the default crossterm input listener and to raise a Tick event each second
         // which we will use to update the clock
 
-        let mut app: Application<Uuid, TuiMessage, ActorMessage> = Application::init(
+        let mut app: Application<Scope, TuiMessage, ActorMessage> = Application::init(
             EventListenerCfg::default()
                 .crossterm_input_listener(Duration::from_millis(20), 3)
                 .add_port(

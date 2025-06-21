@@ -1,28 +1,29 @@
+mod common;
+
 use hive::actors::assistant::Assistant;
 use hive::actors::tools::spawn_agent::SpawnAgent;
 use hive::actors::{
-    Actor, ActorMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage,
-    Message, ToolCallStatus, ToolCallType,
+    Actor, ActorMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage, Message,
+    ToolCallStatus, ToolCallType,
 };
-use hive::config::create_test_config_with_mock_endpoint;
+use hive::scope::Scope;
 use serde_json::json;
 use std::time::Duration;
 use tokio::sync::broadcast;
-use uuid::Uuid;
-use wiremock::{MockServer, Mock, ResponseTemplate};
 use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 #[tokio::test]
 async fn test_no_wait_immediate_complete() {
     // Start mock server
     let mock_server = MockServer::start().await;
-    
+
     // Create shared broadcast channel and scope
     let (tx, mut rx) = broadcast::channel(100);
-    let scope = Uuid::new_v4();
-    
+    let scope = Scope::new();
+
     // Create config with mock server URL
-    let config = create_test_config_with_mock_endpoint(mock_server.uri());
+    let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
     // Set up mock response for spawn LLM call
     Mock::given(method("POST"))
@@ -85,18 +86,16 @@ async fn test_no_wait_immediate_complete() {
     let mut assistant_ready = false;
     let mut spawn_agent_ready = false;
     let mut tools_available = false;
-    
+
     while !assistant_ready || !spawn_agent_ready || !tools_available {
         if let Ok(msg) = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
             let msg = msg.unwrap();
             match &msg.message {
-                Message::ActorReady { actor_id } => {
-                    match actor_id.as_str() {
-                        "assistant" => assistant_ready = true,
-                        "spawn_agent" => spawn_agent_ready = true,
-                        _ => {}
-                    }
-                }
+                Message::ActorReady { actor_id } => match actor_id.as_str() {
+                    "assistant" => assistant_ready = true,
+                    "spawn_agent" => spawn_agent_ready = true,
+                    _ => {}
+                },
                 Message::ToolsAvailable(tools) => {
                     assert_eq!(tools.len(), 1); // spawn_agents
                     assert_eq!(tools[0].name, "spawn_agents");
@@ -130,9 +129,7 @@ async fn test_no_wait_immediate_complete() {
     let mut seen_agent_spawned = false;
     let mut seen_spawn_finished = false;
 
-    while let Ok(msg) =
-        tokio::time::timeout(Duration::from_secs(5), rx.recv()).await
-    {
+    while let Ok(msg) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
         let msg = msg.unwrap();
         println!("Received message: {:?}", msg.message);
 
@@ -142,9 +139,9 @@ async fn test_no_wait_immediate_complete() {
                 seen_user_input = true;
             }
             Message::Agent(agent_msg) if agent_msg.agent_id == scope => {
-                if let AgentMessageType::InterAgentMessage(
-                    InterAgentMessage::TaskStatusUpdate { status },
-                ) = &agent_msg.message
+                if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                    status,
+                }) = &agent_msg.message
                 {
                     match status {
                         AgentStatus::Processing => {
@@ -152,7 +149,10 @@ async fn test_no_wait_immediate_complete() {
                             seen_processing = true;
                         }
                         AgentStatus::AwaitingTools { pending_tool_calls } => {
-                            assert!(seen_spawn_tool_call, "AwaitingTools must come after tool call");
+                            assert!(
+                                seen_spawn_tool_call,
+                                "AwaitingTools must come after tool call"
+                            );
                             assert_eq!(pending_tool_calls.len(), 1);
                             assert_eq!(pending_tool_calls[0], "spawn_call");
                             seen_awaiting_tools = true;
@@ -162,13 +162,17 @@ async fn test_no_wait_immediate_complete() {
                 }
             }
             Message::Agent(agent_msg) if agent_msg.agent_id != scope => {
-                if let AgentMessageType::AgentSpawned { 
-                    role, 
-                    task_description, 
+                if let AgentMessageType::AgentSpawned {
+                    role,
+                    task_description,
                     agent_type,
-                    .. 
-                } = &agent_msg.message {
-                    assert!(seen_spawn_received, "AgentSpawned must come after spawn received");
+                    ..
+                } = &agent_msg.message
+                {
+                    assert!(
+                        seen_spawn_received,
+                        "AgentSpawned must come after spawn received"
+                    );
                     assert_eq!(role, "Quick Worker");
                     assert_eq!(task_description, "Complete immediately");
                     assert_eq!(*agent_type, AgentType::Worker);
@@ -176,25 +180,40 @@ async fn test_no_wait_immediate_complete() {
                 }
             }
             Message::AssistantResponse(genai::chat::MessageContent::ToolCalls(calls)) => {
-                assert!(seen_processing, "AssistantResponse must come after Processing");
+                assert!(
+                    seen_processing,
+                    "AssistantResponse must come after Processing"
+                );
                 assert_eq!(calls.len(), 1);
                 assert_eq!(calls[0].call_id, "spawn_call");
                 seen_assistant_response = true;
             }
             Message::AssistantToolCall(tc) => {
-                assert!(seen_assistant_response, "AssistantToolCall must come after AssistantResponse");
+                assert!(
+                    seen_assistant_response,
+                    "AssistantToolCall must come after AssistantResponse"
+                );
                 assert_eq!(tc.call_id, "spawn_call");
                 assert_eq!(tc.fn_name, "spawn_agents");
                 seen_spawn_tool_call = true;
             }
             Message::ToolCallUpdate(update) if update.call_id == "spawn_call" => {
                 match &update.status {
-                    ToolCallStatus::Received { r#type: ToolCallType::SpawnAgent, .. } => {
-                        assert!(seen_spawn_tool_call, "Spawn received must come after tool call");
+                    ToolCallStatus::Received {
+                        r#type: ToolCallType::SpawnAgent,
+                        ..
+                    } => {
+                        assert!(
+                            seen_spawn_tool_call,
+                            "Spawn received must come after tool call"
+                        );
                         seen_spawn_received = true;
                     }
                     ToolCallStatus::Finished(Ok(content)) => {
-                        assert!(seen_agent_spawned, "Spawn finished must come after AgentSpawned");
+                        assert!(
+                            seen_agent_spawned,
+                            "Spawn finished must come after AgentSpawned"
+                        );
                         assert!(content.contains("Spawned 1 agent"));
                         assert!(content.contains("Quick Worker"));
                         seen_spawn_finished = true;
@@ -223,13 +242,13 @@ async fn test_no_wait_immediate_complete() {
 async fn test_wait_immediate_complete() {
     // Start mock server
     let mock_server = MockServer::start().await;
-    
+
     // Create shared broadcast channel and scope
     let (tx, mut rx) = broadcast::channel(100);
-    let scope = Uuid::new_v4();
-    
+    let scope = Scope::new();
+
     // Create config with mock server URL
-    let config = create_test_config_with_mock_endpoint(mock_server.uri());
+    let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
     // Set up mock response for spawn LLM call
     Mock::given(method("POST"))
@@ -292,18 +311,16 @@ async fn test_wait_immediate_complete() {
     let mut assistant_ready = false;
     let mut spawn_agent_ready = false;
     let mut tools_available = false;
-    
+
     while !assistant_ready || !spawn_agent_ready || !tools_available {
         if let Ok(msg) = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
             let msg = msg.unwrap();
             match &msg.message {
-                Message::ActorReady { actor_id } => {
-                    match actor_id.as_str() {
-                        "assistant" => assistant_ready = true,
-                        "spawn_agent" => spawn_agent_ready = true,
-                        _ => {}
-                    }
-                }
+                Message::ActorReady { actor_id } => match actor_id.as_str() {
+                    "assistant" => assistant_ready = true,
+                    "spawn_agent" => spawn_agent_ready = true,
+                    _ => {}
+                },
                 Message::ToolsAvailable(tools) => {
                     assert_eq!(tools.len(), 1); // spawn_agents
                     assert_eq!(tools[0].name, "spawn_agents");
@@ -338,9 +355,7 @@ async fn test_wait_immediate_complete() {
     let mut seen_spawn_finished = false;
     let mut seen_wait_state = false;
 
-    while let Ok(msg) =
-        tokio::time::timeout(Duration::from_secs(5), rx.recv()).await
-    {
+    while let Ok(msg) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
         let msg = msg.unwrap();
         println!("Received message: {:?}", msg.message);
 
@@ -350,9 +365,9 @@ async fn test_wait_immediate_complete() {
                 seen_user_input = true;
             }
             Message::Agent(agent_msg) if agent_msg.agent_id == scope => {
-                if let AgentMessageType::InterAgentMessage(
-                    InterAgentMessage::TaskStatusUpdate { status },
-                ) = &agent_msg.message
+                if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                    status,
+                }) = &agent_msg.message
                 {
                     match status {
                         AgentStatus::Processing => {
@@ -360,7 +375,10 @@ async fn test_wait_immediate_complete() {
                             seen_processing = true;
                         }
                         AgentStatus::AwaitingTools { pending_tool_calls } => {
-                            assert!(seen_spawn_tool_call, "AwaitingTools must come after tool call");
+                            assert!(
+                                seen_spawn_tool_call,
+                                "AwaitingTools must come after tool call"
+                            );
                             assert_eq!(pending_tool_calls.len(), 1);
                             assert_eq!(pending_tool_calls[0], "spawn_call");
                             seen_awaiting_tools = true;
@@ -377,13 +395,17 @@ async fn test_wait_immediate_complete() {
                 }
             }
             Message::Agent(agent_msg) if agent_msg.agent_id != scope => {
-                if let AgentMessageType::AgentSpawned { 
-                    role, 
-                    task_description, 
+                if let AgentMessageType::AgentSpawned {
+                    role,
+                    task_description,
                     agent_type,
-                    .. 
-                } = &agent_msg.message {
-                    assert!(seen_spawn_received, "AgentSpawned must come after spawn received");
+                    ..
+                } = &agent_msg.message
+                {
+                    assert!(
+                        seen_spawn_received,
+                        "AgentSpawned must come after spawn received"
+                    );
                     assert_eq!(role, "Quick Worker");
                     assert_eq!(task_description, "Complete immediately");
                     assert_eq!(*agent_type, AgentType::Worker);
@@ -391,25 +413,40 @@ async fn test_wait_immediate_complete() {
                 }
             }
             Message::AssistantResponse(genai::chat::MessageContent::ToolCalls(calls)) => {
-                assert!(seen_processing, "AssistantResponse must come after Processing");
+                assert!(
+                    seen_processing,
+                    "AssistantResponse must come after Processing"
+                );
                 assert_eq!(calls.len(), 1);
                 assert_eq!(calls[0].call_id, "spawn_call");
                 seen_assistant_response = true;
             }
             Message::AssistantToolCall(tc) => {
-                assert!(seen_assistant_response, "AssistantToolCall must come after AssistantResponse");
+                assert!(
+                    seen_assistant_response,
+                    "AssistantToolCall must come after AssistantResponse"
+                );
                 assert_eq!(tc.call_id, "spawn_call");
                 assert_eq!(tc.fn_name, "spawn_agents");
                 seen_spawn_tool_call = true;
             }
             Message::ToolCallUpdate(update) if update.call_id == "spawn_call" => {
                 match &update.status {
-                    ToolCallStatus::Received { r#type: ToolCallType::SpawnAgent, .. } => {
-                        assert!(seen_spawn_tool_call, "Spawn received must come after tool call");
+                    ToolCallStatus::Received {
+                        r#type: ToolCallType::SpawnAgent,
+                        ..
+                    } => {
+                        assert!(
+                            seen_spawn_tool_call,
+                            "Spawn received must come after tool call"
+                        );
                         seen_spawn_received = true;
                     }
                     ToolCallStatus::Finished(Ok(content)) => {
-                        assert!(seen_agent_spawned, "Spawn finished must come after AgentSpawned");
+                        assert!(
+                            seen_agent_spawned,
+                            "Spawn finished must come after AgentSpawned"
+                        );
                         assert!(content.contains("Spawned 1 agent"));
                         assert!(content.contains("Quick Worker"));
                         seen_spawn_finished = true;
@@ -435,20 +472,23 @@ async fn test_wait_immediate_complete() {
     assert!(seen_spawn_received, "Missing spawn received");
     assert!(seen_agent_spawned, "Missing AgentSpawned");
     assert!(seen_spawn_finished, "Missing spawn finished");
-    assert!(seen_wait_state, "Missing Wait state - parent should wait for child completion");
+    assert!(
+        seen_wait_state,
+        "Missing Wait state - parent should wait for child completion"
+    );
 }
 
 #[tokio::test]
 async fn test_no_wait_long_running() {
     // Start mock server
     let mock_server = MockServer::start().await;
-    
+
     // Create shared broadcast channel and scope
     let (tx, mut rx) = broadcast::channel(100);
-    let scope = Uuid::new_v4();
-    
+    let scope = Scope::new();
+
     // Create config with mock server URL
-    let config = create_test_config_with_mock_endpoint(mock_server.uri());
+    let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
     // Set up mock response for spawn LLM call
     Mock::given(method("POST"))
@@ -511,18 +551,16 @@ async fn test_no_wait_long_running() {
     let mut assistant_ready = false;
     let mut spawn_agent_ready = false;
     let mut tools_available = false;
-    
+
     while !assistant_ready || !spawn_agent_ready || !tools_available {
         if let Ok(msg) = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
             let msg = msg.unwrap();
             match &msg.message {
-                Message::ActorReady { actor_id } => {
-                    match actor_id.as_str() {
-                        "assistant" => assistant_ready = true,
-                        "spawn_agent" => spawn_agent_ready = true,
-                        _ => {}
-                    }
-                }
+                Message::ActorReady { actor_id } => match actor_id.as_str() {
+                    "assistant" => assistant_ready = true,
+                    "spawn_agent" => spawn_agent_ready = true,
+                    _ => {}
+                },
                 Message::ToolsAvailable(tools) => {
                     assert_eq!(tools.len(), 1);
                     tools_available = true;
@@ -550,11 +588,9 @@ async fn test_no_wait_long_running() {
     let mut seen_parent_continues = false;
     let start_time = std::time::Instant::now();
 
-    while let Ok(msg) =
-        tokio::time::timeout(Duration::from_secs(2), rx.recv()).await
-    {
+    while let Ok(msg) = tokio::time::timeout(Duration::from_secs(2), rx.recv()).await {
         let msg = msg.unwrap();
-        
+
         match &msg.message {
             Message::ToolCallUpdate(update) if update.call_id == "spawn_call" => {
                 match &update.status {
@@ -562,17 +598,20 @@ async fn test_no_wait_long_running() {
                         seen_spawn_finished = true;
                         let elapsed = start_time.elapsed();
                         // Parent should finish spawn quickly (under 1 second)
-                        assert!(elapsed.as_millis() < 1000, 
-                            "Parent took too long to finish spawn: {}ms", elapsed.as_millis());
+                        assert!(
+                            elapsed.as_millis() < 1000,
+                            "Parent took too long to finish spawn: {}ms",
+                            elapsed.as_millis()
+                        );
                         println!("✅ Parent finished spawn in {}ms", elapsed.as_millis());
                     }
                     _ => {}
                 }
             }
             Message::Agent(agent_msg) if agent_msg.agent_id == scope => {
-                if let AgentMessageType::InterAgentMessage(
-                    InterAgentMessage::TaskStatusUpdate { status },
-                ) = &agent_msg.message
+                if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                    status,
+                }) = &agent_msg.message
                 {
                     match status {
                         AgentStatus::Processing => {
@@ -592,21 +631,23 @@ async fn test_no_wait_long_running() {
     }
 
     assert!(seen_spawn_finished, "Spawn should finish quickly");
-    assert!(seen_parent_continues || start_time.elapsed().as_millis() < 2000, 
-        "Parent should continue immediately without waiting");
+    assert!(
+        seen_parent_continues || start_time.elapsed().as_millis() < 2000,
+        "Parent should continue immediately without waiting"
+    );
 }
 
 #[tokio::test]
 async fn test_wait_long_running() {
     // Start mock server
     let mock_server = MockServer::start().await;
-    
+
     // Create shared broadcast channel and scope
     let (tx, mut rx) = broadcast::channel(100);
-    let scope = Uuid::new_v4();
-    
+    let scope = Scope::new();
+
     // Create config with mock server URL
-    let config = create_test_config_with_mock_endpoint(mock_server.uri());
+    let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
     // Set up mock response for spawn LLM call
     Mock::given(method("POST"))
@@ -669,18 +710,16 @@ async fn test_wait_long_running() {
     let mut assistant_ready = false;
     let mut spawn_agent_ready = false;
     let mut tools_available = false;
-    
+
     while !assistant_ready || !spawn_agent_ready || !tools_available {
         if let Ok(msg) = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
             let msg = msg.unwrap();
             match &msg.message {
-                Message::ActorReady { actor_id } => {
-                    match actor_id.as_str() {
-                        "assistant" => assistant_ready = true,
-                        "spawn_agent" => spawn_agent_ready = true,
-                        _ => {}
-                    }
-                }
+                Message::ActorReady { actor_id } => match actor_id.as_str() {
+                    "assistant" => assistant_ready = true,
+                    "spawn_agent" => spawn_agent_ready = true,
+                    _ => {}
+                },
                 Message::ToolsAvailable(tools) => {
                     assert_eq!(tools.len(), 1);
                     tools_available = true;
@@ -708,16 +747,14 @@ async fn test_wait_long_running() {
     let mut wait_state_start = None;
     let mut seen_spawn_finished = false;
 
-    while let Ok(msg) =
-        tokio::time::timeout(Duration::from_secs(5), rx.recv()).await
-    {
+    while let Ok(msg) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
         let msg = msg.unwrap();
-        
+
         match &msg.message {
             Message::Agent(agent_msg) if agent_msg.agent_id == scope => {
-                if let AgentMessageType::InterAgentMessage(
-                    InterAgentMessage::TaskStatusUpdate { status },
-                ) = &agent_msg.message
+                if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                    status,
+                }) = &agent_msg.message
                 {
                     match status {
                         AgentStatus::Wait { tool_call_id } => {
@@ -731,11 +768,15 @@ async fn test_wait_long_running() {
                         AgentStatus::Processing => {
                             if seen_wait_state && wait_state_start.is_some() {
                                 let wait_duration = wait_state_start.unwrap().elapsed();
-                                println!("✅ Parent waited for {}ms before resuming", 
-                                    wait_duration.as_millis());
+                                println!(
+                                    "✅ Parent waited for {}ms before resuming",
+                                    wait_duration.as_millis()
+                                );
                                 // Should have waited at least some time
-                                assert!(wait_duration.as_millis() > 100, 
-                                    "Parent should wait for child to work");
+                                assert!(
+                                    wait_duration.as_millis() > 100,
+                                    "Parent should wait for child to work"
+                                );
                                 break;
                             }
                         }

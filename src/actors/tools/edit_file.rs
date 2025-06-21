@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast};
 use tracing::info;
-use uuid::Uuid;
 
 use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
 use crate::config::ParsedConfig;
+use crate::scope::Scope;
 
 pub const TOOL_NAME: &str = "edit_file";
 pub const TOOL_DESCRIPTION: &str =
@@ -367,7 +367,7 @@ pub struct EditFile {
     config: ParsedConfig,
     file_editor: FileEditor,
     file_reader: Arc<Mutex<super::file_reader::FileReader>>,
-    scope: Uuid,
+    scope: Scope,
 }
 
 impl EditFile {
@@ -375,7 +375,7 @@ impl EditFile {
         config: ParsedConfig,
         tx: broadcast::Sender<ActorMessage>,
         file_reader: Arc<Mutex<super::file_reader::FileReader>>,
-        scope: Uuid,
+        scope: Scope,
     ) -> Self {
         Self {
             config,
@@ -523,7 +523,7 @@ impl Actor for EditFile {
         self.tx.clone()
     }
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 

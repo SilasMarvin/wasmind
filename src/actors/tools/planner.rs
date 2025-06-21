@@ -2,13 +2,13 @@ use genai::chat::{Tool, ToolCall};
 use std::fmt;
 use tokio::sync::broadcast;
 use tracing::info;
-use uuid::Uuid;
 
 use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
     InterAgentMessage, Message, TaskAwaitingManager, ToolCallStatus, ToolCallType, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
+use crate::scope::Scope;
 
 /// Task status for the planner
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -104,7 +104,7 @@ pub struct Planner {
     #[allow(dead_code)] // TODO: Use for planning parameters, model settings
     config: ParsedConfig,
     current_task_plan: Option<TaskPlan>,
-    scope: Uuid,
+    scope: Scope,
     agent_type: AgentType,
 }
 
@@ -112,7 +112,7 @@ impl Planner {
     pub fn new(
         config: ParsedConfig,
         tx: broadcast::Sender<ActorMessage>,
-        scope: Uuid,
+        scope: Scope,
         agent_type: AgentType,
     ) -> Self {
         Self {
@@ -379,7 +379,7 @@ impl Actor for Planner {
         self.tx.subscribe()
     }
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 

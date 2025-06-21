@@ -2,7 +2,6 @@ use genai::chat::{Tool, ToolCall};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::info;
-use uuid::Uuid;
 
 // Assuming AgentSpawnedResponse is already Serialize.
 // It is imported from crate::actors::agent and used with serde_json::to_string in the original code.
@@ -12,6 +11,7 @@ use crate::actors::{
     agent::{Agent, AgentSpawnedResponse},
 };
 use crate::config::ParsedConfig;
+use crate::scope::Scope;
 
 pub const TOOL_NAME: &str = "spawn_agents";
 pub const TOOL_DESCRIPTION: &str = "Spawns one or more new agents (Worker or Manager), each with a specific task. Spawned agents run independently and report back status updates. Use this tool to delegate work to specialized agents.";
@@ -68,11 +68,11 @@ struct SpawnAgentsInput {
 pub struct SpawnAgent {
     tx: broadcast::Sender<ActorMessage>,
     config: ParsedConfig,
-    scope: Uuid,
+    scope: Scope,
 }
 
 impl SpawnAgent {
-    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { tx, config, scope }
     }
 
@@ -231,7 +231,7 @@ impl Actor for SpawnAgent {
         self.tx.clone()
     }
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 

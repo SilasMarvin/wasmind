@@ -1,4 +1,5 @@
 use crate::system_state::SystemState;
+use crate::scope::Scope;
 use minijinja::{Environment, context};
 use serde::Serialize;
 
@@ -21,6 +22,8 @@ pub struct TemplateContext {
     pub system_state: serde_json::Value,
     /// Agent's assigned task description
     pub task: Option<String>,
+    /// Agent's unique identifier (scope)
+    pub id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -35,6 +38,7 @@ impl TemplateContext {
         tools: Vec<ToolInfo>,
         whitelisted_commands: Vec<String>,
         system_state: &SystemState,
+        agent_id: Scope,
     ) -> Self {
         let cwd = std::env::current_dir()
             .map(|path| path.display().to_string())
@@ -51,6 +55,7 @@ impl TemplateContext {
             whitelisted_commands,
             system_state: system_state.to_template_context(),
             task: None,
+            id: agent_id.to_string(),
         }
     }
 
@@ -60,6 +65,7 @@ impl TemplateContext {
         whitelisted_commands: Vec<String>,
         system_state: &SystemState,
         task_description: Option<String>,
+        agent_id: Scope,
     ) -> Self {
         let cwd = std::env::current_dir()
             .map(|path| path.display().to_string())
@@ -76,6 +82,7 @@ impl TemplateContext {
             whitelisted_commands,
             system_state: system_state.to_template_context(),
             task: task_description,
+            id: agent_id.to_string(),
         }
     }
 }
@@ -105,6 +112,7 @@ pub fn render_template(
         plan => &context.system_state["plan"],
         agents => &context.system_state["agents"],
         task => &context.task,
+        id => &context.id,
     };
 
     tmpl.render(ctx)
@@ -157,6 +165,7 @@ mod tests {
             ],
             vec!["ls".to_string(), "cat".to_string()],
             &system_state,
+            Scope::new(),
         );
 
         let template = "You are an assistant with access to {{ tools|length }} tools.";
@@ -177,7 +186,7 @@ mod tests {
             SystemTime::now(),
         );
 
-        let context = TemplateContext::new(vec![], vec![], &system_state);
+        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         let template = "Files loaded: {{ files.count }}";
         let result = render_template(template, &context).unwrap();
@@ -202,6 +211,7 @@ mod tests {
             ],
             vec!["ls".to_string(), "cat".to_string()],
             &system_state,
+            Scope::new(),
         );
 
         let template = r#"You are a helpful assistant with access to {{ tools|length }} tools.
@@ -238,7 +248,7 @@ Working directory: {{ cwd }}"#;
         use crate::system_state::SystemState;
 
         let system_state = SystemState::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state);
+        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         let template = "Current directory: {{ cwd }}";
         let result = render_template(template, &context).unwrap();
@@ -267,7 +277,7 @@ Working directory: {{ cwd }}"#;
             SystemTime::now(),
         );
 
-        let context = TemplateContext::new(vec![], vec![], &system_state);
+        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         let template = r#"Files:
 {% for file in files.list -%}
@@ -292,7 +302,7 @@ Working directory: {{ cwd }}"#;
         use crate::system_state::SystemState;
 
         let system_state = SystemState::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state);
+        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         // Test invalid template syntax
         let invalid_template = "Hello {{ name";  // Missing closing braces
@@ -324,7 +334,7 @@ Working directory: {{ cwd }}"#;
         use crate::system_state::SystemState;
 
         let system_state = SystemState::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state);
+        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         // Test template that gracefully handles missing data
         let template = r#"System State Report:
@@ -376,12 +386,12 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
     fn test_agents_list_template() {
         use crate::actors::AgentStatus;
         use crate::system_state::{AgentTaskInfo, SystemState};
-        use uuid::Uuid;
+        use crate::scope::Scope;
 
         let mut system_state = SystemState::new();
 
         let agent1 = AgentTaskInfo::new(
-            Uuid::new_v4(),
+            Scope::new(),
             AgentType::Worker,
             "Backend Developer".to_string(),
             "Create REST API".to_string(),
@@ -391,7 +401,7 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
         system_state.add_agent(agent1);
         system_state.update_agent_status(&agent1_id, AgentStatus::InProgress);
 
-        let context = TemplateContext::new(vec![], vec![], &system_state);
+        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         let template = r#"Active Agents:
 {% for agent in agents.list -%}
@@ -410,7 +420,7 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
 
         let system_state = SystemState::new();
         let commands = vec!["ls".to_string(), "git".to_string(), "cargo".to_string()];
-        let context = TemplateContext::new(vec![], commands, &system_state);
+        let context = TemplateContext::new(vec![], commands, &system_state, Scope::new());
 
         // Test template with whitelisted_commands
         let template = r#"Allowed commands:
@@ -435,7 +445,7 @@ No commands whitelisted
         use crate::system_state::SystemState;
 
         let system_state = SystemState::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state);
+        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         let template = r#"{% if whitelisted_commands and whitelisted_commands|length > 0 -%}
 Commands: {{ whitelisted_commands|join(", ") }}
@@ -468,7 +478,7 @@ No whitelisted commands available
             ],
         });
 
-        let context = TemplateContext::new(vec![], vec![], &system_state);
+        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         let template = r#"{% if plan.exists -%}
 Current Plan: {{ plan.data.title }}
@@ -483,5 +493,113 @@ Tasks:
         assert!(result.contains("Current Plan: Q1 Goals"));
         assert!(result.contains("[x] Launch v2.0 (completed)"));
         assert!(result.contains("[ ] Add monitoring (pending)"));
+    }
+
+    #[test]
+    fn test_agent_id_template() {
+        use crate::system_state::SystemState;
+
+        let system_state = SystemState::new();
+        let test_scope = Scope::new();
+        let context = TemplateContext::new(vec![], vec![], &system_state, test_scope);
+
+        // Test template that uses the agent id
+        let template = r#"Agent ID: {{ id }}
+Your unique identifier is: {{ id }}
+Agent {{ id }} is ready to assist."#;
+
+        let result = render_template(template, &context).unwrap();
+        let expected_id = test_scope.to_string();
+
+        assert!(result.contains(&format!("Agent ID: {}", expected_id)));
+        assert!(result.contains(&format!("Your unique identifier is: {}", expected_id)));
+        assert!(result.contains(&format!("Agent {} is ready to assist.", expected_id)));
+    }
+
+    #[test]
+    fn test_agent_id_with_task_template() {
+        use crate::system_state::SystemState;
+
+        let system_state = SystemState::new();
+        let test_scope = Scope::new();
+        let task_description = Some("Implement feature X".to_string());
+        
+        let context = TemplateContext::with_task(
+            vec![],
+            vec![],
+            &system_state,
+            task_description.clone(),
+            test_scope,
+        );
+
+        // Test template that uses both id and task
+        let template = r#"Agent {{ id }} is working on: {{ task }}
+{% if task -%}
+Agent {{ id }} has been assigned the task: {{ task }}
+{% else -%}
+Agent {{ id }} has no specific task assigned.
+{% endif %}"#;
+
+        let result = render_template(template, &context).unwrap();
+        let expected_id = test_scope.to_string();
+
+        assert!(result.contains(&format!("Agent {} is working on: Implement feature X", expected_id)));
+        assert!(result.contains(&format!("Agent {} has been assigned the task: Implement feature X", expected_id)));
+        assert!(!result.contains("has no specific task assigned"));
+    }
+
+    #[test]
+    fn test_system_prompt_with_agent_id() {
+        use crate::system_state::SystemState;
+
+        let system_state = SystemState::new();
+        let test_scope = Scope::new();
+
+        // Test a realistic system prompt template that includes agent ID
+        let template = r#"You are Assistant {{ id }}, a helpful AI agent.
+
+Your unique identifier is: {{ id }}
+
+Available tools: {{ tools|length }}
+Current time: {{ current_datetime }}
+Working directory: {{ cwd }}
+
+{% if task -%}
+Your assigned task: {{ task }}
+{% endif %}
+
+Remember that you are Agent {{ id }}. Always include your ID when communicating important updates."#;
+
+        let context = TemplateContext::with_task(
+            vec![
+                ToolInfo {
+                    name: "test_tool".to_string(),
+                    description: "A test tool".to_string(),
+                },
+            ],
+            vec![],
+            &system_state,
+            Some("Test the new feature".to_string()),
+            test_scope,
+        );
+
+        let result = render_template(template, &context).unwrap();
+        let expected_id = test_scope.to_string();
+
+        // Verify agent ID appears in multiple places
+        assert!(result.contains(&format!("You are Assistant {}", expected_id)));
+        assert!(result.contains(&format!("Your unique identifier is: {}", expected_id)));
+        assert!(result.contains(&format!("Remember that you are Agent {}", expected_id)));
+        
+        // Verify other template variables still work
+        assert!(result.contains("Available tools: 1"));
+        assert!(result.contains("Your assigned task: Test the new feature"));
+        assert!(result.contains("Current time:"));
+        assert!(result.contains("Working directory:"));
+
+        // Output the actual rendered result to show the functionality works
+        println!("=== Rendered System Prompt with Agent ID ===");
+        println!("{}", result);
+        println!("=== End ===");
     }
 }

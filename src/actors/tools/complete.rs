@@ -3,23 +3,23 @@ use crate::actors::{
     InterAgentMessage, Message, ToolCallStatus, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
+use crate::scope::Scope;
 use genai::chat::{Tool, ToolCall};
 use serde_json::json;
 use tokio::sync::broadcast;
-use uuid::Uuid;
 
 /// Tool for agents to explicitly signal task completion
 pub struct Complete {
     #[allow(dead_code)]
     config: ParsedConfig,
     tx: broadcast::Sender<ActorMessage>,
-    scope: Uuid,
+    scope: Scope,
 }
 
 impl Complete {
     const TOOL_NAME: &'static str = "complete";
 
-    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { config, tx, scope }
     }
 
@@ -96,7 +96,7 @@ impl Actor for Complete {
         self.tx.subscribe()
     }
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 

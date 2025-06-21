@@ -3,12 +3,12 @@ use image::{DynamicImage, ImageFormat, imageops::FilterType};
 use std::io::Cursor;
 use tokio::sync::broadcast;
 use tracing::error;
-use uuid::Uuid;
 use xcap::{Window, image::RgbaImage};
 
 use crate::{
     actors::{Action, Actor, Message, UserContext},
     config::ParsedConfig,
+    scope::Scope,
 };
 
 use super::ActorMessage;
@@ -18,13 +18,13 @@ pub struct Context {
     tx: broadcast::Sender<ActorMessage>,
     #[allow(dead_code)] // TODO: Use for screenshot size, quality settings
     config: ParsedConfig,
-    scope: Uuid,
+    scope: Scope,
 }
 
 impl Context {
     const MAX_SIZE: u32 = 1024;
 
-    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { tx, config, scope }
     }
 
@@ -120,7 +120,7 @@ impl Actor for Context {
         self.tx.subscribe()
     }
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 

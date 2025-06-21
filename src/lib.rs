@@ -4,6 +4,7 @@ pub mod config;
 pub mod hive;
 pub mod key_bindings;
 pub mod prompt_preview;
+pub mod scope;
 pub mod system_state;
 pub mod template;
 

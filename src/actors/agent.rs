@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{Mutex, broadcast::Sender};
-use uuid::Uuid;
 
 use crate::{
     actors::{
@@ -14,6 +13,7 @@ use crate::{
         },
     },
     config::ParsedConfig,
+    scope::Scope,
 };
 
 use super::{ActorMessage, AgentType, tools::file_reader::FileReader};
@@ -24,7 +24,7 @@ pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
 /// Response when spawning a new agent
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSpawnedResponse {
-    pub agent_id: Uuid,
+    pub agent_id: Scope,
     pub agent_role: String,
 }
 
@@ -36,9 +36,9 @@ pub struct Agent {
     pub task_description: Option<String>,
     pub role: String,
     /// Parent scope
-    pub parent_scope: Uuid,
+    pub parent_scope: Scope,
     /// Agent scope
-    pub scope: Uuid,
+    pub scope: Scope,
 }
 
 impl Agent {
@@ -47,10 +47,10 @@ impl Agent {
         role: String,
         task_description: Option<String>,
         config: ParsedConfig,
-        parent_scope: Uuid,
+        parent_scope: Scope,
         r#type: AgentType,
     ) -> Self {
-        let id = Uuid::new_v4();
+        let id = Scope::new();
 
         Self {
             tx,

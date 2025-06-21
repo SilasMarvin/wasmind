@@ -6,6 +6,3 @@ pub mod mcp;
 pub mod plan_approval;
 pub mod planner;
 pub mod spawn_agent;
-
-#[cfg(test)]
-mod tool_assistant_tests;

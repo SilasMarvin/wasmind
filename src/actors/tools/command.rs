@@ -4,12 +4,12 @@ use std::process::Stdio;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
-use uuid::Uuid;
 
 use crate::actors::{
     Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
+use crate::scope::Scope;
 
 const MAX_COMMAND_OUTPUT_CHARS: usize = 16_384;
 
@@ -46,11 +46,11 @@ pub struct Command {
     pending_command: Option<PendingCommand>,
     config: ParsedConfig,
     running_commands: HashMap<String, JoinHandle<()>>,
-    scope: Uuid,
+    scope: Scope,
 }
 
 impl Command {
-    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self {
             config,
             tx,
@@ -149,7 +149,7 @@ impl Command {
         command: &str,
         args: &[String],
         tool_call_id: &str,
-        scope: Uuid,
+        scope: Scope,
     ) {
         let command = command.to_string();
         let args = args.to_vec();
@@ -286,7 +286,7 @@ impl Actor for Command {
         self.tx.clone()
     }
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 

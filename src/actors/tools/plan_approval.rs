@@ -2,13 +2,13 @@ use genai::chat::{Tool, ToolCall};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::info;
-use uuid::Uuid;
 
 use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, InterAgentMessage, Message,
     ToolCallStatus, ToolCallType, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
+use crate::scope::Scope;
 
 pub const APPROVE_TOOL_NAME: &str = "approve_plan";
 pub const APPROVE_TOOL_DESCRIPTION: &str = "Approve a plan submitted by a spawned agent";
@@ -42,12 +42,12 @@ pub const REJECT_TOOL_INPUT_SCHEMA: &str = r#"{
 
 #[derive(Debug, Deserialize)]
 struct ApprovePlanInput {
-    agent_id: Uuid,
+    agent_id: Scope,
 }
 
 #[derive(Debug, Deserialize)]
 struct RejectPlanInput {
-    agent_id: Uuid,
+    agent_id: Scope,
     plan_id: String,
     reason: String,
 }
@@ -57,11 +57,11 @@ pub struct PlanApproval {
     tx: broadcast::Sender<ActorMessage>,
     #[allow(dead_code)] // TODO: Use for approval timeout, channel buffer sizes
     config: ParsedConfig,
-    scope: Uuid,
+    scope: Scope,
 }
 
 impl PlanApproval {
-    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { tx, config, scope }
     }
 
@@ -164,7 +164,7 @@ impl Actor for PlanApproval {
         self.tx.clone()
     }
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 

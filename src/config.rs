@@ -333,24 +333,6 @@ fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
     }
 }
 
-#[cfg(any(test, feature = "test-utils"))]
-pub fn create_test_config_with_mock_endpoint(mock_endpoint: String) -> ParsedConfig {
-    let mut config = Config::default().unwrap();
-
-    // Use gpt-4o for all models
-    config.hive.main_manager_model.name = "gpt-4o".to_string();
-    config.hive.sub_manager_model.name = "gpt-4o".to_string();
-    config.hive.worker_model.name = "gpt-4o".to_string();
-
-    // Set mock endpoints (needs /v1/ suffix for genai client)
-    let endpoint_with_v1 = format!("{}/v1/", mock_endpoint);
-    config.hive.main_manager_model.endpoint = Some(endpoint_with_v1.clone());
-    config.hive.sub_manager_model.endpoint = Some(endpoint_with_v1.clone());
-    config.hive.worker_model.endpoint = Some(endpoint_with_v1);
-
-    config.try_into().unwrap()
-}
-
 pub fn parse_key_combination(input: &str) -> Option<KeyBinding> {
     let parts: Vec<&str> = input.split('-').collect();
     let mut modifiers = KeyModifiers::empty();

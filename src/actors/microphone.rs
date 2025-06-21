@@ -16,13 +16,13 @@ use rubato::{
 use snafu::Snafu;
 use tokio::sync::broadcast;
 use tracing::error;
-use uuid::Uuid;
 use whisper_rs::{
     FullParams, GGMLLogLevel, SamplingStrategy, WhisperContext, WhisperContextParameters,
 };
 
 use crate::actors::{Action, Actor, Message};
 use crate::config::ParsedConfig;
+use crate::scope::Scope;
 
 use super::{ActorMessage, UserContext};
 
@@ -77,11 +77,11 @@ pub struct Microphone {
     #[allow(dead_code)] // TODO: Use for model path, sample rates, audio settings
     config: ParsedConfig,
     recording: Arc<AtomicBool>,
-    scope: Uuid,
+    scope: Scope,
 }
 
 impl Microphone {
-    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Uuid) -> Self {
+    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self {
             config,
             tx,
@@ -111,7 +111,7 @@ impl Microphone {
 impl Actor for Microphone {
     const ACTOR_ID: &'static str = "microphone";
 
-    fn get_scope(&self) -> &Uuid {
+    fn get_scope(&self) -> &Scope {
         &self.scope
     }
 
@@ -134,7 +134,7 @@ impl Actor for Microphone {
 fn record_audio(
     recording: Arc<AtomicBool>,
     tx: broadcast::Sender<ActorMessage>,
-    scope: Uuid,
+    scope: Scope,
 ) -> MResult<()> {
     let host = cpal::default_host();
     let device = host.default_input_device().unwrap();
