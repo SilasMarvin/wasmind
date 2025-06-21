@@ -21,6 +21,46 @@ use super::{
     InterAgentMessage, TaskAwaitingManager, UserContext,
 };
 
+/// Helper functions for formatting messages used in chat requests and tests
+
+/// Format an agent response for successful task completion
+pub fn format_agent_response_success(agent_id: &str, success: bool, summary: &str) -> String {
+    format!("<agent_response id={}>status: {}\n\n{}</agent_response>", 
+        agent_id, 
+        if success { "SUCCESS" } else { "FAILURE" }, 
+        summary)
+}
+
+/// Format an agent response for failed task completion
+pub fn format_agent_response_failure(agent_id: &str, error: &str) -> String {
+    format!("<agent_response id={}>status: FAILURE\n\n{}</agent_response>", 
+        agent_id, error)
+}
+
+/// Format a plan approval response
+pub fn format_plan_approval_response(approved: bool, reason: Option<&str>) -> String {
+    match (approved, reason) {
+        (true, _) => "<plan_approval_response>PLAN APPROVED BY MANAGER</plan_approval_response>".to_string(),
+        (false, Some(reason)) => format!("<plan_approval_response>PLAN REJECTED BY MANAGER: {}</plan_approval_response>", reason),
+        (false, None) => "<plan_approval_response>PLAN REJECTED BY MANAGER</plan_approval_response>".to_string(),
+    }
+}
+
+/// Format a plan approval request
+pub fn format_plan_approval_request(agent_id: &str, task: &TaskAwaitingManager) -> String {
+    format!(
+        "<plan_approval_request agent_id={}>\n{}</plan_approval_request>",
+        agent_id,
+        serde_json::to_string_pretty(task)
+            .unwrap_or_else(|_| "Failed to serialize plan".to_string())
+    )
+}
+
+/// Format an error message
+pub fn format_error_message(error: &impl std::fmt::Display) -> String {
+    format!("Error: {}", error)
+}
+
 /// Pending message that accumulates user input and system messages
 /// to be submitted to the LLM when appropriate
 #[derive(Debug, Clone, Default)]

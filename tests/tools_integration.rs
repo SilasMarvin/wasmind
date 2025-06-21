@@ -11,14 +11,12 @@ use hive::actors::{
     ToolCallStatus, ToolCallType,
 };
 use hive::scope::Scope;
-use serde_json::json;
 use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::Mutex;
 use tokio::sync::broadcast;
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::MockServer;
 
 #[tokio::test]
 async fn test_edit_file_insert_at_start() {
@@ -38,50 +36,23 @@ async fn test_edit_file_insert_at_start() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock response for LLM call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-edit",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "read_call",
-                        "type": "function",
-                        "function": {
-                            "name": READ_FILE_TOOL,
-                            "arguments": json!({
-                                "path": test_file_path.to_str().unwrap()
-                            }).to_string()
-                        }
-                    }, {
-                        "id": "edit_call",
-                        "type": "function",
-                        "function": {
-                            "name": EDIT_FILE_TOOL,
-                            "arguments": json!({
-                                "path": test_file_path.to_str().unwrap(),
-                                "action": "insert_at_start",
-                                "replacement_text": "// Header comment\n"
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .mount(&mock_server)
+    // Set up sequential mock conversation using the fluent API
+    let tool_result_message = format!("Read file: {}", test_file_path.to_str().unwrap());
+    common::create_mock_sequence(&mock_server, scope, "Please read and edit the test file")
+        .responds_with_read_file(
+            "chatcmpl-read",
+            "read_call",
+            test_file_path.to_str().unwrap(),
+        )
+        .then_expects_tool_result("read_call", &tool_result_message)
+        .responds_with_edit_file(
+            "chatcmpl-edit",
+            "edit_call",
+            test_file_path.to_str().unwrap(),
+            "insert_at_start",
+            "// Header comment\n",
+        )
+        .build()
         .await;
 
     // Create assistant with both file_reader and edit_file
@@ -153,20 +124,22 @@ async fn test_edit_file_insert_at_start() {
     // Track causality for the edit file workflow
     let mut seen_user_input = false;
     let mut seen_processing_1 = false;
-    let mut seen_assistant_response = false;
+    let mut seen_assistant_response_1 = false;
     let mut seen_read_tool_call = false;
-    let mut seen_edit_tool_call = false;
-    let mut seen_awaiting_tools = false;
+    let mut seen_awaiting_tools_1 = false;
     let mut seen_read_received = false;
     let mut seen_file_read = false;
     let mut seen_read_finished = false;
+    let mut seen_processing_2 = false;
+    let mut seen_assistant_response_2 = false;
+    let mut seen_edit_tool_call = false;
+    let mut seen_awaiting_tools_2 = false;
     let mut seen_edit_received = false;
     let mut seen_file_edited = false;
     let mut seen_edit_finished = false;
-    let mut seen_processing_2 = false;
+    let mut seen_processing_3 = false;
 
-    while let Ok(msg) = tokio::time::timeout(tokio::time::Duration::from_secs(10), rx.recv()).await
-    {
+    while let Ok(msg) = tokio::time::timeout(tokio::time::Duration::from_secs(5), rx.recv()).await {
         let msg = msg.unwrap();
         println!("Received message: {:?}", msg.message);
 
@@ -183,27 +156,44 @@ async fn test_edit_file_insert_at_start() {
                     match status {
                         AgentStatus::Processing => {
                             if !seen_processing_1 {
-                                assert!(seen_user_input, "Processing must come after UserContext");
+                                assert!(
+                                    seen_user_input,
+                                    "Processing 1 must come after UserContext"
+                                );
                                 seen_processing_1 = true;
+                            } else if !seen_processing_2 {
+                                assert!(
+                                    seen_read_finished,
+                                    "Processing 2 must come after read finished"
+                                );
+                                seen_processing_2 = true;
                             } else {
                                 assert!(
                                     seen_edit_finished,
-                                    "Final processing must come after edit finished"
+                                    "Processing 3 must come after edit finished"
                                 );
-                                seen_processing_2 = true;
+                                seen_processing_3 = true;
                                 println!("✅ SUCCESS: Edit file workflow completed successfully!");
                                 break;
                             }
                         }
                         AgentStatus::AwaitingTools { pending_tool_calls } => {
-                            assert!(
-                                seen_edit_tool_call,
-                                "AwaitingTools must come after tool calls"
-                            );
-                            // Initially 2 tools, then updates as they complete
-                            if !seen_awaiting_tools {
-                                assert_eq!(pending_tool_calls.len(), 2);
-                                seen_awaiting_tools = true;
+                            if !seen_awaiting_tools_1 {
+                                assert!(
+                                    seen_read_tool_call,
+                                    "AwaitingTools 1 must come after read tool call"
+                                );
+                                assert_eq!(pending_tool_calls.len(), 1);
+                                assert_eq!(pending_tool_calls[0], "read_call");
+                                seen_awaiting_tools_1 = true;
+                            } else {
+                                assert!(
+                                    seen_edit_tool_call,
+                                    "AwaitingTools 2 must come after edit tool call"
+                                );
+                                assert_eq!(pending_tool_calls.len(), 1);
+                                assert_eq!(pending_tool_calls[0], "edit_call");
+                                seen_awaiting_tools_2 = true;
                             }
                         }
                         _ => {}
@@ -211,30 +201,42 @@ async fn test_edit_file_insert_at_start() {
                 }
             }
             Message::AssistantResponse(genai::chat::MessageContent::ToolCalls(calls)) => {
-                assert!(
-                    seen_processing_1,
-                    "AssistantResponse must come after Processing"
-                );
-                assert_eq!(calls.len(), 2);
-                seen_assistant_response = true;
-            }
-            Message::AssistantToolCall(tc) => {
-                assert!(
-                    seen_assistant_response,
-                    "AssistantToolCall must come after AssistantResponse"
-                );
-                match tc.fn_name.as_str() {
-                    READ_FILE_TOOL => {
-                        assert_eq!(tc.call_id, "read_call");
-                        seen_read_tool_call = true;
-                    }
-                    EDIT_FILE_TOOL => {
-                        assert_eq!(tc.call_id, "edit_call");
-                        seen_edit_tool_call = true;
-                    }
-                    _ => panic!("Unexpected tool call: {}", tc.fn_name),
+                assert_eq!(calls.len(), 1);
+                if !seen_assistant_response_1 {
+                    assert!(
+                        seen_processing_1,
+                        "AssistantResponse 1 must come after Processing 1"
+                    );
+                    assert_eq!(calls[0].fn_name, READ_FILE_TOOL);
+                    seen_assistant_response_1 = true;
+                } else {
+                    assert!(
+                        seen_processing_2,
+                        "AssistantResponse 2 must come after Processing 2"
+                    );
+                    assert_eq!(calls[0].fn_name, EDIT_FILE_TOOL);
+                    seen_assistant_response_2 = true;
                 }
             }
+            Message::AssistantToolCall(tc) => match tc.fn_name.as_str() {
+                READ_FILE_TOOL => {
+                    assert!(
+                        seen_assistant_response_1,
+                        "Read tool call must come after AssistantResponse 1"
+                    );
+                    assert_eq!(tc.call_id, "read_call");
+                    seen_read_tool_call = true;
+                }
+                EDIT_FILE_TOOL => {
+                    assert!(
+                        seen_assistant_response_2,
+                        "Edit tool call must come after AssistantResponse 2"
+                    );
+                    assert_eq!(tc.call_id, "edit_call");
+                    seen_edit_tool_call = true;
+                }
+                _ => panic!("Unexpected tool call: {}", tc.fn_name),
+            },
             Message::ToolCallUpdate(update) => match (&update.status, update.call_id.as_str()) {
                 (
                     ToolCallStatus::Received {
@@ -244,8 +246,8 @@ async fn test_edit_file_insert_at_start() {
                     "read_call",
                 ) => {
                     assert!(
-                        seen_read_tool_call,
-                        "Read received must come after read tool call"
+                        seen_awaiting_tools_1,
+                        "Read received must come after AwaitingTools 1"
                     );
                     seen_read_received = true;
                 }
@@ -261,8 +263,8 @@ async fn test_edit_file_insert_at_start() {
                     "edit_call",
                 ) => {
                     assert!(
-                        seen_edit_tool_call,
-                        "Edit received must come after edit tool call"
+                        seen_awaiting_tools_2,
+                        "Edit received must come after AwaitingTools 2"
                     );
                     seen_edit_received = true;
                 }
@@ -294,17 +296,23 @@ async fn test_edit_file_insert_at_start() {
     // Verify we saw all expected messages
     assert!(seen_user_input, "Missing UserContext");
     assert!(seen_processing_1, "Missing first Processing");
-    assert!(seen_assistant_response, "Missing AssistantResponse");
+    assert!(seen_assistant_response_1, "Missing first AssistantResponse");
     assert!(seen_read_tool_call, "Missing read tool call");
-    assert!(seen_edit_tool_call, "Missing edit tool call");
-    assert!(seen_awaiting_tools, "Missing AwaitingTools");
+    assert!(seen_awaiting_tools_1, "Missing first AwaitingTools");
     assert!(seen_read_received, "Missing read received");
     assert!(seen_file_read, "Missing FileRead");
     assert!(seen_read_finished, "Missing read finished");
+    assert!(seen_processing_2, "Missing second Processing");
+    assert!(
+        seen_assistant_response_2,
+        "Missing second AssistantResponse"
+    );
+    assert!(seen_edit_tool_call, "Missing edit tool call");
+    assert!(seen_awaiting_tools_2, "Missing second AwaitingTools");
     assert!(seen_edit_received, "Missing edit received");
     assert!(seen_file_edited, "Missing FileEdited");
     assert!(seen_edit_finished, "Missing edit finished");
-    assert!(seen_processing_2, "Missing final Processing");
+    assert!(seen_processing_3, "Missing final Processing");
 
     // Verify the file was actually edited correctly
     let final_content = fs::read_to_string(&test_file_path).expect("Failed to read final file");
@@ -324,40 +332,10 @@ async fn test_complete_tool() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock response for LLM call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-complete",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "complete_call",
-                        "type": "function",
-                        "function": {
-                            "name": "complete",
-                            "arguments": json!({
-                                "summary": "Task completed successfully",
-                                "success": true
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .mount(&mock_server)
+    // Set up mock using create_mock_sequence
+    common::create_mock_sequence(&mock_server, scope, "Complete the task")
+        .responds_with_complete("chatcmpl-complete", "complete_call", "Task completed successfully", true)
+        .build()
         .await;
 
     // Create assistant with complete tool
@@ -531,39 +509,10 @@ async fn test_plan_approval_approve() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock response for LLM call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-approve",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "approve_call",
-                        "type": "function",
-                        "function": {
-                            "name": "approve_plan",
-                            "arguments": json!({
-                                "agent_id": agent_to_approve.to_string()
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .mount(&mock_server)
+    // Set up mock using create_mock_sequence
+    common::create_mock_sequence(&mock_server, scope, "Approve the plan")
+        .responds_with_approve_plan("chatcmpl-approve", "approve_call", &agent_to_approve.to_string())
+        .build()
         .await;
 
     // Create assistant with plan_approval tool
@@ -743,44 +692,15 @@ async fn test_spawn_agent_basic() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock response for LLM call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-spawn",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "spawn_call",
-                        "type": "function",
-                        "function": {
-                            "name": "spawn_agents",
-                            "arguments": json!({
-                                "agents_to_spawn": [{
-                                    "agent_role": "Test Worker",
-                                    "task_description": "Simple test task",
-                                    "agent_type": "Worker"
-                                }],
-                                "wait": false
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .mount(&mock_server)
+    // Set up mock using create_mock_sequence
+    let agents = vec![common::create_agent_spec(
+        "Test Worker",
+        "Simple test task",
+        "Worker",
+    )];
+    common::create_mock_sequence(&mock_server, scope, "Spawn a test agent")
+        .responds_with_spawn_agents("chatcmpl-spawn", "spawn_call", agents, false)
+        .build()
         .await;
 
     // Create assistant with spawn_agent tool

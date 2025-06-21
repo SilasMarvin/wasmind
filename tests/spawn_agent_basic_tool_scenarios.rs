@@ -7,11 +7,9 @@ use hive::actors::{
     ToolCallStatus, ToolCallType,
 };
 use hive::scope::Scope;
-use serde_json::json;
 use std::time::Duration;
 use tokio::sync::broadcast;
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::MockServer;
 
 #[tokio::test]
 async fn test_no_wait_immediate_complete() {
@@ -25,44 +23,15 @@ async fn test_no_wait_immediate_complete() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock response for spawn LLM call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-spawn",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "spawn_call",
-                        "type": "function",
-                        "function": {
-                            "name": "spawn_agents",
-                            "arguments": json!({
-                                "agents_to_spawn": [{
-                                    "agent_role": "Quick Worker",
-                                    "task_description": "Complete immediately",
-                                    "agent_type": "Worker"
-                                }],
-                                "wait": false
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .mount(&mock_server)
+    // Set up mock using create_mock_sequence
+    let agents = vec![common::create_agent_spec(
+        "Quick Worker",
+        "Complete immediately",
+        "Worker",
+    )];
+    common::create_mock_sequence(&mock_server, scope, "Spawn a quick worker (no wait)")
+        .responds_with_spawn_agents("chatcmpl-spawn", "spawn_call", agents, false)
+        .build()
         .await;
 
     // Create assistant with spawn_agent tool
@@ -250,44 +219,15 @@ async fn test_wait_immediate_complete() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock response for spawn LLM call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-spawn",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "spawn_call",
-                        "type": "function",
-                        "function": {
-                            "name": "spawn_agents",
-                            "arguments": json!({
-                                "agents_to_spawn": [{
-                                    "agent_role": "Quick Worker",
-                                    "task_description": "Complete immediately",
-                                    "agent_type": "Worker"
-                                }],
-                                "wait": true
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .mount(&mock_server)
+    // Set up mock using create_mock_sequence
+    let agents = vec![common::create_agent_spec(
+        "Quick Worker",
+        "Complete immediately",
+        "Worker",
+    )];
+    common::create_mock_sequence(&mock_server, scope, "Spawn a quick worker and wait")
+        .responds_with_spawn_agents("chatcmpl-spawn", "spawn_call", agents, true)
+        .build()
         .await;
 
     // Create assistant with spawn_agent tool
@@ -490,45 +430,20 @@ async fn test_no_wait_long_running() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock response for spawn LLM call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-spawn",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "spawn_call",
-                        "type": "function",
-                        "function": {
-                            "name": "spawn_agents",
-                            "arguments": json!({
-                                "agents_to_spawn": [{
-                                    "agent_role": "Long Worker",
-                                    "task_description": "Process data for 3 seconds",
-                                    "agent_type": "Worker"
-                                }],
-                                "wait": false
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .mount(&mock_server)
-        .await;
+    // Set up mock using create_mock_sequence
+    let agents = vec![common::create_agent_spec(
+        "Long Worker",
+        "Process data for 3 seconds",
+        "Worker",
+    )];
+    common::create_mock_sequence(
+        &mock_server,
+        scope,
+        "Spawn a long-running worker without waiting",
+    )
+    .responds_with_spawn_agents("chatcmpl-spawn", "spawn_call", agents, false)
+    .build()
+    .await;
 
     // Create assistant with spawn_agent tool
     let assistant = Assistant::new(
@@ -649,45 +564,20 @@ async fn test_wait_long_running() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock response for spawn LLM call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-spawn",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "spawn_call",
-                        "type": "function",
-                        "function": {
-                            "name": "spawn_agents",
-                            "arguments": json!({
-                                "agents_to_spawn": [{
-                                    "agent_role": "Long Worker",
-                                    "task_description": "Process data for several seconds",
-                                    "agent_type": "Worker"
-                                }],
-                                "wait": true
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .mount(&mock_server)
-        .await;
+    // Set up mock using create_mock_sequence
+    let agents = vec![common::create_agent_spec(
+        "Long Worker",
+        "Process data for several seconds",
+        "Worker",
+    )];
+    common::create_mock_sequence(
+        &mock_server,
+        scope,
+        "Spawn a long-running worker and wait for it",
+    )
+    .responds_with_spawn_agents("chatcmpl-spawn", "spawn_call", agents, true)
+    .build()
+    .await;
 
     // Create assistant with spawn_agent tool
     let assistant = Assistant::new(
@@ -744,8 +634,8 @@ async fn test_wait_long_running() {
 
     // Track wait state - parent should enter and remain in wait state
     let mut seen_wait_state = false;
-    let mut wait_state_start = None;
     let mut seen_spawn_finished = false;
+    let mut seen_processing = false;
 
     while let Ok(msg) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
         let msg = msg.unwrap();
@@ -758,27 +648,17 @@ async fn test_wait_long_running() {
                 {
                     match status {
                         AgentStatus::Wait { tool_call_id } => {
+                            assert!(!seen_wait_state);
+                            assert!(seen_processing);
+                            assert!(!seen_spawn_finished);
                             assert_eq!(tool_call_id, "spawn_call");
-                            if !seen_wait_state {
-                                seen_wait_state = true;
-                                wait_state_start = Some(std::time::Instant::now());
-                                println!("✅ Parent entered Wait state");
-                            }
+                            seen_wait_state = true;
                         }
                         AgentStatus::Processing => {
-                            if seen_wait_state && wait_state_start.is_some() {
-                                let wait_duration = wait_state_start.unwrap().elapsed();
-                                println!(
-                                    "✅ Parent waited for {}ms before resuming",
-                                    wait_duration.as_millis()
-                                );
-                                // Should have waited at least some time
-                                assert!(
-                                    wait_duration.as_millis() > 100,
-                                    "Parent should wait for child to work"
-                                );
-                                break;
-                            }
+                            assert!(!seen_processing);
+                            assert!(!seen_spawn_finished);
+                            assert!(!seen_wait_state);
+                            seen_processing = true;
                         }
                         _ => {}
                     }
@@ -788,6 +668,7 @@ async fn test_wait_long_running() {
                 match &update.status {
                     ToolCallStatus::Finished(Ok(_)) => {
                         seen_spawn_finished = true;
+                        break;
                     }
                     _ => {}
                 }
@@ -796,6 +677,7 @@ async fn test_wait_long_running() {
         }
     }
 
+    assert!(seen_processing, "Parent should enter Processing state");
     assert!(seen_wait_state, "Parent should enter Wait state");
     assert!(seen_spawn_finished, "Spawn should finish");
     println!("✅ SUCCESS: Parent properly waited for long-running child!");
