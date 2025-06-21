@@ -5,10 +5,13 @@ use hive::actors::tools::complete::Complete;
 use hive::actors::tools::edit_file::{EditFile, TOOL_NAME as EDIT_FILE_TOOL};
 use hive::actors::tools::file_reader::{FileReader, FileReaderActor, TOOL_NAME as READ_FILE_TOOL};
 use hive::actors::tools::plan_approval::PlanApproval;
+use hive::actors::tools::request_information::{
+    REQUEST_INFO_TOOL_NAME, RequestInformation, format_information_request_sent,
+};
 use hive::actors::tools::spawn_agent::SpawnAgent;
 use hive::actors::{
     Actor, ActorMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage, Message,
-    ToolCallStatus, ToolCallType,
+    TaskAwaitingManager, ToolCallStatus, ToolCallType,
 };
 use hive::scope::Scope;
 use std::fs;
@@ -334,7 +337,12 @@ async fn test_complete_tool() {
 
     // Set up mock using create_mock_sequence
     common::create_mock_sequence(&mock_server, scope, "Complete the task")
-        .responds_with_complete("chatcmpl-complete", "complete_call", "Task completed successfully", true)
+        .responds_with_complete(
+            "chatcmpl-complete",
+            "complete_call",
+            "Task completed successfully",
+            true,
+        )
         .build()
         .await;
 
@@ -511,7 +519,11 @@ async fn test_plan_approval_approve() {
 
     // Set up mock using create_mock_sequence
     common::create_mock_sequence(&mock_server, scope, "Approve the plan")
-        .responds_with_approve_plan("chatcmpl-approve", "approve_call", &agent_to_approve.to_string())
+        .responds_with_approve_plan(
+            "chatcmpl-approve",
+            "approve_call",
+            &agent_to_approve.to_string(),
+        )
         .build()
         .await;
 
@@ -875,4 +887,166 @@ async fn test_spawn_agent_basic() {
     assert!(seen_spawn_received, "Missing spawn received");
     assert!(seen_agent_spawned, "Missing AgentSpawned");
     assert!(seen_spawn_finished, "Missing spawn finished");
+}
+
+#[tokio::test]
+#[cfg_attr(not(feature = "test-utils"), ignore)]
+async fn test_request_information_tool() {
+    // Start mock server
+    let mock_server = MockServer::start().await;
+
+    // Create shared broadcast channel and scopes
+    let (tx, mut rx) = broadcast::channel(1000);
+    let scope = Scope::new();
+
+    // Create config with mock server URL
+    let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
+
+    // Set up mock LLM response for request_information tool call
+    common::create_mock_sequence(
+        &mock_server,
+        scope.clone(),
+        "I need more information about user preferences",
+    )
+    .responds_with_tool_call(
+        "chatcmpl-request-info",
+        "info_request_call",
+        REQUEST_INFO_TOOL_NAME,
+        serde_json::json!({
+            "request": "What are the user's preferred colors and themes?"
+        }),
+    )
+    .build()
+    .await;
+
+    // Create assistant with request_information tool
+    let assistant = Assistant::new(
+        config.hive.worker_model.clone(),
+        tx.clone(),
+        scope.clone(),
+        vec![RequestInformation::ACTOR_ID],
+        None,
+        vec![],
+    );
+
+    // Create request_information tool
+    let request_info = RequestInformation::new(config.clone(), tx.clone(), scope.clone());
+
+    // Start actors
+    assistant.run();
+    request_info.run();
+
+    // Wait for setup
+    let mut ready_count = 0;
+    while ready_count < 3 {
+        // 2 actors + 1 tools available
+        if let Ok(msg) = tokio::time::timeout(tokio::time::Duration::from_secs(5), rx.recv()).await
+        {
+            let msg = msg.unwrap();
+            match &msg.message {
+                Message::ActorReady { .. } | Message::ToolsAvailable(_) => ready_count += 1,
+                _ => {}
+            }
+        }
+    }
+
+    // Send user input
+    tx.send(ActorMessage {
+        scope: scope.clone(),
+        message: Message::UserContext(hive::actors::UserContext::UserTUIInput(
+            "I need more information about user preferences".to_string(),
+        )),
+    })
+    .unwrap();
+
+    // Track expected messages
+    let mut seen_user_input = false;
+    let mut seen_processing = false;
+    let mut seen_tool_call = false;
+    let mut seen_awaiting_tools = false;
+    let mut seen_tool_finished = false;
+    let mut seen_awaiting_manager = false;
+
+    while let Ok(msg) = tokio::time::timeout(tokio::time::Duration::from_secs(5), rx.recv()).await {
+        let msg = msg.unwrap();
+
+        println!("{msg:?}");
+
+        match &msg.message {
+            Message::UserContext(hive::actors::UserContext::UserTUIInput(text)) => {
+                assert_eq!(text, "I need more information about user preferences");
+                seen_user_input = true;
+            }
+            Message::Agent(agent_msg) => {
+                if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                    status,
+                }) = &agent_msg.message
+                {
+                    match status {
+                        AgentStatus::Processing => {
+                            assert!(seen_user_input, "Processing must come after UserContext");
+                            seen_processing = true;
+                        }
+                        AgentStatus::AwaitingTools { pending_tool_calls } => {
+                            assert!(seen_processing, "Processing must come before AwaitingTools");
+                            assert!(seen_tool_call, "AwaitingTools must come after tool call");
+                            assert_eq!(pending_tool_calls.len(), 1);
+                            assert_eq!(pending_tool_calls[0], "info_request_call");
+                            seen_awaiting_tools = true;
+                        }
+                        AgentStatus::AwaitingManager(
+                            TaskAwaitingManager::AwaitingMoreInformation(request),
+                        ) => {
+                            assert!(
+                                !seen_tool_finished,
+                                "AwaitingManager must come before tool finished"
+                            );
+                            assert!(
+                                seen_tool_call,
+                                "AwaitingManager must come after seen tool call"
+                            );
+                            assert_eq!(request, "What are the user's preferred colors and themes?");
+                            seen_awaiting_manager = true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Message::AssistantToolCall(tool_call) => {
+                assert!(seen_processing, "Tool call must come after Processing");
+                assert_eq!(tool_call.fn_name, REQUEST_INFO_TOOL_NAME);
+                assert_eq!(tool_call.call_id, "info_request_call");
+                seen_tool_call = true;
+            }
+            Message::ToolCallUpdate(update) => {
+                if let ToolCallStatus::Finished(Ok(result)) = &update.status {
+                    assert!(
+                        seen_awaiting_tools,
+                        "Tool finish must come after AwaitingTools"
+                    );
+                    assert_eq!(update.call_id, "info_request_call");
+                    assert_eq!(
+                        result,
+                        &format_information_request_sent(
+                            "What are the user's preferred colors and themes?"
+                        )
+                    );
+                    seen_tool_finished = true;
+                    break; // Test complete
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Verify all steps occurred
+    assert!(seen_user_input, "Should receive user input");
+    assert!(seen_processing, "Should see agent processing");
+    assert!(seen_tool_call, "Should see request_information tool call");
+    assert!(seen_awaiting_tools, "Should see agent awaiting tools");
+    assert!(seen_tool_finished, "Should see tool call finished");
+    assert!(
+        seen_awaiting_manager,
+        "Should see agent awaiting manager response"
+    );
 }

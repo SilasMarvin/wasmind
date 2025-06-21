@@ -7,7 +7,7 @@ use hive::actors::assistant::{
 use hive::actors::tools::plan_approval::{
     PlanApproval, format_plan_approval_success, format_plan_rejection,
 };
-use hive::actors::tools::planner::{Planner, format_planner_success_response};
+use hive::actors::tools::planner::format_planner_success_response;
 use hive::actors::tools::spawn_agent::SpawnAgent;
 use hive::actors::{
     Actor, ActorMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage, Message,
