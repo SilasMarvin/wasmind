@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+#[cfg(feature = "test-utils")]
 use std::sync::atomic::AtomicU64;
 #[cfg(feature = "test-utils")]
 use std::sync::atomic::Ordering;
@@ -27,7 +28,14 @@ impl Scope {
                 (counter >> 16) as u8,
                 (counter >> 8) as u8,
                 counter as u8,
-                0, 0, 0, 0, 0, 0, 0, 0
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
             ];
             Self(Uuid::from_bytes(uuid_bytes))
         }
@@ -36,7 +44,7 @@ impl Scope {
             Self(Uuid::new_v4())
         }
     }
-    
+
     pub const fn from_uuid(uuid: Uuid) -> Self {
         Self(uuid)
     }
@@ -59,3 +67,4 @@ impl From<Scope> for Uuid {
         scope.0
     }
 }
+

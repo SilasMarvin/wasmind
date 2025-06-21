@@ -4,11 +4,23 @@ use tokio::sync::broadcast;
 use tracing::info;
 
 use crate::actors::{
-    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
-    InterAgentMessage, Message, TaskAwaitingManager, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage,
+    Message, TaskAwaitingManager, ToolCallStatus, ToolCallType, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
+
+pub fn format_planner_success_response(title: &str, agent_type: AgentType) -> String {
+    format!(
+        "Created task plan: {}{}",
+        title,
+        if agent_type == AgentType::Worker {
+            " (awaiting manager approval)"
+        } else {
+            ""
+        }
+    )
+}
 
 /// Task status for the planner
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -255,16 +267,7 @@ impl Planner {
         }
 
         // Return concise response
-        let response = format!(
-            "Created task plan: {} with {} tasks{}",
-            title,
-            plan.tasks.len(),
-            if self.agent_type == AgentType::Worker {
-                " (awaiting manager approval)"
-            } else {
-                ""
-            }
-        );
+        let response = format_planner_success_response(&title, self.agent_type);
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),

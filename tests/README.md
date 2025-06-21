@@ -4,21 +4,21 @@ This directory contains comprehensive integration tests for the spawn agent func
 
 ## Test Scenario Matrix
 
-### **Basic Wait/No-Wait Patterns** (`basic_scenarios.rs`)
+### **Basic Wait/No-Wait Patterns** (`spawn_agent_basic_scenarios.rs`)
 1. **No Wait + Immediate Complete** - Spawn, continue immediately, agent completes in background
 2. **Wait + Immediate Complete** - Spawn, wait, agent completes quickly, parent resumes  
 3. **No Wait + Long Running** - Spawn, continue, agent takes time to complete
 4. **Wait + Long Running** - Spawn, wait, agent works for extended period, parent waits properly
 
-### **Plan Approval Workflows** (`plan_approval.rs`) 
+### **Plan Approval Workflows** (`spawn_agent_plan_approval.rs`) 
 Child agent uses planner tool requiring manager approval:
 
 5. **Wait + Child Planner + Manager Approves** - Parent waits → Child needs approval → Parent approves → Child continues → Child completes → Parent resumes
-6. **Wait + Child Planner + Manager Rejects** - Parent waits → Child needs approval → Parent rejects → Child handles rejection → Parent resumes
-7. **No Wait + Child Planner + Async Approval** - Parent continues → Child needs approval → Parent approves later
-8. **Wait + Child Planner + Manager Timeout** - What happens if manager never responds?
+6. **Wait + Child Planner + Manager Rejects** - Parent waits → Child needs approval → Parent rejects → Child handles rejection → Parent waits
+7. **No Wait + Child Planner + Async Approval** - Parent continues → Child needs approval → Parent approves later -> Child continues -> Parent continues
+8. **Wait + Child Planner + Manager Timeout** - What happens if manager never responds? (TODO)
 
-### **Information Request Workflows** (`info_request.rs`)
+### **Information Request Workflows** (`spawn_agent_info_request.rs`)
 Child agent requests additional information from parent:
 
 9. **Wait + Child Requests Info** - Parent waits → Child requests info → Parent provides → Child continues

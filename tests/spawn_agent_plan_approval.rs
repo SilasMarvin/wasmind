@@ -1,25 +1,53 @@
 mod common;
 
-use hive::actors::assistant::Assistant;
-use hive::actors::tools::complete::Complete;
-use hive::actors::tools::plan_approval::PlanApproval;
-use hive::actors::tools::planner::Planner;
+use hive::actors::assistant::{
+    Assistant, format_agent_response_success, format_plan_approval_request,
+    format_plan_approval_response,
+};
+use hive::actors::tools::plan_approval::{
+    PlanApproval, format_plan_approval_success, format_plan_rejection,
+};
+use hive::actors::tools::planner::{Planner, format_planner_success_response};
 use hive::actors::tools::spawn_agent::SpawnAgent;
 use hive::actors::{
-    Action, Actor, ActorMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage,
-    Message, TaskAwaitingManager, ToolCallStatus, ToolCallType,
+    Actor, ActorMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage, Message,
+    TaskAwaitingManager,
 };
 use hive::scope::Scope;
 use serde_json::json;
 use std::time::Duration;
 use tokio::sync::broadcast;
-use wiremock::matchers::{body_partial_json, method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::MockServer;
 
+/// Test verifies the complete planner approval workflow with expected message sequence:
+///
+/// SETUP PHASE:
+/// - ActorReady messages from assistant, spawn_agent, plan_approval
+/// - ToolsAvailable messages (2 tools)
+/// - UserContext message with task
+///
+/// PHASE 1 - SPAWNING AND PLANNING:
+/// 1. Manager receives task and calls spawn_agents tool (with wait=true)
+/// 2. Manager status → Wait (AgentStatus::Wait via TaskStatusUpdate)
+/// 3. AgentSpawned message for child worker
+/// 4. Child calls planner tool (AssistantToolCall)
+/// 5. PlanUpdated message with new plan
+/// 6. Child status → AwaitingPlanApproval (AgentStatus::AwaitingManager via TaskStatusUpdate)
+///
+/// PHASE 2 - APPROVAL, COMPLETION, AND MANAGER RESUMPTION:
+/// 7. Manager receives approval request and status → Processing
+/// 8. Manager calls approve_plan tool (AssistantToolCall)
+/// 9. Manager receives tool result from approve_plan
+/// 10. Manager status → Wait (goes back to waiting after approval)
+/// 11. Child receives PlanApproved message (InterAgentMessage)
+/// 12. Child calls complete tool (AssistantToolCall)
+/// 13. Child status → Done(Ok(...)) (AgentStatus::Done via TaskStatusUpdate)
+/// 14. Manager receives system message with child completion status
+/// 15. Manager status → Processing (resumes after child completion)
+/// 16. Manager calls complete tool to finish overall task
 #[tokio::test]
+#[cfg_attr(not(feature = "test-utils"), ignore)]
 async fn test_wait_child_planner_manager_approves() {
-    println!("🚀 Starting test_wait_child_planner_manager_approves");
-
     // Start mock server
     let mock_server = MockServer::start().await;
 
@@ -30,84 +58,90 @@ async fn test_wait_child_planner_manager_approves() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock for manager spawn call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-spawn",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "spawn_call",
-                        "type": "function",
-                        "function": {
-                            "name": "spawn_agents",
-                            "arguments": json!({
-                                "agents_to_spawn": [{
-                                    "agent_role": "Planning Worker",
-                                    "task_description": "Create a plan for the task",
-                                    "agent_type": "Worker"
-                                }],
-                                "wait": true
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .up_to_n_times(1)
-        .mount(&mock_server)
-        .await;
+    // Since we're using deterministic scopes, we can predict child scope
+    // From the output, we know:
+    // - Manager scope is #1: 00000000-0000-0001-0000-000000000000
+    // - Child agent scope is #2: 00000000-0000-0002-0000-000000000000
+    // - The child agent uses its own scope for API calls (it IS the assistant)
+    let actual_child_scope =
+        Scope::from_uuid("00000000-0000-0002-0000-000000000000".parse().unwrap());
 
-    // Set up mock for child planner call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-planner",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "plan_call",
-                        "type": "function",
-                        "function": {
-                            "name": "planner",
-                            "arguments": json!({
-                                "action": "create",
-                                "title": "Task Plan",
-                                "tasks": ["Analyze requirements", "Design solution", "Implement", "Test"]
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .up_to_n_times(10)
-        .mount(&mock_server)
-        .await;
+    // Set up mock sequence for manager - spawn call and later approval
+    let agents = vec![common::create_agent_spec(
+        "Planning Worker",
+        "Create a plan for the task",
+        "Worker",
+    )];
+
+    // Set up mock sequence for manager agent
+    common::create_mock_sequence(
+        &mock_server,
+        manager_scope,
+        "Spawn a worker that will create a plan",
+    )
+    .responds_with_spawn_agents("chatcmpl-spawn", "spawn_call", agents, true)
+    .then_expects_tool_result(
+        "spawn_call",
+        &format!("Spawned 1 agent: Planning Worker ({})", actual_child_scope),
+    )
+    .then_system_message(format_plan_approval_request(
+        &actual_child_scope.to_string(),
+        &TaskAwaitingManager::AwaitingPlanApproval {
+            tool_call_id: "plan_call".to_string(),
+        },
+    ))
+    .responds_with_approve_plan(
+        "chatcmpl-approval",
+        "approval_call_id",
+        &actual_child_scope.to_string(),
+    )
+    .then_expects_tool_result(
+        "approval_call_id",
+        &format_plan_approval_success(&actual_child_scope),
+    )
+    .then_system_message(format_agent_response_success(
+        &actual_child_scope,
+        true,
+        "Plan created and executed successfully",
+    ))
+    .responds_with_complete(
+        "chatcmpl-manager-complete",
+        "manager_complete_call",
+        "Successfully spawned worker, approved plan, and completed task.",
+        true,
+    )
+    .build()
+    .await;
+
+    // Set up mock sequence for child agent
+    common::create_mock_sequence(
+        &mock_server,
+        actual_child_scope,
+        "Create a plan for the task",
+    )
+    .responds_with_tool_call(
+        "chatcmpl-planner",
+        "plan_call",
+        "planner",
+        json!({
+            "action": "create",
+            "title": "Task Plan",
+            "tasks": ["Analyze requirements", "Design solution", "Implement", "Test"]
+        }),
+    )
+    .then_expects_tool_result(
+        "plan_call",
+        format_planner_success_response("Task Plan", AgentType::Worker),
+    )
+    .then_system_message(format_plan_approval_response(true, None))
+    .responds_with_complete(
+        "sub-agent-complete",
+        "complete_call_id",
+        "Plan created and executed successfully",
+        true,
+    )
+    .build()
+    .await;
 
     // Create manager assistant with spawn_agent and plan_approval tools
     let manager = Assistant::new(
@@ -124,34 +158,29 @@ async fn test_wait_child_planner_manager_approves() {
     let plan_approval = PlanApproval::new(config.clone(), tx.clone(), manager_scope);
 
     // Start manager actors
-    println!("🚀 Starting manager actors...");
     manager.run();
     spawn_agent.run();
     plan_approval.run();
 
     // Wait for manager setup
-    println!("⏳ Waiting for manager setup...");
     let mut manager_ready = false;
     let mut spawn_ready = false;
     let mut approval_ready = false;
     let mut tools_count = 0;
 
+    // Setup phase: wait for all actors and tools to be ready
     while !manager_ready || !spawn_ready || !approval_ready || tools_count < 2 {
         if let Ok(msg) = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
             let msg = msg.unwrap();
             match &msg.message {
-                Message::ActorReady { actor_id } => {
-                    println!("✅ Actor ready: {}", actor_id);
-                    match actor_id.as_str() {
-                        "assistant" => manager_ready = true,
-                        "spawn_agent" => spawn_ready = true,
-                        "plan_approval" => approval_ready = true,
-                        _ => {}
-                    }
-                }
+                Message::ActorReady { actor_id } => match actor_id.as_str() {
+                    "assistant" => manager_ready = true,
+                    "spawn_agent" => spawn_ready = true,
+                    "plan_approval" => approval_ready = true,
+                    _ => {}
+                },
                 Message::ToolsAvailable(_) => {
                     tools_count += 1;
-                    println!("🔧 Tools available, count: {}", tools_count);
                 }
                 _ => {}
             }
@@ -159,13 +188,10 @@ async fn test_wait_child_planner_manager_approves() {
     }
 
     // Wait for idle and consume it
-    println!("😴 Waiting for idle state...");
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let idle_msg = rx.recv().await;
-    println!("📨 Consumed idle message: {:?}", idle_msg);
+    let _idle_msg = rx.recv().await;
 
     // Send user input to manager
-    println!("📤 Sending user input to manager...");
     tx.send(ActorMessage {
         scope: manager_scope,
         message: Message::UserContext(hive::actors::UserContext::UserTUIInput(
@@ -174,26 +200,26 @@ async fn test_wait_child_planner_manager_approves() {
     })
     .unwrap();
 
-    // Track workflow
+    // Track workflow state
     let mut spawned_agent_id = None;
+
+    // Phase 1 tracking
     let mut seen_manager_wait = false;
     let mut seen_child_plan = false;
+    let mut seen_plan_updated = false;
     let mut seen_manager_awaiting_approval = false;
-    let mut plan_tool_call_id = None;
 
-    // First phase: Wait for agent to be spawned and manager to enter wait state
-    println!("🔄 Phase 1: Waiting for spawn and manager wait state...");
+    // Phase 1: Wait for agent to be spawned and manager to enter wait state
     while let Ok(msg) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
         let msg = msg.unwrap();
-        println!("📨 Phase 1 - Received: {:?}", msg.message);
 
         match &msg.message {
             Message::Agent(agent_msg) if agent_msg.agent_id != manager_scope => {
                 match &agent_msg.message {
                     AgentMessageType::AgentSpawned { .. } => {
+                        assert!(seen_manager_wait);
                         spawned_agent_id = Some(agent_msg.agent_id);
-                        println!("✅ Child agent spawned: {:?}", agent_msg.agent_id);
-                        // SpawnAgent tool automatically creates and starts the child - no manual setup needed!
+                        assert_eq!(agent_msg.agent_id, actual_child_scope);
                     }
                     AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
                         status,
@@ -202,16 +228,10 @@ async fn test_wait_child_planner_manager_approves() {
                             TaskAwaitingManager::AwaitingPlanApproval { tool_call_id },
                         ) = status
                         {
-                            println!(
-                                "🎯 Found AwaitingPlanApproval from child agent: {:?} with tool_call_id: {}",
-                                agent_msg.agent_id, tool_call_id
-                            );
+                            assert!(seen_child_plan);
+                            assert!(seen_plan_updated);
                             seen_manager_awaiting_approval = true;
-
-                            // Check if we have everything we needed to proceed to approval
-                            if spawned_agent_id.is_some() && seen_child_plan && seen_manager_wait {
-                                break;
-                            }
+                            break;
                         }
                     }
                     _ => {}
@@ -224,8 +244,8 @@ async fn test_wait_child_planner_manager_approves() {
                 {
                     match status {
                         AgentStatus::Wait { .. } => {
+                            assert!(spawned_agent_id.is_none());
                             seen_manager_wait = true;
-                            println!("✅ Manager entered Wait state");
                         }
                         _ => {}
                     }
@@ -233,89 +253,38 @@ async fn test_wait_child_planner_manager_approves() {
             }
             Message::AssistantToolCall(tc) if tc.fn_name == "planner" => {
                 seen_child_plan = true;
-                plan_tool_call_id = Some(tc.call_id.clone());
-                println!("✅ Child agent created plan with call_id: {}", tc.call_id);
+            }
+            Message::PlanUpdated(_plan) => {
+                assert!(seen_child_plan);
+                seen_plan_updated = true;
             }
             _ => {}
         }
     }
 
-    if spawned_agent_id.is_none() {
-        println!("❌ TIMEOUT in Phase 1: spawned_agent_id is None");
-    }
-    if !seen_manager_wait {
-        println!("❌ TIMEOUT in Phase 1: manager never entered wait state");
-    }
-
+    // Phase 1 assertions
     assert!(spawned_agent_id.is_some(), "Child agent should be spawned");
     assert!(seen_manager_wait, "Manager should enter wait state");
     assert!(seen_child_plan, "Child should create a plan");
+    assert!(seen_plan_updated, "Child agent should update plan");
     assert!(
         seen_manager_awaiting_approval,
         "Manager should await plan approval"
     );
-    println!(
-        "✅ Phase 1 complete: spawned_agent_id={:?}, manager_wait={}, child_plan={}, manager_awaiting={}",
-        spawned_agent_id, seen_manager_wait, seen_child_plan, seen_manager_awaiting_approval
-    );
 
-    // Second phase: Manager approves plan
-    println!("🔄 Phase 2: Manager approval process...");
+    // Phase 2: Manager approves plan
 
-    // Wait a moment for Phase 1 to fully complete
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    // Clear ALL mocks and set up a single catch-all mock that always approves
-    mock_server.reset().await;
-    println!("🧹 Cleared all mocks, setting up simple catch-all approval mock...");
-
-    // Single mock that always responds with approve_plan for ANY request
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-approval",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "approval_call_id",
-                        "type": "function",
-                        "function": {
-                            "name": "approve_plan",
-                            "arguments": json!({
-                                "agent_id": spawned_agent_id.unwrap().to_string()
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .named("universal_approval_mock")
-        .mount(&mock_server)
-        .await;
-
-    println!("✅ Set up approval mock - manager should make LLM call when Processing");
-
-    // Track the approval workflow - now expecting natural flow
+    // Phase 2 tracking
     let mut seen_manager_processing = false;
     let mut seen_manager_approval_call = false;
+    let mut seen_manager_wait_after_approval = false;
     let mut seen_plan_approved = false;
     let mut seen_child_complete = false;
+    let mut seen_manager_resume_processing = false;
+    let mut seen_manager_final_complete = false;
 
     while let Ok(msg) = tokio::time::timeout(Duration::from_secs(2), rx.recv()).await {
         let msg = msg.unwrap();
-        println!("📨 Phase 2 - Received: {:?}", msg.message);
 
         match &msg.message {
             // Manager should transition to Processing when it gets approval request
@@ -327,10 +296,20 @@ async fn test_wait_child_planner_manager_approves() {
                     match status {
                         AgentStatus::Processing => {
                             if !seen_manager_processing {
-                                seen_manager_processing = true;
-                                println!(
-                                    "✅ Manager transitioned to Processing (should make LLM call for approval decision)"
+                                assert!(
+                                    seen_manager_awaiting_approval,
+                                    "Manager should be awaiting approval before processing"
                                 );
+                                seen_manager_processing = true;
+                            }
+                        }
+                        AgentStatus::Wait { .. } => {
+                            if seen_manager_approval_call && !seen_manager_wait_after_approval {
+                                assert!(
+                                    seen_manager_approval_call,
+                                    "Manager should have called approve_plan before going back to wait"
+                                );
+                                seen_manager_wait_after_approval = true;
                             }
                         }
                         _ => {}
@@ -340,33 +319,32 @@ async fn test_wait_child_planner_manager_approves() {
 
             // Manager makes approval tool call from LLM response
             Message::AssistantToolCall(tc) if tc.fn_name == "approve_plan" => {
-                seen_manager_approval_call = true;
-                println!(
-                    "✅ Manager called approve_plan tool with call_id: {}",
-                    tc.call_id
+                assert!(
+                    seen_manager_processing,
+                    "Manager should be processing before calling approve_plan"
                 );
+                seen_manager_approval_call = true;
             }
 
             // Child receives approval message and status updates
             Message::Agent(agent_msg) if agent_msg.agent_id == spawned_agent_id.unwrap() => {
                 match &agent_msg.message {
                     AgentMessageType::InterAgentMessage(InterAgentMessage::PlanApproved) => {
+                        assert!(
+                            seen_manager_approval_call,
+                            "Manager should have called approve_plan before child receives approval"
+                        );
                         seen_plan_approved = true;
-                        println!("✅ Child received plan approval - should automatically continue");
-
-                        // If we've seen the core approval workflow, we can declare success
-                        if seen_manager_processing && seen_manager_approval_call {
-                            println!("🎉 EARLY SUCCESS: Core approval workflow verified!");
-                            break;
-                        }
                     }
                     AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
                         status,
                     }) => match status {
                         AgentStatus::Done(Ok(_)) => {
+                            assert!(
+                                seen_plan_approved,
+                                "Child should have received plan approval before completing"
+                            );
                             seen_child_complete = true;
-                            println!("✅ SUCCESS: Child completed task after approval!");
-                            break;
                         }
                         _ => {}
                     },
@@ -376,59 +354,87 @@ async fn test_wait_child_planner_manager_approves() {
 
             // Child tool calls (including complete)
             Message::AssistantToolCall(tc) if tc.fn_name == "complete" => {
-                println!("✅ Child called complete tool");
+                // Check if this is manager's final complete call
+                if msg.scope == manager_scope && seen_child_complete {
+                    assert!(
+                        seen_manager_resume_processing,
+                        "Manager should have resumed processing before calling final complete"
+                    );
+                    seen_manager_final_complete = true;
+                    break;
+                }
             }
             _ => {}
         }
+
+        // Manager resumption logic: After child completion, manager should resume
+        if seen_child_complete && !seen_manager_resume_processing {
+            // Look for manager resuming processing after receiving child completion message
+            if let Message::Agent(agent_msg) = &msg.message {
+                if agent_msg.agent_id == manager_scope {
+                    if let AgentMessageType::InterAgentMessage(
+                        InterAgentMessage::TaskStatusUpdate { status },
+                    ) = &agent_msg.message
+                    {
+                        if matches!(status, AgentStatus::Processing) {
+                            seen_manager_resume_processing = true;
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    if !seen_manager_processing {
-        println!("❌ TIMEOUT in Phase 2: manager never transitioned to processing");
-    }
-    if !seen_manager_approval_call {
-        println!("❌ TIMEOUT in Phase 2: manager never made approval call");
-    }
-    if !seen_plan_approved {
-        println!("❌ TIMEOUT in Phase 2: plan was never approved");
-    }
-    if !seen_child_complete {
-        println!("❌ TIMEOUT in Phase 2: child never completed");
-    }
-
-    // Relax assertions since the core workflow is proven to work
+    // Phase 2 assertions
     assert!(
         seen_manager_processing,
-        "Manager should transition to processing for approval"
+        "Manager should transition to Processing"
     );
-    // Note: LLM mock integration is challenging, but the core logic is verified
+    assert!(
+        seen_manager_approval_call,
+        "Manager should call approve_plan tool"
+    );
+    assert!(
+        seen_manager_wait_after_approval,
+        "Manager should go back to Wait state after approval"
+    );
+    assert!(seen_plan_approved, "Child should receive plan approval");
+    assert!(seen_child_complete, "Child should complete task");
 
-    if !seen_manager_approval_call {
-        println!("ℹ️  LLM mocking issue prevented approval call, but core logic works");
-    }
-    if !seen_plan_approved {
-        println!("ℹ️  Plan approval depends on LLM mocking which has issues");
-    }
-    if !seen_child_complete {
-        println!("ℹ️  Child completion depends on plan approval working");
-    }
-
-    println!("✅ SUCCESS: Core plan approval workflow verified!");
-    println!(
-        "   - ✅ Phase 1: Manager spawned child (via SpawnAgent tool), child created plan, sent AwaitingPlanApproval"
+    assert!(
+        seen_manager_resume_processing,
+        "Manager should resume processing after child completion"
     );
-    println!(
-        "   - ✅ Phase 2: Manager processed approval request and transitioned to Processing state"
+    assert!(
+        seen_manager_final_complete,
+        "Manager should call complete tool to finish overall task"
     );
-    println!("   - ✅ No manual child creation - SpawnAgent tool handled everything automatically");
-    println!(
-        "   - ✅ No forced state transitions - natural AwaitingPlanApproval → Processing flow"
-    );
-    println!("   - ✅ Enum pattern matching working correctly throughout");
-    println!("   - ✅ Core business logic for plan approval is sound");
-    println!("   - ⚠️  LLM mocking integration needs refinement for full end-to-end test");
 }
 
+/// Test verifies the planner rejection workflow where manager rejects child's plan:
+///
+/// SETUP PHASE:
+/// - ActorReady messages from assistant, spawn_agent, plan_approval
+/// - ToolsAvailable messages (2 tools)  
+/// - UserContext message with task
+///
+/// PHASE 1 - SPAWNING AND PLANNING:
+/// 1. Manager receives task and calls spawn_agents tool (with wait=true)
+/// 2. Manager status → Wait (AgentStatus::Wait via TaskStatusUpdate)
+/// 3. AgentSpawned message for child worker
+/// 4. Child calls planner tool (AssistantToolCall)
+/// 5. PlanUpdated message with new plan
+/// 6. Child status → AwaitingPlanApproval (AgentStatus::AwaitingManager via TaskStatusUpdate)
+///
+/// PHASE 2 - REJECTION AND FINAL STATES:
+/// 7. Manager receives approval request and status → Processing
+/// 8. Manager calls reject_plan tool (AssistantToolCall)
+/// 9. Manager receives tool result from reject_plan
+/// 10. Manager status → Wait (goes back to waiting after rejection)
+/// 11. Child receives PlanRejected message (InterAgentMessage)
+/// 12. Child status → Processing (starts working but doesn't complete)
 #[tokio::test]
+#[cfg_attr(not(feature = "test-utils"), ignore)]
 async fn test_wait_child_planner_manager_rejects() {
     // Start mock server
     let mock_server = MockServer::start().await;
@@ -440,48 +446,78 @@ async fn test_wait_child_planner_manager_rejects() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock response for manager spawn call
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-spawn",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "spawn_call",
-                        "type": "function",
-                        "function": {
-                            "name": "spawn_agents",
-                            "arguments": json!({
-                                "agents_to_spawn": [{
-                                    "agent_role": "Planning Worker",
-                                    "task_description": "Create a plan that will be rejected",
-                                    "agent_type": "Worker"
-                                }],
-                                "wait": true
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .expect(1)
-        .mount(&mock_server)
-        .await;
+    // Since we're using deterministic scopes, we can predict child scope
+    let actual_child_scope =
+        Scope::from_uuid("00000000-0000-0002-0000-000000000000".parse().unwrap());
 
-    // Create manager assistant
+    // Set up mock sequence for manager - spawn call and later rejection
+    let agents = vec![common::create_agent_spec(
+        "Planning Worker",
+        "Create a plan for the task",
+        "Worker",
+    )];
+
+    // Set up mock sequence for manager agent
+    common::create_mock_sequence(
+        &mock_server,
+        manager_scope,
+        "Spawn a worker that will create a plan",
+    )
+    .responds_with_spawn_agents("chatcmpl-spawn", "spawn_call", agents, true)
+    .then_expects_tool_result(
+        "spawn_call",
+        &format!("Spawned 1 agent: Planning Worker ({})", actual_child_scope),
+    )
+    .then_system_message(format_plan_approval_request(
+        &actual_child_scope.to_string(),
+        &TaskAwaitingManager::AwaitingPlanApproval {
+            tool_call_id: "plan_call".to_string(),
+        },
+    ))
+    .responds_with_reject_plan(
+        "chatcmpl-rejection",
+        "rejection_call_id",
+        &actual_child_scope.to_string(),
+        "This plan needs more detail and better structure",
+    )
+    .then_expects_tool_result(
+        "rejection_call_id",
+        &format_plan_rejection(
+            &actual_child_scope,
+            "This plan needs more detail and better structure",
+        ),
+    )
+    .build()
+    .await;
+
+    // Set up mock sequence for child agent
+    common::create_mock_sequence(
+        &mock_server,
+        actual_child_scope,
+        "Create a plan for the task",
+    )
+    .responds_with_tool_call(
+        "chatcmpl-planner",
+        "plan_call",
+        "planner",
+        json!({
+            "action": "create",
+            "title": "Task Plan",
+            "tasks": ["Analyze requirements", "Design solution", "Implement", "Test"]
+        }),
+    )
+    .then_expects_tool_result(
+        "plan_call",
+        format_planner_success_response("Task Plan", AgentType::Worker),
+    )
+    .then_system_message(format_plan_approval_response(
+        false,
+        Some("This plan needs more detail and better structure"),
+    ))
+    .build()
+    .await;
+
+    // Create manager assistant with spawn_agent and plan_approval tools
     let manager = Assistant::new(
         config.hive.main_manager_model.clone(),
         tx.clone(),
@@ -501,15 +537,25 @@ async fn test_wait_child_planner_manager_rejects() {
     plan_approval.run();
 
     // Wait for manager setup
-    let mut ready_count = 0;
+    let mut manager_ready = false;
+    let mut spawn_ready = false;
+    let mut approval_ready = false;
     let mut tools_count = 0;
 
-    while ready_count < 3 || tools_count < 3 {
+    // Setup phase: wait for all actors and tools to be ready
+    while !manager_ready || !spawn_ready || !approval_ready || tools_count < 2 {
         if let Ok(msg) = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
             let msg = msg.unwrap();
             match &msg.message {
-                Message::ActorReady { .. } => ready_count += 1,
-                Message::ToolsAvailable(_) => tools_count += 1,
+                Message::ActorReady { actor_id } => match actor_id.as_str() {
+                    "assistant" => manager_ready = true,
+                    "spawn_agent" => spawn_ready = true,
+                    "plan_approval" => approval_ready = true,
+                    _ => {}
+                },
+                Message::ToolsAvailable(_) => {
+                    tools_count += 1;
+                }
                 _ => {}
             }
         }
@@ -517,230 +563,239 @@ async fn test_wait_child_planner_manager_rejects() {
 
     // Wait for idle and consume it
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let _ = rx.recv().await;
+    let _idle_msg = rx.recv().await;
 
     // Send user input to manager
     tx.send(ActorMessage {
         scope: manager_scope,
         message: Message::UserContext(hive::actors::UserContext::UserTUIInput(
-            "Spawn a worker with a bad plan".to_string(),
+            "Spawn a worker that will create a plan".to_string(),
         )),
     })
     .unwrap();
 
-    // Track workflow
+    // Track workflow state
     let mut spawned_agent_id = None;
 
-    // Wait for agent spawn
+    // Phase 1 tracking
+    let mut seen_manager_wait = false;
+    let mut seen_child_plan = false;
+    let mut seen_plan_updated = false;
+    let mut seen_manager_awaiting_approval = false;
+
+    // Phase 1: Wait for agent to be spawned and manager to enter wait state
     while let Ok(msg) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
-        let msg = msg.unwrap();
-
-        if let Message::Agent(agent_msg) = &msg.message {
-            if agent_msg.agent_id != manager_scope {
-                if let AgentMessageType::AgentSpawned { .. } = &agent_msg.message {
-                    spawned_agent_id = Some(agent_msg.agent_id);
-                    println!("✅ Child agent spawned: {:?}", agent_msg.agent_id);
-
-                    // Set up child's bad plan
-                    Mock::given(method("POST"))
-                        .and(path("/v1/chat/completions"))
-                        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                            "id": "chatcmpl-plan",
-                            "object": "chat.completion",
-                            "created": 1677652288,
-                            "model": "gpt-4o",
-                            "choices": [{
-                                "index": 0,
-                                "message": {
-                                    "role": "assistant",
-                                    "content": null,
-                                    "tool_calls": [{
-                                        "id": "plan_call",
-                                        "type": "function",
-                                        "function": {
-                                            "name": "plan",
-                                            "arguments": json!({
-                                                "plan": "1. Delete everything\n2. Hope for the best"
-                                            }).to_string()
-                                        }
-                                    }]
-                                },
-                                "finish_reason": "tool_calls"
-                            }],
-                            "usage": {
-                                "prompt_tokens": 100,
-                                "completion_tokens": 50,
-                                "total_tokens": 150
-                            }
-                        })))
-                        .expect(1)
-                        .mount(&mock_server)
-                        .await;
-
-                    // Create child agent
-                    let child_id = agent_msg.agent_id;
-                    let child = Assistant::new(
-                        config.hive.worker_model.clone(),
-                        tx.clone(),
-                        child_id,
-                        vec![Planner::ACTOR_ID, Complete::ACTOR_ID],
-                        Some(manager_scope.to_string()),
-                        vec![],
-                    );
-                    let planner =
-                        Planner::new(config.clone(), tx.clone(), child_id, AgentType::Worker);
-                    let complete = Complete::new(config.clone(), tx.clone(), child_id);
-
-                    child.run();
-                    planner.run();
-                    complete.run();
-                    break;
-                }
-            }
-        }
-    }
-
-    assert!(spawned_agent_id.is_some(), "Child agent should be spawned");
-
-    // Wait for manager to need approval
-    let mut seen_awaiting_approval = false;
-    while let Ok(msg) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
-        let msg = msg.unwrap();
-
-        if let Message::Agent(agent_msg) = &msg.message {
-            if agent_msg.agent_id == manager_scope {
-                if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                    status,
-                }) = &agent_msg.message
-                {
-                    if let AgentStatus::AwaitingManager(
-                        TaskAwaitingManager::AwaitingPlanApproval { .. },
-                    ) = status
-                    {
-                        seen_awaiting_approval = true;
-                        println!("✅ Manager awaiting plan approval");
-
-                        // Set up rejection response
-                        Mock::given(method("POST"))
-                            .and(path("/v1/chat/completions"))
-                            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                                "id": "chatcmpl-reject",
-                                "object": "chat.completion",
-                                "created": 1677652288,
-                                "model": "gpt-4o",
-                                "choices": [{
-                                    "index": 0,
-                                    "message": {
-                                        "role": "assistant",
-                                        "content": null,
-                                        "tool_calls": [{
-                                            "id": "reject_call",
-                                            "type": "function",
-                                            "function": {
-                                                "name": "reject_plan",
-                                                "arguments": json!({
-                                                    "agnet_id": spawned_agent_id.unwrap().to_string(), // Note: typo in schema
-                                                    "plan_id": "plan_call",
-                                                    "reason": "This plan is too destructive and lacks detail"
-                                                }).to_string()
-                                            }
-                                        }]
-                                    },
-                                    "finish_reason": "tool_calls"
-                                }],
-                                "usage": {
-                                    "prompt_tokens": 100,
-                                    "completion_tokens": 50,
-                                    "total_tokens": 150
-                                }
-                            })))
-                            .mount(&mock_server)
-                            .await;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    assert!(seen_awaiting_approval, "Manager should await approval");
-
-    // Track rejection and child handling
-    let mut seen_plan_rejected = false;
-    let mut seen_child_revise = false;
-    let mut seen_final_complete = false;
-
-    while let Ok(msg) = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
         let msg = msg.unwrap();
 
         match &msg.message {
-            Message::Agent(agent_msg) if agent_msg.agent_id == spawned_agent_id.unwrap() => {
-                if let AgentMessageType::InterAgentMessage(InterAgentMessage::PlanRejected {
-                    reason,
-                }) = &agent_msg.message
-                {
-                    seen_plan_rejected = true;
-                    println!("✅ Child received rejection: {}", reason);
-
-                    // Set up child's response to rejection
-                    Mock::given(method("POST"))
-                        .and(path("/v1/chat/completions"))
-                        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                            "id": "chatcmpl-revise",
-                            "object": "chat.completion",
-                            "created": 1677652288,
-                            "model": "gpt-4o",
-                            "choices": [{
-                                "index": 0,
-                                "message": {
-                                    "role": "assistant",
-                                    "content": null,
-                                    "tool_calls": [{
-                                        "id": "complete_call",
-                                        "type": "function",
-                                        "function": {
-                                            "name": "complete",
-                                            "arguments": json!({
-                                                "summary": "Plan was rejected. Would need to create a better plan.",
-                                                "success": false
-                                            }).to_string()
-                                        }
-                                    }]
-                                },
-                                "finish_reason": "tool_calls"
-                            }],
-                            "usage": {
-                                "prompt_tokens": 100,
-                                "completion_tokens": 50,
-                                "total_tokens": 150
-                            }
-                        })))
-                        .mount(&mock_server)
-                        .await;
-                    seen_child_revise = true;
+            Message::Agent(agent_msg) if agent_msg.agent_id != manager_scope => {
+                match &agent_msg.message {
+                    AgentMessageType::AgentSpawned { .. } => {
+                        assert!(
+                            seen_manager_wait,
+                            "Manager should be waiting before child spawns"
+                        );
+                        spawned_agent_id = Some(agent_msg.agent_id);
+                        assert_eq!(agent_msg.agent_id, actual_child_scope);
+                    }
+                    AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                        status,
+                    }) => {
+                        if let AgentStatus::AwaitingManager(
+                            TaskAwaitingManager::AwaitingPlanApproval { tool_call_id },
+                        ) = status
+                        {
+                            assert!(
+                                seen_child_plan,
+                                "Child should have created plan before awaiting approval"
+                            );
+                            assert!(
+                                seen_plan_updated,
+                                "Plan should be updated before awaiting approval"
+                            );
+                            seen_manager_awaiting_approval = true;
+                            break;
+                        }
+                    }
+                    _ => {}
                 }
-
+            }
+            Message::Agent(agent_msg) if agent_msg.agent_id == manager_scope => {
                 if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
                     status,
                 }) = &agent_msg.message
                 {
-                    if let AgentStatus::Done(_) = status {
-                        seen_final_complete = true;
-                        println!("✅ SUCCESS: Child handled rejection and completed!");
-                        break;
+                    match status {
+                        AgentStatus::Wait { .. } => {
+                            assert!(
+                                spawned_agent_id.is_none(),
+                                "Child should not be spawned before manager waits"
+                            );
+                            seen_manager_wait = true;
+                        }
+                        _ => {}
                     }
+                }
+            }
+            Message::AssistantToolCall(tc) if tc.fn_name == "planner" => {
+                seen_child_plan = true;
+            }
+            Message::PlanUpdated(_plan) => {
+                assert!(
+                    seen_child_plan,
+                    "Child should have called planner before plan update"
+                );
+                seen_plan_updated = true;
+            }
+            _ => {}
+        }
+    }
+
+    // Phase 1 assertions
+    assert!(spawned_agent_id.is_some(), "Child agent should be spawned");
+    assert!(seen_manager_wait, "Manager should enter wait state");
+    assert!(seen_child_plan, "Child should create a plan");
+    assert!(seen_plan_updated, "Child agent should update plan");
+    assert!(
+        seen_manager_awaiting_approval,
+        "Manager should await plan approval"
+    );
+
+    // Phase 2: Manager rejects plan
+
+    // Phase 2 tracking
+    let mut seen_manager_processing = false;
+    let mut seen_manager_rejection_call = false;
+    let mut seen_manager_wait_after_rejection = false;
+    let mut seen_plan_rejected = false;
+    let mut seen_child_processing = false;
+
+    while let Ok(msg) = tokio::time::timeout(Duration::from_secs(2), rx.recv()).await {
+        let msg = msg.unwrap();
+
+        match &msg.message {
+            // Manager should transition to Processing when it gets approval request
+            Message::Agent(agent_msg) if agent_msg.agent_id == manager_scope => {
+                if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                    status,
+                }) = &agent_msg.message
+                {
+                    match status {
+                        AgentStatus::Processing => {
+                            if !seen_manager_processing {
+                                assert!(
+                                    seen_manager_awaiting_approval,
+                                    "Manager should be awaiting approval before processing"
+                                );
+                                seen_manager_processing = true;
+                            }
+                        }
+                        AgentStatus::Wait { .. } => {
+                            if seen_manager_rejection_call && !seen_manager_wait_after_rejection {
+                                assert!(
+                                    seen_manager_rejection_call,
+                                    "Manager should have called reject_plan before going back to wait"
+                                );
+                                seen_manager_wait_after_rejection = true;
+                                // This is the final state for the manager - check if we can end the test
+                                if seen_child_processing {
+                                    break;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            // Manager makes rejection tool call from LLM response
+            Message::AssistantToolCall(tc) if tc.fn_name == "reject_plan" => {
+                assert!(
+                    seen_manager_processing,
+                    "Manager should be processing before calling reject_plan"
+                );
+                seen_manager_rejection_call = true;
+            }
+
+            // Child receives rejection message and status updates
+            Message::Agent(agent_msg) if agent_msg.agent_id == spawned_agent_id.unwrap() => {
+                match &agent_msg.message {
+                    AgentMessageType::InterAgentMessage(InterAgentMessage::PlanRejected {
+                        ..
+                    }) => {
+                        assert!(
+                            seen_manager_rejection_call,
+                            "Manager should have called reject_plan before child receives rejection"
+                        );
+                        seen_plan_rejected = true;
+                    }
+                    AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                        status,
+                    }) => match status {
+                        AgentStatus::Processing => {
+                            assert!(
+                                seen_plan_rejected,
+                                "Child should have received plan rejection before processing"
+                            );
+                            seen_child_processing = true;
+                            // This is the final state for the child - check if we can end the test
+                            if seen_manager_wait_after_rejection {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
                 }
             }
             _ => {}
         }
     }
 
-    assert!(seen_plan_rejected, "Plan should be rejected");
-    assert!(seen_child_revise, "Child should handle rejection");
-    assert!(seen_final_complete, "Child should complete after rejection");
+    // Phase 2 assertions
+    assert!(
+        seen_manager_processing,
+        "Manager should transition to Processing"
+    );
+    assert!(
+        seen_manager_rejection_call,
+        "Manager should call reject_plan tool"
+    );
+    assert!(
+        seen_manager_wait_after_rejection,
+        "Manager should go back to Wait state after rejection"
+    );
+    assert!(seen_plan_rejected, "Child should receive plan rejection");
+    assert!(
+        seen_child_processing,
+        "Child should end in Processing state"
+    );
 }
 
+/// Test verifies async plan approval when manager is busy processing:
+///
+/// SETUP PHASE:
+/// - ActorReady messages from assistant, spawn_agent, plan_approval
+/// - ToolsAvailable messages (2 tools)  
+/// - UserContext message with task
+///
+/// PHASE 1 - SPAWNING WITHOUT WAIT:
+/// 1. Manager receives task and calls spawn_agents tool (with wait=false)
+/// 2. Manager gets spawn response and makes another LLM request (with 3s delay)
+/// 3. Manager status → Processing (busy with delayed request)
+/// 4. AgentSpawned message for child worker
+/// 5. Child calls planner tool (AssistantToolCall)
+/// 6. PlanUpdated message with new plan
+/// 7. Child status → AwaitingPlanApproval (while manager is still busy)
+///
+/// PHASE 2 - ASYNC APPROVAL:
+/// 8. Manager finishes delayed request and transitions to Processing (for approval)
+/// 9. Manager calls approve_plan tool (AssistantToolCall)
+/// 10. Manager receives tool result and goes back to Processing (final state)
+/// 11. Child receives PlanApproved message (InterAgentMessage)  
+/// 12. Child calls complete tool and status → Processing (final state)
 #[tokio::test]
+#[cfg_attr(not(feature = "test-utils"), ignore)]
 async fn test_no_wait_child_planner_async_approval() {
     // Start mock server
     let mock_server = MockServer::start().await;
@@ -752,48 +807,85 @@ async fn test_no_wait_child_planner_async_approval() {
     // Create config with mock server URL
     let config = common::create_test_config_with_mock_endpoint(mock_server.uri());
 
-    // Set up mock response for manager spawn call (no wait)
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "chatcmpl-spawn",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4o",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": null,
-                    "tool_calls": [{
-                        "id": "spawn_call",
-                        "type": "function",
-                        "function": {
-                            "name": "spawn_agents",
-                            "arguments": json!({
-                                "agents_to_spawn": [{
-                                    "agent_role": "Background Planner",
-                                    "task_description": "Work on a plan in the background",
-                                    "agent_type": "Worker"
-                                }],
-                                "wait": false  // No wait!
-                            }).to_string()
-                        }
-                    }]
-                },
-                "finish_reason": "tool_calls"
-            }],
-            "usage": {
-                "prompt_tokens": 100,
-                "completion_tokens": 50,
-                "total_tokens": 150
-            }
-        })))
-        .expect(1)
-        .mount(&mock_server)
-        .await;
+    // Since we're using deterministic scopes, we can predict child scope
+    let actual_child_scope =
+        Scope::from_uuid("00000000-0000-0002-0000-000000000000".parse().unwrap());
 
-    // Create manager assistant
+    // Set up mock sequence for manager - spawn call and delayed content response
+    let agents = vec![common::create_agent_spec(
+        "Background Worker",
+        "Create a plan in the background",
+        "Worker",
+    )];
+
+    // Set up mock sequence for manager agent
+    common::create_mock_sequence(
+        &mock_server,
+        manager_scope,
+        "Spawn a worker without waiting",
+    )
+    .responds_with_spawn_agents("chatcmpl-spawn", "spawn_call", agents, false)
+    .then_expects_tool_result(
+        "spawn_call",
+        &format!(
+            "Spawned 1 agent: Background Worker ({})",
+            actual_child_scope
+        ),
+    )
+    .responds_with_content_delay(
+        "chatcmpl-filler",
+        "Working on other important tasks...",
+        Some(Duration::from_millis(500)),
+    )
+    .then_system_message(format_plan_approval_request(
+        &actual_child_scope.to_string(),
+        &TaskAwaitingManager::AwaitingPlanApproval {
+            tool_call_id: "plan_call".to_string(),
+        },
+    ))
+    .responds_with_approve_plan(
+        "chatcmpl-approval",
+        "approval_call_id",
+        &actual_child_scope.to_string(),
+    )
+    .then_expects_tool_result(
+        "approval_call_id",
+        &format_plan_approval_success(&actual_child_scope),
+    )
+    .build()
+    .await;
+
+    // Set up mock sequence for child agent
+    common::create_mock_sequence(
+        &mock_server,
+        actual_child_scope,
+        "Create a plan in the background",
+    )
+    .responds_with_tool_call(
+        "chatcmpl-planner",
+        "plan_call",
+        "planner",
+        json!({
+            "action": "create",
+            "title": "Background Task Plan",
+            "tasks": ["Analyze task", "Work independently", "Report back"]
+        }),
+    )
+    .then_expects_tool_result(
+        "plan_call",
+        format_planner_success_response("Background Task Plan", AgentType::Worker),
+    )
+    .then_system_message(format_plan_approval_response(true, None))
+    .responds_with_complete(
+        "child-complete",
+        "child_complete_call",
+        "Background work completed successfully",
+        true,
+    )
+    .build()
+    .await;
+
+    // Create manager assistant with spawn_agent and plan_approval tools
     let manager = Assistant::new(
         config.hive.main_manager_model.clone(),
         tx.clone(),
@@ -803,110 +895,76 @@ async fn test_no_wait_child_planner_async_approval() {
         vec![],
     );
 
-    // Create tools
+    // Create tools for manager
     let spawn_agent = SpawnAgent::new(config.clone(), tx.clone(), manager_scope);
     let plan_approval = PlanApproval::new(config.clone(), tx.clone(), manager_scope);
 
-    // Start actors
+    // Start manager actors
     manager.run();
     spawn_agent.run();
     plan_approval.run();
 
-    // Wait for setup
-    let mut ready_count = 0;
-    while ready_count < 6 {
-        // 3 actors * 2 (ready + tools)
+    // Wait for manager setup
+    let mut manager_ready = false;
+    let mut spawn_ready = false;
+    let mut approval_ready = false;
+    let mut tools_count = 0;
+
+    // Setup phase: wait for all actors and tools to be ready
+    while !manager_ready || !spawn_ready || !approval_ready || tools_count < 2 {
         if let Ok(msg) = tokio::time::timeout(Duration::from_secs(1), rx.recv()).await {
             let msg = msg.unwrap();
             match &msg.message {
-                Message::ActorReady { .. } | Message::ToolsAvailable(_) => ready_count += 1,
+                Message::ActorReady { actor_id } => match actor_id.as_str() {
+                    "assistant" => manager_ready = true,
+                    "spawn_agent" => spawn_ready = true,
+                    "plan_approval" => approval_ready = true,
+                    _ => {}
+                },
+                Message::ToolsAvailable(_) => {
+                    tools_count += 1;
+                }
                 _ => {}
             }
         }
     }
 
-    // Consume idle
+    // Wait for idle and consume it
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let _ = rx.recv().await;
+    let _idle_msg = rx.recv().await;
 
-    // Send spawn request
+    // Send user input to manager
     tx.send(ActorMessage {
         scope: manager_scope,
         message: Message::UserContext(hive::actors::UserContext::UserTUIInput(
-            "Spawn a background worker (don't wait)".to_string(),
+            "Spawn a worker without waiting".to_string(),
         )),
     })
     .unwrap();
 
-    // Track workflow
+    // Track workflow state
     let mut spawned_agent_id = None;
-    let mut seen_manager_continues = false;
-    let mut manager_doing_other_work = false;
 
-    // Phase 1: Manager spawns and continues
-    while let Ok(msg) = tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
+    // Phase 1 tracking - no wait spawning
+    let mut seen_manager_processing_initial = false;
+    let mut seen_child_spawn = false;
+    let mut seen_child_plan = false;
+    let mut seen_plan_updated = false;
+    let mut seen_child_awaiting_approval = false;
+
+    // Phase 2 tracking - async approval
+    let mut seen_manager_processing_approval = false;
+    let mut seen_manager_approval_call = false;
+    let mut seen_plan_approved = false;
+    let mut seen_child_processing_final = false;
+    let mut seen_manager_processing_final = false;
+
+    // Wait for the complete async workflow
+    while let Ok(msg) = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
         let msg = msg.unwrap();
 
         match &msg.message {
-            Message::Agent(agent_msg) if agent_msg.agent_id != manager_scope => {
-                if let AgentMessageType::AgentSpawned { .. } = &agent_msg.message {
-                    spawned_agent_id = Some(agent_msg.agent_id);
-                    println!("✅ Child agent spawned: {:?}", agent_msg.agent_id);
-
-                    // Set up child's plan
-                    Mock::given(method("POST"))
-                        .and(path("/v1/chat/completions"))
-                        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                            "id": "chatcmpl-plan",
-                            "object": "chat.completion",
-                            "created": 1677652288,
-                            "model": "gpt-4o",
-                            "choices": [{
-                                "index": 0,
-                                "message": {
-                                    "role": "assistant",
-                                    "content": null,
-                                    "tool_calls": [{
-                                        "id": "plan_call",
-                                        "type": "function",
-                                        "function": {
-                                            "name": "plan",
-                                            "arguments": json!({
-                                                "plan": "Background task plan"
-                                            }).to_string()
-                                        }
-                                    }]
-                                },
-                                "finish_reason": "tool_calls"
-                            }],
-                            "usage": {
-                                "prompt_tokens": 100,
-                                "completion_tokens": 50,
-                                "total_tokens": 150
-                            }
-                        })))
-                        .mount(&mock_server)
-                        .await;
-
-                    // Create child
-                    let child_id = agent_msg.agent_id;
-                    let child = Assistant::new(
-                        config.hive.worker_model.clone(),
-                        tx.clone(),
-                        child_id,
-                        vec![Planner::ACTOR_ID, Complete::ACTOR_ID],
-                        Some(manager_scope.to_string()),
-                        vec![],
-                    );
-                    let planner =
-                        Planner::new(config.clone(), tx.clone(), child_id, AgentType::Worker);
-                    let complete = Complete::new(config.clone(), tx.clone(), child_id);
-
-                    child.run();
-                    planner.run();
-                    complete.run();
-                }
-            }
+            // Manager status updates
             Message::Agent(agent_msg) if agent_msg.agent_id == manager_scope => {
                 if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
                     status,
@@ -914,121 +972,134 @@ async fn test_no_wait_child_planner_async_approval() {
                 {
                     match status {
                         AgentStatus::Processing => {
-                            if spawned_agent_id.is_some() && !seen_manager_continues {
-                                seen_manager_continues = true;
-                                println!("✅ Manager continues processing (no wait)");
-
-                                // Simulate manager doing other work
-                                Mock::given(method("POST"))
-                                    .and(path("/v1/chat/completions"))
-                                    .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                                        "id": "chatcmpl-other",
-                                        "object": "chat.completion",
-                                        "created": 1677652288,
-                                        "model": "gpt-4o",
-                                        "choices": [{
-                                            "index": 0,
-                                            "message": {
-                                                "role": "assistant",
-                                                "content": "Working on other tasks while child works in background"
-                                            },
-                                            "finish_reason": "stop"
-                                        }],
-                                        "usage": {
-                                            "prompt_tokens": 100,
-                                            "completion_tokens": 50,
-                                            "total_tokens": 150
-                                        }
-                                    })))
-                                    .mount(&mock_server)
-                                    .await;
-
-                                manager_doing_other_work = true;
-                                break;
+                            if !seen_manager_processing_initial && !seen_child_spawn {
+                                // Initial processing after spawn
+                                seen_manager_processing_initial = true;
+                            } else if seen_child_awaiting_approval
+                                && !seen_manager_processing_approval
+                            {
+                                // Processing for approval after child needs approval
+                                seen_manager_processing_approval = true;
+                            } else if seen_manager_approval_call && !seen_manager_processing_final {
+                                // Final processing state after approval
+                                seen_manager_processing_final = true;
+                                // Check if we can end the test
+                                if seen_child_processing_final {
+                                    break;
+                                }
                             }
                         }
                         _ => {}
                     }
                 }
             }
+
+            // Child agent lifecycle
+            Message::Agent(agent_msg) if agent_msg.agent_id != manager_scope => {
+                match &agent_msg.message {
+                    AgentMessageType::AgentSpawned { .. } => {
+                        spawned_agent_id = Some(agent_msg.agent_id);
+                        seen_child_spawn = true;
+                        assert_eq!(agent_msg.agent_id, actual_child_scope);
+                    }
+                    AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                        status,
+                    }) => {
+                        match status {
+                            AgentStatus::AwaitingManager(
+                                TaskAwaitingManager::AwaitingPlanApproval { .. },
+                            ) => {
+                                assert!(
+                                    seen_child_plan,
+                                    "Child should have created plan before awaiting approval"
+                                );
+                                assert!(
+                                    seen_plan_updated,
+                                    "Plan should be updated before awaiting approval"
+                                );
+                                seen_child_awaiting_approval = true;
+                            }
+                            AgentStatus::Processing => {
+                                if seen_plan_approved && !seen_child_processing_final {
+                                    seen_child_processing_final = true;
+                                    // Check if we can end the test
+                                    if seen_manager_processing_final {
+                                        break;
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    AgentMessageType::InterAgentMessage(InterAgentMessage::PlanApproved) => {
+                        assert!(
+                            seen_manager_approval_call,
+                            "Manager should have called approve_plan before child receives approval"
+                        );
+                        seen_plan_approved = true;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Tool calls
+            Message::AssistantToolCall(tc) => match tc.fn_name.as_str() {
+                "planner" => {
+                    seen_child_plan = true;
+                }
+                "approve_plan" => {
+                    assert!(
+                        seen_manager_processing_approval,
+                        "Manager should be processing approval before calling approve_plan"
+                    );
+                    seen_manager_approval_call = true;
+                }
+                _ => {}
+            },
+
+            // Plan updates
+            Message::PlanUpdated(_plan) => {
+                assert!(
+                    seen_child_plan,
+                    "Child should have called planner before plan update"
+                );
+                seen_plan_updated = true;
+            }
+
             _ => {}
         }
     }
 
-    assert!(spawned_agent_id.is_some(), "Child should be spawned");
+    // Phase 1 assertions - no wait spawning
+    assert!(spawned_agent_id.is_some(), "Child agent should be spawned");
     assert!(
-        seen_manager_continues,
-        "Manager should continue without waiting"
+        seen_manager_processing_initial,
+        "Manager should be processing initially"
+    );
+    assert!(seen_child_spawn, "Child should be spawned");
+    assert!(seen_child_plan, "Child should create a plan");
+    assert!(seen_plan_updated, "Child agent should update plan");
+    assert!(
+        seen_child_awaiting_approval,
+        "Child should await plan approval"
     );
 
-    // Phase 2: Child requests approval while manager is doing other work
-    let mut seen_approval_needed = false;
-    let mut seen_async_approval = false;
-
-    // Wait a bit for child to create plan
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    while let Ok(msg) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
-        let msg = msg.unwrap();
-
-        if let Message::Agent(agent_msg) = &msg.message {
-            if agent_msg.agent_id == manager_scope {
-                if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                    status,
-                }) = &agent_msg.message
-                {
-                    if let AgentStatus::AwaitingManager(
-                        TaskAwaitingManager::AwaitingPlanApproval { .. },
-                    ) = status
-                    {
-                        seen_approval_needed = true;
-                        println!("✅ Manager notified of pending approval (async)");
-
-                        // Manager approves asynchronously
-                        Mock::given(method("POST"))
-                            .and(path("/v1/chat/completions"))
-                            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                                "id": "chatcmpl-async-approve",
-                                "object": "chat.completion",
-                                "created": 1677652288,
-                                "model": "gpt-4o",
-                                "choices": [{
-                                    "index": 0,
-                                    "message": {
-                                        "role": "assistant",
-                                        "content": null,
-                                        "tool_calls": [{
-                                            "id": "approve_call",
-                                            "type": "function",
-                                            "function": {
-                                                "name": "approve_plan",
-                                                "arguments": json!({
-                                                    "agent_id": spawned_agent_id.unwrap().to_string()
-                                                }).to_string()
-                                            }
-                                        }]
-                                    },
-                                    "finish_reason": "tool_calls"
-                                }],
-                                "usage": {
-                                    "prompt_tokens": 100,
-                                    "completion_tokens": 50,
-                                    "total_tokens": 150
-                                }
-                            })))
-                            .mount(&mock_server)
-                            .await;
-
-                        seen_async_approval = true;
-                        println!("✅ SUCCESS: Manager handles approval asynchronously!");
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    assert!(manager_doing_other_work, "Manager should do other work");
-    assert!(seen_approval_needed, "Child should need approval");
-    assert!(seen_async_approval, "Manager should handle approval async");
+    // Phase 2 assertions - async approval
+    assert!(
+        seen_manager_processing_approval,
+        "Manager should process approval request"
+    );
+    assert!(
+        seen_manager_approval_call,
+        "Manager should call approve_plan tool"
+    );
+    assert!(seen_plan_approved, "Child should receive plan approval");
+    assert!(
+        seen_child_processing_final,
+        "Child should end in Processing state"
+    );
+    assert!(
+        seen_manager_processing_final,
+        "Manager should end in Processing state"
+    );
 }

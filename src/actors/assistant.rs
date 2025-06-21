@@ -24,25 +24,36 @@ use super::{
 /// Helper functions for formatting messages used in chat requests and tests
 
 /// Format an agent response for successful task completion
-pub fn format_agent_response_success(agent_id: &str, success: bool, summary: &str) -> String {
-    format!("<agent_response id={}>status: {}\n\n{}</agent_response>", 
-        agent_id, 
-        if success { "SUCCESS" } else { "FAILURE" }, 
-        summary)
+pub fn format_agent_response_success(agent_id: &Scope, success: bool, summary: &str) -> String {
+    format!(
+        "<agent_response id={}>status: {}\n\n{}</agent_response>",
+        agent_id,
+        if success { "SUCCESS" } else { "FAILURE" },
+        summary
+    )
 }
 
 /// Format an agent response for failed task completion
-pub fn format_agent_response_failure(agent_id: &str, error: &str) -> String {
-    format!("<agent_response id={}>status: FAILURE\n\n{}</agent_response>", 
-        agent_id, error)
+pub fn format_agent_response_failure(agent_id: &Scope, error: &str) -> String {
+    format!(
+        "<agent_response id={}>status: FAILURE\n\n{}</agent_response>",
+        agent_id, error
+    )
 }
 
 /// Format a plan approval response
 pub fn format_plan_approval_response(approved: bool, reason: Option<&str>) -> String {
     match (approved, reason) {
-        (true, _) => "<plan_approval_response>PLAN APPROVED BY MANAGER</plan_approval_response>".to_string(),
-        (false, Some(reason)) => format!("<plan_approval_response>PLAN REJECTED BY MANAGER: {}</plan_approval_response>", reason),
-        (false, None) => "<plan_approval_response>PLAN REJECTED BY MANAGER</plan_approval_response>".to_string(),
+        (true, _) => {
+            "<plan_approval_response>PLAN APPROVED BY MANAGER</plan_approval_response>".to_string()
+        }
+        (false, Some(reason)) => format!(
+            "<plan_approval_response>PLAN REJECTED BY MANAGER: {}</plan_approval_response>",
+            reason
+        ),
+        (false, None) => {
+            "<plan_approval_response>PLAN REJECTED BY MANAGER</plan_approval_response>".to_string()
+        }
     }
 }
 
@@ -335,12 +346,17 @@ impl Assistant {
                 if self.pending_message.user_content.is_some() {
                     // User input takes priority - don't return to Wait, go to Idle/Processing instead
                     // But first add any completed agent summaries to pending messages
-                    let completed_summaries = wait_context.waiting_for_agents.iter()
+                    let completed_summaries = wait_context
+                        .waiting_for_agents
+                        .iter()
                         .filter_map(|(agent_id, result)| {
                             result.as_ref().map(|r| match r {
-                                Ok(res) => format!("<agent_response id={agent_id}>status: {}\n\n{}</agent_response>", 
-                                    if res.success { "SUCCESS" } else { "FAILURE" }, res.summary),
-                                Err(err) => format!("<agent_response id={agent_id}>status: FAILURE\n\n{err}</agent_response>"),
+                                Ok(res) => format_agent_response_success(
+                                    &agent_id,
+                                    res.success,
+                                    &res.summary,
+                                ),
+                                Err(err) => format_agent_response_failure(&agent_id, err),
                             })
                         })
                         .collect::<Vec<String>>();
@@ -363,12 +379,15 @@ impl Assistant {
                 }
             } else {
                 // All agents are done - add completion summaries to pending messages
-                let all_done_summaries = wait_context.waiting_for_agents.drain()
+                let all_done_summaries = wait_context
+                    .waiting_for_agents
+                    .drain()
                     .filter_map(|(agent_id, result)| {
                         result.map(|r| match r {
-                            Ok(res) => format!("<agent_response id={agent_id}>status: {}\n\n{}</agent_response>", 
-                                if res.success { "SUCCESS" } else { "FAILURE" }, res.summary),
-                            Err(err) => format!("<agent_response id={agent_id}>status: FAILURE\n\n{err}</agent_response>"),
+                            Ok(res) => {
+                                format_agent_response_success(&agent_id, res.success, &res.summary)
+                            }
+                            Err(err) => format_agent_response_failure(&agent_id, &err),
                         })
                     })
                     .collect::<Vec<String>>();

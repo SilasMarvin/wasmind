@@ -10,6 +10,16 @@ use crate::actors::{
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
+/// Format plan approval tool result message
+pub fn format_plan_approval_success(agent_id: &Scope) -> String {
+    format!("Plan for agent {} approved", agent_id)
+}
+
+/// Format plan rejection tool result message
+pub fn format_plan_rejection(agent_id: &Scope, reason: &str) -> String {
+    format!("Plan for agent {} rejected: {}", agent_id, reason)
+}
+
 pub const APPROVE_TOOL_NAME: &str = "approve_plan";
 pub const APPROVE_TOOL_DESCRIPTION: &str = "Approve a plan submitted by a spawned agent";
 pub const APPROVE_TOOL_INPUT_SCHEMA: &str = r#"{
@@ -20,7 +30,7 @@ pub const APPROVE_TOOL_INPUT_SCHEMA: &str = r#"{
             "description": "The ID of the agent whose plan is being approved"
         }
     },
-    "required": ["agent_id", "plan_id"]
+    "required": ["agent_id"]
 }"#;
 
 pub const REJECT_TOOL_NAME: &str = "reject_plan";
@@ -28,7 +38,7 @@ pub const REJECT_TOOL_DESCRIPTION: &str = "Reject a plan submitted by a child ag
 pub const REJECT_TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
-        "agnet_id": {
+        "agent_id": {
             "type": "string",
             "description": "The ID of the task whose plan is being rejected"
         },
@@ -37,7 +47,7 @@ pub const REJECT_TOOL_INPUT_SCHEMA: &str = r#"{
             "description": "The reason for rejecting the plan"
         }
     },
-    "required": ["agnet_id", "plan_id", "reason"]
+    "required": ["agent_id", "reason"]
 }"#;
 
 #[derive(Debug, Deserialize)]
@@ -48,7 +58,6 @@ struct ApprovePlanInput {
 #[derive(Debug, Deserialize)]
 struct RejectPlanInput {
     agent_id: Scope,
-    plan_id: String,
     reason: String,
 }
 
@@ -95,10 +104,7 @@ impl PlanApproval {
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
-            status: ToolCallStatus::Finished(Ok(format!(
-                "Plan for agent {} approved",
-                input.agent_id
-            ))),
+            status: ToolCallStatus::Finished(Ok(format_plan_approval_success(&input.agent_id))),
         }));
     }
 
@@ -136,9 +142,9 @@ impl PlanApproval {
 
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
-            status: ToolCallStatus::Finished(Ok(format!(
-                "Plan for agent {} rejected: {}",
-                input.agent_id, input.reason
+            status: ToolCallStatus::Finished(Ok(format_plan_rejection(
+                &input.agent_id,
+                &input.reason,
             ))),
         }));
     }
