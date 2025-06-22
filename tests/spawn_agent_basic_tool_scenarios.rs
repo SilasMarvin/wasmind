@@ -100,8 +100,6 @@ async fn test_no_wait_immediate_complete() {
 
     while let Ok(msg) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
         let msg = msg.unwrap();
-        println!("Received message: {:?}", msg.message);
-
         match &msg.message {
             Message::UserContext(hive::actors::UserContext::UserTUIInput(text)) => {
                 assert_eq!(text, "Spawn a quick worker (no wait)");
@@ -186,7 +184,6 @@ async fn test_no_wait_immediate_complete() {
                         assert!(content.contains("Spawned 1 agent"));
                         assert!(content.contains("Quick Worker"));
                         seen_spawn_finished = true;
-                        println!("✅ SUCCESS: No-wait spawn workflow finished!");
                         break;
                     }
                     _ => {}
@@ -297,8 +294,6 @@ async fn test_wait_immediate_complete() {
 
     while let Ok(msg) = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
         let msg = msg.unwrap();
-        println!("Received message: {:?}", msg.message);
-
         match &msg.message {
             Message::UserContext(hive::actors::UserContext::UserTUIInput(text)) => {
                 assert_eq!(text, "Spawn a quick worker and wait");
@@ -327,7 +322,6 @@ async fn test_wait_immediate_complete() {
                             assert!(seen_spawn_received, "Wait must come after spawn received");
                             assert_eq!(tool_call_id, "spawn_call");
                             seen_wait_state = true;
-                            println!("✅ SUCCESS: Parent entered Wait state as expected!");
                             // Continue to see the rest of the workflow
                         }
                         _ => {}
@@ -392,7 +386,6 @@ async fn test_wait_immediate_complete() {
                         seen_spawn_finished = true;
                         // Break here once we've seen everything including wait state
                         if seen_wait_state {
-                            println!("✅ SUCCESS: Wait + immediate complete workflow finished!");
                             break;
                         }
                     }
@@ -518,7 +511,6 @@ async fn test_no_wait_long_running() {
                             "Parent took too long to finish spawn: {}ms",
                             elapsed.as_millis()
                         );
-                        println!("✅ Parent finished spawn in {}ms", elapsed.as_millis());
                     }
                     _ => {}
                 }
@@ -533,7 +525,6 @@ async fn test_no_wait_long_running() {
                             if seen_spawn_finished {
                                 // Parent continues processing after spawn
                                 seen_parent_continues = true;
-                                println!("✅ SUCCESS: Parent continues after spawning (no wait)!");
                                 break;
                             }
                         }
@@ -680,5 +671,4 @@ async fn test_wait_long_running() {
     assert!(seen_processing, "Parent should enter Processing state");
     assert!(seen_wait_state, "Parent should enter Wait state");
     assert!(seen_spawn_finished, "Spawn should finish");
-    println!("✅ SUCCESS: Parent properly waited for long-running child!");
 }
