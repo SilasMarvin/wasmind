@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     Action, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentTaskResult,
-    InterAgentMessage, WaitReason, UserContext,
+    InterAgentMessage, UserContext, WaitReason,
 };
 
 /// Helper functions for formatting messages used in chat requests and tests
@@ -266,37 +266,20 @@ impl Assistant {
                         }
                     }
                 }
-                AgentStatus::Wait { tool_call_id, reason } => {
+                AgentStatus::Wait {
+                    tool_call_id,
+                    reason: _,
+                } => {
                     if tool_call_id == &update.call_id {
-                        // Handle tool response based on the wait reason
-                        match reason {
-                            WaitReason::WaitingForPlanApproval | WaitReason::WaitingForManagerResponse => {
-                                // For plan approval and manager response, add tool response to chat
-                                let tool_response = genai::chat::ToolResponse {
-                                    call_id: update.call_id.clone(),
-                                    content,
-                                };
-                                self.chat_request =
-                                    self.chat_request.clone().append_message(ChatMessage {
-                                        role: ChatRole::Tool,
-                                        content: MessageContent::ToolResponses(vec![tool_response]),
-                                        options: None,
-                                    });
-                            }
-                            WaitReason::WaitingForAgentResponse { .. } => {
-                                // For agent response, also add tool response to chat
-                                let tool_response = genai::chat::ToolResponse {
-                                    call_id: update.call_id.clone(),
-                                    content,
-                                };
-                                self.chat_request =
-                                    self.chat_request.clone().append_message(ChatMessage {
-                                        role: ChatRole::Tool,
-                                        content: MessageContent::ToolResponses(vec![tool_response]),
-                                        options: None,
-                                    });
-                            }
-                        }
+                        let tool_response = genai::chat::ToolResponse {
+                            call_id: update.call_id.clone(),
+                            content,
+                        };
+                        self.chat_request = self.chat_request.clone().append_message(ChatMessage {
+                            role: ChatRole::Tool,
+                            content: MessageContent::ToolResponses(vec![tool_response]),
+                            options: None,
+                        });
                     }
                 }
                 _ => (),
@@ -310,13 +293,6 @@ impl Assistant {
 
     fn add_system_message_part(&mut self, message: String) {
         self.pending_message.add_system_part(message);
-    }
-
-    fn add_system_message(&mut self, content: impl Into<MessageContent>) {
-        self.chat_request = self
-            .chat_request
-            .clone()
-            .append_message(ChatMessage::system(content));
     }
 
     async fn submit_pending_message(&mut self) {
@@ -377,8 +353,8 @@ impl Assistant {
                     self.wait_context = Some(wait_context.clone());
                     self.set_state(AgentStatus::Wait {
                         tool_call_id: wait_context.original_tool_call_id.clone(),
-                        reason: WaitReason::WaitingForAgentResponse { 
-                            agent_id: crate::scope::Scope::new() // Placeholder - managed by wait context
+                        reason: WaitReason::WaitingForAgentResponse {
+                            agent_id: crate::scope::Scope::new(), // Placeholder - managed by wait context
                         },
                     });
                     return true;
@@ -799,10 +775,16 @@ impl Actor for Assistant {
                             InterAgentMessage::TaskStatusUpdate { status } => {
                                 // We only care about AwaitingManager and Wait states from our tools
                                 match &status {
-                                    super::AgentStatus::Wait { tool_call_id, reason } => {
+                                    super::AgentStatus::Wait {
+                                        tool_call_id,
+                                        reason,
+                                    } => {
                                         // Handle wait state updates
                                         match &self.state {
-                                            AgentStatus::Wait { tool_call_id: current_id, .. } => {
+                                            AgentStatus::Wait {
+                                                tool_call_id: current_id,
+                                                ..
+                                            } => {
                                                 if tool_call_id != current_id {
                                                     // Different tool call, update state
                                                     self.state = AgentStatus::Wait {
@@ -810,9 +792,13 @@ impl Actor for Assistant {
                                                         reason: reason.clone(),
                                                     };
                                                     // Set up wait context if needed for agent spawning
-                                                    if matches!(reason, WaitReason::WaitingForAgentResponse { .. }) {
+                                                    if matches!(
+                                                        reason,
+                                                        WaitReason::WaitingForAgentResponse { .. }
+                                                    ) {
                                                         self.wait_context = Some(WaitContext {
-                                                            original_tool_call_id: tool_call_id.clone(),
+                                                            original_tool_call_id: tool_call_id
+                                                                .clone(),
                                                             waiting_for_agents: HashMap::new(),
                                                         });
                                                     }
@@ -826,7 +812,10 @@ impl Actor for Assistant {
                                                     reason: reason.clone(),
                                                 };
                                                 // Set up wait context if needed for agent spawning
-                                                if matches!(reason, WaitReason::WaitingForAgentResponse { .. }) {
+                                                if matches!(
+                                                    reason,
+                                                    WaitReason::WaitingForAgentResponse { .. }
+                                                ) {
                                                     self.wait_context = Some(WaitContext {
                                                         original_tool_call_id: tool_call_id.clone(),
                                                         waiting_for_agents: HashMap::new(),
@@ -859,28 +848,48 @@ impl Actor for Assistant {
                                 self.submit_pending_message().await;
                             }
                             InterAgentMessage::ManagerMessage { message } => {
-                                // Our manager sent us information - add as system message and submit to LLM
-                                let manager_message = format!(
-                                    "<manager_message>{}</manager_message>",
-                                    message
-                                );
+                                // Our manager sent us information - add as system message
+                                let manager_message =
+                                    format!("<manager_message>{}</manager_message>", message);
                                 self.add_system_message_part(manager_message);
+
                                 // If we're idle, submit immediately
                                 if matches!(self.state, AgentStatus::Idle) {
                                     self.submit_pending_message().await;
                                 }
+                                // If we're in other states (including Wait), just queue the message
                             }
-                            InterAgentMessage::SubAgentMessage { message: sub_message } => {
+                            InterAgentMessage::SubAgentMessage {
+                                message: sub_message,
+                            } => {
                                 // Our sub-agent sent us a message - add as system message and check if we're waiting
                                 let sub_agent_message = format!(
                                     "<sub_agent_message agent_id=\"{}\">{}</sub_agent_message>",
                                     message.agent_id, sub_message
                                 );
                                 self.add_system_message_part(sub_agent_message);
-                                
-                                // Check if we're waiting for a response and should submit to LLM
-                                if let AgentStatus::Wait { reason: WaitReason::WaitingForAgentResponse { agent_id }, .. } = &self.state {
+
+                                // Check if we're waiting for a response from this agent
+                                if let AgentStatus::Wait {
+                                    reason: WaitReason::WaitingForAgentResponse { agent_id },
+                                    tool_call_id,
+                                } = &self.state
+                                {
                                     if *agent_id == message.agent_id {
+                                        // This is the response we were waiting for - complete the tool call
+                                        let tool_response = genai::chat::ToolResponse {
+                                            call_id: tool_call_id.clone(),
+                                            content: sub_message.clone(),
+                                        };
+                                        self.chat_request =
+                                            self.chat_request.clone().append_message(ChatMessage {
+                                                role: ChatRole::Tool,
+                                                content: MessageContent::ToolResponses(vec![
+                                                    tool_response,
+                                                ]),
+                                                options: None,
+                                            });
+                                        // Submit the message to trigger transition to Processing
                                         self.submit_pending_message().await;
                                     }
                                 }
@@ -910,7 +919,10 @@ impl Actor for Assistant {
                                     // Sub-agent Done status handling
                                     (
                                         AgentStatus::Done(agent_task_result),
-                                        AgentStatus::Wait { tool_call_id: _, reason: _ },
+                                        AgentStatus::Wait {
+                                            tool_call_id: _,
+                                            reason: _,
+                                        },
                                     ) => {
                                         // We're waiting for this agent - track completion in wait_context
                                         if let Some(ref mut wait_context) = self.wait_context {
@@ -1024,7 +1036,10 @@ impl Actor for Assistant {
 
                                     // Sub-agent awaiting manager (plan approval) status handling
                                     (
-                                        AgentStatus::Wait { reason: WaitReason::WaitingForPlanApproval, .. },
+                                        AgentStatus::Wait {
+                                            reason: WaitReason::WaitingForPlanApproval,
+                                            ..
+                                        },
                                         AgentStatus::Wait { tool_call_id, .. },
                                     ) => {
                                         // Urgent: Plan approval needed - save wait context and transition to Processing
@@ -1044,7 +1059,10 @@ impl Actor for Assistant {
                                     }
 
                                     (
-                                        AgentStatus::Wait { reason: WaitReason::WaitingForPlanApproval, .. },
+                                        AgentStatus::Wait {
+                                            reason: WaitReason::WaitingForPlanApproval,
+                                            ..
+                                        },
                                         AgentStatus::Idle,
                                     ) => {
                                         // Add plan approval request to pending message and submit
@@ -1057,7 +1075,10 @@ impl Actor for Assistant {
                                     }
 
                                     (
-                                        AgentStatus::Wait { reason: WaitReason::WaitingForPlanApproval, .. },
+                                        AgentStatus::Wait {
+                                            reason: WaitReason::WaitingForPlanApproval,
+                                            ..
+                                        },
                                         AgentStatus::Processing
                                         | AgentStatus::AwaitingTools { .. }
                                         | AgentStatus::Wait { .. },
@@ -1068,6 +1089,54 @@ impl Actor for Assistant {
                                             &WaitReason::WaitingForPlanApproval,
                                         );
                                         self.add_system_message_part(approval_request);
+                                    }
+
+                                    // Sub-agent waiting for manager response (from send_manager_message tool)
+                                    (
+                                        AgentStatus::Wait {
+                                            reason: WaitReason::WaitingForManagerResponse,
+                                            ..
+                                        },
+                                        AgentStatus::Idle,
+                                    ) => {
+                                        // Sub-agent needs manager response - transition to Processing immediately
+                                        let manager_request = format!(
+                                            "<sub_agent_message agent_id=\"{}\">[Agent is waiting for manager response]</sub_agent_message>",
+                                            message.agent_id
+                                        );
+                                        self.add_system_message_part(manager_request);
+                                        self.submit_pending_message().await;
+                                    }
+
+                                    (
+                                        AgentStatus::Wait {
+                                            reason: WaitReason::WaitingForManagerResponse,
+                                            ..
+                                        },
+                                        AgentStatus::Wait { .. },
+                                    ) => {
+                                        // Urgent: Sub-agent needs manager response - transition to Processing
+                                        let manager_request = format!(
+                                            "<sub_agent_message agent_id=\"{}\">[Agent is waiting for manager response]</sub_agent_message>",
+                                            message.agent_id
+                                        );
+                                        self.add_system_message_part(manager_request);
+                                        self.submit_pending_message().await;
+                                    }
+
+                                    (
+                                        AgentStatus::Wait {
+                                            reason: WaitReason::WaitingForManagerResponse,
+                                            ..
+                                        },
+                                        AgentStatus::Processing | AgentStatus::AwaitingTools { .. },
+                                    ) => {
+                                        // Add manager request to pending message for later submission
+                                        let manager_request = format!(
+                                            "<sub_agent_message agent_id=\"{}\">[Agent is waiting for manager response]</sub_agent_message>",
+                                            message.agent_id
+                                        );
+                                        self.add_system_message_part(manager_request);
                                     }
 
                                     // Sub-agent InProgress status - just update system state, no action
@@ -1087,37 +1156,46 @@ impl Actor for Assistant {
                                 }
                             }
                             // Sub-agent sent us a message
-                            InterAgentMessage::SubAgentMessage { message: sub_message } => {
+                            InterAgentMessage::SubAgentMessage {
+                                message: sub_message,
+                            } => {
                                 // A sub-agent sent us a message - add as system message
                                 let sub_agent_message = format!(
                                     "<sub_agent_message agent_id=\"{}\">{}</sub_agent_message>",
                                     message.agent_id, sub_message
                                 );
                                 self.add_system_message_part(sub_agent_message);
-                                
+
                                 // Check if we're waiting for a response from this agent
-                                if let AgentStatus::Wait { reason: WaitReason::WaitingForAgentResponse { agent_id }, tool_call_id } = &self.state {
+                                if let AgentStatus::Wait {
+                                    reason: WaitReason::WaitingForAgentResponse { agent_id },
+                                    tool_call_id,
+                                } = &self.state
+                                {
                                     if agent_id == &message.agent_id {
                                         // This is the response we were waiting for - complete the tool call
                                         let tool_response = genai::chat::ToolResponse {
                                             call_id: tool_call_id.clone(),
                                             content: sub_message.clone(),
                                         };
-                                        self.chat_request = self.chat_request.clone().append_message(ChatMessage {
-                                            role: ChatRole::Tool,
-                                            content: MessageContent::ToolResponses(vec![tool_response]),
-                                            options: None,
-                                        });
+                                        self.chat_request =
+                                            self.chat_request.clone().append_message(ChatMessage {
+                                                role: ChatRole::Tool,
+                                                content: MessageContent::ToolResponses(vec![
+                                                    tool_response,
+                                                ]),
+                                                options: None,
+                                            });
                                         // Continue processing will happen automatically when state transitions
                                     }
                                 }
-                                
+
                                 // If we're idle, submit immediately
                                 if matches!(self.state, AgentStatus::Idle) {
                                     self.submit_pending_message().await;
                                 }
                             }
-                            
+
                             // We don't need to handle these
                             InterAgentMessage::PlanApproved => (),
                             InterAgentMessage::PlanRejected { reason: _ } => (),
@@ -1147,8 +1225,21 @@ mod tests {
     // - Idle: Ready to accept requests
     // - Processing: Actively making an LLM call
     // - AwaitingTools: Waiting for tool execution results
-    // - Wait: Waiting for spawned sub-agents to complete (tool_call_id tracks the tool that caused wait)
-    // - AwaitingManager: WE are waiting for OUR manager's approval or more information
+    // - Wait: Waiting with specific reasons (tool_call_id tracks the tool that caused wait):
+    //   * WaitingForAgentResponse { agent_id }: Waiting for a specific agent to respond via SubAgentMessage
+    //   * WaitingForManagerResponse: Waiting for our manager to respond via ManagerMessage
+    //   * WaitingForPlanApproval: Waiting for our manager to approve/reject our plan
+    // - Done: Task completed successfully or failed
+    //
+    // Wait Reasons (WaitReason enum):
+    // - WaitingForAgentResponse { agent_id }: Used when manager calls send_message(wait=true)
+    // - WaitingForManagerResponse: Used when agent calls send_manager_message(wait=true)
+    // - WaitingForPlanApproval: Used when agent requests plan approval from manager
+    //
+    // Message Types:
+    // - ManagerMessage: Manager -> Agent communication (from send_message tool)
+    // - SubAgentMessage: Agent -> Manager communication (from send_manager_message tool)
+    // - TaskStatusUpdate: State transitions broadcast by tools/agents
     //
     // Pending Message System:
     // The assistant maintains a pending message with:
@@ -1163,9 +1254,10 @@ mod tests {
     //    - If task_description exists: add to pending message and submit immediately (-> Processing)
     //    - ERROR if sub-agent messages received in this state
     //
-    // 2. Idle -> Processing (on UserContext or Action::Assist):
+    // 2. Idle -> Processing (on UserContext, Action::Assist, or immediate messages):
     //    - UserContext: Add to pending message, submit LLM request
     //    - Action::Assist: Submit pending message to LLM (if any content exists)
+    //    - ManagerMessage/SubAgentMessage: Add to pending, submit immediately
     //
     // 3. Processing -> Idle (on AssistantResponse with no tool calls):
     //    - Add response to chat history
@@ -1189,41 +1281,58 @@ mod tests {
     //
     // 7. AwaitingTools -> Wait (when tool completes and sets wait state):
     //    - Add tool response to chat history
-    //    - Track spawned agents for completion
-    //    - Transition to Wait state with tool_call_id
+    //    - Set appropriate WaitReason based on tool (send_message, send_manager_message, etc.)
+    //    - Track spawned agents for completion if WaitingForAgentResponse
+    //    - Transition to Wait state with tool_call_id and reason
     //
-    // 8. AwaitingTools -> AwaitingManager (when tool completes and sets awaiting manager state):
-    //    - Add tool response to chat history
-    //    - Transition to AwaitingManager
-    //    - Wait for our manager's approval/rejection
-    //
-    // 9. Processing/AwaitingTools -> Idle (on Action::Cancel):
+    // 8. Processing/AwaitingTools -> Idle (on Action::Cancel):
     //    - Cancel current LLM request
     //    - Transition to Idle
     //    - If pending message exists: submit immediately (-> Processing)
     //
-    // 10. Wait -> Processing (on sub-agent Done status when no more agents waiting):
+    // 9. Wait -> Processing (on sub-agent Done status when no more agents waiting):
     //     - Add agent completion summary to pending message (system part)
     //     - Submit LLM request immediately
     //     - Transition to Processing
     //
-    // 11. Wait -> Wait (on sub-agent Done status when still waiting on other agents):
+    // 10. Wait -> Wait (on sub-agent Done status when still waiting on other agents):
     //     - Add agent completion summary to pending message (system part)
     //     - Update waiting agents tracking
     //     - Remain in Wait state
     //
-    // 12. Any state (on sub-agent Done status, not in Wait):
+    // 11. Wait -> Processing (on ManagerMessage when WaitingForManagerResponse):
+    //     - Add manager message to pending message (system part)
+    //     - Submit LLM request immediately
+    //     - Transition to Processing
+    //
+    // 12. Wait -> Processing (on SubAgentMessage when WaitingForAgentResponse from that agent):
+    //     - Add agent message to pending message (system part)
+    //     - Add tool response to chat history (completing the original tool call)
+    //     - Submit LLM request immediately
+    //     - Transition to Processing
+    //
+    // 13. Any state (on sub-agent Done status, not in Wait):
     //     - Add agent completion summary to pending message (system part)
     //     - If currently Idle: submit immediately (-> Processing)
     //     - If currently Processing/AwaitingTools: will submit after current operation completes
     //     - State remains unchanged
     //
-    // 13. Any state (on sub-agent AwaitingManager status):
+    // 14. Any state (on sub-agent Wait { reason: WaitingForPlanApproval }):
     //     - Add plan approval request to pending message (system part) for US to review as manager
     //     - If currently Idle: submit immediately (-> Processing)
     //     - If currently Processing/AwaitingTools: will submit after current operation completes
     //     - If currently Wait: submit immediately (-> Processing) and transition out of Wait
-    //     - Other states remain unchanged (WE don't transition to AwaitingManager - they are awaiting US)
+    //     - Other states remain unchanged (WE don't transition to Wait - they are awaiting US)
+    //
+    // 15. Any state (on ManagerMessage when not waiting for it):
+    //     - Add manager message to pending message (system part)
+    //     - If currently Idle: submit immediately (-> Processing)
+    //     - If currently Processing/AwaitingTools/Wait: queue in pending for later submission
+    //
+    // 16. Any state (on SubAgentMessage when not waiting for it):
+    //     - Add agent message to pending message (system part)
+    //     - If currently Idle: submit immediately (-> Processing)
+    //     - If currently Processing/AwaitingTools/Wait: queue in pending for later submission
     //
     // NON-TRANSITIONING ACTIONS:
     // - UserContext while Processing/AwaitingTools/Wait: Add to pending message for later submission
@@ -1239,6 +1348,7 @@ mod tests {
     // - Only one pending message exists at a time (new content appends to existing)
     // - Sub-agent messages in AwaitingActors state should cause an error
     // - WE are the manager when receiving sub-agent status updates
+    // - Wait state with WaitingForAgentResponse completes the original tool call when receiving SubAgentMessage
 
     fn create_test_assistant(
         required_actors: Vec<&'static str>,
@@ -1757,11 +1867,11 @@ mod tests {
 
         let agent_id = Scope::new();
         let agent_message = create_agent_message(
-            agent_id, 
+            agent_id,
             AgentStatus::Wait {
                 tool_call_id: "info_123".to_string(),
                 reason: WaitReason::WaitingForManagerResponse,
-            }
+            },
         );
         assistant.handle_message(agent_message).await;
 
@@ -1788,11 +1898,11 @@ mod tests {
 
         let agent_id = Scope::new();
         let agent_message = create_agent_message(
-            agent_id, 
+            agent_id,
             AgentStatus::Wait {
                 tool_call_id: "info_123".to_string(),
                 reason: WaitReason::WaitingForManagerResponse,
-            }
+            },
         );
         assistant.handle_message(agent_message).await;
 
@@ -1971,7 +2081,9 @@ mod tests {
         // Set up Wait state with two agents
         assistant.state = AgentStatus::Wait {
             tool_call_id: "spawn_agents_123".to_string(),
-            reason: WaitReason::WaitingForAgentResponse { agent_id: crate::scope::Scope::new() },
+            reason: WaitReason::WaitingForAgentResponse {
+                agent_id: crate::scope::Scope::new(),
+            },
         };
         let mut waiting_for_agents = HashMap::new();
         waiting_for_agents.insert(agent1_id, None);
@@ -1987,7 +2099,7 @@ mod tests {
             AgentStatus::Wait {
                 tool_call_id: "info_123".to_string(),
                 reason: WaitReason::WaitingForManagerResponse,
-            }
+            },
         );
         assistant.handle_message(agent_message).await;
 
@@ -2026,7 +2138,9 @@ mod tests {
         // Set up Wait state with two agents
         assistant.state = AgentStatus::Wait {
             tool_call_id: "spawn_agents_123".to_string(),
-            reason: WaitReason::WaitingForAgentResponse { agent_id: crate::scope::Scope::new() },
+            reason: WaitReason::WaitingForAgentResponse {
+                agent_id: crate::scope::Scope::new(),
+            },
         };
         let mut waiting_for_agents = HashMap::new();
         waiting_for_agents.insert(agent1_id, None);
@@ -2042,7 +2156,7 @@ mod tests {
             AgentStatus::Wait {
                 tool_call_id: "info_123".to_string(),
                 reason: WaitReason::WaitingForManagerResponse,
-            }
+            },
         );
         assistant.handle_message(agent_message).await;
 
@@ -2084,7 +2198,9 @@ mod tests {
         // Set up Wait state with two agents
         assistant.state = AgentStatus::Wait {
             tool_call_id: "spawn_agents_123".to_string(),
-            reason: WaitReason::WaitingForAgentResponse { agent_id: crate::scope::Scope::new() },
+            reason: WaitReason::WaitingForAgentResponse {
+                agent_id: crate::scope::Scope::new(),
+            },
         };
         let mut waiting_for_agents = HashMap::new();
         waiting_for_agents.insert(agent1_id, None);
@@ -2100,7 +2216,7 @@ mod tests {
             AgentStatus::Wait {
                 tool_call_id: "info_123".to_string(),
                 reason: WaitReason::WaitingForManagerResponse,
-            }
+            },
         );
         assistant.handle_message(agent_message).await;
 
@@ -2146,7 +2262,9 @@ mod tests {
         // Set up Wait state with three agents
         assistant.state = AgentStatus::Wait {
             tool_call_id: "spawn_agents_123".to_string(),
-            reason: WaitReason::WaitingForAgentResponse { agent_id: crate::scope::Scope::new() },
+            reason: WaitReason::WaitingForAgentResponse {
+                agent_id: crate::scope::Scope::new(),
+            },
         };
         let mut waiting_for_agents = HashMap::new();
         waiting_for_agents.insert(agent1_id, None);
@@ -2163,7 +2281,7 @@ mod tests {
             AgentStatus::Wait {
                 tool_call_id: "info_123".to_string(),
                 reason: WaitReason::WaitingForManagerResponse,
-            }
+            },
         );
         assistant.handle_message(agent_message).await;
 
@@ -2191,7 +2309,7 @@ mod tests {
             AgentStatus::Wait {
                 tool_call_id: "info_123".to_string(),
                 reason: WaitReason::WaitingForManagerResponse,
-            }
+            },
         );
         assistant.handle_message(agent_message).await;
 
@@ -2242,10 +2360,12 @@ mod tests {
             }),
         });
 
-        assistant.handle_message(ActorMessage {
-            scope: assistant.scope,
-            message: agent_message,
-        }).await;
+        assistant
+            .handle_message(ActorMessage {
+                scope: assistant.scope,
+                message: agent_message,
+            })
+            .await;
 
         // Should transition to Processing
         assert!(matches!(assistant.state, AgentStatus::Processing));
@@ -2265,18 +2385,20 @@ mod tests {
             }),
         });
 
-        assistant.handle_message(ActorMessage {
-            scope: assistant.scope,
-            message: agent_message,
-        }).await;
+        assistant
+            .handle_message(ActorMessage {
+                scope: assistant.scope,
+                message: agent_message,
+            })
+            .await;
 
         // Should remain in Processing
         assert!(matches!(assistant.state, AgentStatus::Processing));
         // Message should be queued in pending
         assert!(assistant.pending_message.has_content());
-        assert!(assistant.pending_message.system_parts.iter().any(|part| 
+        assert!(assistant.pending_message.system_parts.iter().any(|part| {
             part.contains("<manager_message>Additional information</manager_message>")
-        ));
+        }));
     }
 
     #[tokio::test]
@@ -2293,10 +2415,12 @@ mod tests {
             }),
         });
 
-        assistant.handle_message(ActorMessage {
-            scope: assistant.scope,
-            message: agent_message,
-        }).await;
+        assistant
+            .handle_message(ActorMessage {
+                scope: assistant.scope,
+                message: agent_message,
+            })
+            .await;
 
         // Should remain in AwaitingTools
         assert!(matches!(assistant.state, AgentStatus::AwaitingTools { .. }));
@@ -2319,17 +2443,201 @@ mod tests {
             }),
         });
 
-        assistant.handle_message(ActorMessage {
-            scope: assistant.scope,
-            message: agent_message,
-        }).await;
+        assistant
+            .handle_message(ActorMessage {
+                scope: assistant.scope,
+                message: agent_message,
+            })
+            .await;
 
         // Should remain in Wait
         assert!(matches!(assistant.state, AgentStatus::Wait { .. }));
         // Message should be queued
         assert!(assistant.pending_message.has_content());
-        assert!(assistant.pending_message.system_parts.iter().any(|part| 
+        assert!(assistant.pending_message.system_parts.iter().any(|part| {
             part.contains("<manager_message>Information while waiting</manager_message>")
-        ));
+        }));
+    }
+
+    #[tokio::test]
+    async fn test_wait_manager_response_to_processing() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AgentStatus::Wait {
+            tool_call_id: "wait123".to_string(),
+            reason: WaitReason::WaitingForManagerResponse,
+        };
+
+        assert!(!assistant.pending_message.has_content());
+
+        let agent_message = Message::Agent(AgentMessage {
+            agent_id: assistant.scope,
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::ManagerMessage {
+                message: "Response from manager".to_string(),
+            }),
+        });
+
+        assistant
+            .handle_message(ActorMessage {
+                scope: assistant.scope,
+                message: agent_message,
+            })
+            .await;
+
+        // Should remain in Wait state and queue the message
+        assert!(matches!(assistant.state, AgentStatus::Wait { .. }));
+        // Message should be queued
+        assert!(assistant.pending_message.has_content());
+    }
+
+    #[tokio::test]
+    async fn test_wait_agent_response_to_processing_and_complete_tool_call() {
+        let mut assistant = create_test_assistant(vec![], None);
+        let agent_id = Scope::new();
+
+        assistant.state = AgentStatus::Wait {
+            tool_call_id: "send_msg_123".to_string(),
+            reason: WaitReason::WaitingForAgentResponse { agent_id },
+        };
+
+        // Agent sends back a response
+        let agent_message = Message::Agent(AgentMessage {
+            agent_id,
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::SubAgentMessage {
+                message: "Response from agent".to_string(),
+            }),
+        });
+
+        assistant
+            .handle_message(ActorMessage {
+                scope: assistant.scope,
+                message: agent_message,
+            })
+            .await;
+
+        // Should transition to Processing
+        assert!(matches!(assistant.state, AgentStatus::Processing));
+        // Should have completed tool call and submitted message (so pending is clear)
+        assert!(!assistant.pending_message.has_content());
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_message_while_processing() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AgentStatus::Processing;
+        let agent_id = Scope::new();
+
+        let agent_message = Message::Agent(AgentMessage {
+            agent_id,
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::SubAgentMessage {
+                message: "Message while processing".to_string(),
+            }),
+        });
+
+        assistant
+            .handle_message(ActorMessage {
+                scope: assistant.scope,
+                message: agent_message,
+            })
+            .await;
+
+        // Should remain in Processing
+        assert!(matches!(assistant.state, AgentStatus::Processing));
+        // Message should be queued
+        assert!(assistant.pending_message.has_content());
+        assert!(assistant.pending_message.system_parts.iter().any(|part| {
+            part.contains(&format!(
+                "<sub_agent_message agent_id=\"{}\">Message while processing</sub_agent_message>",
+                agent_id
+            ))
+        }));
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_message_while_awaiting_tools() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AgentStatus::AwaitingTools {
+            pending_tool_calls: vec!["tool123".to_string()],
+        };
+        let agent_id = Scope::new();
+
+        let agent_message = Message::Agent(AgentMessage {
+            agent_id,
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::SubAgentMessage {
+                message: "Message while waiting for tools".to_string(),
+            }),
+        });
+
+        assistant
+            .handle_message(ActorMessage {
+                scope: assistant.scope,
+                message: agent_message,
+            })
+            .await;
+
+        // Should remain in AwaitingTools
+        assert!(matches!(assistant.state, AgentStatus::AwaitingTools { .. }));
+        // Message should be queued
+        assert!(assistant.pending_message.has_content());
+        assert!(assistant.pending_message.system_parts.iter().any(|part| {
+            part.contains(&format!("<sub_agent_message agent_id=\"{}\">Message while waiting for tools</sub_agent_message>", agent_id))
+        }));
+    }
+
+    #[tokio::test]
+    async fn test_multiple_sub_agent_messages_queuing() {
+        let mut assistant = create_test_assistant(vec![], None);
+        assistant.state = AgentStatus::AwaitingTools {
+            pending_tool_calls: vec!["tool123".to_string()],
+        };
+        let agent1_id = Scope::new();
+        let agent2_id = Scope::new();
+
+        // Send first message
+        let agent_message1 = Message::Agent(AgentMessage {
+            agent_id: agent1_id,
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::SubAgentMessage {
+                message: "First message".to_string(),
+            }),
+        });
+
+        assistant
+            .handle_message(ActorMessage {
+                scope: assistant.scope,
+                message: agent_message1,
+            })
+            .await;
+
+        // Send second message
+        let agent_message2 = Message::Agent(AgentMessage {
+            agent_id: agent2_id,
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::SubAgentMessage {
+                message: "Second message".to_string(),
+            }),
+        });
+
+        assistant
+            .handle_message(ActorMessage {
+                scope: assistant.scope,
+                message: agent_message2,
+            })
+            .await;
+
+        // Should remain in AwaitingTools
+        assert!(matches!(assistant.state, AgentStatus::AwaitingTools { .. }));
+        // Both messages should be queued
+        assert!(assistant.pending_message.has_content());
+        assert_eq!(assistant.pending_message.system_parts.len(), 2);
+        assert!(assistant.pending_message.system_parts.iter().any(|part| {
+            part.contains(&format!(
+                "<sub_agent_message agent_id=\"{}\">First message</sub_agent_message>",
+                agent1_id
+            ))
+        }));
+        assert!(assistant.pending_message.system_parts.iter().any(|part| {
+            part.contains(&format!(
+                "<sub_agent_message agent_id=\"{}\">Second message</sub_agent_message>",
+                agent2_id
+            ))
+        }));
     }
 }
