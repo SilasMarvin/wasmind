@@ -1,5 +1,5 @@
-use crate::system_state::SystemState;
 use crate::scope::Scope;
+use crate::system_state::SystemState;
 use minijinja::{Environment, context};
 use serde::Serialize;
 
@@ -305,7 +305,7 @@ Working directory: {{ cwd }}"#;
         let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         // Test invalid template syntax
-        let invalid_template = "Hello {{ name";  // Missing closing braces
+        let invalid_template = "Hello {{ name"; // Missing closing braces
         let result = render_template(invalid_template, &context);
         assert!(result.is_err());
 
@@ -375,7 +375,7 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
         assert!(result.contains("Plan: No active plan"));
         assert!(result.contains("Agents: 0 spawned"));
         assert!(result.contains("Task: No specific task"));
-        
+
         // Verify that conditional sections are not rendered
         assert!(!result.contains("Tool List:"));
         assert!(!result.contains("File Paths:"));
@@ -385,8 +385,8 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
     #[test]
     fn test_agents_list_template() {
         use crate::actors::AgentStatus;
-        use crate::system_state::{AgentTaskInfo, SystemState};
         use crate::scope::Scope;
+        use crate::system_state::{AgentTaskInfo, SystemState};
 
         let mut system_state = SystemState::new();
 
@@ -399,7 +399,12 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
         let agent1_id = agent1.agent_id;
 
         system_state.add_agent(agent1);
-        system_state.update_agent_status(&agent1_id, AgentStatus::InProgress);
+        system_state.update_agent_status(
+            &agent1_id,
+            AgentStatus::Processing {
+                id: uuid::Uuid::new_v4(),
+            },
+        );
 
         let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
@@ -523,7 +528,7 @@ Agent {{ id }} is ready to assist."#;
         let system_state = SystemState::new();
         let test_scope = Scope::new();
         let task_description = Some("Implement feature X".to_string());
-        
+
         let context = TemplateContext::with_task(
             vec![],
             vec![],
@@ -543,8 +548,14 @@ Agent {{ id }} has no specific task assigned.
         let result = render_template(template, &context).unwrap();
         let expected_id = test_scope.to_string();
 
-        assert!(result.contains(&format!("Agent {} is working on: Implement feature X", expected_id)));
-        assert!(result.contains(&format!("Agent {} has been assigned the task: Implement feature X", expected_id)));
+        assert!(result.contains(&format!(
+            "Agent {} is working on: Implement feature X",
+            expected_id
+        )));
+        assert!(result.contains(&format!(
+            "Agent {} has been assigned the task: Implement feature X",
+            expected_id
+        )));
         assert!(!result.contains("has no specific task assigned"));
     }
 
@@ -571,12 +582,10 @@ Your assigned task: {{ task }}
 Remember that you are Agent {{ id }}. Always include your ID when communicating important updates."#;
 
         let context = TemplateContext::with_task(
-            vec![
-                ToolInfo {
-                    name: "test_tool".to_string(),
-                    description: "A test tool".to_string(),
-                },
-            ],
+            vec![ToolInfo {
+                name: "test_tool".to_string(),
+                description: "A test tool".to_string(),
+            }],
             vec![],
             &system_state,
             Some("Test the new feature".to_string()),
@@ -590,7 +599,7 @@ Remember that you are Agent {{ id }}. Always include your ID when communicating 
         assert!(result.contains(&format!("You are Assistant {}", expected_id)));
         assert!(result.contains(&format!("Your unique identifier is: {}", expected_id)));
         assert!(result.contains(&format!("Remember that you are Agent {}", expected_id)));
-        
+
         // Verify other template variables still work
         assert!(result.contains("Available tools: 1"));
         assert!(result.contains("Your assigned task: Test the new feature"));

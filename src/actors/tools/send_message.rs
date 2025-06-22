@@ -1,6 +1,6 @@
 use crate::actors::{
-    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage, Message,
-    ToolCallStatus, ToolCallUpdate, WaitReason,
+    Actor, ActorMessage, AgentMessage, AgentMessageType, InterAgentMessage, Message,
+    ToolCallStatus, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -20,13 +20,9 @@ pub const SEND_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
         "message": {
             "type": "string",
             "description": "The message to send"
-        },
-        "wait": {
-            "type": "boolean",
-            "description": "Whether to pause and wait for a response from the agent"
         }
     },
-    "required": ["agent_id", "message", "wait"]
+    "required": ["agent_id", "message"]
 }"#;
 
 #[derive(Debug, Deserialize)]
@@ -37,12 +33,8 @@ struct SendMessageInput {
 }
 
 /// Format send message success message
-pub fn format_send_message_success(agent_id: &str, waiting: bool) -> String {
-    if waiting {
-        format!("Message sent to agent {} - waiting for response", agent_id)
-    } else {
-        format!("Message sent to agent {}", agent_id)
-    }
+pub fn format_send_message_success(agent_id: &str) -> String {
+    format!("Message sent to agent {agent_id}")
 }
 
 /// SendMessage tool actor for managers to send messages to subordinate agents
@@ -103,36 +95,18 @@ impl SendMessage {
             }
         };
 
-        // Send the ManagerMessage to the specified agent
+        // Send the message
         let _ = self.broadcast(Message::Agent(AgentMessage {
             agent_id: agent_scope,
-            message: AgentMessageType::InterAgentMessage(InterAgentMessage::ManagerMessage {
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
                 message: input.message,
             }),
         }));
 
-        if input.wait {
-            // Set manager to wait state for agent response
-            let _ = self.broadcast(Message::Agent(AgentMessage {
-                agent_id: self.scope,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                    status: AgentStatus::Wait {
-                        tool_call_id: tool_call.call_id.clone(),
-                        reason: WaitReason::WaitingForAgentResponse {
-                            agent_id: agent_scope,
-                        },
-                    },
-                }),
-            }));
-        }
-
         // Send tool success response
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
-            status: ToolCallStatus::Finished(Ok(format_send_message_success(
-                &input.agent_id,
-                input.wait,
-            ))),
+            status: ToolCallStatus::Finished(Ok(format_send_message_success(&input.agent_id))),
         }));
     }
 
@@ -176,4 +150,3 @@ impl Actor for SendMessage {
         });
     }
 }
-

@@ -8,12 +8,15 @@ pub mod state_system;
 pub mod tools;
 pub mod tui;
 
-use genai::chat::ToolCall;
+use crate::scope::Scope;
+use genai::chat::{ToolCall, ToolResponse};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
-use crate::scope::Scope;
+use uuid::Uuid;
 
 /// Actions users can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -77,14 +80,6 @@ pub enum ToolCallStatus {
     Finished(Result<String, String>),
 }
 
-/// Reason for waiting
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum WaitReason {
-    WaitingForAgentResponse { agent_id: Scope },
-    WaitingForManagerResponse,
-    WaitingForPlanApproval,
-}
-
 /// The result of an agent task
 pub type AgentTaskResult = Result<AgentTaskResultOk, String>;
 
@@ -95,39 +90,43 @@ pub struct AgentTaskResultOk {
     pub success: bool,
 }
 
+/// Reason for waiting
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum WaitReason {
+    WaitingForUserInput,
+    WaitForDuration {
+        tool_call_id: String,
+        timestamp: u64,
+        duration: Duration,
+    },
+    WaitingForPlanApproval {
+        tool_call_id: String,
+    },
+    WaitingForTools {
+        tool_calls: HashMap<String, Option<String>>,
+    },
+    WaitingForActors {
+        pending_actors: Vec<String>,
+    },
+}
+
 /// Unified agent status that combines assistant state and task status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentStatus {
-    /// Waiting for actors to be ready
-    AwaitingActors,
-    /// Ready to accept requests, has tools available
-    Idle,
     /// Actively processing a user request (making LLM call)
-    Processing,
-    /// Waiting for tool execution results
-    AwaitingTools { pending_tool_calls: Vec<String> },
-    /// Waiting for next input from user, sub agent, etc...
-    /// Does not submit a response to the LLM when the tool call with `tool_call_id` returns a
-    /// response. Waits for other input
-    Wait { tool_call_id: String, reason: WaitReason },
-    /// Agent is working on the task
-    InProgress,
+    Processing { id: Uuid },
+    /// Waiting for something outside of our control to complete
+    Wait { reason: WaitReason },
     /// Agent task is complete
     Done(AgentTaskResult),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum InterAgentMessage {
-    /// Agent reports task status to manager
+    /// Agent task status update
     TaskStatusUpdate { status: AgentStatus },
-    /// Manager approves a plan
-    PlanApproved,
-    /// Manager rejects a plan
-    PlanRejected { reason: String },
-    /// Manager sends information to an agent
-    ManagerMessage { message: String },
-    /// Sub-agent sends message to manager
-    SubAgentMessage { message: String },
+    /// Message between agents
+    Message { message: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -171,6 +170,7 @@ pub enum UserContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
     // User actions from keyboard/TUI
+    // TODO: Redo this
     Action(Action),
 
     // UserContext
@@ -178,7 +178,10 @@ pub enum Message {
 
     // Assistant messages
     AssistantToolCall(ToolCall),
-    AssistantResponse(genai::chat::MessageContent),
+    AssistantResponse {
+        id: Uuid,
+        content: genai::chat::MessageContent,
+    },
 
     // Tool messages
     ToolCallUpdate(ToolCallUpdate),
@@ -225,28 +228,11 @@ impl PartialEq for Message {
                 a.call_id == b.call_id
             }
 
-            // AssistantResponse - compare by content type/discriminant
-            (Message::AssistantResponse(a), Message::AssistantResponse(b)) => {
-                use genai::chat::MessageContent;
-                match (a, b) {
-                    (MessageContent::Text(t1), MessageContent::Text(t2)) => t1 == t2,
-                    (MessageContent::ToolCalls(tc1), MessageContent::ToolCalls(tc2)) => {
-                        tc1.len() == tc2.len()
-                            && tc1
-                                .iter()
-                                .zip(tc2.iter())
-                                .all(|(t1, t2)| t1.call_id == t2.call_id)
-                    }
-                    (MessageContent::ToolResponses(tr1), MessageContent::ToolResponses(tr2)) => {
-                        tr1.len() == tr2.len()
-                            && tr1.iter().zip(tr2.iter()).all(|(r1, r2)| {
-                                r1.call_id == r2.call_id && r1.content == r2.content
-                            })
-                    }
-                    (MessageContent::Parts(_), MessageContent::Parts(_)) => false, // Too complex, skip
-                    _ => false, // Different variants
-                }
-            }
+            // AssistantResponse - compare by id
+            (
+                Message::AssistantResponse { id: id1, .. },
+                Message::AssistantResponse { id: id2, .. },
+            ) => id1 == id2,
 
             // ToolsAvailable - compare tool names
             (Message::ToolsAvailable(tools1), Message::ToolsAvailable(tools2)) => {

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::actors::tools::planner::{TaskPlan, TaskStatus};
-use crate::actors::{AgentStatus, AgentType};
+use crate::actors::{AgentStatus, AgentTaskResult, AgentType};
 use crate::scope::Scope;
 use crate::template::{self, TemplateContext, ToolInfo};
 
@@ -84,13 +84,35 @@ impl std::fmt::Display for FileInfo {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AgentDisplayStatus {
+    Done(AgentTaskResult),
+    InProgress,
+    AwaitingManagerPlanApproval,
+}
+
+impl From<AgentStatus> for AgentDisplayStatus {
+    fn from(value: AgentStatus) -> Self {
+        match value {
+            AgentStatus::Processing { .. } => Self::InProgress,
+            AgentStatus::Wait { reason } => match reason {
+                crate::actors::WaitReason::WaitingForPlanApproval { .. } => {
+                    Self::AwaitingManagerPlanApproval
+                }
+                _ => Self::InProgress,
+            },
+            AgentStatus::Done(agent_task_result) => Self::Done(agent_task_result),
+        }
+    }
+}
+
 /// Information about a spawned agent and its assigned task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTaskInfo {
     pub agent_id: Scope,
     pub agent_role: String,
     pub task_description: String,
-    pub status: AgentStatus,
+    pub status: AgentDisplayStatus,
     pub spawned_at: std::time::SystemTime,
 }
 
@@ -105,7 +127,7 @@ impl AgentTaskInfo {
             agent_id,
             agent_role,
             task_description,
-            status: AgentStatus::InProgress,
+            status: AgentDisplayStatus::InProgress,
             spawned_at: std::time::SystemTime::now(),
         }
     }
@@ -114,13 +136,10 @@ impl AgentTaskInfo {
     /// Treat InProgress and Waiting as the same for right now.
     pub fn status_icon(&self) -> &'static str {
         match &self.status {
-            AgentStatus::InProgress | AgentStatus::Wait { tool_call_id: _, reason: _ } => "[~]",
-            AgentStatus::Done(Ok(_)) => "[x]",
-            AgentStatus::Done(Err(_)) => "[!]",
-            AgentStatus::AwaitingActors => "[...]",
-            AgentStatus::Idle => "[ ]",
-            AgentStatus::Processing => "[>]",
-            AgentStatus::AwaitingTools { .. } => "[*]",
+            AgentDisplayStatus::InProgress => "[~]",
+            AgentDisplayStatus::Done(Ok(_)) => "[x]",
+            AgentDisplayStatus::Done(Err(_)) => "[!]",
+            AgentDisplayStatus::AwaitingManagerPlanApproval => "[*]",
         }
     }
 
@@ -237,7 +256,7 @@ impl SystemState {
     /// Update an agent's task status
     pub fn update_agent_status(&mut self, agent_id: &Scope, status: AgentStatus) {
         if let Some(agent_info) = self.agents.get_mut(agent_id) {
-            agent_info.status = status;
+            agent_info.status = status.into();
             self.modified = true;
         }
     }
@@ -360,14 +379,10 @@ impl SystemState {
                     "role": agent.agent_role,
                     "task": agent.task_description,
                     "status": match &agent.status {
-                        AgentStatus::InProgress => "in_progress",
-                        AgentStatus::Wait { .. } => "waiting",
-                        AgentStatus::Done(Ok(_)) => "completed",
-                        AgentStatus::Done(Err(_)) => "failed",
-                        AgentStatus::AwaitingActors => "awaiting_actors",
-                        AgentStatus::Idle => "idle",
-                        AgentStatus::Processing => "processing",
-                        AgentStatus::AwaitingTools { .. } => "awaiting_tools",
+                        // TODO: Probably update this error display
+                        AgentDisplayStatus::Done(_) => "done".to_string(),
+                        AgentDisplayStatus::InProgress => "in_progress".to_string(),
+                        AgentDisplayStatus::AwaitingManagerPlanApproval => "plan_awaiting_your_approval".to_string(),
                     },
                     "status_icon": agent.status_icon(),
                     "formatted": agent.format_for_prompt()
@@ -429,7 +444,13 @@ impl SystemState {
         whitelisted_commands: Vec<String>,
         agent_id: Scope,
     ) -> Result<String> {
-        self.render_system_prompt_with_task(prompt_template, tools, whitelisted_commands, None, agent_id)
+        self.render_system_prompt_with_task(
+            prompt_template,
+            tools,
+            whitelisted_commands,
+            None,
+            agent_id,
+        )
     }
 
     /// Render the system prompt with the given template, tools, and task description
@@ -852,7 +873,9 @@ Current plan: active
         let mut state = SystemState::new();
 
         // Test with no files or plan
-        let result = state.render_system_prompt(template, &[], vec![], Scope::new()).unwrap();
+        let result = state
+            .render_system_prompt(template, &[], vec![], Scope::new())
+            .unwrap();
         assert!(result.contains("You are an AI assistant."));
         assert!(!result.contains("Currently loaded files"));
         assert!(!result.contains("Current plan"));
@@ -864,7 +887,9 @@ Current plan: active
             SystemTime::now(),
         );
 
-        let result = state.render_system_prompt(template, &[], vec![], Scope::new()).unwrap();
+        let result = state
+            .render_system_prompt(template, &[], vec![], Scope::new())
+            .unwrap();
         assert!(result.contains("Currently loaded files: 1"));
         assert!(!result.contains("Current plan"));
 
@@ -874,7 +899,9 @@ Current plan: active
             tasks: vec![],
         });
 
-        let result = state.render_system_prompt(template, &[], vec![], Scope::new()).unwrap();
+        let result = state
+            .render_system_prompt(template, &[], vec![], Scope::new())
+            .unwrap();
         assert!(result.contains("Currently loaded files: 1"));
         assert!(result.contains("Current plan: active"));
     }
@@ -934,12 +961,10 @@ No specific task assigned.
 Available tools: {{ tools|length }}"#;
 
         let state = SystemState::new();
-        let tools = vec![
-            ToolInfo {
-                name: "test_tool".to_string(),
-                description: "A test tool".to_string(),
-            },
-        ];
+        let tools = vec![ToolInfo {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+        }];
 
         // Test without task
         let result = state

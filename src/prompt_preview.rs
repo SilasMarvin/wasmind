@@ -199,8 +199,8 @@ file = "app.log"
 
         // Add some agents in different states
         use crate::actors::AgentStatus;
-        use crate::system_state::AgentTaskInfo;
         use crate::scope::Scope;
+        use crate::system_state::AgentTaskInfo;
 
         let agent1 = AgentTaskInfo::new(
             Scope::new(),
@@ -306,8 +306,8 @@ file = "app.log"
 
         // Add agents
         use crate::actors::AgentStatus;
-        use crate::system_state::AgentTaskInfo;
         use crate::scope::Scope;
+        use crate::system_state::AgentTaskInfo;
 
         let backend_agent = AgentTaskInfo::new(
             Scope::new(),
@@ -418,20 +418,7 @@ file = "app.log"
                 pending
             );
         }
-        println!("  Agents spawned: {}", state.agent_count());
-        if state.agent_count() > 0 {
-            let agents = state.get_agents();
-            let completed = agents
-                .values()
-                .filter(|a| matches!(a.status, crate::actors::AgentStatus::Done(_)))
-                .count();
-            let in_progress = agents
-                .values()
-                .filter(|a| matches!(a.status, crate::actors::AgentStatus::InProgress))
-                .count();
-            println!("    {} completed, {} in progress", completed, in_progress);
-        }
-        println!();
+        println!("  Agents spawned: {}\n", state.agent_count());
 
         // Show rendered prompt with clear delimiters
         let agent_label = agent_type.unwrap_or("main_manager");

@@ -6,8 +6,8 @@ use tracing::info;
 // Assuming AgentSpawnedResponse is already Serialize.
 // It is imported from crate::actors::agent and used with serde_json::to_string in the original code.
 use crate::actors::{
-    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
-    InterAgentMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentType, Message, ToolCallStatus,
+    ToolCallType, ToolCallUpdate,
     agent::{Agent, AgentSpawnedResponse},
 };
 use crate::config::ParsedConfig;
@@ -41,10 +41,6 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
                 },
                 "required": ["agent_role", "task_description", "agent_type"]
             }
-        },
-        "wait": {
-            "type": "boolean",
-            "description": "Set to true to pause your own operations and await status updates or completion signals from the spawned agent(s) before proceeding. Set to false (default) to continue with other actions immediately after spawning."
         }
     },
     "required": ["agents_to_spawn"]
@@ -60,8 +56,6 @@ struct AgentDefinition {
 #[derive(Debug, Deserialize)]
 struct SpawnAgentsInput {
     agents_to_spawn: Vec<AgentDefinition>,
-    #[serde(default)]
-    wait: bool,
 }
 
 /// SpawnAgent tool actor for managers to spawn new agents
@@ -109,21 +103,6 @@ impl SpawnAgent {
                 status: ToolCallStatus::Finished(Err("No agents specified in 'agents_to_spawn' array. At least one agent must be provided.".to_string())),
             }));
             return;
-        }
-
-        // Broadcast the new agent status
-        if input.wait {
-            self.broadcast(Message::Agent(AgentMessage {
-                agent_id: self.scope.clone(),
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                    status: AgentStatus::Wait {
-                        tool_call_id: tool_call.call_id.clone(),
-                        reason: crate::actors::WaitReason::WaitingForAgentResponse { 
-                            agent_id: crate::scope::Scope::new() // Placeholder - will be managed by wait context
-                        },
-                    },
-                }),
-            }))
         }
 
         let mut spawned_agents_responses: Vec<AgentSpawnedResponse> = Vec::new();
@@ -193,10 +172,9 @@ impl SpawnAgent {
         // All agents defined in the input have been processed and spawn tasks initiated
 
         info!(
-            "Successfully initiated spawning for {} agent(s): [{}]. Wait flag was: {}.",
+            "Successfully initiated spawning for {} agent(s): [{}]",
             spawned_agents_responses.len(),
             successfully_spawned_agents_details.join("; "),
-            input.wait
         );
 
         // Return concise response
@@ -257,7 +235,7 @@ impl Actor for SpawnAgent {
             schema: Some(
                 serde_json::from_str(TOOL_INPUT_SCHEMA)
                     .expect("TOOL_INPUT_SCHEMA must be valid JSON"),
-            ), // Uses updated TOOL_INPUT_SCHEMA
+            ),
         };
 
         let _ = self.broadcast(Message::ToolsAvailable(vec![tool]));

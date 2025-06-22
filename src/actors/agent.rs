@@ -8,7 +8,7 @@ use crate::{
         assistant::Assistant,
         tools::{
             command::Command, complete::Complete, edit_file::EditFile,
-            file_reader::FileReaderActor, mcp::MCP, plan_approval::PlanApproval, planner::Planner,
+            file_reader::FileReaderActor, mcp::MCP, planner::Planner,
             send_manager_message::SendManagerMessage, send_message::SendMessage,
             spawn_agent::SpawnAgent,
         },
@@ -71,7 +71,6 @@ impl Agent {
                 let mut actors = vec![
                     Planner::ACTOR_ID,
                     SpawnAgent::ACTOR_ID,
-                    PlanApproval::ACTOR_ID,
                     SendMessage::ACTOR_ID,
                 ];
 
@@ -115,6 +114,7 @@ impl Agent {
                     config,
                     self.tx.clone(),
                     self.scope.clone(),
+                    self.parent_scope.clone(),
                     self.get_required_actors(),
                     self.task_description.clone(),
                     self.config.whitelisted_commands.clone(),
@@ -136,8 +136,6 @@ impl Agent {
                 // Add spawn_agent and plan approval tools for managers
                 SpawnAgent::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
 
-                PlanApproval::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-
                 SendMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
             }
             AgentType::Worker => {
@@ -146,6 +144,7 @@ impl Agent {
                     self.config.hive.worker_model.clone(),
                     self.tx.clone(),
                     self.scope.clone(),
+                    self.parent_scope.clone(),
                     self.get_required_actors(),
                     self.task_description.clone(),
                     self.config.whitelisted_commands.clone(),
@@ -176,7 +175,13 @@ impl Agent {
                 MCP::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
 
-                SendManagerMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone(), self.parent_scope.clone()).run();
+                SendManagerMessage::new(
+                    self.config.clone(),
+                    self.tx.clone(),
+                    self.scope.clone(),
+                    self.parent_scope.clone(),
+                )
+                .run();
             }
         }
     }

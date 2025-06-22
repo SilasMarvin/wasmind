@@ -1,12 +1,14 @@
 use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, InterAgentMessage, Message,
-    ToolCallStatus, ToolCallUpdate, WaitReason, AgentStatus,
+    ToolCallStatus, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 use genai::chat::{Tool, ToolCall};
 use serde::Deserialize;
 use tokio::sync::broadcast;
+
+pub const SEND_MANAGER_MESSAGE_SUCCESS_TOOL_RESPONSE: &'static str = "Message sent to manager";
 
 pub const SEND_MANAGER_MESSAGE_TOOL_NAME: &str = "send_manager_message";
 pub const SEND_MANAGER_MESSAGE_TOOL_DESCRIPTION: &str = "Send a message to your manager";
@@ -16,28 +18,15 @@ pub const SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
         "message": {
             "type": "string",
             "description": "The message to send to your manager"
-        },
-        "wait": {
-            "type": "boolean",
-            "description": "Whether to wait for a response from the manager"
         }
     },
-    "required": ["message", "wait"]
+    "required": ["message"]
 }"#;
 
 #[derive(Debug, Deserialize)]
 struct SendManagerMessageInput {
     message: String,
     wait: bool,
-}
-
-/// Format send manager message success message
-pub fn format_send_manager_message_success(waiting: bool) -> String {
-    if waiting {
-        "Message sent to manager - waiting for response".to_string()
-    } else {
-        "Message sent to manager".to_string()
-    }
 }
 
 /// SendManagerMessage tool actor for agents to send messages to their manager
@@ -52,8 +41,18 @@ pub struct SendManagerMessage {
 impl SendManagerMessage {
     pub const ACTOR_ID: &'static str = "send_manager_message";
 
-    pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope, parent_scope: Scope) -> Self {
-        Self { config, tx, scope, parent_scope }
+    pub fn new(
+        config: ParsedConfig,
+        tx: broadcast::Sender<ActorMessage>,
+        scope: Scope,
+        parent_scope: Scope,
+    ) -> Self {
+        Self {
+            config,
+            tx,
+            scope,
+            parent_scope,
+        }
     }
 
     pub fn get_tool_schema() -> Tool {
@@ -86,28 +85,17 @@ impl SendManagerMessage {
         // Send the SubAgentMessage to the parent manager
         let _ = self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.parent_scope,
-            message: AgentMessageType::InterAgentMessage(InterAgentMessage::SubAgentMessage {
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
                 message: input.message,
             }),
         }));
 
-        if input.wait {
-            // Set agent to wait state for manager response
-            let _ = self.broadcast(Message::Agent(AgentMessage {
-                agent_id: self.scope,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                    status: AgentStatus::Wait {
-                        tool_call_id: tool_call.call_id.clone(),
-                        reason: WaitReason::WaitingForManagerResponse,
-                    },
-                }),
-            }));
-        }
-
         // Send tool success response
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
-            status: ToolCallStatus::Finished(Ok(format_send_manager_message_success(input.wait))),
+            status: ToolCallStatus::Finished(Ok(
+                SEND_MANAGER_MESSAGE_SUCCESS_TOOL_RESPONSE.to_string()
+            )),
         }));
     }
 
@@ -151,3 +139,4 @@ impl Actor for SendManagerMessage {
         });
     }
 }
+

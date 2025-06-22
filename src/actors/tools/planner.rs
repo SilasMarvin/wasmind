@@ -1,11 +1,10 @@
 use genai::chat::{Tool, ToolCall};
 use std::fmt;
 use tokio::sync::broadcast;
-use tracing::info;
 
 use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage,
-    Message, WaitReason, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    Message, ToolCallStatus, ToolCallType, ToolCallUpdate, WaitReason,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -258,8 +257,9 @@ impl Planner {
                 agent_id: self.scope.clone(),
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
                     status: AgentStatus::Wait {
-                        tool_call_id: tool_call_id.to_string(),
-                        reason: WaitReason::WaitingForPlanApproval,
+                        reason: WaitReason::WaitingForPlanApproval {
+                            tool_call_id: tool_call_id.to_owned(),
+                        },
                     },
                 }),
             }));

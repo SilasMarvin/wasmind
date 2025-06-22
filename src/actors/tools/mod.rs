@@ -3,7 +3,6 @@ pub mod complete;
 pub mod edit_file;
 pub mod file_reader;
 pub mod mcp;
-pub mod plan_approval;
 pub mod planner;
 pub mod send_manager_message;
 pub mod send_message;
