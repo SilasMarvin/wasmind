@@ -114,10 +114,9 @@ impl AgentTaskInfo {
     /// Treat InProgress and Waiting as the same for right now.
     pub fn status_icon(&self) -> &'static str {
         match &self.status {
-            AgentStatus::InProgress | AgentStatus::Wait { tool_call_id: _ } => "[~]",
+            AgentStatus::InProgress | AgentStatus::Wait { tool_call_id: _, reason: _ } => "[~]",
             AgentStatus::Done(Ok(_)) => "[x]",
             AgentStatus::Done(Err(_)) => "[!]",
-            AgentStatus::AwaitingManager(_) => "[?]",
             AgentStatus::AwaitingActors => "[...]",
             AgentStatus::Idle => "[ ]",
             AgentStatus::Processing => "[>]",
@@ -138,7 +137,7 @@ impl AgentTaskInfo {
         //         TaskAwaitingManager::AwaitingPlanApproval(_) => {
         //             " - Awaiting plan approval".to_string()
         //         }
-        //         TaskAwaitingManager::AwaitingMoreInformation(info) => {
+        //         TaskAwaitingManager::AwaitingMoreInformation { request, .. } => {
         //             format!(" - Needs: {}", info)
         //         }
         //     },
@@ -365,7 +364,6 @@ impl SystemState {
                         AgentStatus::Wait { .. } => "waiting",
                         AgentStatus::Done(Ok(_)) => "completed",
                         AgentStatus::Done(Err(_)) => "failed",
-                        AgentStatus::AwaitingManager(_) => "awaiting_manager",
                         AgentStatus::AwaitingActors => "awaiting_actors",
                         AgentStatus::Idle => "idle",
                         AgentStatus::Processing => "processing",

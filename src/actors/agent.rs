@@ -9,7 +9,8 @@ use crate::{
         tools::{
             command::Command, complete::Complete, edit_file::EditFile,
             file_reader::FileReaderActor, mcp::MCP, plan_approval::PlanApproval, planner::Planner,
-            request_information::RequestInformation, spawn_agent::SpawnAgent,
+            send_manager_message::SendManagerMessage, send_message::SendMessage,
+            spawn_agent::SpawnAgent,
         },
     },
     config::ParsedConfig,
@@ -71,7 +72,7 @@ impl Agent {
                     Planner::ACTOR_ID,
                     SpawnAgent::ACTOR_ID,
                     PlanApproval::ACTOR_ID,
-                    RequestInformation::ACTOR_ID,
+                    SendMessage::ACTOR_ID,
                 ];
 
                 // Add complete tool for sub-managers or Main Manager in headless mode
@@ -89,7 +90,7 @@ impl Agent {
                     Planner::ACTOR_ID,
                     MCP::ACTOR_ID,
                     Complete::ACTOR_ID,
-                    RequestInformation::ACTOR_ID,
+                    SendManagerMessage::ACTOR_ID,
                 ]
             }
         }
@@ -137,8 +138,7 @@ impl Agent {
 
                 PlanApproval::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
 
-                RequestInformation::new(self.config.clone(), self.tx.clone(), self.scope.clone())
-                    .run();
+                SendMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
             }
             AgentType::Worker => {
                 // Workers get all execution tools
@@ -176,8 +176,7 @@ impl Agent {
                 MCP::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
 
-                RequestInformation::new(self.config.clone(), self.tx.clone(), self.scope.clone())
-                    .run();
+                SendManagerMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone(), self.parent_scope.clone()).run();
             }
         }
     }

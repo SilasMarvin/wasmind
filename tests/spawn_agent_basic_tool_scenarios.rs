@@ -323,7 +323,7 @@ async fn test_wait_immediate_complete() {
                             assert_eq!(pending_tool_calls[0], "spawn_call");
                             seen_awaiting_tools = true;
                         }
-                        AgentStatus::Wait { tool_call_id } => {
+                        AgentStatus::Wait { tool_call_id, .. } => {
                             assert!(seen_spawn_received, "Wait must come after spawn received");
                             assert_eq!(tool_call_id, "spawn_call");
                             seen_wait_state = true;
@@ -647,7 +647,7 @@ async fn test_wait_long_running() {
                 }) = &agent_msg.message
                 {
                     match status {
-                        AgentStatus::Wait { tool_call_id } => {
+                        AgentStatus::Wait { tool_call_id, .. } => {
                             assert!(!seen_wait_state);
                             assert!(seen_processing);
                             assert!(!seen_spawn_finished);

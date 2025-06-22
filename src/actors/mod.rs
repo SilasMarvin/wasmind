@@ -77,11 +77,12 @@ pub enum ToolCallStatus {
     Finished(Result<String, String>),
 }
 
-/// Task awaiting manager decision
+/// Reason for waiting
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum TaskAwaitingManager {
-    AwaitingPlanApproval { tool_call_id: String },
-    AwaitingMoreInformation(String),
+pub enum WaitReason {
+    WaitingForAgentResponse { agent_id: Scope },
+    WaitingForManagerResponse,
+    WaitingForPlanApproval,
 }
 
 /// The result of an agent task
@@ -108,9 +109,7 @@ pub enum AgentStatus {
     /// Waiting for next input from user, sub agent, etc...
     /// Does not submit a response to the LLM when the tool call with `tool_call_id` returns a
     /// response. Waits for other input
-    Wait { tool_call_id: String },
-    /// Waiting for manager plan approval
-    AwaitingManager(TaskAwaitingManager),
+    Wait { tool_call_id: String, reason: WaitReason },
     /// Agent is working on the task
     InProgress,
     /// Agent task is complete
@@ -125,6 +124,10 @@ pub enum InterAgentMessage {
     PlanApproved,
     /// Manager rejects a plan
     PlanRejected { reason: String },
+    /// Manager sends information to an agent
+    ManagerMessage { message: String },
+    /// Sub-agent sends message to manager
+    SubAgentMessage { message: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

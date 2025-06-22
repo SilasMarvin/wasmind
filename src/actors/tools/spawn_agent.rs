@@ -118,6 +118,9 @@ impl SpawnAgent {
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
                     status: AgentStatus::Wait {
                         tool_call_id: tool_call.call_id.clone(),
+                        reason: crate::actors::WaitReason::WaitingForAgentResponse { 
+                            agent_id: crate::scope::Scope::new() // Placeholder - will be managed by wait context
+                        },
                     },
                 }),
             }))

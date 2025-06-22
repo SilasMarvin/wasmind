@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage,
-    Message, TaskAwaitingManager, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    Message, WaitReason, ToolCallStatus, ToolCallType, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -257,11 +257,10 @@ impl Planner {
             let _ = self.broadcast(Message::Agent(AgentMessage {
                 agent_id: self.scope.clone(),
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                    status: AgentStatus::AwaitingManager(
-                        TaskAwaitingManager::AwaitingPlanApproval {
-                            tool_call_id: tool_call_id.to_string(),
-                        },
-                    ),
+                    status: AgentStatus::Wait {
+                        tool_call_id: tool_call_id.to_string(),
+                        reason: WaitReason::WaitingForPlanApproval,
+                    },
                 }),
             }));
         }

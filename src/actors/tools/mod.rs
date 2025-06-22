@@ -5,5 +5,6 @@ pub mod file_reader;
 pub mod mcp;
 pub mod plan_approval;
 pub mod planner;
-pub mod request_information;
+pub mod send_manager_message;
+pub mod send_message;
 pub mod spawn_agent;
