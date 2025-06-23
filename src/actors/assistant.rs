@@ -255,6 +255,7 @@ impl Assistant {
     }
 
     fn interupt_wait_tool_call(&mut self, tool_call_id: &str, timestamp: u64, duration: Duration) {
+        eprintln!("\n\nINTERRUPTING\n\n");
         self.chat_request = self.chat_request.clone().append_message(ChatMessage {
             role: ChatRole::Tool,
             content: MessageContent::ToolResponses(vec![ToolResponse {
@@ -903,9 +904,13 @@ mod tests {
     //    - Tool requests duration wait → `WaitForDuration`
     //    - Tool requests plan approval → `WaitingForPlanApproval`
     //
-    // 6. **From WaitForDuration/WaitingForPlanApproval**:
+    // 6. **From WaitingForPlanApproval**:
     //    - Manager/Sub-agent message received → `Processing`
-    //    - (Tool will handle timeout/approval completion)
+    //    - (Tool will handle approval completion)
+    //
+    // 7. **From WaitForDuration**:
+    //    - Manager/Sub-agent message received → `Processing` with interrupt tool response
+    //    - (Tool will handle timeout completion)
     //
     // ## Edge Cases to Test
     //
@@ -1686,19 +1691,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_messages_during_special_wait_states() {
+    async fn test_manager_message_during_plan_approval_wait() {
         let parent_scope = Scope::new();
         let mut assistant = create_test_assistant_with_parent(vec![], None, parent_scope);
 
-        // Set to WaitForDuration
+        // Set to WaitingForPlanApproval
         assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitForDuration {
+            reason: WaitReason::WaitingForPlanApproval {
                 tool_call_id: "call_123".to_string(),
-                timestamp: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-                duration: std::time::Duration::from_secs(5),
             },
         });
 
@@ -1710,7 +1710,7 @@ mod tests {
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: agent_scope,
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
-                    message: "Interrupt wait".to_string(),
+                    message: "Manager approval response".to_string(),
                 }),
             }),
         )
@@ -1718,6 +1718,129 @@ mod tests {
 
         // Should transition to Processing
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_manager_message_during_wait_for_duration() {
+        let parent_scope = Scope::new();
+        let mut assistant = create_test_assistant_with_parent(vec![], None, parent_scope);
+
+        let initial_messages_count = assistant.chat_request.messages.len();
+
+        // Set to WaitForDuration
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let duration = std::time::Duration::from_secs(5);
+
+        assistant.set_state(AgentStatus::Wait {
+            reason: WaitReason::WaitForDuration {
+                tool_call_id: "call_123".to_string(),
+                timestamp,
+                duration,
+            },
+        });
+
+        // Manager message should trigger processing and add interrupt message
+        let agent_scope = assistant.scope.clone();
+        send_message_with_scope(
+            &parent_scope,
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: agent_scope,
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
+                    message: "Interrupt wait duration".to_string(),
+                }),
+            }),
+        )
+        .await;
+
+        // Should transition to Processing
+        assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
+
+        // Verify that an interrupt tool and system response were added to chat_request
+        assert_eq!(
+            assistant.chat_request.messages.len(),
+            initial_messages_count + 2
+        );
+
+        let last_message = assistant.chat_request.messages.pop().unwrap();
+        assert!(matches!(last_message.role, genai::chat::ChatRole::System));
+
+        let last_message = assistant.chat_request.messages.pop().unwrap();
+
+        if let genai::chat::MessageContent::ToolResponses(responses) = &last_message.content {
+            assert_eq!(responses.len(), 1);
+            assert_eq!(responses[0].call_id, "call_123");
+            // The content should contain interrupt information
+            assert!(responses[0].content.contains("interrupted"));
+        } else {
+            panic!("Expected ToolResponses content");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_message_during_wait_for_duration() {
+        let mut assistant = create_test_assistant(vec![], None);
+        let sub_agent_scope = Scope::new();
+
+        // Add sub-agent to tracked scopes
+        assistant.spawned_agents_scope.push(sub_agent_scope);
+
+        let initial_messages_count = assistant.chat_request.messages.len();
+
+        // Set to WaitForDuration
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let duration = std::time::Duration::from_secs(10);
+
+        assistant.set_state(AgentStatus::Wait {
+            reason: WaitReason::WaitForDuration {
+                tool_call_id: "call_456".to_string(),
+                timestamp,
+                duration,
+            },
+        });
+
+        // Sub-agent message should trigger processing and add interrupt message
+        let agent_scope = assistant.scope.clone();
+        send_message_with_scope(
+            &sub_agent_scope,
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: agent_scope,
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
+                    message: "Sub-agent interrupt wait".to_string(),
+                }),
+            }),
+        )
+        .await;
+
+        // Should transition to Processing
+        assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
+
+        // Verify that an interrupt tool response was added to chat_request
+        assert_eq!(
+            assistant.chat_request.messages.len(),
+            initial_messages_count + 2
+        );
+
+        let last_message = assistant.chat_request.messages.pop().unwrap();
+        assert!(matches!(last_message.role, genai::chat::ChatRole::System));
+
+        let last_message = assistant.chat_request.messages.pop().unwrap();
+
+        if let genai::chat::MessageContent::ToolResponses(responses) = &last_message.content {
+            assert_eq!(responses.len(), 1);
+            assert_eq!(responses[0].call_id, "call_456");
+            // The content should contain interrupt information
+            assert!(responses[0].content.contains("interrupted"));
+        } else {
+            panic!("Expected ToolResponses content");
+        }
     }
 
     // Pending Message Tests
