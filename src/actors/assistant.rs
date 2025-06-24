@@ -254,6 +254,8 @@ impl Assistant {
         }
     }
 
+    // TODO: Add interrupt support for all tool calls
+    // Useful for when the user cancels, timeouts, etc...
     fn interupt_wait_tool_call(&mut self, tool_call_id: &str, timestamp: u64, duration: Duration) {
         eprintln!("\n\nINTERRUPTING\n\n");
         self.chat_request = self.chat_request.clone().append_message(ChatMessage {
@@ -1838,6 +1840,104 @@ mod tests {
             assert_eq!(responses[0].call_id, "call_456");
             // The content should contain interrupt information
             assert!(responses[0].content.contains("interrupted"));
+        } else {
+            panic!("Expected ToolResponses content");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_completion_during_plan_approval_wait() {
+        let mut assistant = create_test_assistant(vec![], None);
+
+        // Set to WaitingForPlanApproval
+        assistant.set_state(AgentStatus::Wait {
+            reason: WaitReason::WaitingForPlanApproval {
+                tool_call_id: "plan_call_123".to_string(),
+            },
+        });
+
+        let initial_messages_count = assistant.chat_request.messages.len();
+
+        // Send tool completion
+        send_message(
+            &mut assistant,
+            Message::ToolCallUpdate(ToolCallUpdate {
+                call_id: "plan_call_123".to_string(),
+                status: ToolCallStatus::Finished(Ok("Plan submitted for approval".to_string())),
+            }),
+        )
+        .await;
+
+        // Should STILL be in WaitingForPlanApproval - does NOT transition to Processing
+        assert!(matches!(
+            assistant.state,
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForPlanApproval { .. }
+            }
+        ));
+
+        // Tool response should be added to chat_request
+        assert_eq!(
+            assistant.chat_request.messages.len(),
+            initial_messages_count + 1
+        );
+
+        let last_message = assistant.chat_request.messages.last().unwrap();
+        assert!(matches!(last_message.role, genai::chat::ChatRole::Tool));
+
+        if let genai::chat::MessageContent::ToolResponses(responses) = &last_message.content {
+            assert_eq!(responses.len(), 1);
+            assert_eq!(responses[0].call_id, "plan_call_123");
+            assert_eq!(responses[0].content, "Plan submitted for approval");
+        } else {
+            panic!("Expected ToolResponses content");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_completion_during_wait_for_duration() {
+        let mut assistant = create_test_assistant(vec![], None);
+
+        // Set to WaitForDuration
+        assistant.set_state(AgentStatus::Wait {
+            reason: WaitReason::WaitForDuration {
+                tool_call_id: "wait_call_456".to_string(),
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+                duration: std::time::Duration::from_secs(5),
+            },
+        });
+
+        let initial_messages_count = assistant.chat_request.messages.len();
+
+        // Send tool completion
+        send_message(
+            &mut assistant,
+            Message::ToolCallUpdate(ToolCallUpdate {
+                call_id: "wait_call_456".to_string(),
+                status: ToolCallStatus::Finished(Ok("Wait completed".to_string())),
+            }),
+        )
+        .await;
+
+        // Should transition to Processing
+        assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
+
+        // Tool response should be added to chat_request
+        assert_eq!(
+            assistant.chat_request.messages.len(),
+            initial_messages_count + 1
+        );
+
+        let last_message = assistant.chat_request.messages.last().unwrap();
+        assert!(matches!(last_message.role, genai::chat::ChatRole::Tool));
+
+        if let genai::chat::MessageContent::ToolResponses(responses) = &last_message.content {
+            assert_eq!(responses.len(), 1);
+            assert_eq!(responses[0].call_id, "wait_call_456");
+            assert_eq!(responses[0].content, "Wait completed");
         } else {
             panic!("Expected ToolResponses content");
         }
