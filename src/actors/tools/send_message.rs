@@ -29,7 +29,6 @@ pub const SEND_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
 struct SendMessageInput {
     agent_id: String,
     message: String,
-    wait: bool,
 }
 
 /// Format send message success message

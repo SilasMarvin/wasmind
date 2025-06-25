@@ -164,6 +164,10 @@ pub struct Assistant {
     state: AgentStatus,
 }
 
+/// The assistant
+/// A few limitations:
+/// 1. If the assistant uses multiple tools and Wait we will lose those tools as the Wait tool puts
+///    the assistant in a special state
 impl Assistant {
     pub fn new(
         config: ParsedModelConfig,

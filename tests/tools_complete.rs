@@ -76,10 +76,6 @@ async fn test_complete_tool() {
         }
     }
 
-    // Wait for idle and consume it
-    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-    let _ = rx.recv().await;
-
     // Send user input
     tx.send(ActorMessage {
         scope,

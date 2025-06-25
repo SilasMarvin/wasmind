@@ -8,7 +8,8 @@ use genai::chat::{Tool, ToolCall};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 
-pub const SEND_MANAGER_MESSAGE_SUCCESS_TOOL_RESPONSE: &'static str = "Message sent to manager";
+pub const SEND_MANAGER_MESSAGE_SUCCESS_TOOL_RESPONSE: &'static str =
+    "Message sent to manager. Expect a response in 300 seconds.";
 
 pub const SEND_MANAGER_MESSAGE_TOOL_NAME: &str = "send_manager_message";
 pub const SEND_MANAGER_MESSAGE_TOOL_DESCRIPTION: &str = "Send a message to your manager";
@@ -26,7 +27,6 @@ pub const SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
 #[derive(Debug, Deserialize)]
 struct SendManagerMessageInput {
     message: String,
-    wait: bool,
 }
 
 /// SendManagerMessage tool actor for agents to send messages to their manager
@@ -139,4 +139,3 @@ impl Actor for SendManagerMessage {
         });
     }
 }
-
