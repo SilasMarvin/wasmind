@@ -136,6 +136,7 @@ impl Agent {
                     self.parent_scope.clone(),
                     self.get_required_actors(),
                     self.task_description.clone(),
+                    Some(self.role.clone()),
                     self.config.whitelisted_commands.clone(),
                 )
                 .run();
@@ -161,6 +162,7 @@ impl Agent {
                     self.parent_scope.clone(),
                     self.get_required_actors(),
                     self.task_description.clone(),
+                    Some(self.role.clone()),
                     self.config.whitelisted_commands.clone(),
                 )
                 .run();

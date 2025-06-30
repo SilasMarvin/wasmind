@@ -24,6 +24,8 @@ pub struct TemplateContext {
     pub task: Option<String>,
     /// Agent's unique identifier (scope)
     pub id: String,
+    /// Agent's role (e.g., "Software Engineer", "QA Tester", "Project Lead Manager")
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,6 +58,7 @@ impl TemplateContext {
             system_state: system_state.to_template_context(),
             task: None,
             id: agent_id.to_string(),
+            role: None,
         }
     }
 
@@ -83,6 +86,36 @@ impl TemplateContext {
             system_state: system_state.to_template_context(),
             task: task_description,
             id: agent_id.to_string(),
+            role: None,
+        }
+    }
+
+    /// Create a new template context with system state, task description, and role
+    pub fn with_task_and_role(
+        tools: Vec<ToolInfo>,
+        whitelisted_commands: Vec<String>,
+        system_state: &SystemState,
+        task_description: Option<String>,
+        role: Option<String>,
+        agent_id: Scope,
+    ) -> Self {
+        let cwd = std::env::current_dir()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        Self {
+            tools,
+            current_datetime: chrono::Utc::now()
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string(),
+            os: std::env::consts::OS.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
+            cwd,
+            whitelisted_commands,
+            system_state: system_state.to_template_context(),
+            task: task_description,
+            id: agent_id.to_string(),
+            role,
         }
     }
 }
@@ -113,6 +146,7 @@ pub fn render_template(
         agents => &context.system_state["agents"],
         task => &context.task,
         id => &context.id,
+        role => &context.role,
     };
 
     tmpl.render(ctx)
@@ -610,5 +644,66 @@ Remember that you are Agent {{ id }}. Always include your ID when communicating 
         println!("=== Rendered System Prompt with Agent ID ===");
         println!("{}", result);
         println!("=== End ===");
+    }
+
+    #[test]
+    fn test_template_with_role() {
+        use crate::system_state::SystemState;
+
+        let system_state = SystemState::new();
+        let test_scope = Scope::new();
+
+        // Test template that uses role
+        let template = r#"You are a {{ role }} agent.
+
+{% if role -%}
+Your role: {{ role }}
+{% else -%}
+No specific role assigned.
+{% endif %}
+
+{% if task -%}
+Your task: {{ task }}
+{% endif %}
+
+Agent ID: {{ id }}
+Tools available: {{ tools|length }}"#;
+
+        // Test without role
+        let context = TemplateContext::with_task(
+            vec![ToolInfo {
+                name: "test_tool".to_string(),
+                description: "A test tool".to_string(),
+            }],
+            vec![],
+            &system_state,
+            Some("Build a web app".to_string()),
+            test_scope,
+        );
+
+        let result = render_template(template, &context).unwrap();
+        assert!(result.contains("No specific role assigned"));
+        assert!(result.contains("Your task: Build a web app"));
+
+        // Test with role
+        let context = TemplateContext::with_task_and_role(
+            vec![ToolInfo {
+                name: "test_tool".to_string(),
+                description: "A test tool".to_string(),
+            }],
+            vec![],
+            &system_state,
+            Some("Build a web app".to_string()),
+            Some("Software Engineer".to_string()),
+            test_scope,
+        );
+
+        let result = render_template(template, &context).unwrap();
+        assert!(result.contains("You are a Software Engineer agent"));
+        assert!(result.contains("Your role: Software Engineer"));
+        assert!(!result.contains("No specific role assigned"));
+        assert!(result.contains("Your task: Build a web app"));
+        assert!(result.contains(&format!("Agent ID: {}", test_scope)));
+        assert!(result.contains("Tools available: 1"));
     }
 }

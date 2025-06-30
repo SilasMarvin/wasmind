@@ -162,6 +162,8 @@ pub struct Assistant {
     /// Whitelisted commands for the system prompt
     whitelisted_commands: Vec<String>,
     state: AgentStatus,
+    /// Agent's role (e.g., "Software Engineer", "QA Tester", "Project Lead Manager")
+    role: Option<String>,
 }
 
 /// The assistant
@@ -176,6 +178,7 @@ impl Assistant {
         parent_scope: Scope,
         required_actors: Vec<&'static str>,
         task_description: Option<String>,
+        role: Option<String>,
         whitelisted_commands: Vec<String>,
     ) -> Self {
         let client = Client::builder()
@@ -209,6 +212,7 @@ impl Assistant {
             parent_scope,
             spawned_agents_scope: vec![],
             whitelisted_commands,
+            role,
         };
 
         // If we have a task and we aren't waiting on actors just submit it here
@@ -440,11 +444,12 @@ impl Assistant {
                 .collect();
 
             // Render system prompt with tools and task description
-            match self.system_state.render_system_prompt_with_task(
+            match self.system_state.render_system_prompt_with_task_and_role(
                 &self.config.system_prompt,
                 &tool_infos,
                 self.whitelisted_commands.clone(),
                 self.task_description.clone(),
+                self.role.clone(),
                 self.scope,
             ) {
                 Ok(rendered_prompt) => {
@@ -1003,6 +1008,7 @@ mod tests {
             parent_scope,
             required_actors,
             task_description,
+            None,
             vec![],
         )
     }
@@ -1030,6 +1036,7 @@ mod tests {
             parent_scope,
             required_actors,
             task_description,
+            None,
             vec![],
         )
     }

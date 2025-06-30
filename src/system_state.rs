@@ -479,6 +479,35 @@ impl SystemState {
         // Render the template
         template::render_template(prompt_template, &context).context(TemplateRenderFailedSnafu)
     }
+
+    /// Render the system prompt with the given template, tools, task description, and role
+    pub fn render_system_prompt_with_task_and_role(
+        &self,
+        prompt_template: &str,
+        tools: &[ToolInfo],
+        whitelisted_commands: Vec<String>,
+        task_description: Option<String>,
+        role: Option<String>,
+        agent_id: Scope,
+    ) -> Result<String> {
+        // Check if it's a template
+        if !template::is_template(prompt_template) {
+            return Ok(prompt_template.to_string());
+        }
+
+        // Build template context with task and role
+        let context = TemplateContext::with_task_and_role(
+            tools.to_vec(),
+            whitelisted_commands,
+            self,
+            task_description,
+            role,
+            agent_id,
+        );
+
+        // Render the template
+        template::render_template(prompt_template, &context).context(TemplateRenderFailedSnafu)
+    }
 }
 
 #[cfg(test)]
@@ -752,15 +781,15 @@ mod tests {
         let agents_list = context["agents"]["list"].as_array().unwrap();
         assert_eq!(agents_list.len(), 2);
 
-        // Find the completed agent
-        let completed_agent = agents_list
+        // Find the done agent
+        let done_agent = agents_list
             .iter()
-            .find(|a| a["status"] == "completed")
+            .find(|a| a["status"] == "done")
             .unwrap();
 
-        assert_eq!(completed_agent["role"], "Software Engineer");
-        assert_eq!(completed_agent["task"], "Implement feature X");
-        assert_eq!(completed_agent["status_icon"], "[x]");
+        assert_eq!(done_agent["role"], "Software Engineer");
+        assert_eq!(done_agent["task"], "Implement feature X");
+        assert_eq!(done_agent["status_icon"], "[x]");
 
         // Find the in-progress agent
         let in_progress_agent = agents_list
@@ -910,7 +939,11 @@ Current plan: active
     fn test_modified_flag_tracking() {
         let mut state = SystemState::new();
 
-        // Initially not modified
+        // Initially modified (to ensure first render happens)
+        assert!(state.is_modified());
+        
+        // Reset clears the flag
+        state.reset_modified();
         assert!(!state.is_modified());
 
         // Adding a file sets modified
@@ -984,6 +1017,55 @@ Available tools: {{ tools|length }}"#;
             )
             .unwrap();
         assert!(result.contains("Your assigned task: Implement user authentication"));
+        assert!(!result.contains("No specific task assigned"));
+    }
+
+    #[test]
+    fn test_render_system_prompt_with_task_and_role() {
+        let template = r#"You are an AI assistant.
+
+{% if role -%}
+Your role: {{ role }}
+{% else -%}
+No specific role assigned.
+{% endif %}
+
+{% if task -%}
+Your assigned task: {{ task }}
+{% else -%}
+No specific task assigned.
+{% endif %}
+
+Available tools: {{ tools|length }}"#;
+
+        let state = SystemState::new();
+        let tools = vec![ToolInfo {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+        }];
+
+        // Test without role and task
+        let result = state
+            .render_system_prompt_with_task_and_role(template, &tools, vec![], None, None, Scope::new())
+            .unwrap();
+        assert!(result.contains("No specific role assigned"));
+        assert!(result.contains("No specific task assigned"));
+        assert!(result.contains("Available tools: 1"));
+
+        // Test with role and task
+        let result = state
+            .render_system_prompt_with_task_and_role(
+                template,
+                &tools,
+                vec![],
+                Some("Implement user authentication".to_string()),
+                Some("Backend Developer".to_string()),
+                Scope::new(),
+            )
+            .unwrap();
+        assert!(result.contains("Your role: Backend Developer"));
+        assert!(result.contains("Your assigned task: Implement user authentication"));
+        assert!(!result.contains("No specific role assigned"));
         assert!(!result.contains("No specific task assigned"));
     }
 
