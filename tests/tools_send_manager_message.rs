@@ -107,7 +107,7 @@ async fn test_send_manager_message_tool() {
                 seen_user_input = true;
             }
             Message::Agent(agent_msg) => match &agent_msg.message {
-                AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
                     status,
                 }) if agent_msg.agent_id == scope => match status {
                     AgentStatus::Processing { .. } => {

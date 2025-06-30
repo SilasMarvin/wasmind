@@ -16,7 +16,7 @@ pub fn init_test_logger() {
 }
 
 pub fn create_test_config_with_mock_endpoint(mock_endpoint: String) -> ParsedConfig {
-    let mut config = Config::default().unwrap();
+    let mut config = Config::new(true).unwrap();
 
     // Use gpt-4o for all models
     config.hive.main_manager_model.name = "gpt-4o".to_string();
@@ -107,9 +107,10 @@ impl wiremock::Match for ExactMessageMatcher {
                         if actual_array.len() == expected_array.len() {
                             // Check if the actual messages contain all expected messages
                             for expected_msg in expected_array {
-                                if !actual_array.iter().any(|actual_msg| {
-                                    messages_match(expected_msg, actual_msg)
-                                }) {
+                                if !actual_array
+                                    .iter()
+                                    .any(|actual_msg| messages_match(expected_msg, actual_msg))
+                                {
                                     return false;
                                 }
                             }
@@ -400,7 +401,6 @@ impl<'a> MockSequence<'a> {
                     let response_body =
                         create_tool_call_response(response_id, vec![tool_call.clone()]);
 
-
                     let mut response_template =
                         ResponseTemplate::new(200).set_body_json(response_body);
                     if let Some(delay) = delay {
@@ -425,7 +425,6 @@ impl<'a> MockSequence<'a> {
                     // Build the expected messages for this content response step
                     let expected_messages = self.build_expected_messages_for_step(&agent_id, i);
                     let response_body = create_content_response(response_id, content);
-
 
                     let mut response_template =
                         ResponseTemplate::new(200).set_body_json(response_body);

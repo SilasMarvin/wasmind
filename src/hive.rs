@@ -139,7 +139,7 @@ pub fn start_headless_hive(
                 }
                 Message::Agent(AgentMessage {
                     agent_id,
-                    message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                    message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                         status: AgentStatus::Done(res),
                     })
                 }) if agent_id == ROOT_AGENT_SCOPE => {

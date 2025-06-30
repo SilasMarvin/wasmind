@@ -255,13 +255,15 @@ impl Planner {
         if self.agent_type == AgentType::Worker {
             let _ = self.broadcast(Message::Agent(AgentMessage {
                 agent_id: self.scope.clone(),
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                    status: AgentStatus::Wait {
-                        reason: WaitReason::WaitingForPlanApproval {
-                            tool_call_id: tool_call_id.to_owned(),
+                message: AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::StatusUpdateRequest {
+                        status: AgentStatus::Wait {
+                            reason: WaitReason::WaitingForPlanApproval {
+                                tool_call_id: tool_call_id.to_owned(),
+                            },
                         },
                     },
-                }),
+                ),
             }));
         }
 

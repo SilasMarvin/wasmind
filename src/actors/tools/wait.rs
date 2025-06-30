@@ -82,7 +82,7 @@ impl Wait {
         // Send agent status update first to stop LLM processing
         let _ = self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.get_scope().clone(),
-            message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
                 status: AgentStatus::Wait {
                     reason: WaitReason::WaitForDuration {
                         tool_call_id: tool_call.call_id.clone(),

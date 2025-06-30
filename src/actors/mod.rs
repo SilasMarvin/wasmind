@@ -125,7 +125,9 @@ pub enum AgentStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum InterAgentMessage {
     /// Agent task status update
-    TaskStatusUpdate { status: AgentStatus },
+    StatusUpdate { status: AgentStatus },
+    /// Request to update agent status
+    StatusUpdateRequest { status: AgentStatus },
     /// Message between agents
     Message { message: String },
 }

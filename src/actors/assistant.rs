@@ -12,7 +12,7 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::{
-    SResult,
+    IS_HEADLESS, SResult,
     actors::{Actor, Message, ToolCallStatus, ToolCallUpdate},
     config::ParsedModelConfig,
     scope::Scope,
@@ -217,9 +217,9 @@ impl Assistant {
         match (&s.state, &s.task_description) {
             (AgentStatus::Wait { reason }, Some(_)) => match reason {
                 WaitReason::WaitingForUserInput => {
-                    s.pending_message
-                        .set_user_content(ContentPart::Text(s.task_description.take().unwrap()));
-                    s.submit_pending_message(false);
+                    // s.pending_message
+                    //     .set_user_content(ContentPart::Text(s.task_description.take().unwrap()));
+                    s.submit_pending_message(true);
                 }
                 _ => (),
             },
@@ -235,7 +235,7 @@ impl Assistant {
             scope: self.scope.clone(),
             message: Message::Agent(AgentMessage {
                 agent_id: self.scope.clone(),
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                     status: self.state.clone(),
                 }),
             }),
@@ -720,16 +720,23 @@ impl Actor for Assistant {
                                 );
                             }
                             _ => {
-                                // If we have pending message content, submit it immediately when Idle
-                                if self.pending_message.has_content() {
+                                if *crate::IS_HEADLESS.get().unwrap() {
+                                    // This is an error by the LLM it should only ever respond with
+                                    // tool calls in headless mode
+                                    self.pending_message.add_system_part("ERROR! You responded without calling a tool. Try again and this time ensure you call a tool! If in doubt, use the `wait` tool.".to_string());
                                     self.submit_pending_message(false);
                                 } else {
-                                    self.set_state(
-                                        AgentStatus::Wait {
-                                            reason: WaitReason::WaitingForUserInput,
-                                        },
-                                        true,
-                                    );
+                                    // If we have pending message content, submit it immediately when Idle
+                                    if self.pending_message.has_content() {
+                                        self.submit_pending_message(false);
+                                    } else {
+                                        self.set_state(
+                                            AgentStatus::Wait {
+                                                reason: WaitReason::WaitingForUserInput,
+                                            },
+                                            true,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -763,8 +770,12 @@ impl Actor for Assistant {
                     // These are our own status updates broadcasted from tool calls
                     AgentMessageType::InterAgentMessage(inter_agent_message) => {
                         match inter_agent_message {
-                            InterAgentMessage::TaskStatusUpdate { status } => {
-                                self.set_state(status, false);
+                            InterAgentMessage::StatusUpdateRequest { status } => {
+                                self.set_state(status.clone(), true);
+                                if matches!(status, AgentStatus::Done(..)) {
+                                    // When we are done we shutdown
+                                    let _ = self.broadcast(Message::Action(Action::Exit));
+                                }
                             }
                             _ => (),
                         }
@@ -778,7 +789,7 @@ impl Actor for Assistant {
                 Message::Agent(agent_message) => match agent_message.message {
                     AgentMessageType::InterAgentMessage(inter_agent_message) => {
                         match inter_agent_message {
-                            InterAgentMessage::TaskStatusUpdate { status } => {
+                            InterAgentMessage::StatusUpdate { status } => {
                                 self.system_state
                                     .update_agent_status(&agent_message.agent_id, status.clone());
 
@@ -947,7 +958,14 @@ mod tests {
     //
     // 7. **From WaitForDuration**:
     //    - Manager/Sub-agent message received → `Processing` with interrupt tool response
+    //    - Sub-agent completion (Done status) → `Processing` with interrupt tool response
     //    - (Tool will handle timeout completion)
+    //
+    // ## Special Behaviors
+    //
+    // 1. **Sub-Agent Completion Handling**:
+    //    - When in `WaitForDuration`: Interrupts wait, adds response to system queue, submits LLM request
+    //    - When in other states: Adds response to pending system messages (no automatic submission)
     //
     // ## Edge Cases to Test
     //
@@ -959,6 +977,7 @@ mod tests {
     // 6. Sub-agent lifecycle (spawn, status updates, removal)
     // 7. System state updates (files, plans)
     // 8. Parent vs sub-agent message filtering
+    // 9. Sub-agent completion in various states
 
     fn create_test_assistant(
         required_actors: Vec<&'static str>,
@@ -1647,7 +1666,7 @@ mod tests {
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: sub_agent_id,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                     status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
                         summary: "Task completed".to_string(),
                         success: true,
@@ -1683,7 +1702,7 @@ mod tests {
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: agent_scope,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                     status: AgentStatus::Wait {
                         reason: WaitReason::WaitForDuration {
                             tool_call_id: "call_123".to_string(),
@@ -1728,7 +1747,7 @@ mod tests {
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: agent_scope,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                     status: AgentStatus::Wait {
                         reason: WaitReason::WaitingForPlanApproval {
                             tool_call_id: "call_123".to_string(),
@@ -2215,7 +2234,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_concurrent_state_updates() {
+    async fn test_tool_state_transitions() {
         let mut assistant = create_test_assistant(vec![], None);
 
         // Set up WaitingForTools with multiple tools
@@ -2235,7 +2254,7 @@ mod tests {
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: agent_scope,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                     status: AgentStatus::Wait {
                         reason: WaitReason::WaitForDuration {
                             tool_call_id: "call_1".to_string(),
@@ -2261,13 +2280,14 @@ mod tests {
             panic!("Expected WaitForDuration state");
         }
 
-        // Tool 2 tries to update - should be ignored since we're no longer in WaitingForTools
+        // Tool 2 can also update state - this is valid behavior
+        // Tools can transition the assistant to different states as needed
         let agent_scope = assistant.scope.clone();
         send_message(
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: agent_scope,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                     status: AgentStatus::Wait {
                         reason: WaitReason::WaitingForPlanApproval {
                             tool_call_id: "call_2".to_string(),
@@ -2278,14 +2298,14 @@ mod tests {
         )
         .await;
 
-        // State should remain WaitForDuration for call_1
+        // State should now be WaitingForPlanApproval - tools can transition states
         if let AgentStatus::Wait {
-            reason: WaitReason::WaitForDuration { tool_call_id, .. },
+            reason: WaitReason::WaitingForPlanApproval { tool_call_id },
         } = &assistant.state
         {
-            assert_eq!(tool_call_id, "call_1");
+            assert_eq!(tool_call_id, "call_2");
         } else {
-            panic!("Expected WaitForDuration state to remain");
+            panic!("Expected WaitingForPlanApproval state");
         }
     }
 
@@ -2317,5 +2337,422 @@ mod tests {
 
         // Spawned agents list should be empty
         assert!(assistant.spawned_agents_scope.is_empty());
+    }
+
+    // Sub-Agent Completion Tests
+
+    #[tokio::test]
+    async fn test_sub_agent_completion_during_wait_for_duration() {
+        let mut assistant = create_test_assistant(vec![], None);
+        let sub_agent_id = Scope::new();
+        let sub_agent_scope = Scope::new();
+
+        // Add sub-agent to tracked scopes
+        assistant.spawned_agents_scope.push(sub_agent_scope);
+
+        // First spawn the sub-agent so it's in system state
+        send_message(
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: sub_agent_id,
+                message: AgentMessageType::AgentSpawned {
+                    agent_type: crate::actors::AgentType::Worker,
+                    role: "test_worker".to_string(),
+                    task_description: "test task".to_string(),
+                    tool_call_id: "spawn_123".to_string(),
+                },
+            }),
+        )
+        .await;
+
+        // Reset system state modified flag after spawn
+        assistant.system_state.reset_modified();
+
+        let initial_messages_count = assistant.chat_request.messages.len();
+
+        // Set to WaitForDuration
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let duration = std::time::Duration::from_secs(10);
+
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitForDuration {
+                    tool_call_id: "wait_call_123".to_string(),
+                    timestamp,
+                    duration,
+                },
+            },
+            true,
+        );
+
+        // Send sub-agent task completion (success case)
+        send_message_with_scope(
+            &sub_agent_scope,
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: sub_agent_id,
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
+                    status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+                        summary: "Sub-agent task completed successfully".to_string(),
+                        success: true,
+                    })),
+                }),
+            }),
+        )
+        .await;
+
+        // Should transition to Processing due to interrupt
+        assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
+
+        // Verify that interrupt tool response and agent response were added
+        assert_eq!(
+            assistant.chat_request.messages.len(),
+            initial_messages_count + 2
+        );
+
+        // Check the last message is a system message with agent response
+        let last_message = assistant.chat_request.messages.last().unwrap();
+        assert!(matches!(last_message.role, genai::chat::ChatRole::System));
+        if let MessageContent::Text(text) = &last_message.content {
+            assert!(text.contains("agent_response"));
+            assert!(text.contains(&sub_agent_id.to_string()));
+            assert!(text.contains("SUCCESS"));
+            assert!(text.contains("Sub-agent task completed successfully"));
+        } else {
+            panic!("Expected Text content in system message");
+        }
+
+        // Check the second to last message is a tool response (interrupt)
+        let interrupt_message =
+            &assistant.chat_request.messages[assistant.chat_request.messages.len() - 2];
+        assert!(matches!(
+            interrupt_message.role,
+            genai::chat::ChatRole::Tool
+        ));
+        if let MessageContent::ToolResponses(responses) = &interrupt_message.content {
+            assert_eq!(responses.len(), 1);
+            assert_eq!(responses[0].call_id, "wait_call_123");
+            assert!(responses[0].content.contains("interrupted"));
+        } else {
+            panic!("Expected ToolResponses content");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_completion_during_wait_for_duration_failure() {
+        let mut assistant = create_test_assistant(vec![], None);
+        let sub_agent_id = Scope::new();
+        let sub_agent_scope = Scope::new();
+
+        // Add sub-agent to tracked scopes
+        assistant.spawned_agents_scope.push(sub_agent_scope);
+
+        // First spawn the sub-agent so it's in system state
+        send_message(
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: sub_agent_id,
+                message: AgentMessageType::AgentSpawned {
+                    agent_type: crate::actors::AgentType::Worker,
+                    role: "test_worker".to_string(),
+                    task_description: "test task".to_string(),
+                    tool_call_id: "spawn_456".to_string(),
+                },
+            }),
+        )
+        .await;
+
+        // Reset system state modified flag after spawn
+        assistant.system_state.reset_modified();
+
+        let initial_messages_count = assistant.chat_request.messages.len();
+
+        // Set to WaitForDuration
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let duration = std::time::Duration::from_secs(5);
+
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitForDuration {
+                    tool_call_id: "wait_call_456".to_string(),
+                    timestamp,
+                    duration,
+                },
+            },
+            true,
+        );
+
+        // Send sub-agent task completion (failure case)
+        send_message_with_scope(
+            &sub_agent_scope,
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: sub_agent_id,
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
+                    status: AgentStatus::Done(Err("Sub-agent encountered an error".to_string())),
+                }),
+            }),
+        )
+        .await;
+
+        // Should transition to Processing due to interrupt
+        assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
+
+        // Verify messages were added
+        assert_eq!(
+            assistant.chat_request.messages.len(),
+            initial_messages_count + 2
+        );
+
+        // Check the last message contains failure information
+        let last_message = assistant.chat_request.messages.last().unwrap();
+        assert!(matches!(last_message.role, genai::chat::ChatRole::System));
+        if let MessageContent::Text(text) = &last_message.content {
+            assert!(text.contains("agent_response"));
+            assert!(text.contains(&sub_agent_id.to_string()));
+            assert!(text.contains("FAILURE"));
+            assert!(text.contains("Sub-agent encountered an error"));
+        } else {
+            panic!("Expected Text content in system message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_completion_during_waiting_for_user_input() {
+        let mut assistant = create_test_assistant(vec![], None);
+        let sub_agent_id = Scope::new();
+        let sub_agent_scope = Scope::new();
+
+        // Add sub-agent to tracked scopes
+        assistant.spawned_agents_scope.push(sub_agent_scope);
+
+        // First spawn the sub-agent so it's in system state
+        send_message(
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: sub_agent_id,
+                message: AgentMessageType::AgentSpawned {
+                    agent_type: crate::actors::AgentType::Worker,
+                    role: "test_worker".to_string(),
+                    task_description: "background task".to_string(),
+                    tool_call_id: "spawn_789".to_string(),
+                },
+            }),
+        )
+        .await;
+
+        // Reset system state modified flag after spawn
+        assistant.system_state.reset_modified();
+
+        // Verify in WaitingForUserInput
+        assert!(matches!(
+            assistant.state,
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForUserInput
+            }
+        ));
+
+        let initial_messages_count = assistant.chat_request.messages.len();
+
+        // Send sub-agent task completion
+        send_message_with_scope(
+            &sub_agent_scope,
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: sub_agent_id,
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
+                    status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+                        summary: "Background task completed".to_string(),
+                        success: true,
+                    })),
+                }),
+            }),
+        )
+        .await;
+
+        // Should remain in WaitingForUserInput (no automatic submission)
+        assert!(matches!(
+            assistant.state,
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForUserInput
+            }
+        ));
+
+        // System state should be modified
+        assert!(assistant.system_state.is_modified());
+
+        // No new messages should be added to chat_request
+        assert_eq!(
+            assistant.chat_request.messages.len(),
+            initial_messages_count
+        );
+
+        // But pending message should contain the agent response
+        assert!(assistant.pending_message.has_content());
+        let pending_messages = assistant.pending_message.to_chat_messages();
+        assert_eq!(pending_messages.len(), 1);
+        assert!(matches!(pending_messages[0].role, ChatRole::System));
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_completion_during_processing() {
+        let mut assistant = create_test_assistant(vec![], None);
+        let sub_agent_id = Scope::new();
+        let sub_agent_scope = Scope::new();
+
+        // Add sub-agent to tracked scopes
+        assistant.spawned_agents_scope.push(sub_agent_scope);
+
+        // Set to Processing state
+        let processing_id = Uuid::new_v4();
+        assistant.set_state(AgentStatus::Processing { id: processing_id }, true);
+
+        let initial_messages_count = assistant.chat_request.messages.len();
+
+        // Send sub-agent task completion
+        send_message_with_scope(
+            &sub_agent_scope,
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: sub_agent_id,
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
+                    status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+                        summary: "Concurrent task finished".to_string(),
+                        success: false,
+                    })),
+                }),
+            }),
+        )
+        .await;
+
+        // Should remain in Processing state
+        assert!(matches!(
+            assistant.state,
+            AgentStatus::Processing { id } if id == processing_id
+        ));
+
+        // No new messages should be added to chat_request
+        assert_eq!(
+            assistant.chat_request.messages.len(),
+            initial_messages_count
+        );
+
+        // But pending message should contain the agent response
+        assert!(assistant.pending_message.has_content());
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_completion_during_waiting_for_tools() {
+        let mut assistant = create_test_assistant(vec![], None);
+        let sub_agent_id = Scope::new();
+        let sub_agent_scope = Scope::new();
+
+        // Add sub-agent to tracked scopes
+        assistant.spawned_agents_scope.push(sub_agent_scope);
+
+        // Set up WaitingForTools state
+        let mut tool_calls = std::collections::HashMap::new();
+        tool_calls.insert("call_123".to_string(), None);
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { tool_calls },
+            },
+            true,
+        );
+
+        let initial_messages_count = assistant.chat_request.messages.len();
+
+        // Send sub-agent task completion
+        send_message_with_scope(
+            &sub_agent_scope,
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: sub_agent_id,
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
+                    status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+                        summary: "Helper task done".to_string(),
+                        success: true,
+                    })),
+                }),
+            }),
+        )
+        .await;
+
+        // Should remain in WaitingForTools
+        assert!(matches!(
+            assistant.state,
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { .. }
+            }
+        ));
+
+        // No new messages should be added to chat_request
+        assert_eq!(
+            assistant.chat_request.messages.len(),
+            initial_messages_count
+        );
+
+        // But pending message should contain the agent response
+        assert!(assistant.pending_message.has_content());
+    }
+
+    #[tokio::test]
+    async fn test_sub_agent_completion_during_waiting_for_plan_approval() {
+        let mut assistant = create_test_assistant(vec![], None);
+        let sub_agent_id = Scope::new();
+        let sub_agent_scope = Scope::new();
+
+        // Add sub-agent to tracked scopes
+        assistant.spawned_agents_scope.push(sub_agent_scope);
+
+        // Set to WaitingForPlanApproval
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForPlanApproval {
+                    tool_call_id: "plan_123".to_string(),
+                },
+            },
+            true,
+        );
+
+        let initial_messages_count = assistant.chat_request.messages.len();
+
+        // Send sub-agent task completion
+        send_message_with_scope(
+            &sub_agent_scope,
+            &mut assistant,
+            Message::Agent(crate::actors::AgentMessage {
+                agent_id: sub_agent_id,
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
+                    status: AgentStatus::Done(Err(
+                        "Sub-agent failed while waiting for approval".to_string()
+                    )),
+                }),
+            }),
+        )
+        .await;
+
+        // Should remain in WaitingForPlanApproval
+        assert!(matches!(
+            assistant.state,
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForPlanApproval { .. }
+            }
+        ));
+
+        // No new messages should be added to chat_request
+        assert_eq!(
+            assistant.chat_request.messages.len(),
+            initial_messages_count
+        );
+
+        // But pending message should contain the agent response
+        assert!(assistant.pending_message.has_content());
     }
 }

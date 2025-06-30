@@ -11,7 +11,7 @@ pub mod template;
 use actors::Message;
 use hive::ROOT_AGENT_SCOPE;
 use snafu::{Location, Snafu};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 use tokio::runtime;
 
 pub static TOKIO_RUNTIME: LazyLock<runtime::Runtime> = LazyLock::new(|| {
@@ -21,6 +21,8 @@ pub static TOKIO_RUNTIME: LazyLock<runtime::Runtime> = LazyLock::new(|| {
         .build()
         .expect("Error building tokio runtime")
 });
+
+pub static IS_HEADLESS: OnceLock<bool> = OnceLock::new();
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -119,6 +121,8 @@ pub fn run_main_program() -> SResult<()> {
     use tokio::runtime;
     use tracing::{error, info};
 
+    IS_HEADLESS.set(true).unwrap();
+
     let config = Config::new(false).context(ConfigSnafu)?;
     let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
 
@@ -190,6 +194,8 @@ pub fn run_headless_program(prompt: String, auto_approve_commands_override: bool
     use snafu::ResultExt;
     use tokio::runtime;
     use tracing::info;
+
+    IS_HEADLESS.set(true).unwrap();
 
     let config = Config::new(true).context(ConfigSnafu)?;
     let mut parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;

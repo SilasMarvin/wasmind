@@ -102,9 +102,9 @@ async fn test_complete_tool() {
                 seen_user_input = true;
             }
             Message::Agent(agent_msg) if agent_msg.agent_id == scope => {
-                if let AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                    status,
-                }) = &agent_msg.message
+                if let AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::StatusUpdateRequest { status },
+                ) = &agent_msg.message
                 {
                     match status {
                         AgentStatus::Processing { .. } => {

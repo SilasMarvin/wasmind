@@ -103,37 +103,39 @@ async fn test_send_message_tool() {
                 assert_eq!(text, "Send a message to the child agent");
                 seen_user_input = true;
             }
-            Message::Agent(agent_msg) => match &agent_msg.message {
-                AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
-                    status,
-                }) if agent_msg.agent_id == scope => match status {
-                    AgentStatus::Processing { .. } => {
-                        assert!(seen_user_input, "Processing must come after UserContext");
-                        seen_processing = true;
-                    }
-                    AgentStatus::Wait {
-                        reason: WaitReason::WaitingForTools { tool_calls },
-                    } => {
-                        assert!(seen_processing, "Processing must come before AwaitingTools");
-                        assert!(seen_tool_call, "AwaitingTools must come after tool call");
-                        assert_eq!(tool_calls.len(), 1);
-                        assert!(tool_calls.get("send_message_call").is_some());
-                        seen_awaiting_tools = true;
+            Message::Agent(agent_msg) => {
+                match &agent_msg.message {
+                    AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
+                        status,
+                    }) if agent_msg.agent_id == scope => match status {
+                        AgentStatus::Processing { .. } => {
+                            assert!(seen_user_input, "Processing must come after UserContext");
+                            seen_processing = true;
+                        }
+                        AgentStatus::Wait {
+                            reason: WaitReason::WaitingForTools { tool_calls },
+                        } => {
+                            assert!(seen_processing, "Processing must come before AwaitingTools");
+                            assert!(seen_tool_call, "AwaitingTools must come after tool call");
+                            assert_eq!(tool_calls.len(), 1);
+                            assert!(tool_calls.get("send_message_call").is_some());
+                            seen_awaiting_tools = true;
+                        }
+                        _ => {}
+                    },
+                    AgentMessageType::InterAgentMessage(InterAgentMessage::Message { message })
+                        if agent_msg.agent_id == child_scope =>
+                    {
+                        assert!(seen_tool_call, "Message must come after tool call");
+                        assert_eq!(
+                            message,
+                            "Focus on performance optimization and error handling"
+                        );
+                        seen_manager_message = true;
                     }
                     _ => {}
-                },
-                AgentMessageType::InterAgentMessage(InterAgentMessage::Message { message })
-                    if agent_msg.agent_id == child_scope =>
-                {
-                    assert!(seen_tool_call, "Message must come after tool call");
-                    assert_eq!(
-                        message,
-                        "Focus on performance optimization and error handling"
-                    );
-                    seen_manager_message = true;
                 }
-                _ => {}
-            },
+            }
             Message::AssistantToolCall(tool_call) => {
                 assert!(seen_processing, "Tool call must come after Processing");
                 assert_eq!(tool_call.fn_name, SEND_MESSAGE_TOOL_NAME);

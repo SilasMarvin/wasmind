@@ -74,13 +74,10 @@ impl Complete {
         // Send agent status update first to stop LLM processing
         let _ = self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.get_scope().clone(),
-            message: AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate {
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
                 status: AgentStatus::Done(Ok(agent_task_result.clone())),
             }),
         }));
-
-        // When the task is completed we shut down this agent
-        let _ = self.broadcast(Message::Action(Action::Exit));
 
         // Send tool call completion after Done status
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
