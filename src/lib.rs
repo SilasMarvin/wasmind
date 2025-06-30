@@ -119,7 +119,7 @@ pub fn run_main_program() -> SResult<()> {
     use tokio::runtime;
     use tracing::{error, info};
 
-    let config = Config::new().context(ConfigSnafu)?;
+    let config = Config::new(false).context(ConfigSnafu)?;
     let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
 
     // Create the tokio runtime in main thread
@@ -191,7 +191,7 @@ pub fn run_headless_program(prompt: String, auto_approve_commands_override: bool
     use tokio::runtime;
     use tracing::info;
 
-    let config = Config::new().context(ConfigSnafu)?;
+    let config = Config::new(true).context(ConfigSnafu)?;
     let mut parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
 
     // Override config setting if CLI flag is provided

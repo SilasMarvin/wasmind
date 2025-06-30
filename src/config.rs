@@ -67,7 +67,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new() -> Result<Self, ConfigError> {
+    pub fn new(is_headless: bool) -> Result<Self, ConfigError> {
         // Check for environment variable first
         let config_file_path = if let Ok(env_path) = std::env::var("HIVE_CONFIG_PATH") {
             tracing::debug!(
@@ -91,7 +91,7 @@ impl Config {
 
         if let Some(mut user_config) = user_config {
             // Always load default config to get whitelisted commands
-            let default = Config::default()?;
+            let default = Config::load_default(is_headless)?;
 
             if user_config.key_bindings.clear_defaults {
                 // Even with clear_defaults, use default whitelisted commands if user hasn't specified any
@@ -127,31 +127,30 @@ impl Config {
                 Ok(user_config)
             }
         } else {
-            let config = Config::default()?;
+            let config = Config::load_default(is_headless)?;
             Ok(config)
         }
     }
 
-    pub fn from_file(path: &str) -> Result<Self, ConfigError> {
+    pub fn from_file(path: &str, is_headless: bool) -> Result<Self, ConfigError> {
         let contents = fs::read_to_string(path)?;
         let mut config: Config = toml::from_str(&contents).context(TomlDeserializeSnafu)?;
 
         // Merge with default whitelisted commands if none specified
         if config.whitelisted_commands.is_empty() {
-            let default = Config::default()?;
+            let default = Config::load_default(is_headless)?;
             config.whitelisted_commands = default.whitelisted_commands;
         }
 
         Ok(config)
     }
 
-    pub fn default() -> Result<Self, ConfigError> {
-        // Use headless config for builds without GUI features
-        #[cfg(not(feature = "gui"))]
-        let default_contents = include_str!("../headless_config.toml");
-
-        #[cfg(feature = "gui")]
-        let default_contents = include_str!("../default_config.toml");
+    pub fn load_default(is_headless: bool) -> Result<Self, ConfigError> {
+        let default_contents = if is_headless {
+            include_str!("../headless_config.toml")
+        } else {
+            include_str!("../default_config.toml")
+        };
 
         let config: Config = toml::from_str(default_contents).context(TomlDeserializeSnafu)?;
         Ok(config)

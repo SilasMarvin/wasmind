@@ -4,7 +4,7 @@ use tokio::sync::broadcast;
 use crate::{
     actors::{
         Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
-        InterAgentMessage, Message, agent::Agent, tui::TuiActor,
+        InterAgentMessage, Message, ToolCallStatus, ToolCallUpdate, agent::Agent, tui::TuiActor,
     },
     config::ParsedConfig,
     scope::Scope,
@@ -15,7 +15,8 @@ use crate::actors::context::Context;
 #[cfg(feature = "audio")]
 use crate::actors::microphone::Microphone;
 
-pub const ROOT_AGENT_SCOPE: Scope = Scope::from_uuid(uuid::uuid!("29443a2e-78e1-4983-975a-d68b0e6c4cf0"));
+pub const ROOT_AGENT_SCOPE: Scope =
+    Scope::from_uuid(uuid::uuid!("29443a2e-78e1-4983-975a-d68b0e6c4cf0"));
 
 /// Handle for communicating with the HIVE system
 pub struct HiveHandle {
@@ -47,12 +48,13 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
         Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
 
         // Create the Main Manager agent
-        let main_manager = Agent::new(
+        let main_manager = Agent::new_with_scope(
             tx.clone(),
             crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
             None,
             config.clone(),
             ROOT_AGENT_SCOPE,
+            Scope::new(), // parent_scope means nothing for the MainManager
             AgentType::MainManager
         );
 
@@ -109,12 +111,13 @@ pub fn start_headless_hive(
         #[cfg(feature = "audio")]
         Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
 
-        let main_manager = Agent::new(
+        let main_manager = Agent::new_with_scope(
             tx.clone(),
             crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
             Some(initial_prompt),
             config.clone(),
             ROOT_AGENT_SCOPE,
+            Scope::new(), // parent_scope means nothing for the MainManager 
             AgentType::MainManager
         );
 
@@ -152,8 +155,6 @@ pub fn start_headless_hive(
                             eprintln!("Errored: {error_message}");
                         },
                     }
-                    let _ = exit_tx.send(());
-                    break;
                 }
                 _ => ()
             }

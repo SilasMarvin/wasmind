@@ -17,7 +17,10 @@ use crate::{
     scope::Scope,
 };
 
-use super::{ActorMessage, AgentType, tools::file_reader::FileReader};
+use super::{
+    ActorMessage, AgentType,
+    tools::{file_reader::FileReader, wait::Wait},
+};
 
 /// Role name for the main manager agent
 pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
@@ -64,6 +67,26 @@ impl Agent {
         }
     }
 
+    pub fn new_with_scope(
+        tx: Sender<ActorMessage>,
+        role: String,
+        task_description: Option<String>,
+        config: ParsedConfig,
+        scope: Scope,
+        parent_scope: Scope,
+        r#type: AgentType,
+    ) -> Self {
+        Self {
+            tx,
+            r#type,
+            config,
+            task_description,
+            scope,
+            parent_scope,
+            role,
+        }
+    }
+
     /// Get the required actors for this agent's assistant type
     pub fn get_required_actors(&self) -> Vec<&'static str> {
         match &self.r#type {
@@ -72,12 +95,8 @@ impl Agent {
                     Planner::ACTOR_ID,
                     SpawnAgent::ACTOR_ID,
                     SendMessage::ACTOR_ID,
+                    Complete::ACTOR_ID,
                 ];
-
-                // Add complete tool for sub-managers or Main Manager in headless mode
-                if self.r#type == AgentType::SubManager || cfg!(not(feature = "gui")) {
-                    actors.push(Complete::ACTOR_ID);
-                }
 
                 actors
             }
@@ -120,6 +139,8 @@ impl Agent {
                     self.config.whitelisted_commands.clone(),
                 )
                 .run();
+                SendMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+                Wait::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 Planner::new(
                     self.config.clone(),
                     self.tx.clone(),
@@ -127,16 +148,9 @@ impl Agent {
                     self.r#type,
                 )
                 .run();
-
-                // Add complete tool for sub-managers or Main Manager in headless mode
-                if self.r#type == AgentType::SubManager || cfg!(not(feature = "gui")) {
-                    Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-                }
-
-                // Add spawn_agent and plan approval tools for managers
                 SpawnAgent::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
 
-                SendMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+                Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
             }
             AgentType::Worker => {
                 // Workers get all execution tools
@@ -150,6 +164,7 @@ impl Agent {
                     self.config.whitelisted_commands.clone(),
                 )
                 .run();
+                Wait::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 Command::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 FileReaderActor::new(
                     self.config.clone(),

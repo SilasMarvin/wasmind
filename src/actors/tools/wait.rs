@@ -10,13 +10,13 @@ use genai::chat::{Tool, ToolCall};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 
-pub const WAIT_TOOL_NAME: &str = "wait_tool";
+pub const WAIT_TOOL_NAME: &str = "wait";
 pub const WAIT_TOOL_DESCRIPTION: &str = "Wait for a specified number of seconds. You will be woken up when the duration ends or by important system messages.";
 pub const WAIT_TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
         "duration": {
-            "type": "int",
+            "type": "integer",
             "description": "The number of seconds to wait for."
         }
     },

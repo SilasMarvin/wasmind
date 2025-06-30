@@ -59,6 +59,7 @@ pub struct ToolCallUpdate {
 /// ToolCall Type
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ToolCallType {
+    Complete,
     Command,
     ReadFile,
     EditFile,

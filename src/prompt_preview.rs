@@ -31,7 +31,7 @@ pub enum PromptPreviewError {
 pub type Result<T> = std::result::Result<T, PromptPreviewError>;
 
 // TODO: Our prompt preveiw function should take in the prompt to preview for: either -
-// manager, worker
+// manager, worker and whether it is headless or not
 
 /// Preview scenarios for system prompt rendering
 pub struct PromptPreviewScenarios {
@@ -41,9 +41,9 @@ pub struct PromptPreviewScenarios {
 impl PromptPreviewScenarios {
     pub fn new(config_path: Option<String>) -> Result<Self> {
         let config = if let Some(path) = config_path {
-            Config::from_file(&path).context(ConfigLoadFailedSnafu)?
+            Config::from_file(&path, false).context(ConfigLoadFailedSnafu)?
         } else {
-            Config::new().context(ConfigLoadFailedSnafu)?
+            Config::new(false).context(ConfigLoadFailedSnafu)?
         };
 
         let parsed_config = config.try_into().context(ConfigLoadFailedSnafu)?;

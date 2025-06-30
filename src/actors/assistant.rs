@@ -243,9 +243,11 @@ impl Assistant {
     }
 
     /// Update state and broadcast the change
-    fn set_state(&mut self, new_state: AgentStatus) {
+    fn set_state(&mut self, new_state: AgentStatus, broadcast_change: bool) {
         self.state = new_state;
-        self.broadcast_state_change();
+        if broadcast_change {
+            self.broadcast_state_change();
+        }
     }
 
     fn handle_tools_available(&mut self, new_tools: Vec<Tool>) {
@@ -261,7 +263,6 @@ impl Assistant {
     // TODO: Add interrupt support for all tool calls
     // Useful for when the user cancels, timeouts, etc...
     fn interupt_wait_tool_call(&mut self, tool_call_id: &str, timestamp: u64, duration: Duration) {
-        eprintln!("\n\nINTERRUPTING\n\n");
         self.chat_request = self.chat_request.clone().append_message(ChatMessage {
             role: ChatRole::Tool,
             content: MessageContent::ToolResponses(vec![ToolResponse {
@@ -384,9 +385,12 @@ impl Assistant {
     #[tracing::instrument(name = "llm_request", skip(self))]
     fn submit_llm_request(&mut self) {
         let processing_id = Uuid::new_v4();
-        self.set_state(AgentStatus::Processing {
-            id: processing_id.clone(),
-        });
+        self.set_state(
+            AgentStatus::Processing {
+                id: processing_id.clone(),
+            },
+            true,
+        );
 
         // Cancel any existing request
         if let Some(handle) = self.cancel_handle.lock().unwrap().take() {
@@ -566,6 +570,11 @@ impl Actor for Assistant {
     async fn handle_message(&mut self, message: ActorMessage) {
         // Handle state transitions based on the message
 
+        // If we are Done we always just return
+        if matches!(self.state, AgentStatus::Done(..)) {
+            return;
+        }
+
         // message.scope == self.scope and message.agent_id == self.scope -> messages in our scope to use (typically from tools)
         // message.scope == self.parent_scope and message.agent_id == self.scope -> messages from our parent to us
         // message.scope in self.sub_agent_scopes and message.agent_id == self.scope -> messages from our children to us
@@ -632,9 +641,12 @@ impl Actor for Assistant {
                                 self.add_user_content(ContentPart::Text(task.clone()));
                                 self.submit_pending_message(false);
                             } else {
-                                self.set_state(AgentStatus::Wait {
-                                    reason: WaitReason::WaitingForUserInput,
-                                });
+                                self.set_state(
+                                    AgentStatus::Wait {
+                                        reason: WaitReason::WaitingForUserInput,
+                                    },
+                                    true,
+                                );
                             }
                         }
                     }
@@ -700,18 +712,24 @@ impl Actor for Assistant {
                                     .iter()
                                     .map(|tc| (tc.call_id.clone(), None))
                                     .collect();
-                                self.set_state(AgentStatus::Wait {
-                                    reason: WaitReason::WaitingForTools { tool_calls },
-                                });
+                                self.set_state(
+                                    AgentStatus::Wait {
+                                        reason: WaitReason::WaitingForTools { tool_calls },
+                                    },
+                                    true,
+                                );
                             }
                             _ => {
                                 // If we have pending message content, submit it immediately when Idle
                                 if self.pending_message.has_content() {
                                     self.submit_pending_message(false);
                                 } else {
-                                    self.set_state(AgentStatus::Wait {
-                                        reason: WaitReason::WaitingForUserInput,
-                                    });
+                                    self.set_state(
+                                        AgentStatus::Wait {
+                                            reason: WaitReason::WaitingForUserInput,
+                                        },
+                                        true,
+                                    );
                                 }
                             }
                         }
@@ -746,43 +764,7 @@ impl Actor for Assistant {
                     AgentMessageType::InterAgentMessage(inter_agent_message) => {
                         match inter_agent_message {
                             InterAgentMessage::TaskStatusUpdate { status } => {
-                                // Tool calls may update us to WaitForDuration or
-                                // WaitingForPlanApproval
-                                match &status {
-                                    AgentStatus::Wait { reason } => {
-                                        if let AgentStatus::Wait {
-                                            reason: WaitReason::WaitingForTools { tool_calls },
-                                        } = &self.state
-                                        {
-                                            match reason {
-                                                r @ WaitReason::WaitForDuration {
-                                                    tool_call_id,
-                                                    timestamp: _,
-                                                    duration: _,
-                                                } => {
-                                                    if !tool_calls.contains_key(tool_call_id) {
-                                                        return;
-                                                    }
-                                                    self.set_state(AgentStatus::Wait {
-                                                        reason: r.clone(),
-                                                    });
-                                                }
-                                                r @ WaitReason::WaitingForPlanApproval {
-                                                    tool_call_id,
-                                                } => {
-                                                    if !tool_calls.contains_key(tool_call_id) {
-                                                        return;
-                                                    }
-                                                    self.set_state(AgentStatus::Wait {
-                                                        reason: r.clone(),
-                                                    });
-                                                }
-                                                _ => (),
-                                            }
-                                        }
-                                    }
-                                    _ => (),
-                                }
+                                self.set_state(status, false);
                             }
                             _ => (),
                         }
@@ -799,6 +781,55 @@ impl Actor for Assistant {
                             InterAgentMessage::TaskStatusUpdate { status } => {
                                 self.system_state
                                     .update_agent_status(&agent_message.agent_id, status.clone());
+
+                                match status {
+                                    AgentStatus::Done(agent_task_result_ok) => {
+                                        match self.state.clone() {
+                                            AgentStatus::Wait {
+                                                reason:
+                                                    WaitReason::WaitForDuration {
+                                                        tool_call_id,
+                                                        timestamp,
+                                                        duration,
+                                                    },
+                                            } => {
+                                                self.interupt_wait_tool_call(
+                                                    &tool_call_id,
+                                                    timestamp,
+                                                    duration,
+                                                );
+                                                let formatted_message = match agent_task_result_ok {
+                                                    Ok(response) => format_agent_response_success(
+                                                        &agent_message.agent_id,
+                                                        response.success,
+                                                        &response.summary,
+                                                    ),
+                                                    Err(err) => format_agent_response_failure(
+                                                        &agent_message.agent_id,
+                                                        &err,
+                                                    ),
+                                                };
+                                                self.add_system_message_part(formatted_message);
+                                                self.submit_pending_message(false);
+                                            }
+                                            _ => {
+                                                let formatted_message = match agent_task_result_ok {
+                                                    Ok(response) => format_agent_response_success(
+                                                        &agent_message.agent_id,
+                                                        response.success,
+                                                        &response.summary,
+                                                    ),
+                                                    Err(err) => format_agent_response_failure(
+                                                        &agent_message.agent_id,
+                                                        &err,
+                                                    ),
+                                                };
+                                                self.add_system_message_part(formatted_message);
+                                            }
+                                        }
+                                    }
+                                    _ => (),
+                                }
                             }
                             InterAgentMessage::Message {
                                 message: sub_agent_message,
@@ -935,7 +966,7 @@ mod tests {
     ) -> Assistant {
         use crate::config::Config;
 
-        let mut config = Config::default().unwrap();
+        let mut config = Config::load_default(true).unwrap();
         // Set the config endpoints to complete nonsense so we don't waste tokens
         config.hive.main_manager_model.endpoint = Some("http://localhost:9000".to_string());
         config.hive.sub_manager_model.endpoint = Some("http://localhost:9000".to_string());
@@ -964,7 +995,7 @@ mod tests {
     ) -> Assistant {
         use crate::config::Config;
 
-        let mut config = Config::default().unwrap();
+        let mut config = Config::load_default(true).unwrap();
         config.hive.main_manager_model.endpoint = Some("http://localhost:9000".to_string());
         config.hive.sub_manager_model.endpoint = Some("http://localhost:9000".to_string());
         config.hive.worker_model.endpoint = Some("http://localhost:9000".to_string());
@@ -1304,9 +1335,12 @@ mod tests {
         let processing_id = Uuid::new_v4();
 
         // Manually set to Processing state
-        assistant.set_state(AgentStatus::Processing {
-            id: processing_id.clone(),
-        });
+        assistant.set_state(
+            AgentStatus::Processing {
+                id: processing_id.clone(),
+            },
+            true,
+        );
 
         // Send assistant response with text
         send_message(
@@ -1335,9 +1369,12 @@ mod tests {
         let processing_id = Uuid::new_v4();
 
         // Manually set to Processing state
-        assistant.set_state(AgentStatus::Processing {
-            id: processing_id.clone(),
-        });
+        assistant.set_state(
+            AgentStatus::Processing {
+                id: processing_id.clone(),
+            },
+            true,
+        );
 
         let tool_call = ToolCall {
             call_id: "call_123".to_string(),
@@ -1374,7 +1411,7 @@ mod tests {
         let old_id = Uuid::new_v4();
 
         // Set to Processing with current ID
-        assistant.set_state(AgentStatus::Processing { id: current_id });
+        assistant.set_state(AgentStatus::Processing { id: current_id }, true);
 
         // Send response with old ID
         send_message(
@@ -1402,9 +1439,12 @@ mod tests {
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
         tool_calls.insert("call_123".to_string(), None);
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitingForTools { tool_calls },
-        });
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { tool_calls },
+            },
+            true,
+        );
 
         // Send tool call update
         send_message(
@@ -1428,9 +1468,12 @@ mod tests {
         let mut tool_calls = std::collections::HashMap::new();
         tool_calls.insert("call_1".to_string(), None);
         tool_calls.insert("call_2".to_string(), None);
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitingForTools { tool_calls },
-        });
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { tool_calls },
+            },
+            true,
+        );
 
         // Send first tool result
         send_message(
@@ -1470,9 +1513,12 @@ mod tests {
 
         let mut tool_calls = std::collections::HashMap::new();
         tool_calls.insert("call_123".to_string(), None);
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitingForTools { tool_calls },
-        });
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { tool_calls },
+            },
+            true,
+        );
 
         // Send tool call update with error
         send_message(
@@ -1624,9 +1670,12 @@ mod tests {
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
         tool_calls.insert("call_123".to_string(), None);
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitingForTools { tool_calls },
-        });
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { tool_calls },
+            },
+            true,
+        );
 
         // Tool sends status update to WaitForDuration
         let agent_scope = assistant.scope.clone();
@@ -1666,9 +1715,12 @@ mod tests {
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
         tool_calls.insert("call_123".to_string(), None);
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitingForTools { tool_calls },
-        });
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { tool_calls },
+            },
+            true,
+        );
 
         // Tool sends status update to WaitingForPlanApproval
         let agent_scope = assistant.scope.clone();
@@ -1702,11 +1754,14 @@ mod tests {
         let mut assistant = create_test_assistant_with_parent(vec![], None, parent_scope);
 
         // Set to WaitingForPlanApproval
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitingForPlanApproval {
-                tool_call_id: "call_123".to_string(),
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForPlanApproval {
+                    tool_call_id: "call_123".to_string(),
+                },
             },
-        });
+            true,
+        );
 
         // Manager message should trigger processing
         let agent_scope = assistant.scope.clone();
@@ -1740,13 +1795,16 @@ mod tests {
             .as_secs();
         let duration = std::time::Duration::from_secs(5);
 
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitForDuration {
-                tool_call_id: "call_123".to_string(),
-                timestamp,
-                duration,
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitForDuration {
+                    tool_call_id: "call_123".to_string(),
+                    timestamp,
+                    duration,
+                },
             },
-        });
+            true,
+        );
 
         // Manager message should trigger processing and add interrupt message
         let agent_scope = assistant.scope.clone();
@@ -1803,13 +1861,16 @@ mod tests {
             .as_secs();
         let duration = std::time::Duration::from_secs(10);
 
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitForDuration {
-                tool_call_id: "call_456".to_string(),
-                timestamp,
-                duration,
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitForDuration {
+                    tool_call_id: "call_456".to_string(),
+                    timestamp,
+                    duration,
+                },
             },
-        });
+            true,
+        );
 
         // Sub-agent message should trigger processing and add interrupt message
         let agent_scope = assistant.scope.clone();
@@ -1854,11 +1915,14 @@ mod tests {
         let mut assistant = create_test_assistant(vec![], None);
 
         // Set to WaitingForPlanApproval
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitingForPlanApproval {
-                tool_call_id: "plan_call_123".to_string(),
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForPlanApproval {
+                    tool_call_id: "plan_call_123".to_string(),
+                },
             },
-        });
+            true,
+        );
 
         let initial_messages_count = assistant.chat_request.messages.len();
 
@@ -1903,16 +1967,19 @@ mod tests {
         let mut assistant = create_test_assistant(vec![], None);
 
         // Set to WaitForDuration
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitForDuration {
-                tool_call_id: "wait_call_456".to_string(),
-                timestamp: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-                duration: std::time::Duration::from_secs(5),
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitForDuration {
+                    tool_call_id: "wait_call_456".to_string(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
+                    duration: std::time::Duration::from_secs(5),
+                },
             },
-        });
+            true,
+        );
 
         let initial_messages_count = assistant.chat_request.messages.len();
 
@@ -1985,9 +2052,12 @@ mod tests {
             .set_user_content(ContentPart::Text("Pending message".to_string()));
 
         // Set to Processing
-        assistant.set_state(AgentStatus::Processing {
-            id: processing_id.clone(),
-        });
+        assistant.set_state(
+            AgentStatus::Processing {
+                id: processing_id.clone(),
+            },
+            true,
+        );
 
         // Send assistant response
         send_message(
@@ -2091,9 +2161,12 @@ mod tests {
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
         tool_calls.insert("call_123".to_string(), None);
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitingForTools { tool_calls },
-        });
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { tool_calls },
+            },
+            true,
+        );
 
         // Send update for unknown call ID
         send_message(
@@ -2149,9 +2222,12 @@ mod tests {
         let mut tool_calls = std::collections::HashMap::new();
         tool_calls.insert("call_1".to_string(), None);
         tool_calls.insert("call_2".to_string(), None);
-        assistant.set_state(AgentStatus::Wait {
-            reason: WaitReason::WaitingForTools { tool_calls },
-        });
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { tool_calls },
+            },
+            true,
+        );
 
         // Tool 1 requests state change to WaitForDuration
         let agent_scope = assistant.scope.clone();

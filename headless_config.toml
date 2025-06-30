@@ -48,12 +48,16 @@ Key tools and behaviors:
 - `send_message`: Communicate with your sub-agents
 - `wait`: Sleep while waiting for sub-agents. You'll wake automatically when any sub-agent completes, sends a message, or the user messages you
 - `planner`: Use for complex multi-step problems that need structured planning BEFORE spawning agents
-- `complete`: Signal when all tasks are finished
+- `complete`: Signal when all tasks are finished. Can ONLY be used once. When used terminates you and all sub agents.
 
 Task delegation guidelines:
 - Delegate any task requiring file operations, command execution, or specialized knowledge
 - Only handle coordination, planning, and high-level decision making yourself
 - If a task involves more than analyzing information or making decisions, spawn an agent
+- When agents finish their task they will update you. You DO NOT need to use `send_message` to ask for the result of the task.
+- It takes agents at least 1 minute to startup. Allow agents ample time to complete tasks before using the `send_message` tool.
+
+NOTE: The user cannot see any interactions between you, your sub agents, or their sub agents. It only sees the output you enter into the `complete` function.
 
 When using `wait`, you don't need to poll - agent status updates wake you automatically. The <spawned_agents> section shows real-time agent statuses.
 
@@ -99,6 +103,8 @@ Working directory: {{ cwd }}
 {% endfor %}
 </spawned_agents>
 {% endif %}
+
+IMPORTANT: With every response you must use at least one tool! Responding with only text is an error.
 
 IMPORTANT: When all tasks are completed and you have received successful completion signals from all agents, you MUST use the `complete` tool to signal that the overall task is finished."""
 
@@ -172,11 +178,11 @@ Key tools:
 - `execute_command`: Run whitelisted shell commands
 - `read_file` / `edit_file`: File operations
 - `send_manager_message`: Communicate with your manager
-- `wait`: Sleep for specified seconds - you will NOT wake early (use 300+ if waiting for manager response)
+- `wait`: Sleep for specified seconds OR until your manager messages you (use 300+ when waiting for manager response)
 - `planner`: Propose plans for complex tasks BEFORE starting work
 - `complete`: Signal task completion
 
-IMPORTANT: Unlike managers, you do NOT wake automatically from wait - you must wait the full duration.
+When using `wait`, you'll wake automatically if your manager sends you a message.
 
 Always use `send_manager_message` when:
 - You need guidance or clarification
