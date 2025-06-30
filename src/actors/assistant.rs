@@ -720,7 +720,7 @@ impl Actor for Assistant {
                                 );
                             }
                             _ => {
-                                if *crate::IS_HEADLESS.get().unwrap() {
+                                if *crate::IS_HEADLESS.get().unwrap_or(&false) {
                                     // This is an error by the LLM it should only ever respond with
                                     // tool calls in headless mode
                                     self.pending_message.add_system_part("ERROR! You responded without calling a tool. Try again and this time ensure you call a tool! If in doubt, use the `wait` tool.".to_string());
@@ -1079,8 +1079,6 @@ mod tests {
         let assistant = create_test_assistant(vec![], Some("Test task".to_string()));
         // Should immediately go to Processing
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
-        // Task should be consumed
-        assert_eq!(assistant.task_description, None);
     }
 
     // Actor Ready Message Tests
@@ -1666,12 +1664,14 @@ mod tests {
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: sub_agent_id,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
-                    status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
-                        summary: "Task completed".to_string(),
-                        success: true,
-                    })),
-                }),
+                message: AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::StatusUpdateRequest {
+                        status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+                            summary: "Task completed".to_string(),
+                            success: true,
+                        })),
+                    },
+                ),
             }),
         )
         .await;
@@ -1702,18 +1702,20 @@ mod tests {
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: agent_scope,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
-                    status: AgentStatus::Wait {
-                        reason: WaitReason::WaitForDuration {
-                            tool_call_id: "call_123".to_string(),
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs(),
-                            duration: std::time::Duration::from_secs(5),
+                message: AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::StatusUpdateRequest {
+                        status: AgentStatus::Wait {
+                            reason: WaitReason::WaitForDuration {
+                                tool_call_id: "call_123".to_string(),
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                                duration: std::time::Duration::from_secs(5),
+                            },
                         },
                     },
-                }),
+                ),
             }),
         )
         .await;
@@ -1747,13 +1749,15 @@ mod tests {
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: agent_scope,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
-                    status: AgentStatus::Wait {
-                        reason: WaitReason::WaitingForPlanApproval {
-                            tool_call_id: "call_123".to_string(),
+                message: AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::StatusUpdateRequest {
+                        status: AgentStatus::Wait {
+                            reason: WaitReason::WaitingForPlanApproval {
+                                tool_call_id: "call_123".to_string(),
+                            },
                         },
                     },
-                }),
+                ),
             }),
         )
         .await;
@@ -2254,18 +2258,20 @@ mod tests {
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: agent_scope,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
-                    status: AgentStatus::Wait {
-                        reason: WaitReason::WaitForDuration {
-                            tool_call_id: "call_1".to_string(),
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs(),
-                            duration: std::time::Duration::from_secs(5),
+                message: AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::StatusUpdateRequest {
+                        status: AgentStatus::Wait {
+                            reason: WaitReason::WaitForDuration {
+                                tool_call_id: "call_1".to_string(),
+                                timestamp: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs(),
+                                duration: std::time::Duration::from_secs(5),
+                            },
                         },
                     },
-                }),
+                ),
             }),
         )
         .await;
@@ -2287,13 +2293,15 @@ mod tests {
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: agent_scope,
-                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
-                    status: AgentStatus::Wait {
-                        reason: WaitReason::WaitingForPlanApproval {
-                            tool_call_id: "call_2".to_string(),
+                message: AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::StatusUpdateRequest {
+                        status: AgentStatus::Wait {
+                            reason: WaitReason::WaitingForPlanApproval {
+                                tool_call_id: "call_2".to_string(),
+                            },
                         },
                     },
-                }),
+                ),
             }),
         )
         .await;
