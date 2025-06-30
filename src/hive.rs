@@ -4,7 +4,7 @@ use tokio::sync::broadcast;
 use crate::{
     actors::{
         Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
-        InterAgentMessage, Message, ToolCallStatus, ToolCallUpdate, agent::Agent, tui::TuiActor,
+        InterAgentMessage, Message, agent::Agent, tui::TuiActor,
     },
     config::ParsedConfig,
     scope::Scope,

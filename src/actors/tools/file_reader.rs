@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{Mutex, broadcast};
-use tracing::info;
 
 use crate::actors::ActorMessage;
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};

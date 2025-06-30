@@ -91,7 +91,7 @@ impl Agent {
     pub fn get_required_actors(&self) -> Vec<&'static str> {
         match &self.r#type {
             AgentType::SubManager | AgentType::MainManager => {
-                let mut actors = vec![
+                let actors = vec![
                     Planner::ACTOR_ID,
                     SpawnAgent::ACTOR_ID,
                     SendMessage::ACTOR_ID,

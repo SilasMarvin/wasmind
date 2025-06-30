@@ -12,7 +12,7 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::{
-    IS_HEADLESS, SResult,
+    SResult,
     actors::{Actor, Message, ToolCallStatus, ToolCallUpdate},
     config::ParsedModelConfig,
     scope::Scope,

@@ -9,12 +9,12 @@ pub mod tools;
 pub mod tui;
 
 use crate::scope::Scope;
-use genai::chat::{ToolCall, ToolResponse};
+use genai::chat::ToolCall;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
