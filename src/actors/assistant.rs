@@ -30,7 +30,7 @@ use super::{
 /// Format an agent response for successful task completion
 pub fn format_agent_response_success(agent_id: &Scope, success: bool, summary: &str) -> String {
     format!(
-        "<agent_response id={}>status: {}\n\n{}</agent_response>",
+        "<sub_agent_complete id={}>status: {}\n\n{}</sub_agent_complete>",
         agent_id,
         if success { "SUCCESS" } else { "FAILURE" },
         summary
@@ -40,7 +40,7 @@ pub fn format_agent_response_success(agent_id: &Scope, success: bool, summary: &
 /// Format an agent response for failed task completion
 pub fn format_agent_response_failure(agent_id: &Scope, error: &str) -> String {
     format!(
-        "<agent_response id={}>status: FAILURE\n\n{}</agent_response>",
+        "<sub_agent_complete id={}>status: FAILURE\n\n{}</sub_agent_complete>",
         agent_id, error
     )
 }
@@ -52,12 +52,16 @@ pub fn format_error_message(error: &impl std::fmt::Display) -> String {
 
 /// Format sub agent message
 pub fn format_sub_agent_message(message: &str, agent_id: &Scope) -> String {
-    format!(r#"<sub_agent_message agent_id="{agent_id}">{message}</sub_agent_message>"#)
+    format!(
+        r#"New message from one of your sub agents. You can respond using the `send_message` tool.\n<sub_agent_message agent_id="{agent_id}">{message}</sub_agent_message>"#
+    )
 }
 
 /// Format manager message
 pub fn format_manager_message(message: &str) -> String {
-    format!(r#"<manager_message>{message}</manager_message>"#)
+    format!(
+        r#"New message from your manager. You can respond with the `send_manager_message` tool.\n<manager_message>{message}</manager_message>"#
+    )
 }
 
 /// Pending message that accumulates user input and system messages

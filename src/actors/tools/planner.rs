@@ -23,7 +23,7 @@ pub fn format_planner_success_response(title: &str, agent_type: AgentType) -> St
 
 pub fn format_request_plan_approval_message(plan: &TaskPlan) -> String {
     format!(
-        "Please approve or disapprove the following plan: <plan>\n{plan}\n</plan>\nIf you do not approve of it, please inform me what I should do next."
+        "Before starting, please approve or reject my plan to acomplish my task: <plan>\n{plan}\n</plan>\n\nI am waiting for you to respond before proceeding."
     )
 }
 
