@@ -45,32 +45,6 @@ pub fn format_agent_response_failure(agent_id: &Scope, error: &str) -> String {
     )
 }
 
-/// Format a plan approval response
-pub fn format_plan_approval_response(approved: bool, reason: Option<&str>) -> String {
-    match (approved, reason) {
-        (true, _) => {
-            "<plan_approval_response>PLAN APPROVED BY MANAGER</plan_approval_response>".to_string()
-        }
-        (false, Some(reason)) => format!(
-            "<plan_approval_response>PLAN REJECTED BY MANAGER: {}</plan_approval_response>",
-            reason
-        ),
-        (false, None) => {
-            "<plan_approval_response>PLAN REJECTED BY MANAGER</plan_approval_response>".to_string()
-        }
-    }
-}
-
-/// Format a plan approval request
-pub fn format_plan_approval_request(agent_id: &str, reason: &WaitReason) -> String {
-    format!(
-        "<plan_approval_request agent_id={}>\n{}</plan_approval_request>",
-        agent_id,
-        serde_json::to_string_pretty(reason)
-            .unwrap_or_else(|_| "Failed to serialize reason".to_string())
-    )
-}
-
 /// Format an error message
 pub fn format_error_message(error: &impl std::fmt::Display) -> String {
     format!("Error: {}", error)

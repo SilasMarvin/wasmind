@@ -21,6 +21,12 @@ pub fn format_planner_success_response(title: &str, agent_type: AgentType) -> St
     )
 }
 
+pub fn format_request_plan_approval_message(plan: &TaskPlan) -> String {
+    format!(
+        "Please approve or disapprove the following plan: <plan>\n{plan}\n</plan>\nIf you do not approve of it, please inform me what I should do next."
+    )
+}
+
 /// Task status for the planner
 #[derive(Debug, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TaskStatus {
@@ -70,7 +76,7 @@ pub struct TaskPlan {
 
 impl fmt::Display for TaskPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "## Current Task Plan: {}", self.title)?;
+        writeln!(f, "Plan: {}", self.title)?;
         for (i, task) in self.tasks.iter().enumerate() {
             writeln!(f, "{}. {} {}", i + 1, task.status, task.description)?;
         }
@@ -117,6 +123,7 @@ pub struct Planner {
     current_task_plan: Option<TaskPlan>,
     scope: Scope,
     agent_type: AgentType,
+    parent_scope: Option<Scope>,
 }
 
 impl Planner {
@@ -125,6 +132,7 @@ impl Planner {
         tx: broadcast::Sender<ActorMessage>,
         scope: Scope,
         agent_type: AgentType,
+        parent_scope: Option<Scope>,
     ) -> Self {
         Self {
             config,
@@ -132,6 +140,7 @@ impl Planner {
             current_task_plan: None,
             scope,
             agent_type,
+            parent_scope,
         }
     }
 
@@ -264,6 +273,13 @@ impl Planner {
                         },
                     },
                 ),
+            }));
+
+            let _ = self.broadcast(Message::Agent(AgentMessage {
+                agent_id: self.parent_scope.clone().unwrap(),
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
+                    message: format_request_plan_approval_message(&plan),
+                }),
             }));
         }
 

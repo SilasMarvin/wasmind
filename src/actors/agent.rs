@@ -147,6 +147,7 @@ impl Agent {
                     self.tx.clone(),
                     self.scope.clone(),
                     self.r#type,
+                    Some(self.parent_scope.clone()),
                 )
                 .run();
                 SpawnAgent::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
@@ -187,6 +188,7 @@ impl Agent {
                     self.tx.clone(),
                     self.scope.clone(),
                     self.r#type,
+                    Some(self.parent_scope.clone()),
                 )
                 .run();
                 MCP::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();

@@ -60,6 +60,7 @@ async fn test_read_edit_file() {
         Scope::new(), // Parent scope is not used for this test
         vec![FileReaderActor::ACTOR_ID, EditFile::ACTOR_ID],
         None,
+        None,
         vec![],
     );
 

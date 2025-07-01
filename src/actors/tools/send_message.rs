@@ -33,7 +33,7 @@ struct SendMessageInput {
 
 /// Format send message success message
 pub fn format_send_message_success(agent_id: &str) -> String {
-    format!("Message sent to agent {agent_id}")
+    format!("Message sent to agent {agent_id} - please allow at least 5 minutes for a response.")
 }
 
 /// SendMessage tool actor for managers to send messages to subordinate agents
