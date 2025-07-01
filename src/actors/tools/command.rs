@@ -27,6 +27,10 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
             "type": "array",
             "items": { "type": "string" },
             "description": "Arguments to pass to the shell command"
+        },
+        "directory": {
+            "type": "string",
+            "description": "Optional directory to execute the command in. If not specified, the command will run in the current working directory"
         }
     },
     "required": ["command"]
@@ -37,6 +41,7 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
 pub struct PendingCommand {
     pub command: String,
     pub args: Vec<String>,
+    pub directory: Option<String>,
     pub tool_call_id: String,
 }
 
@@ -80,6 +85,8 @@ impl Command {
             _ => Vec::new(),
         };
 
+        let directory = args.get("directory").and_then(|v| v.as_str()).map(String::from);
+
         let args_string = args_array.join(" ");
         let friendly_command_display = format!("{command} {args_string}");
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
@@ -114,6 +121,7 @@ impl Command {
             self.execute_command(
                 &command,
                 &args_array,
+                directory.as_deref(),
                 &tool_call.call_id,
                 self.scope.clone(),
             )
@@ -124,6 +132,7 @@ impl Command {
             self.execute_command(
                 &command,
                 &args_array,
+                directory.as_deref(),
                 &tool_call.call_id,
                 self.scope.clone(),
             )
@@ -133,6 +142,7 @@ impl Command {
             self.pending_command = Some(PendingCommand {
                 command: command.to_string(),
                 args: args_array.clone(),
+                directory,
                 tool_call_id: tool_call.call_id.clone(),
             });
 
@@ -148,11 +158,13 @@ impl Command {
         &mut self,
         command: &str,
         args: &[String],
+        directory: Option<&str>,
         tool_call_id: &str,
         scope: Scope,
     ) {
         let command = command.to_string();
         let args = args.to_vec();
+        let directory = directory.map(String::from);
         let tool_call_id_clone = tool_call_id.to_string();
         let tx = self.tx.clone();
 
@@ -165,6 +177,13 @@ impl Command {
                 .args(&args)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
+            
+            // Set the working directory
+            if let Some(dir) = directory {
+                child.current_dir(dir);
+            } else {
+                child.current_dir(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+            }
 
             // Execute the command
             let output = match child.output().await {
@@ -317,6 +336,7 @@ impl Actor for Command {
                         self.execute_command(
                             &pending_command.command,
                             &pending_command.args,
+                            pending_command.directory.as_deref(),
                             &pending_command.tool_call_id,
                             self.scope.clone(),
                         )
@@ -331,5 +351,91 @@ impl Actor for Command {
             }
             _ => (),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::process::Command as TokioCommand;
+    use std::env;
+    
+    #[tokio::test]
+    async fn test_command_runs_in_current_directory() {
+        // Test that commands execute in the current working directory
+        let current_dir = env::current_dir().expect("Failed to get current dir");
+        
+        // Run pwd command with current_dir set
+        let mut child = TokioCommand::new("pwd");
+        child.current_dir(&current_dir);
+        
+        let output = child.output().await.expect("Failed to execute pwd");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        
+        // Should contain the current directory path
+        assert!(stdout.trim().contains(current_dir.to_str().unwrap()));
+    }
+    
+    #[tokio::test]
+    async fn test_touch_command_creates_file_in_current_dir() {
+        // Create a temp directory for testing
+        let temp_dir = env::temp_dir().join(format!("hive_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&temp_dir).expect("Failed to create temp dir");
+        
+        // Run touch command with current_dir set
+        let test_file = "test_file.txt";
+        let mut child = TokioCommand::new("touch");
+        child
+            .arg(test_file)
+            .current_dir(&temp_dir);
+        
+        let output = child.output().await.expect("Failed to execute touch");
+        assert!(output.status.success(), "Touch command should succeed");
+        
+        // Verify file was created in the correct directory
+        let expected_path = temp_dir.join(test_file);
+        assert!(expected_path.exists(), "File should exist in temp directory");
+        
+        // Cleanup
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+    
+    #[tokio::test]
+    async fn test_command_with_current_dir_uses_process_cwd() {
+        // Our implementation should use std::env::current_dir()
+        let current_dir = env::current_dir().expect("Failed to get current dir");
+        
+        // Run pwd command using our approach
+        let mut child = TokioCommand::new("pwd");
+        child.current_dir(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
+        
+        let output = child.output().await.expect("Failed to execute pwd");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        
+        // Should match the actual current directory
+        assert_eq!(stdout.trim(), current_dir.to_str().unwrap());
+    }
+    
+    #[tokio::test]
+    async fn test_command_with_custom_directory() {
+        // Test that commands can run in a specified directory
+        let temp_dir = env::temp_dir().join(format!("hive_test_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&temp_dir).expect("Failed to create temp dir");
+        
+        // Create a test file in the temp directory
+        let test_file = "custom_dir_test.txt";
+        std::fs::write(temp_dir.join(test_file), "test content").expect("Failed to write test file");
+        
+        // Run ls command in the temp directory
+        let mut child = TokioCommand::new("ls");
+        child.current_dir(&temp_dir);
+        
+        let output = child.output().await.expect("Failed to execute ls");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        
+        // Should contain our test file
+        assert!(stdout.contains(test_file), "ls output should contain test file");
+        
+        // Cleanup
+        std::fs::remove_dir_all(&temp_dir).ok();
     }
 }

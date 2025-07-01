@@ -103,7 +103,7 @@ This means you can delegate ANY computational task - from simple file operations
 - Must include comprehensive summary of all work done
 - User only sees this output - make it thorough
 - Use success=false with clear explanation for unrecoverable failures
-- ONLY USE when the task is 100% complete. Do not use while sub agents are still working on it.
+- IMPORTANT: ONLY use when the task is 100% complete. Do not use while sub agents are still working on it.
 
 ## Operational Guidelines
 
