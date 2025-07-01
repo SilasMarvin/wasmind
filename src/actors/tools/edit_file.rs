@@ -128,6 +128,11 @@ impl FileEditor {
     ) -> Result<String> {
         let path_ref = path.as_ref();
         
+        // Special case: InsertAtStart on non-existent file - create it first
+        if !path_ref.exists() && matches!(action, EditAction::InsertAtStart { .. }) {
+            return self.create_file_with_insert_at_start(path_ref, action, file_reader);
+        }
+        
         // Check if the file exists first to provide a better error message
         if !path_ref.exists() {
             return Err(EditFileError::CanonicalizePath {
@@ -185,6 +190,53 @@ impl FileEditor {
         Ok(format!(
             "Successfully edited file: {}",
             canonical_path.display()
+        ))
+    }
+
+    /// Create a new file with InsertAtStart action
+    fn create_file_with_insert_at_start<P: AsRef<Path>>(
+        &self,
+        path: P,
+        action: EditAction,
+        file_reader: &mut super::file_reader::FileReader,
+    ) -> Result<String> {
+        let path_ref = path.as_ref();
+        
+        // Extract the text to insert
+        let text = match action {
+            EditAction::InsertAtStart { text } => text,
+            _ => return Err(EditFileError::CanonicalizePath {
+                source: std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Expected InsertAtStart action".to_string()
+                ),
+                path: path_ref.to_path_buf(),
+            }),
+        };
+        
+        // Create any necessary parent directories
+        if let Some(parent) = path_ref.parent() {
+            fs::create_dir_all(parent).context(WriteFileSnafu {
+                path: path_ref.to_path_buf(),
+            })?;
+        }
+        
+        // Write the content to the new file (starting with empty content + inserted text)
+        let new_content = format!("{}", text);
+        fs::write(path_ref, &new_content).context(WriteFileSnafu {
+            path: path_ref.to_path_buf(),
+        })?;
+        
+        // Now read and cache the file so it's available for future operations
+        file_reader
+            .read_and_cache_file(path_ref)
+            .map_err(|_| EditFileError::FileModified {
+                path: path_ref.to_path_buf(),
+            })?;
+        
+        Ok(format!(
+            "Successfully created and edited file: {}",
+            path_ref.display()
         ))
     }
 
@@ -635,8 +687,107 @@ mod tests {
         );
         
         assert!(result.is_err());
-        // This should still produce a helpful error about the file not existing
+        // This should produce an error when trying to write the file
         let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("File does not exist") || error_msg.contains("canonicalize"));
+        assert!(error_msg.contains("Failed to write file"));
+    }
+    
+    #[test]
+    fn test_insert_at_start_creates_new_file() {
+        let editor = FileEditor::new();
+        let mut file_reader = super::super::file_reader::FileReader::default();
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("new_file.txt");
+        
+        // Ensure file doesn't exist
+        assert!(!file_path.exists());
+        
+        // Use InsertAtStart on non-existent file
+        let result = editor.edit_file(
+            &file_path,
+            EditAction::InsertAtStart {
+                text: "Hello, world!\n".to_string(),
+            },
+            &mut file_reader,
+        );
+        
+        assert!(result.is_ok());
+        assert!(file_path.exists());
+        
+        // Verify the content
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "Hello, world!\n");
+        
+        // Verify it was cached
+        let canonical_path = fs::canonicalize(&file_path).unwrap();
+        assert!(file_reader.get_cached_content(&canonical_path).is_some());
+    }
+    
+    #[test]
+    fn test_insert_at_start_creates_parent_directories() {
+        let editor = FileEditor::new();
+        let mut file_reader = super::super::file_reader::FileReader::default();
+        let temp_dir = TempDir::new().unwrap();
+        let nested_path = temp_dir.path().join("nested").join("dirs").join("file.txt");
+        
+        // Ensure parent directories don't exist
+        assert!(!nested_path.parent().unwrap().exists());
+        
+        // Use InsertAtStart on non-existent file with non-existent parent dirs
+        let result = editor.edit_file(
+            &nested_path,
+            EditAction::InsertAtStart {
+                text: "Created with nested dirs!\n".to_string(),
+            },
+            &mut file_reader,
+        );
+        
+        assert!(result.is_ok());
+        assert!(nested_path.exists());
+        assert!(nested_path.parent().unwrap().exists());
+        
+        // Verify the content
+        let content = fs::read_to_string(&nested_path).unwrap();
+        assert_eq!(content, "Created with nested dirs!\n");
+    }
+    
+    #[test]
+    fn test_other_actions_still_fail_on_nonexistent_file() {
+        let editor = FileEditor::new();
+        let mut file_reader = super::super::file_reader::FileReader::default();
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("nonexistent.txt");
+        
+        // InsertAtEnd should still fail
+        let result = editor.edit_file(
+            &file_path,
+            EditAction::InsertAtEnd {
+                text: "This should fail".to_string(),
+            },
+            &mut file_reader,
+        );
+        assert!(result.is_err());
+        
+        // Replace should still fail
+        let result = editor.edit_file(
+            &file_path,
+            EditAction::Replace {
+                search_string: "old".to_string(),
+                replacement_text: "new".to_string(),
+                expected_occurrences: 1,
+            },
+            &mut file_reader,
+        );
+        assert!(result.is_err());
+        
+        // Delete should still fail
+        let result = editor.edit_file(
+            &file_path,
+            EditAction::Delete {
+                search_string: "delete_me".to_string(),
+            },
+            &mut file_reader,
+        );
+        assert!(result.is_err());
     }
 }
