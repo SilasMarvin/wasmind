@@ -127,6 +127,18 @@ impl FileEditor {
         file_reader: &mut super::file_reader::FileReader,
     ) -> Result<String> {
         let path_ref = path.as_ref();
+        
+        // Check if the file exists first to provide a better error message
+        if !path_ref.exists() {
+            return Err(EditFileError::CanonicalizePath {
+                source: std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("File does not exist. Please create the file first using a different tool or verify the path is correct.")
+                ),
+                path: path_ref.to_path_buf(),
+            });
+        }
+        
         let canonical_path = fs::canonicalize(path_ref).context(CanonicalizePathSnafu {
             path: path_ref.to_path_buf(),
         })?;
@@ -544,5 +556,87 @@ impl Actor for EditFile {
             Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
             _ => (),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_edit_nonexistent_file_error_message() {
+        let editor = FileEditor::new();
+        let mut file_reader = super::super::file_reader::FileReader::default();
+        
+        // Try to edit a file that doesn't exist
+        let result = editor.edit_file(
+            "/tmp/this_file_definitely_does_not_exist_123456789.txt",
+            EditAction::Replace {
+                search_string: "old".to_string(),
+                replacement_text: "new".to_string(),
+                expected_occurrences: 1,
+            },
+            &mut file_reader,
+        );
+        
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        
+        // Check that the error message contains our helpful guidance
+        assert!(error_msg.contains("File does not exist"));
+        assert!(error_msg.contains("Please create the file first"));
+        assert!(error_msg.contains("verify the path is correct"));
+    }
+    
+    #[test]
+    fn test_edit_existing_file_not_read_error() {
+        let editor = FileEditor::new();
+        let mut file_reader = super::super::file_reader::FileReader::default();
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.txt");
+        
+        // Create a file but don't read it
+        fs::write(&file_path, "test content").unwrap();
+        
+        // Try to edit without reading first
+        let result = editor.edit_file(
+            &file_path,
+            EditAction::Replace {
+                search_string: "test".to_string(),
+                replacement_text: "new".to_string(),
+                expected_occurrences: 1,
+            },
+            &mut file_reader,
+        );
+        
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            EditFileError::FileNotRead { path } => {
+                assert!(path.to_string_lossy().contains("test.txt"));
+            }
+            _ => panic!("Expected FileNotRead error"),
+        }
+    }
+    
+    #[test]
+    fn test_edit_file_with_invalid_path_chars() {
+        let editor = FileEditor::new();
+        let mut file_reader = super::super::file_reader::FileReader::default();
+        
+        // Try to edit a file with an invalid path
+        let result = editor.edit_file(
+            "\0invalid\0path",
+            EditAction::InsertAtStart {
+                text: "hello".to_string(),
+            },
+            &mut file_reader,
+        );
+        
+        assert!(result.is_err());
+        // This should still produce a helpful error about the file not existing
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("File does not exist") || error_msg.contains("canonicalize"));
     }
 }
