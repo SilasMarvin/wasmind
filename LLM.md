@@ -58,8 +58,8 @@ pub struct Agent {
 ```
 
 **Tool Access by Agent Type:**
-- **Managers**: `planner`, `spawn_agent`, `plan_approval`, `complete` (sub-managers only)
-- **Workers**: `command`, `read_file`, `edit_file`, `planner`, `mcp`, `complete`
+- **Managers**: `planner`, `spawn_agents`, `send_message`, `wait`, `complete` (sub-managers only)
+- **Workers**: `execute_command`, `read_file`, `edit_file`, `planner`, `send_manager_message`, `wait`, `complete`, MCP tools (dynamically loaded)
 
 ## Message Architecture
 
@@ -97,16 +97,23 @@ Agents communicate using specialized message types:
 
 ```rust
 pub enum InterAgentMessage {
-    TaskStatusUpdate { status: AgentTaskStatus },
-    PlanApproved { plan_id },
-    PlanRejected { plan_id, reason },
+    StatusUpdate { status: AgentStatus },
+    StatusUpdateRequest { status: AgentStatus },
+    Message { message: String },  // Direct messages between agents
 }
 
-pub enum AgentTaskStatus {
-    Done(Result<AgentTaskResultOk, String>),
-    InProgress,
-    AwaitingManager(TaskAwaitingManager),
-    Waiting { tool_call_id: String },
+pub enum AgentStatus {
+    Processing { id: Uuid },
+    Wait { reason: WaitReason },
+    Done(AgentTaskResult),
+}
+
+pub enum WaitReason {
+    WaitingForUserInput,
+    WaitForDuration { tool_call_id: String, timestamp: u64, duration: u64 },
+    WaitingForPlanApproval { tool_call_id: String },
+    WaitingForTools { tool_calls: Vec<String> },
+    WaitingForActors { pending_actors: Vec<String> },
 }
 ```
 
@@ -120,18 +127,21 @@ pub enum AgentTaskStatus {
 ### Tool Categories
 
 1. **Manager Tools**:
-   - `spawn_agents`: Create new agents (Worker or Manager type)
+   - `spawn_agents`: Create new agents (array input for multiple agents at once)
    - `planner`: Create and manage task plans
-   - `approve_plan` / `reject_plan`: Review plans from subordinates
+   - `send_message`: Send messages to subordinate agents
+   - `wait`: Wait for specified duration (with interrupt capability)
    - `complete`: Signal task completion (sub-managers and headless main manager)
 
 2. **Worker Tools**:
-   - `execute_command`: Run shell commands (with whitelisting)
-   - `read_file`: Read file contents with caching
-   - `edit_file`: Modify files with various operations
-   - `planner`: Create plans for manager approval
+   - `execute_command`: Run shell commands (with whitelisting, 30s default/600s max timeout)
+   - `read_file`: Read file contents with caching (10MB max, 64KB auto-read limit)
+   - `edit_file`: Line-based file editing (validates file hasn't changed)
+   - `planner`: Create plans (automatically requests manager approval)
+   - `send_manager_message`: Send messages to manager agent
+   - `wait`: Wait for specified duration (with interrupt capability)
    - `complete`: Signal task completion
-   - MCP tools: Dynamically loaded from MCP servers
+   - MCP tools: Dynamically loaded from configured MCP servers
 
 ### Tool Implementation Pattern
 Each tool is an Actor that:
@@ -157,15 +167,68 @@ Tools expose JSON schemas for LLM interaction:
     "required": ["summary", "success"]
   }
 }
+
+// Example: spawn_agents tool (array input)
+{
+  "name": "spawn_agents",
+  "description": "Spawn new agents to help with tasks",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "agents_to_spawn": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "agent_role": { "type": "string" },
+            "task_description": { "type": "string" },
+            "agent_type": { "type": "string", "enum": ["Worker", "Manager"] }
+          },
+          "required": ["agent_role", "task_description", "agent_type"]
+        }
+      }
+    },
+    "required": ["agents_to_spawn"]
+  }
+}
+
+// Example: read_file tool
+{
+  "name": "read_file",
+  "description": "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "path": { "type": "string" },
+      "start_line": { "type": "integer", "description": "Optional starting line (1-indexed)" },
+      "end_line": { "type": "integer", "description": "Optional ending line (inclusive)" }
+    },
+    "required": ["path"]
+  }
+}
 ```
 
 ## System State Management
 
 ### SystemState (`src/system_state.rs`)
 Maintains context injected into LLM prompts:
-- **Files**: Currently loaded file contents with metadata
-- **Plans**: Active task plans with status tracking
-- **Agents**: Spawned agents and their task assignments
+- **Files**: Managed by FileReader actor with caching (10MB limit, line-numbered format)
+- **Plans**: Active task plans with status tracking (Pending, InProgress, Completed, Skipped)
+- **Agents**: Spawned agents and their task assignments (tracks spawn time for ordering)
+
+### FileReader (`src/actors/tools/file_reader.rs`)
+Centralized file caching system:
+- **Size Limits**:
+  - Maximum file size: 10MB (`MAX_FILE_SIZE_BYTES`)
+  - Automatic full read: Files ≤64KB (`SMALL_FILE_SIZE_BYTES`)
+  - Large files require line range specification
+- **File Format**: All content includes line numbers: `1|first line\n2|second line`
+- **Error Messages**: Include JSON metadata for large files:
+  ```json
+  {"path": "file.txt", "size_bytes": 123456, "total_lines": 5000}
+  ```
+- **Caching**: Tracks modification times, supports partial content merging
+- **Shared Access**: `Arc<tokio::sync::Mutex<FileReader>>` for thread-safe access
 
 ### Template System (`src/template.rs`)
 Jinja2 template support for dynamic system prompts:
@@ -192,6 +255,7 @@ Available template variables:
 - `tools`, `task`, `current_datetime`, `os`, `arch`, `cwd`
 - `whitelisted_commands`, `files`, `plan`, `agents`
 - `id` - The unique identifier (scope) of the current agent
+- `role` - The agent's role (e.g., "Software Engineer", "QA Tester")
 
 ## Configuration System
 
@@ -223,6 +287,15 @@ command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem"]
 ```
 
+### MCP Integration (`src/actors/tools/mcp.rs`)
+Model Context Protocol support for external tool providers:
+- **Dynamic Tool Loading**: Tools are loaded from configured MCP servers at runtime
+- **Multi-Server Support**: Can connect to multiple MCP servers simultaneously
+- **Tool Mapping**: Each tool is mapped to its originating server
+- **Content Types**: Supports text, image, resource, and audio content
+- **Protocol**: Uses JSON-RPC over stdio for communication
+- **Tool Execution**: Routes tool calls to appropriate MCP server
+
 ## Development Workflow
 
 ### Running HIVE
@@ -245,6 +318,14 @@ cargo run -- prompt-preview --all
    - `AssistantToolCall` - Tool invocations
    - `TaskCompleted` - Completion signals
    - `Actor ready` - Actor initialization
+   - `file_reader_tool_call` - File read operations
+   - `InterAgentMessage` - Agent-to-agent communication
+4. **Common debugging scenarios**:
+   - File access issues: Check FileReader cache and modification times
+   - Tool failures: Verify tool availability broadcasts
+   - Agent communication: Monitor scope-based message filtering
+   - MCP tools: Check MCP server connection and tool loading
+   - Wait timeouts: Track WaitForDuration status updates
 
 ### Testing
 - Integration tests use Docker sandbox for safety
@@ -266,19 +347,36 @@ cargo run -- prompt-preview --all
 ### File Editing Pattern
 ```
 1. Worker calls read_file tool
-2. System updates FileRead state
-3. Worker calls edit_file tool with changes
-4. System validates file hasn't changed
-5. System updates FileEdited state
+2. FileReader caches content with line numbers
+3. Worker calls edit_file tool with line-based changes
+4. System validates file hasn't changed (modification time)
+5. Edits processed in reverse order to maintain line integrity
+6. System updates FileEdited state
 ```
 
 ### Plan Approval Pattern
 ```
 1. Worker creates plan using planner tool
-2. Status changes to AwaitingManager
-3. Manager receives plan for review
-4. Manager calls approve_plan or reject_plan
+2. Status changes to WaitingForPlanApproval
+3. Manager receives InterAgentMessage with plan
+4. Manager approves/rejects via StatusUpdate message
 5. Worker proceeds based on decision
+```
+
+### Inter-Agent Communication Pattern
+```
+1. Agent calls send_message or send_manager_message tool
+2. Tool sends InterAgentMessage::Message
+3. Target agent receives in their message stream
+4. Response flows back through normal channels
+```
+
+### Wait Pattern
+```
+1. Agent calls wait tool with duration (seconds)
+2. Status changes to Wait with WaitForDuration reason
+3. Timer runs in background
+4. Agent resumes on timer completion or interruption
 ```
 
 ## Best Practices
@@ -286,13 +384,38 @@ cargo run -- prompt-preview --all
 1. **Always use the complete tool** - Every agent must signal completion
 2. **Check tool availability** - Tools broadcast their presence on startup
 3. **Use structured logging** - All messages are JSON-serializable
-4. **Leverage templates** - Dynamic prompts adapt to available tools
+4. **Leverage templates** - Dynamic prompts adapt to available tools and state
 5. **Test with Docker** - Safe environment for command execution
 6. **Monitor scopes** - Each agent operates in its own scope
-7. **Handle errors gracefully** - Use Result types and error messages
+7. **Handle errors gracefully** - All tools return structured errors via `ToolCallStatus`
+8. **File operations** - Always check if files exist and validate cache staleness
+9. **Line ranges for large files** - Use start_line/end_line for files >64KB
+10. **Inter-agent communication** - Use send_message/send_manager_message for coordination
+11. **Wait interrupts** - The wait tool can be interrupted by user input or agent messages
+12. **Command timeouts** - Commands default to 30s timeout, max 600s for long operations
+
+## Error Handling Patterns
+
+### File Access Errors
+- Large files return JSON metadata with path, size, and line count
+- Missing files return clear error messages
+- Cache staleness detected via modification time comparison
+
+### Tool Execution Errors
+- Command timeouts return truncated output with error indication
+- Permission errors include command and working directory context
+- Tool unavailability errors suggest checking tool registration
+
+### Agent Communication Errors
+- Invalid agent scopes return "agent not found" errors
+- Message delivery failures include retry suggestions
+- Plan approval timeouts trigger automatic escalation
 
 For implementation details, refer to:
 - `src/actors/agent.rs` - Agent lifecycle and tool access
 - `src/actors/tools/` - Individual tool implementations
-- `src/system_state.rs` - Context management
+- `src/actors/tools/file_reader.rs` - File caching and reading system
+- `src/actors/tools/mcp.rs` - Model Context Protocol integration
+- `src/system_state.rs` - Context management and template data
+- `src/template.rs` - Jinja2 template system and context
 - `docs/system_prompt_templates.md` - Template guide
