@@ -158,6 +158,7 @@ impl Assistant {
         task_description: Option<String>,
         role: Option<String>,
         whitelisted_commands: Vec<String>,
+        file_reader: Option<Arc<tokio::sync::Mutex<crate::actors::tools::file_reader::FileReader>>>,
     ) -> Self {
         let client = Client::builder()
             .with_service_target_resolver(config.service_target_resolver.clone())
@@ -175,12 +176,18 @@ impl Assistant {
             }
         };
 
+        let system_state = if let Some(file_reader) = file_reader {
+            SystemState::with_file_reader(file_reader)
+        } else {
+            SystemState::new()
+        };
+
         let mut s = Self {
             tx,
             config,
             client,
             chat_request: ChatRequest::default(),
-            system_state: SystemState::new(),
+            system_state,
             available_tools: Vec::new(),
             cancel_handle: Arc::new(Mutex::new(None)),
             pending_message: PendingMessage::new(),
@@ -988,6 +995,7 @@ mod tests {
             task_description,
             None,
             vec![],
+            None,
         )
     }
 
@@ -1016,6 +1024,7 @@ mod tests {
             task_description,
             None,
             vec![],
+            None,
         )
     }
 
@@ -2410,7 +2419,7 @@ mod tests {
         let last_message = assistant.chat_request.messages.last().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
         if let MessageContent::Text(text) = &last_message.content {
-            assert!(text.contains("agent_response"));
+            assert!(text.contains("sub_agent_complete"));
             assert!(text.contains(&sub_agent_id.to_string()));
             assert!(text.contains("SUCCESS"));
             assert!(text.contains("Sub-agent task completed successfully"));
@@ -2507,7 +2516,7 @@ mod tests {
         let last_message = assistant.chat_request.messages.last().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
         if let MessageContent::Text(text) = &last_message.content {
-            assert!(text.contains("agent_response"));
+            assert!(text.contains("sub_agent_complete"));
             assert!(text.contains(&sub_agent_id.to_string()));
             assert!(text.contains("FAILURE"));
             assert!(text.contains("Sub-agent encountered an error"));

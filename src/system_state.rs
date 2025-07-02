@@ -2,8 +2,10 @@ use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::actors::tools::planner::{TaskPlan, TaskStatus};
+use crate::actors::tools::file_reader::FileReader;
 use crate::actors::{AgentStatus, AgentTaskResult, AgentType};
 use crate::scope::Scope;
 use crate::template::{self, TemplateContext, ToolInfo};
@@ -178,10 +180,10 @@ impl AgentTaskInfo {
 }
 
 /// Manages the system state that gets injected into the system prompt
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SystemState {
-    /// Currently loaded files and their contents
-    files: HashMap<PathBuf, FileInfo>,
+    /// File reader for accessing cached file contents
+    file_reader: Option<Arc<tokio::sync::Mutex<FileReader>>>,
     /// Current task plan if any
     current_plan: Option<TaskPlan>,
     /// Spawned agents and their tasks
@@ -195,7 +197,7 @@ pub struct SystemState {
 impl Default for SystemState {
     fn default() -> Self {
         Self {
-            files: HashMap::new(),
+            file_reader: None,
             current_plan: None,
             agents: HashMap::new(),
             max_file_lines: 50, // Max lines per file
@@ -209,23 +211,33 @@ impl SystemState {
         Self::default()
     }
 
+    pub fn with_file_reader(file_reader: Arc<tokio::sync::Mutex<FileReader>>) -> Self {
+        Self {
+            file_reader: Some(file_reader),
+            current_plan: None,
+            agents: HashMap::new(),
+            max_file_lines: 50,
+            modified: true,
+        }
+    }
+
     /// Add or update a file in the system state
+    /// Note: Files are now managed by FileReader, this method marks state as modified
     pub fn update_file(
         &mut self,
-        path: PathBuf,
-        content: String,
-        last_modified: std::time::SystemTime,
+        _path: PathBuf,
+        _content: String,
+        _last_modified: std::time::SystemTime,
     ) {
-        let file_info = FileInfo::new(path.clone(), content, last_modified);
-        self.files.insert(path, file_info);
+        // Files are now managed by FileReader, just mark as modified
         self.modified = true;
     }
 
     /// Remove a file from the system state
-    pub fn remove_file(&mut self, path: &PathBuf) {
-        if self.files.remove(path).is_some() {
-            self.modified = true;
-        }
+    /// Note: Files are now managed by FileReader, this method marks state as modified
+    pub fn remove_file(&mut self, _path: &PathBuf) {
+        // Files are now managed by FileReader, just mark as modified
+        self.modified = true;
     }
 
     /// Update the current task plan
@@ -279,43 +291,81 @@ impl SystemState {
     }
 
     /// Get all files currently loaded
-    pub fn get_files(&self) -> &HashMap<PathBuf, FileInfo> {
-        &self.files
+    /// Note: This method is deprecated, files are now managed by FileReader
+    pub fn get_files(&self) -> HashMap<PathBuf, FileInfo> {
+        // Return empty map since files are now in FileReader
+        HashMap::new()
     }
 
     /// Get a specific file by path
+    /// Note: This method is deprecated, files are now managed by FileReader
     pub fn get_file(&self, path: &PathBuf) -> Option<&FileInfo> {
-        self.files.get(path)
+        // Files are now in FileReader, cannot return reference
+        None
     }
 
     /// Check if a file is currently loaded
     pub fn has_file(&self, path: &PathBuf) -> bool {
-        self.files.contains_key(path)
+        if let Some(file_reader) = &self.file_reader {
+            let reader = file_reader.blocking_lock();
+            reader.get_cached_entry(path).is_some()
+        } else {
+            false
+        }
     }
 
     /// Get the number of currently loaded files
     pub fn file_count(&self) -> usize {
-        self.files.len()
+        if let Some(file_reader) = &self.file_reader {
+            let reader = file_reader.blocking_lock();
+            reader.list_cached_paths().len()
+        } else {
+            0
+        }
     }
 
     /// Generate the files section for the system prompt
     pub fn render_files_section(&self) -> String {
-        if self.files.is_empty() {
-            return "No files currently loaded.".to_string();
+        if let Some(file_reader) = &self.file_reader {
+            let reader = file_reader.blocking_lock();
+            let cached_paths = reader.list_cached_paths();
+            
+            if cached_paths.is_empty() {
+                return "No files currently loaded.".to_string();
+            }
+
+            let mut sections = Vec::new();
+            let mut sorted_paths = cached_paths.clone();
+            sorted_paths.sort();
+
+            for path in sorted_paths {
+                if let Some(content) = reader.get_cached_content(path) {
+                    let lines: Vec<&str> = content.lines().collect();
+                    let display_content = if lines.len() <= self.max_file_lines {
+                        content.clone()
+                    } else {
+                        let preview_lines = &lines[..self.max_file_lines];
+                        format!(
+                            "{}\n... ({} more lines)",
+                            preview_lines.join("\n"),
+                            lines.len() - self.max_file_lines
+                        )
+                    };
+
+                    let formatted_file = format!(
+                        "## {}\n```\n{}\n```\n({} lines total)",
+                        path.display(),
+                        display_content,
+                        lines.len()
+                    );
+                    sections.push(formatted_file);
+                }
+            }
+
+            format!("## Currently Loaded Files\n\n{}", sections.join("\n\n"))
+        } else {
+            "No files currently loaded.".to_string()
         }
-
-        let mut sections = Vec::new();
-
-        // Sort files by path for consistent output
-        let mut sorted_files: Vec<_> = self.files.iter().collect();
-        sorted_files.sort_by_key(|(path, _)| path.as_path());
-
-        for (_path, file_info) in sorted_files {
-            let formatted_file = file_info.format_with_limit(self.max_file_lines);
-            sections.push(formatted_file);
-        }
-
-        format!("## Currently Loaded Files\n\n{}", sections.join("\n\n"))
     }
 
     /// Generate the plan section for the system prompt
@@ -349,22 +399,44 @@ impl SystemState {
 
     /// Generate the complete system state context for templates
     pub fn to_template_context(&self) -> serde_json::Value {
-        // Sort files by path for consistent output
-        let mut sorted_files: Vec<_> = self.files.iter().collect();
-        sorted_files.sort_by_key(|(path, _)| path.as_path());
+        // Get files from FileReader
+        let files_list: Vec<serde_json::Value> = if let Some(file_reader) = &self.file_reader {
+            let reader = file_reader.blocking_lock();
+            let cached_paths = reader.list_cached_paths();
+            let mut sorted_paths = cached_paths.clone();
+            sorted_paths.sort();
 
-        // Convert files to a list with path and content
-        let files_list: Vec<serde_json::Value> = sorted_files
-            .into_iter()
-            .map(|(path, file_info)| {
-                serde_json::json!({
-                    "path": path.display().to_string(),
-                    "content": file_info.content,
-                    "lines": file_info.lines,
-                    "preview": file_info.get_preview(self.max_file_lines)
+            sorted_paths
+                .into_iter()
+                .filter_map(|path| {
+                    if let Some(content) = reader.get_cached_content(path) {
+                        let lines: Vec<&str> = content.lines().collect();
+                        let line_count = lines.len();
+                        let preview = if line_count <= self.max_file_lines {
+                            content.clone()
+                        } else {
+                            let preview_lines = &lines[..self.max_file_lines];
+                            format!(
+                                "{}\n... ({} more lines)",
+                                preview_lines.join("\n"),
+                                line_count - self.max_file_lines
+                            )
+                        };
+
+                        Some(serde_json::json!({
+                            "path": path.display().to_string(),
+                            "content": content.clone(),
+                            "lines": line_count,
+                            "preview": preview
+                        }))
+                    } else {
+                        None
+                    }
                 })
-            })
-            .collect();
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         // Sort agents by spawn time for consistent output
         let mut sorted_agents: Vec<_> = self.agents.values().collect();
@@ -392,9 +464,9 @@ impl SystemState {
 
         serde_json::json!({
             "files": {
-                "count": self.file_count(),
+                "count": files_list.len(),
                 "list": files_list,
-                "section": self.render_files_section()
+                "section": "" // Will be rendered separately as async
             },
             "plan": {
                 "exists": self.current_plan.is_some(),

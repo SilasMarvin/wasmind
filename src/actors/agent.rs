@@ -138,6 +138,7 @@ impl Agent {
                     self.task_description.clone(),
                     Some(self.role.clone()),
                     self.config.whitelisted_commands.clone(),
+                    Some(file_reader.clone()),
                 )
                 .run();
                 SendMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
@@ -165,6 +166,7 @@ impl Agent {
                     self.task_description.clone(),
                     Some(self.role.clone()),
                     self.config.whitelisted_commands.clone(),
+                    Some(file_reader.clone()),
                 )
                 .run();
                 Wait::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
