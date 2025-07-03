@@ -116,7 +116,7 @@ impl Agent {
 
     /// Run the agent - start their actors
     #[tracing::instrument(name = "agent_run", skip(self), fields(agent_id = %self.scope, type = ?self.r#type, role = %self.role))]
-    pub async fn run(self) {
+    pub fn run(self) {
         // Create shared file reader
         let file_reader = Arc::new(Mutex::new(FileReader::default()));
 

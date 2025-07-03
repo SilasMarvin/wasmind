@@ -52,6 +52,7 @@ async fn test_send_manager_message_tool() {
         None,
         None,
         vec![],
+        None,
     );
 
     // Create send_message tool

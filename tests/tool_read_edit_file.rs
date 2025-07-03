@@ -62,6 +62,7 @@ async fn test_read_edit_file() {
         None,
         None,
         vec![],
+        None,
     );
 
     // Create tools

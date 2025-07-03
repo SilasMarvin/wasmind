@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::actors::tools::planner::{TaskPlan, TaskStatus};
 use crate::actors::tools::file_reader::FileReader;
+use crate::actors::tools::planner::{TaskPlan, TaskStatus};
 use crate::actors::{AgentStatus, AgentTaskResult, AgentType};
 use crate::scope::Scope;
 use crate::template::{self, TemplateContext, ToolInfo};
@@ -98,7 +98,7 @@ impl From<AgentStatus> for AgentDisplayStatus {
         match value {
             AgentStatus::Processing { .. } => Self::InProgress,
             AgentStatus::Wait { reason } => match reason {
-                crate::actors::WaitReason::WaitingForPlanApproval { .. } => {
+                crate::actors::WaitReason::WaitingForManager { .. } => {
                     Self::AwaitingManagerPlanApproval
                 }
                 _ => Self::InProgress,
@@ -329,7 +329,7 @@ impl SystemState {
         if let Some(file_reader) = &self.file_reader {
             let reader = file_reader.blocking_lock();
             let cached_paths = reader.list_cached_paths();
-            
+
             if cached_paths.is_empty() {
                 return "No files currently loaded.".to_string();
             }
@@ -854,10 +854,7 @@ mod tests {
         assert_eq!(agents_list.len(), 2);
 
         // Find the done agent
-        let done_agent = agents_list
-            .iter()
-            .find(|a| a["status"] == "done")
-            .unwrap();
+        let done_agent = agents_list.iter().find(|a| a["status"] == "done").unwrap();
 
         assert_eq!(done_agent["role"], "Software Engineer");
         assert_eq!(done_agent["task"], "Implement feature X");
@@ -1013,7 +1010,7 @@ Current plan: active
 
         // Initially modified (to ensure first render happens)
         assert!(state.is_modified());
-        
+
         // Reset clears the flag
         state.reset_modified();
         assert!(!state.is_modified());
@@ -1118,7 +1115,14 @@ Available tools: {{ tools|length }}"#;
 
         // Test without role and task
         let result = state
-            .render_system_prompt_with_task_and_role(template, &tools, vec![], None, None, Scope::new())
+            .render_system_prompt_with_task_and_role(
+                template,
+                &tools,
+                vec![],
+                None,
+                None,
+                Scope::new(),
+            )
             .unwrap();
         assert!(result.contains("No specific role assigned"));
         assert!(result.contains("No specific task assigned"));

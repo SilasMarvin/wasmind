@@ -43,6 +43,7 @@ async fn test_complete_tool() {
         None,
         None,
         vec![],
+        None,
     );
 
     // Create complete tool

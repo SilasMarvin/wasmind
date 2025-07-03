@@ -58,10 +58,8 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
             AgentType::MainManager
         );
 
-        // Start the Main Manager in its own task
-        tokio::spawn(async move {
-            main_manager.run().await;
-        });
+        // Start the Main Manager
+        main_manager.run();
 
         // Keep the runtime alive and listen for exit signals
         loop {
@@ -121,10 +119,8 @@ pub fn start_headless_hive(
             AgentType::MainManager
         );
 
-        // Start the Main Manager in its own task
-        tokio::spawn(async move {
-            main_manager.run().await;
-        });
+        // Start the Main Manager
+        main_manager.run();
 
         // Listen for exit signals and broadcast them
         loop {

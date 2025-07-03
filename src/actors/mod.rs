@@ -100,7 +100,7 @@ pub enum WaitReason {
         timestamp: u64,
         duration: Duration,
     },
-    WaitingForPlanApproval {
+    WaitingForManager {
         tool_call_id: String,
     },
     WaitingForTools {
@@ -312,7 +312,7 @@ pub trait Actor: Send + Sized + 'static {
     /// Gets the message sender
     fn get_tx(&self) -> broadcast::Sender<ActorMessage>;
 
-    /// gets the message receiver
+    /// Gets the message receiver
     fn get_rx(&self) -> broadcast::Receiver<ActorMessage>;
 
     /// Sends a message

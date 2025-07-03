@@ -163,10 +163,8 @@ impl SpawnAgent {
                 agent_def.agent_type
             ));
 
-            // Spawn the agent task to run asynchronously
-            tokio::spawn(async move {
-                agent.run().await;
-            });
+            // Spawn the agent task to run
+            agent.run();
         }
 
         // All agents defined in the input have been processed and spawn tasks initiated

@@ -267,7 +267,7 @@ impl Planner {
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
                         status: AgentStatus::Wait {
-                            reason: WaitReason::WaitingForPlanApproval {
+                            reason: WaitReason::WaitingForManager {
                                 tool_call_id: tool_call_id.to_owned(),
                             },
                         },

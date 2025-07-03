@@ -305,7 +305,7 @@ impl Assistant {
                 // Don't submit pending messages while WaitingForPlanApproval
                 // We need to wait for a message from our manager
                 AgentStatus::Wait {
-                    reason: WaitReason::WaitingForPlanApproval { tool_call_id },
+                    reason: WaitReason::WaitingForManager { tool_call_id },
                 } => {
                     if tool_call_id != &update.call_id {
                         return;
@@ -595,7 +595,7 @@ impl Actor for Assistant {
                                                 self.submit_pending_message(false);
                                             }
                                             WaitReason::WaitingForUserInput
-                                            | WaitReason::WaitingForPlanApproval { .. } => {
+                                            | WaitReason::WaitingForManager { .. } => {
                                                 self.submit_pending_message(false);
                                             }
                                             _ => (),
@@ -853,7 +853,7 @@ impl Actor for Assistant {
                                             self.submit_pending_message(false);
                                         }
                                         WaitReason::WaitingForUserInput
-                                        | WaitReason::WaitingForPlanApproval { .. } => {
+                                        | WaitReason::WaitingForManager { .. } => {
                                             self.submit_pending_message(false);
                                         }
                                         _ => (),
@@ -1746,7 +1746,7 @@ mod tests {
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
                         status: AgentStatus::Wait {
-                            reason: WaitReason::WaitingForPlanApproval {
+                            reason: WaitReason::WaitingForManager {
                                 tool_call_id: "call_123".to_string(),
                             },
                         },
@@ -1760,7 +1760,7 @@ mod tests {
         assert!(matches!(
             assistant.state,
             AgentStatus::Wait {
-                reason: WaitReason::WaitingForPlanApproval { .. }
+                reason: WaitReason::WaitingForManager { .. }
             }
         ));
     }
@@ -1773,7 +1773,7 @@ mod tests {
         // Set to WaitingForPlanApproval
         assistant.set_state(
             AgentStatus::Wait {
-                reason: WaitReason::WaitingForPlanApproval {
+                reason: WaitReason::WaitingForManager {
                     tool_call_id: "call_123".to_string(),
                 },
             },
@@ -1934,7 +1934,7 @@ mod tests {
         // Set to WaitingForPlanApproval
         assistant.set_state(
             AgentStatus::Wait {
-                reason: WaitReason::WaitingForPlanApproval {
+                reason: WaitReason::WaitingForManager {
                     tool_call_id: "plan_call_123".to_string(),
                 },
             },
@@ -1957,7 +1957,7 @@ mod tests {
         assert!(matches!(
             assistant.state,
             AgentStatus::Wait {
-                reason: WaitReason::WaitingForPlanApproval { .. }
+                reason: WaitReason::WaitingForManager { .. }
             }
         ));
 
@@ -2290,7 +2290,7 @@ mod tests {
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
                         status: AgentStatus::Wait {
-                            reason: WaitReason::WaitingForPlanApproval {
+                            reason: WaitReason::WaitingForManager {
                                 tool_call_id: "call_2".to_string(),
                             },
                         },
@@ -2302,7 +2302,7 @@ mod tests {
 
         // State should now be WaitingForPlanApproval - tools can transition states
         if let AgentStatus::Wait {
-            reason: WaitReason::WaitingForPlanApproval { tool_call_id },
+            reason: WaitReason::WaitingForManager { tool_call_id },
         } = &assistant.state
         {
             assert_eq!(tool_call_id, "call_2");
@@ -2716,7 +2716,7 @@ mod tests {
         // Set to WaitingForPlanApproval
         assistant.set_state(
             AgentStatus::Wait {
-                reason: WaitReason::WaitingForPlanApproval {
+                reason: WaitReason::WaitingForManager {
                     tool_call_id: "plan_123".to_string(),
                 },
             },
@@ -2744,7 +2744,7 @@ mod tests {
         assert!(matches!(
             assistant.state,
             AgentStatus::Wait {
-                reason: WaitReason::WaitingForPlanApproval { .. }
+                reason: WaitReason::WaitingForManager { .. }
             }
         ));
 
