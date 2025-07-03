@@ -95,10 +95,8 @@ pub struct AgentTaskResultOk {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum WaitReason {
     WaitingForUserInput,
-    WaitForDuration {
+    WaitForSystem {
         tool_call_id: String,
-        timestamp: u64,
-        duration: Duration,
     },
     WaitingForManager {
         tool_call_id: String,

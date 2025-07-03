@@ -84,7 +84,7 @@ impl Wait {
             agent_id: self.get_scope().clone(),
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
                 status: AgentStatus::Wait {
-                    reason: WaitReason::WaitForDuration {
+                    reason: WaitReason::WaitForSystem {
                         tool_call_id: tool_call.call_id.clone(),
                         timestamp: SystemTime::now()
                             .duration_since(UNIX_EPOCH)

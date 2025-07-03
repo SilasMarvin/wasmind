@@ -3,10 +3,7 @@ use genai::{
     chat::{ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool, ToolResponse},
 };
 use snafu::ResultExt;
-use std::{
-    sync::{Arc, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tracing::error;
 use uuid::Uuid;
@@ -249,27 +246,6 @@ impl Assistant {
         }
     }
 
-    // TODO: Add interrupt support for all tool calls
-    // Useful for when the user cancels, timeouts, etc...
-    fn interupt_wait_tool_call(&mut self, tool_call_id: &str, timestamp: u64, duration: Duration) {
-        self.chat_request = self.chat_request.clone().append_message(ChatMessage {
-            role: ChatRole::Tool,
-            content: MessageContent::ToolResponses(vec![ToolResponse {
-                call_id: tool_call_id.to_string(),
-                content: crate::actors::tools::wait::format_wait_response_interupted(
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        - timestamp,
-                    duration.as_secs(),
-                ),
-            }]),
-            options: None,
-        });
-        // TODO: Broadcast some kind of tool call cancelled?
-    }
-
     fn handle_tool_call_update(&mut self, update: ToolCallUpdate) {
         if let ToolCallStatus::Finished(result) = &update.status {
             match &mut self.state {
@@ -323,7 +299,7 @@ impl Assistant {
                 }
                 // Wait is a special function
                 AgentStatus::Wait {
-                    reason: WaitReason::WaitForDuration { tool_call_id, .. },
+                    reason: WaitReason::WaitForSystem { tool_call_id, .. },
                 } => {
                     if tool_call_id != &update.call_id {
                         return;
@@ -582,16 +558,7 @@ impl Actor for Assistant {
                                     self.add_system_message_part(formatted_message);
                                     match self.state.clone() {
                                         AgentStatus::Wait { reason } => match reason {
-                                            WaitReason::WaitForDuration {
-                                                tool_call_id,
-                                                timestamp,
-                                                duration,
-                                            } => {
-                                                self.interupt_wait_tool_call(
-                                                    &tool_call_id,
-                                                    timestamp,
-                                                    duration,
-                                                );
+                                            WaitReason::WaitForSystem { .. } => {
                                                 self.submit_pending_message(false);
                                             }
                                             WaitReason::WaitingForUserInput
@@ -740,16 +707,25 @@ impl Actor for Assistant {
                         agent_type,
                         role,
                         task_description,
-                        tool_call_id: _,
+                        tool_call_id,
                     } => {
-                        self.spawned_agents_scope.push(message.agent_id.clone());
-                        let agent_info = crate::system_state::AgentTaskInfo::new(
-                            message.agent_id.clone(),
-                            agent_type,
-                            role,
-                            task_description,
-                        );
-                        self.system_state.add_agent(agent_info);
+                        // Ensure we actually called the tool to spawn agents
+                        if let AgentStatus::Wait {
+                            reason: WaitReason::WaitingForTools { tool_calls },
+                        } = &self.state
+                        {
+                            if !tool_calls.contains_key(&tool_call_id) {
+                                return;
+                            }
+                            self.spawned_agents_scope.push(message.agent_id.clone());
+                            let agent_info = crate::system_state::AgentTaskInfo::new(
+                                message.agent_id.clone(),
+                                agent_type,
+                                role,
+                                task_description,
+                            );
+                            self.system_state.add_agent(agent_info);
+                        }
                     }
                     // One of our sub agents was removed
                     AgentMessageType::AgentRemoved => {
@@ -787,18 +763,11 @@ impl Actor for Assistant {
                                     AgentStatus::Done(agent_task_result_ok) => {
                                         match self.state.clone() {
                                             AgentStatus::Wait {
-                                                reason:
-                                                    WaitReason::WaitForDuration {
-                                                        tool_call_id,
-                                                        timestamp,
-                                                        duration,
-                                                    },
+                                                reason: WaitReason::WaitForSystem { .. },
+                                            }
+                                            | AgentStatus::Wait {
+                                                reason: WaitReason::WaitingForUserInput,
                                             } => {
-                                                self.interupt_wait_tool_call(
-                                                    &tool_call_id,
-                                                    timestamp,
-                                                    duration,
-                                                );
                                                 let formatted_message = match agent_task_result_ok {
                                                     Ok(response) => format_agent_response_success(
                                                         &agent_message.agent_id,
@@ -840,19 +809,8 @@ impl Actor for Assistant {
                                 self.add_system_message_part(formatted_message);
                                 match self.state.clone() {
                                     AgentStatus::Wait { reason } => match reason {
-                                        WaitReason::WaitForDuration {
-                                            tool_call_id,
-                                            timestamp,
-                                            duration,
-                                        } => {
-                                            self.interupt_wait_tool_call(
-                                                &tool_call_id,
-                                                timestamp,
-                                                duration,
-                                            );
-                                            self.submit_pending_message(false);
-                                        }
-                                        WaitReason::WaitingForUserInput
+                                        WaitReason::WaitForSystem { .. }
+                                        | WaitReason::WaitingForUserInput
                                         | WaitReason::WaitingForManager { .. } => {
                                             self.submit_pending_message(false);
                                         }
@@ -874,6 +832,8 @@ impl Actor for Assistant {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use crate::config::ParsedConfig;
 
     use super::*;
@@ -1554,6 +1514,12 @@ mod tests {
         let mut assistant = create_test_assistant(vec![], None);
         let spawned_agent_id = Scope::new();
 
+        assistant.state = AgentStatus::Wait {
+            reason: WaitReason::WaitingForTools {
+                tool_calls: HashMap::from([("call_123".to_string(), None)]),
+            },
+        };
+
         send_message(
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
@@ -1699,13 +1665,8 @@ mod tests {
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
                         status: AgentStatus::Wait {
-                            reason: WaitReason::WaitForDuration {
+                            reason: WaitReason::WaitForSystem {
                                 tool_call_id: "call_123".to_string(),
-                                timestamp: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs(),
-                                duration: std::time::Duration::from_secs(5),
                             },
                         },
                     },
@@ -1718,7 +1679,7 @@ mod tests {
         assert!(matches!(
             assistant.state,
             AgentStatus::Wait {
-                reason: WaitReason::WaitForDuration { .. }
+                reason: WaitReason::WaitForSystem { .. }
             }
         ));
     }
@@ -1805,19 +1766,11 @@ mod tests {
 
         let initial_messages_count = assistant.chat_request.messages.len();
 
-        // Set to WaitForDuration
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let duration = std::time::Duration::from_secs(5);
-
+        // Set to WaitForSystem
         assistant.set_state(
             AgentStatus::Wait {
-                reason: WaitReason::WaitForDuration {
+                reason: WaitReason::WaitForSystem {
                     tool_call_id: "call_123".to_string(),
-                    timestamp,
-                    duration,
                 },
             },
             true,
@@ -1831,7 +1784,7 @@ mod tests {
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: agent_scope,
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
-                    message: "Interrupt wait duration".to_string(),
+                    message: "Interrupt wait".to_string(),
                 }),
             }),
         )
@@ -1840,29 +1793,25 @@ mod tests {
         // Should transition to Processing
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
-        // Verify that an interrupt tool and system response were added to chat_request
+        // Verify that a system response was added
         assert_eq!(
             assistant.chat_request.messages.len(),
-            initial_messages_count + 2
+            initial_messages_count + 1
         );
 
         let last_message = assistant.chat_request.messages.pop().unwrap();
+
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
 
-        let last_message = assistant.chat_request.messages.pop().unwrap();
-
-        if let genai::chat::MessageContent::ToolResponses(responses) = &last_message.content {
-            assert_eq!(responses.len(), 1);
-            assert_eq!(responses[0].call_id, "call_123");
-            // The content should contain interrupt information
-            assert!(responses[0].content.contains("interrupted"));
+        if let genai::chat::MessageContent::Text(content) = &last_message.content {
+            assert!(content.contains("Interrupt wait"));
         } else {
             panic!("Expected ToolResponses content");
         }
     }
 
     #[tokio::test]
-    async fn test_sub_agent_message_during_wait_for_duration() {
+    async fn test_sub_agent_message_during_system_wait() {
         let mut assistant = create_test_assistant(vec![], None);
         let sub_agent_scope = Scope::new();
 
@@ -1871,19 +1820,10 @@ mod tests {
 
         let initial_messages_count = assistant.chat_request.messages.len();
 
-        // Set to WaitForDuration
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let duration = std::time::Duration::from_secs(10);
-
         assistant.set_state(
             AgentStatus::Wait {
-                reason: WaitReason::WaitForDuration {
+                reason: WaitReason::WaitForSystem {
                     tool_call_id: "call_456".to_string(),
-                    timestamp,
-                    duration,
                 },
             },
             true,
@@ -1906,32 +1846,21 @@ mod tests {
         // Should transition to Processing
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
-        // Verify that an interrupt tool response was added to chat_request
+        // Verify that the message was added
         assert_eq!(
             assistant.chat_request.messages.len(),
-            initial_messages_count + 2
+            initial_messages_count + 1
         );
 
         let last_message = assistant.chat_request.messages.pop().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
-
-        let last_message = assistant.chat_request.messages.pop().unwrap();
-
-        if let genai::chat::MessageContent::ToolResponses(responses) = &last_message.content {
-            assert_eq!(responses.len(), 1);
-            assert_eq!(responses[0].call_id, "call_456");
-            // The content should contain interrupt information
-            assert!(responses[0].content.contains("interrupted"));
-        } else {
-            panic!("Expected ToolResponses content");
-        }
     }
 
     #[tokio::test]
     async fn test_tool_completion_during_plan_approval_wait() {
         let mut assistant = create_test_assistant(vec![], None);
 
-        // Set to WaitingForPlanApproval
+        // Set to WaitingForManager
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForManager {
@@ -1953,7 +1882,7 @@ mod tests {
         )
         .await;
 
-        // Should STILL be in WaitingForPlanApproval - does NOT transition to Processing
+        // Should STILL be in WaitingForManager - does NOT transition to Processing
         assert!(matches!(
             assistant.state,
             AgentStatus::Wait {
@@ -1986,13 +1915,8 @@ mod tests {
         // Set to WaitForDuration
         assistant.set_state(
             AgentStatus::Wait {
-                reason: WaitReason::WaitForDuration {
+                reason: WaitReason::WaitForSystem {
                     tool_call_id: "wait_call_456".to_string(),
-                    timestamp: std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs(),
-                    duration: std::time::Duration::from_secs(5),
                 },
             },
             true,
@@ -2255,13 +2179,8 @@ mod tests {
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
                         status: AgentStatus::Wait {
-                            reason: WaitReason::WaitForDuration {
+                            reason: WaitReason::WaitForSystem {
                                 tool_call_id: "call_1".to_string(),
-                                timestamp: std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs(),
-                                duration: std::time::Duration::from_secs(5),
                             },
                         },
                     },
@@ -2272,7 +2191,7 @@ mod tests {
 
         // Should transition to WaitForDuration
         if let AgentStatus::Wait {
-            reason: WaitReason::WaitForDuration { tool_call_id, .. },
+            reason: WaitReason::WaitForSystem { tool_call_id, .. },
         } = &assistant.state
         {
             assert_eq!(tool_call_id, "call_1");
@@ -2346,17 +2265,21 @@ mod tests {
     #[tokio::test]
     async fn test_sub_agent_completion_during_wait_for_duration() {
         let mut assistant = create_test_assistant(vec![], None);
-        let sub_agent_id = Scope::new();
-        let sub_agent_scope = Scope::new();
 
-        // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.push(sub_agent_scope);
+        let sub_agent_scope = Scope::new();
+        // assistant.spawned_agents_scope.push(sub_agent_scope);
+
+        assistant.state = AgentStatus::Wait {
+            reason: WaitReason::WaitingForTools {
+                tool_calls: HashMap::from([("spawn_123".to_string(), None)]),
+            },
+        };
 
         // First spawn the sub-agent so it's in system state
         send_message(
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
-                agent_id: sub_agent_id,
+                agent_id: sub_agent_scope,
                 message: AgentMessageType::AgentSpawned {
                     agent_type: crate::actors::AgentType::Worker,
                     role: "test_worker".to_string(),
@@ -2372,19 +2295,11 @@ mod tests {
 
         let initial_messages_count = assistant.chat_request.messages.len();
 
-        // Set to WaitForDuration
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let duration = std::time::Duration::from_secs(10);
-
+        // Set to Wait
         assistant.set_state(
             AgentStatus::Wait {
-                reason: WaitReason::WaitForDuration {
+                reason: WaitReason::WaitForSystem {
                     tool_call_id: "wait_call_123".to_string(),
-                    timestamp,
-                    duration,
                 },
             },
             true,
@@ -2395,7 +2310,7 @@ mod tests {
             &sub_agent_scope,
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
-                agent_id: sub_agent_id,
+                agent_id: sub_agent_scope,
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                     status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
                         summary: "Sub-agent task completed successfully".to_string(),
@@ -2412,7 +2327,7 @@ mod tests {
         // Verify that interrupt tool response and agent response were added
         assert_eq!(
             assistant.chat_request.messages.len(),
-            initial_messages_count + 2
+            initial_messages_count + 1
         );
 
         // Check the last message is a system message with agent response
@@ -2420,43 +2335,30 @@ mod tests {
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
         if let MessageContent::Text(text) = &last_message.content {
             assert!(text.contains("sub_agent_complete"));
-            assert!(text.contains(&sub_agent_id.to_string()));
+            assert!(text.contains(&sub_agent_scope.to_string()));
             assert!(text.contains("SUCCESS"));
             assert!(text.contains("Sub-agent task completed successfully"));
         } else {
             panic!("Expected Text content in system message");
-        }
-
-        // Check the second to last message is a tool response (interrupt)
-        let interrupt_message =
-            &assistant.chat_request.messages[assistant.chat_request.messages.len() - 2];
-        assert!(matches!(
-            interrupt_message.role,
-            genai::chat::ChatRole::Tool
-        ));
-        if let MessageContent::ToolResponses(responses) = &interrupt_message.content {
-            assert_eq!(responses.len(), 1);
-            assert_eq!(responses[0].call_id, "wait_call_123");
-            assert!(responses[0].content.contains("interrupted"));
-        } else {
-            panic!("Expected ToolResponses content");
         }
     }
 
     #[tokio::test]
     async fn test_sub_agent_completion_during_wait_for_duration_failure() {
         let mut assistant = create_test_assistant(vec![], None);
-        let sub_agent_id = Scope::new();
         let sub_agent_scope = Scope::new();
 
-        // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.push(sub_agent_scope);
+        assistant.state = AgentStatus::Wait {
+            reason: WaitReason::WaitingForTools {
+                tool_calls: HashMap::from([("spawn_456".to_string(), None)]),
+            },
+        };
 
         // First spawn the sub-agent so it's in system state
         send_message(
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
-                agent_id: sub_agent_id,
+                agent_id: sub_agent_scope,
                 message: AgentMessageType::AgentSpawned {
                     agent_type: crate::actors::AgentType::Worker,
                     role: "test_worker".to_string(),
@@ -2472,19 +2374,11 @@ mod tests {
 
         let initial_messages_count = assistant.chat_request.messages.len();
 
-        // Set to WaitForDuration
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let duration = std::time::Duration::from_secs(5);
-
+        // Set to Wait
         assistant.set_state(
             AgentStatus::Wait {
-                reason: WaitReason::WaitForDuration {
+                reason: WaitReason::WaitForSystem {
                     tool_call_id: "wait_call_456".to_string(),
-                    timestamp,
-                    duration,
                 },
             },
             true,
@@ -2495,7 +2389,7 @@ mod tests {
             &sub_agent_scope,
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
-                agent_id: sub_agent_id,
+                agent_id: sub_agent_scope,
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                     status: AgentStatus::Done(Err("Sub-agent encountered an error".to_string())),
                 }),
@@ -2509,7 +2403,7 @@ mod tests {
         // Verify messages were added
         assert_eq!(
             assistant.chat_request.messages.len(),
-            initial_messages_count + 2
+            initial_messages_count + 1
         );
 
         // Check the last message contains failure information
@@ -2517,7 +2411,7 @@ mod tests {
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
         if let MessageContent::Text(text) = &last_message.content {
             assert!(text.contains("sub_agent_complete"));
-            assert!(text.contains(&sub_agent_id.to_string()));
+            assert!(text.contains(&sub_agent_scope.to_string()));
             assert!(text.contains("FAILURE"));
             assert!(text.contains("Sub-agent encountered an error"));
         } else {
@@ -2528,29 +2422,8 @@ mod tests {
     #[tokio::test]
     async fn test_sub_agent_completion_during_waiting_for_user_input() {
         let mut assistant = create_test_assistant(vec![], None);
-        let sub_agent_id = Scope::new();
         let sub_agent_scope = Scope::new();
-
-        // Add sub-agent to tracked scopes
         assistant.spawned_agents_scope.push(sub_agent_scope);
-
-        // First spawn the sub-agent so it's in system state
-        send_message(
-            &mut assistant,
-            Message::Agent(crate::actors::AgentMessage {
-                agent_id: sub_agent_id,
-                message: AgentMessageType::AgentSpawned {
-                    agent_type: crate::actors::AgentType::Worker,
-                    role: "test_worker".to_string(),
-                    task_description: "background task".to_string(),
-                    tool_call_id: "spawn_789".to_string(),
-                },
-            }),
-        )
-        .await;
-
-        // Reset system state modified flag after spawn
-        assistant.system_state.reset_modified();
 
         // Verify in WaitingForUserInput
         assert!(matches!(
@@ -2567,7 +2440,7 @@ mod tests {
             &sub_agent_scope,
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
-                agent_id: sub_agent_id,
+                agent_id: sub_agent_scope,
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                     status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
                         summary: "Background task completed".to_string(),
@@ -2579,27 +2452,21 @@ mod tests {
         .await;
 
         // Should remain in WaitingForUserInput (no automatic submission)
-        assert!(matches!(
-            assistant.state,
-            AgentStatus::Wait {
-                reason: WaitReason::WaitingForUserInput
-            }
-        ));
-
-        // System state should be modified
-        assert!(assistant.system_state.is_modified());
+        assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
         // No new messages should be added to chat_request
         assert_eq!(
             assistant.chat_request.messages.len(),
-            initial_messages_count
+            initial_messages_count + 1
         );
 
-        // But pending message should contain the agent response
-        assert!(assistant.pending_message.has_content());
-        let pending_messages = assistant.pending_message.to_chat_messages();
-        assert_eq!(pending_messages.len(), 1);
-        assert!(matches!(pending_messages[0].role, ChatRole::System));
+        let last_message = assistant.chat_request.messages.last().unwrap();
+        assert!(matches!(last_message.role, genai::chat::ChatRole::System));
+        if let MessageContent::Text(text) = &last_message.content {
+            assert!(text.contains("Background task completed"));
+        } else {
+            panic!("Expected Text content in system message");
+        }
     }
 
     #[tokio::test]

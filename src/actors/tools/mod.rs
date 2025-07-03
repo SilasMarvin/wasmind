@@ -7,4 +7,3 @@ pub mod planner;
 pub mod send_manager_message;
 pub mod send_message;
 pub mod spawn_agent;
-pub mod wait;

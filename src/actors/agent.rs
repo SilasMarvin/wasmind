@@ -17,10 +17,7 @@ use crate::{
     scope::Scope,
 };
 
-use super::{
-    ActorMessage, AgentType,
-    tools::{file_reader::FileReader, wait::Wait},
-};
+use super::{ActorMessage, AgentType, tools::file_reader::FileReader};
 
 /// Role name for the main manager agent
 pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
@@ -142,7 +139,6 @@ impl Agent {
                 )
                 .run();
                 SendMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-                Wait::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 Planner::new(
                     self.config.clone(),
                     self.tx.clone(),
@@ -169,7 +165,6 @@ impl Agent {
                     Some(file_reader.clone()),
                 )
                 .run();
-                Wait::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 Command::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 FileReaderActor::new(
                     self.config.clone(),
