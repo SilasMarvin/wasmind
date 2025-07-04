@@ -68,6 +68,8 @@ pub enum ToolCallType {
     TaskCompleted,
     SpawnAgent,
     MCP,
+    ReportProgressNormal,
+    FlagIssueForReview,
 }
 
 pub type ToolCallResult = Result<String, String>;
@@ -132,21 +134,10 @@ pub enum InterAgentMessage {
         tool_call_id: String,
         status: AgentStatus,
     },
+    /// Interrupt and force wait for manager
+    InterruptAndForceWaitForManager { tool_call_id: String },
     /// Message between agents
     Message { message: String },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AgentMessage {
-    pub agent_id: Scope,
-    pub message: AgentMessageType,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AgentType {
-    MainManager,
-    SubManager,
-    Worker,
 }
 
 /// Messages between two agents or agents and their tools
@@ -160,6 +151,19 @@ pub enum AgentMessageType {
     },
     AgentRemoved,
     InterAgentMessage(InterAgentMessage),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentMessage {
+    pub agent_id: Scope,
+    pub message: AgentMessageType,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentType {
+    MainManager,
+    SubManager,
+    Worker,
 }
 
 /// Context provided by the user

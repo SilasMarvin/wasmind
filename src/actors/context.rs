@@ -76,19 +76,19 @@ impl Context {
                 let mut buffer = Cursor::new(Vec::new());
                 if let Err(e) = image.write_to(&mut buffer, ImageFormat::Png) {
                     error!("Failed to encode screenshot: {}", e);
-                    let _ = self.broadcast(Message::UserContext(UserContext::ScreenshotCaptured(
+                    self.broadcast(Message::UserContext(UserContext::ScreenshotCaptured(
                         Err(format!("Failed to encode screenshot: {}", e)),
                     )));
                     return;
                 }
                 let base64 = STANDARD.encode(buffer.into_inner());
-                let _ = self.broadcast(Message::UserContext(UserContext::ScreenshotCaptured(Ok(
+                self.broadcast(Message::UserContext(UserContext::ScreenshotCaptured(Ok(
                     base64,
                 ))));
             }
             Err(e) => {
                 error!("Failed to capture screen: {}", e);
-                let _ = self.broadcast(Message::UserContext(UserContext::ScreenshotCaptured(Err(
+                self.broadcast(Message::UserContext(UserContext::ScreenshotCaptured(Err(
                     format!("Failed to capture screen: {}", e),
                 ))));
             }
@@ -98,13 +98,13 @@ impl Context {
     async fn handle_capture_clipboard(&mut self) {
         match Self::capture_clipboard() {
             Ok(text) => {
-                let _ = self.broadcast(Message::UserContext(UserContext::ClipboardCaptured(Ok(
+                self.broadcast(Message::UserContext(UserContext::ClipboardCaptured(Ok(
                     text,
                 ))));
             }
             Err(e) => {
                 error!("Failed to capture clipboard: {}", e);
-                let _ = self.broadcast(Message::UserContext(UserContext::ClipboardCaptured(Err(
+                self.broadcast(Message::UserContext(UserContext::ClipboardCaptured(Err(
                     format!("Failed to capture clipboard: {}", e),
                 ))));
             }

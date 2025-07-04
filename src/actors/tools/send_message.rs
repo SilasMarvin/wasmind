@@ -100,7 +100,7 @@ impl SendMessage {
         };
 
         // Send the message
-        let _ = self.broadcast(Message::Agent(AgentMessage {
+        self.broadcast(Message::Agent(AgentMessage {
             agent_id: agent_scope,
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
                 message: input.message,
@@ -109,7 +109,7 @@ impl SendMessage {
 
         // Maybe broadcast a request to wait
         if input.wait.unwrap_or_default() {
-            let _ = self.broadcast(Message::Agent(AgentMessage {
+            self.broadcast(Message::Agent(AgentMessage {
                 agent_id: self.scope.clone(),
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
@@ -125,7 +125,7 @@ impl SendMessage {
         }
 
         // Send tool success response
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(format_send_message_success(&input.agent_id))),
         }));

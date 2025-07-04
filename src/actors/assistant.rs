@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use crate::{
     SResult,
-    actors::{Actor, Message, ToolCallStatus, ToolCallUpdate},
+    actors::{Actor, AssistantRequest, Message, ToolCallStatus, ToolCallUpdate},
     config::ParsedModelConfig,
     scope::Scope,
     system_state::SystemState,
@@ -66,6 +66,11 @@ pub fn format_manager_message(message: &str) -> String {
     format!(
         r#"New message from your manager. You can respond with the `send_manager_message` tool.\n<manager_message>{message}</manager_message>"#
     )
+}
+
+/// Format a general hive system message
+pub fn format_general_message(message: &str) -> String {
+    format!("**HIVE SYSTEM ALERT**:\n{message}")
 }
 
 /// Pending message that accumulates user input and system messages
@@ -127,7 +132,7 @@ impl PendingMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChatSystemMessage {
-    Other(String),
+    General(String),
     ManagerMessage(String),
     SubAgentMessage {
         message: String,
@@ -179,7 +184,7 @@ pub fn chat_history_to_request(messages: Vec<ChatHistoryMessage>) -> ChatRequest
                         ),
                         Err(err) => format_agent_response_failure(&agent_id, &err),
                     },
-                    ChatSystemMessage::Other(msg) => msg,
+                    ChatSystemMessage::General(msg) => format_general_message(&msg),
                 };
                 chat_request = chat_request.append_message(ChatMessage::system(content));
             }
@@ -201,6 +206,7 @@ pub fn chat_history_to_request(messages: Vec<ChatHistoryMessage>) -> ChatRequest
                 });
             }
             ChatHistoryMessage::ToolResponse(responses) => {
+                // TODO: Add a formatter for this
                 let tool_responses: Vec<ToolResponse> = responses
                     .into_iter()
                     .map(|r| ToolResponse {
@@ -305,8 +311,6 @@ impl Assistant {
         match (&s.state, &s.task_description) {
             (AgentStatus::Wait { reason }, Some(_)) => match reason {
                 WaitReason::WaitingForUserInput => {
-                    // s.pending_message
-                    //     .set_user_content(ContentPart::Text(s.task_description.take().unwrap()));
                     s.submit_pending_message(true);
                 }
                 _ => (),
@@ -440,8 +444,16 @@ impl Assistant {
             }
         }
 
+        let system_prompt = self.render_system_prompt();
+
+        self.broadcast(Message::AssistantRequest(AssistantRequest {
+            system: system_prompt.clone(),
+            tools: self.available_tools.clone(),
+            messages: self.chat_history.clone(),
+        }));
+
         let mut request: ChatRequest = chat_history_to_request(self.chat_history.clone());
-        request = request.with_system(self.render_system_prompt());
+        request = request.with_system(system_prompt.clone());
         request = request.with_tools(self.available_tools.clone());
 
         // Debug log the full request
@@ -664,9 +676,8 @@ impl Actor for Assistant {
                         if pending_actors.is_empty() {
                             // If we have a task to execute do it!
                             // Otherwise wait for user input
-                            if let Some(ref task) = self.task_description {
-                                self.add_user_content(ContentPart::Text(task.clone()));
-                                self.submit_pending_message(false);
+                            if let Some(_) = self.task_description {
+                                self.submit_pending_message(true);
                             } else {
                                 self.set_state(
                                     AgentStatus::Wait {
@@ -752,7 +763,7 @@ impl Actor for Assistant {
                                 if *crate::IS_HEADLESS.get().unwrap_or(&false) {
                                     // This is an error by the LLM it should only ever respond with
                                     // tool calls in headless mode
-                                    self.pending_message.add_system_part(ChatSystemMessage::Other("ERROR! You responded without calling a tool. Try again and this time ensure you call a tool! If in doubt, use the `wait` tool.".to_string()));
+                                    self.pending_message.add_system_part(ChatSystemMessage::General("ERROR! You responded without calling a tool. Try again and this time ensure you call a tool! If in doubt, use the `wait` tool.".to_string()));
                                     self.submit_pending_message(false);
                                 } else {
                                     // If we have pending message content, submit it immediately when Idle
@@ -800,14 +811,18 @@ impl Actor for Assistant {
                             self.system_state.add_agent(agent_info);
                         }
                     }
+
                     // One of our sub agents was removed
                     AgentMessageType::AgentRemoved => {
                         todo!();
                         // self.system_state.remove_agent(&message.agent_id);
                         // probably remove the scope here
                     }
-                    // These are our own status updates broadcasted from tool calls
-                    AgentMessageType::InterAgentMessage(inter_agent_message) => {
+
+                    // These are our own status updates and system messages broadcasted from tool calls and temporal agents
+                    AgentMessageType::InterAgentMessage(inter_agent_message)
+                        if message.agent_id == self.scope =>
+                    {
                         match inter_agent_message {
                             InterAgentMessage::StatusUpdateRequest {
                                 status,
@@ -823,13 +838,49 @@ impl Actor for Assistant {
                                     self.set_state(status.clone(), true);
                                     if matches!(status, AgentStatus::Done(..)) {
                                         // When we are done we shutdown
-                                        let _ = self.broadcast(Message::Action(Action::Exit));
+                                        self.broadcast(Message::Action(Action::Exit));
                                     }
+                                }
+                            }
+                            InterAgentMessage::InterruptAndForceWaitForManager { tool_call_id } => {
+                                // If the last message is a tool call pop it off
+                                // Most APIs error if a ToolCall is not followed by a ToolResponse
+                                // Alternatively we could add a dummy tool response but this seems more reasonable
+                                if matches!(
+                                    self.chat_history.last(),
+                                    Some(ChatHistoryMessage::Assistant(
+                                        AssistantMessage::ToolCalls(_)
+                                    ))
+                                ) {
+                                    self.chat_history.pop();
+                                }
+
+                                self.set_state(
+                                    AgentStatus::Wait {
+                                        reason: WaitReason::WaitingForManager { tool_call_id },
+                                    },
+                                    true,
+                                );
+                            }
+                            InterAgentMessage::Message { message } => {
+                                self.pending_message
+                                    .add_system_part(ChatSystemMessage::General(message));
+                                match self.state.clone() {
+                                    AgentStatus::Wait {
+                                        reason: WaitReason::WaitForSystem { .. },
+                                    }
+                                    | AgentStatus::Wait {
+                                        reason: WaitReason::WaitingForUserInput,
+                                    } => {
+                                        self.submit_pending_message(false);
+                                    }
+                                    _ => (),
                                 }
                             }
                             _ => (),
                         }
                     }
+                    _ => (),
                 },
                 _ => {}
             }
@@ -845,6 +896,13 @@ impl Actor for Assistant {
 
                                 match status {
                                     AgentStatus::Done(agent_task_result) => {
+                                        self.add_system_message_part(
+                                            ChatSystemMessage::SubAgentComplete {
+                                                agent_id: agent_message.agent_id,
+                                                result: agent_task_result,
+                                            },
+                                        );
+
                                         match self.state.clone() {
                                             AgentStatus::Wait {
                                                 reason: WaitReason::WaitForSystem { .. },
@@ -852,22 +910,9 @@ impl Actor for Assistant {
                                             | AgentStatus::Wait {
                                                 reason: WaitReason::WaitingForUserInput,
                                             } => {
-                                                self.add_system_message_part(
-                                                    ChatSystemMessage::SubAgentComplete {
-                                                        agent_id: agent_message.agent_id,
-                                                        result: agent_task_result,
-                                                    },
-                                                );
                                                 self.submit_pending_message(false);
                                             }
-                                            _ => {
-                                                self.add_system_message_part(
-                                                    ChatSystemMessage::SubAgentComplete {
-                                                        agent_id: agent_message.agent_id,
-                                                        result: agent_task_result,
-                                                    },
-                                                );
-                                            }
+                                            _ => (),
                                         }
                                     }
                                     _ => (),
@@ -1074,21 +1119,8 @@ mod tests {
         // State should transition to Processing because task executes
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
-        // Chat history should contain the task as user message
-        assert!(!assistant.chat_history.is_empty());
-
-        // Check that the last message is a user message with "Test task"
-        let last_message = assistant.chat_history.last().unwrap();
-        if let ChatHistoryMessage::User(parts) = last_message {
-            assert_eq!(parts.len(), 1);
-            if let ContentPart::Text(text) = &parts[0] {
-                assert_eq!(text, "Test task");
-            } else {
-                panic!("Expected text content part");
-            }
-        } else {
-            panic!("Expected User message");
-        }
+        let system_message = assistant.render_system_prompt();
+        assert!(system_message.contains("Test task"));
     }
 
     #[tokio::test]

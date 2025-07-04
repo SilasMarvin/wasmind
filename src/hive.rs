@@ -60,7 +60,7 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
             None,
             config.clone(),
             Scope::new(), // parent_scope means nothing for the MainManager
-            AgentType::MainManager
+            AgentType::MainManager,
         ).with_scope(ROOT_AGENT_SCOPE)
         .with_actors([Planner::ACTOR_ID, SpawnAgent::ACTOR_ID, SendMessage::ACTOR_ID, Wait::ACTOR_ID]);
 
@@ -121,7 +121,7 @@ pub fn start_headless_hive(
             Some(initial_prompt),
             config.clone(),
             Scope::new(), // parent_scope means nothing for the MainManager 
-            AgentType::MainManager
+            AgentType::MainManager,
         ).with_scope(ROOT_AGENT_SCOPE)
         .with_actors([Planner::ACTOR_ID, SpawnAgent::ACTOR_ID, SendMessage::ACTOR_ID, Wait::ACTOR_ID, Complete::ACTOR_ID]);
 

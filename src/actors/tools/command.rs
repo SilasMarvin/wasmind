@@ -130,7 +130,7 @@ impl Command {
 
         let args_string = args_array.join(" ");
         let friendly_command_display = format!("{command} {args_string}");
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::Command,
@@ -190,7 +190,7 @@ impl Command {
                 tool_call_id: tool_call.call_id.clone(),
             });
 
-            let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call.call_id,
                 status: ToolCallStatus::AwaitingUserYNConfirmation,
             }));
@@ -400,7 +400,7 @@ impl Actor for Command {
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
 
-        let _ = self.broadcast(Message::ToolsAvailable(vec![tool]));
+        self.broadcast(Message::ToolsAvailable(vec![tool]));
     }
 
     async fn handle_message(&mut self, message: ActorMessage) {

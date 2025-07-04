@@ -9,6 +9,12 @@ use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, AgentType, Message, ToolCallStatus,
     ToolCallType, ToolCallUpdate,
     agent::{Agent, AgentSpawnedResponse},
+    temporal::check_health::CheckHealthActor,
+    tools::{
+        command::Command, complete::Complete, edit_file::EditFile, file_reader::FileReaderActor,
+        mcp::MCP, planner::Planner, send_manager_message::SendManagerMessage,
+        send_message::SendMessage, wait::Wait,
+    },
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -80,7 +86,7 @@ impl SpawnAgent {
         }
 
         // Send received status
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::SpawnAgent,
@@ -92,7 +98,7 @@ impl SpawnAgent {
         let input: SpawnAgentsInput = match serde_json::from_value(tool_call.fn_arguments) {
             Ok(input) => input,
             Err(e) => {
-                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!("Invalid input schema: {}. Ensure 'agents_to_spawn' is a non-empty array of valid agent definitions.", e))),
                 }));
@@ -102,7 +108,7 @@ impl SpawnAgent {
 
         // Schema validation (minItems: 1) should ideally catch this, but an explicit check is good.
         if input.agents_to_spawn.is_empty() {
-            let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call.call_id,
                 status: ToolCallStatus::Finished(Err("No agents specified in 'agents_to_spawn' array. At least one agent must be provided.".to_string())),
             }));
@@ -122,7 +128,17 @@ impl SpawnAgent {
                     self.config.clone(),
                     self.scope.clone(),
                     AgentType::Worker,
-                ),
+                )
+                .with_actors([
+                    SendManagerMessage::ACTOR_ID,
+                    Planner::ACTOR_ID,
+                    Command::ACTOR_ID,
+                    FileReaderActor::ACTOR_ID,
+                    EditFile::ACTOR_ID,
+                    MCP::ACTOR_ID,
+                    Complete::ACTOR_ID,
+                    CheckHealthActor::ACTOR_ID,
+                ]),
                 "Manager" => Agent::new(
                     self.tx.clone(),
                     agent_def.agent_role.clone(),
@@ -130,13 +146,20 @@ impl SpawnAgent {
                     self.config.clone(),
                     self.scope.clone(),
                     AgentType::SubManager,
-                ),
+                )
+                .with_actors([
+                    SendManagerMessage::ACTOR_ID,
+                    SendMessage::ACTOR_ID,
+                    Planner::ACTOR_ID,
+                    Complete::ACTOR_ID,
+                    Wait::ACTOR_ID,
+                ]),
                 _ => {
                     let error_msg = format!(
                         "Invalid agent_type: '{}' for agent role '{}'. Must be 'Worker' or 'Manager'.",
                         agent_def.agent_type, agent_def.agent_role
                     );
-                    let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                    self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                         call_id: tool_call.call_id.clone(),
                         status: ToolCallStatus::Finished(Err(error_msg)),
                     }));
@@ -145,7 +168,7 @@ impl SpawnAgent {
             };
 
             // Send AgentSpawned message to update system state for this agent
-            let _ = self.broadcast(Message::Agent(AgentMessage {
+            self.broadcast(Message::Agent(AgentMessage {
                 agent_id: agent.scope.clone(),
                 message: AgentMessageType::AgentSpawned {
                     agent_type: agent.r#type,
@@ -195,7 +218,7 @@ impl SpawnAgent {
                 .join(", ")
         );
 
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(response)),
         }));
@@ -240,6 +263,6 @@ impl Actor for SpawnAgent {
             ),
         };
 
-        let _ = self.broadcast(Message::ToolsAvailable(vec![tool]));
+        self.broadcast(Message::ToolsAvailable(vec![tool]));
     }
 }

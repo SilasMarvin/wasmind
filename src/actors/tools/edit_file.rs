@@ -308,7 +308,7 @@ impl EditFile {
         let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
             Ok(args) => args,
             Err(e) => {
-                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(format!(
                         "Failed to parse arguments: {}",
@@ -323,7 +323,7 @@ impl EditFile {
         let path = match args.get("path").and_then(|v| v.as_str()) {
             Some(p) => p,
             None => {
-                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(
                         "Missing required field: path".to_string()
@@ -337,7 +337,7 @@ impl EditFile {
         let edits = match FileEditor::parse_edits_from_args(&args) {
             Ok(edits) => edits,
             Err(e) => {
-                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id,
                     status: ToolCallStatus::Finished(Err(e.to_string())),
                 }));
@@ -347,7 +347,7 @@ impl EditFile {
 
         let friendly_command_display = format!("Apply {} edits to {}", edits.len(), path);
 
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::EditFile,
@@ -372,7 +372,7 @@ impl EditFile {
                         .unwrap_or_else(|_| String::new());
                     if let Ok(metadata) = std::fs::metadata(&canonical_path) {
                         if let Ok(last_modified) = metadata.modified() {
-                            let _ = self.broadcast(Message::FileEdited {
+                            self.broadcast(Message::FileEdited {
                                 path: canonical_path,
                                 content,
                                 last_modified,
@@ -385,7 +385,7 @@ impl EditFile {
             Err(e) => ToolCallStatus::Finished(Err(e.to_string())),
         };
 
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
             status,
         }));
@@ -417,7 +417,7 @@ impl Actor for EditFile {
             schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
         };
 
-        let _ = self.broadcast(Message::ToolsAvailable(vec![tool]));
+        self.broadcast(Message::ToolsAvailable(vec![tool]));
     }
 
     async fn handle_message(&mut self, message: ActorMessage) {

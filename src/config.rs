@@ -4,7 +4,7 @@ use genai::{
     ServiceTarget,
     resolver::{AuthData, Endpoint, ServiceTargetResolver},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use snafu::{ResultExt, Snafu};
 use std::{collections::HashMap, fs, io, path::PathBuf};
 
@@ -167,13 +167,21 @@ struct KeyConfig {
 }
 
 /// The model configuration we deserialize directly from toml
-#[derive(Deserialize, Default, Debug, Clone)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct ModelConfig {
     pub name: String,
     pub system_prompt: Option<String>,
     pub endpoint: Option<String>,
     pub auth: Option<String>,
     pub adapter: Option<String>,
+}
+
+/// Temporal worker configuration
+#[derive(Deserialize, Default, Debug, Clone)]
+pub struct TemporalConfig {
+    /// Model configuration for check_health temporal worker
+    #[serde(default)]
+    pub check_health: Option<ModelConfig>,
 }
 
 /// HIVE multi-agent configuration
@@ -188,6 +196,9 @@ pub struct HiveConfig {
     /// Model configuration for worker agents
     #[serde(default)]
     pub worker_model: ModelConfig,
+    /// Temporal worker configurations
+    #[serde(default)]
+    pub temporal: TemporalConfig,
 }
 
 /// An MCP Config
@@ -231,6 +242,9 @@ impl TryFrom<Config> for ParsedConfig {
             main_manager_model: parse_model_config(value.hive.main_manager_model),
             sub_manager_model: parse_model_config(value.hive.sub_manager_model),
             worker_model: parse_model_config(value.hive.worker_model),
+            temporal: ParsedTemporalConfig {
+                check_health: value.hive.temporal.check_health.map(parse_model_config),
+            },
         };
 
         Ok(Self {
@@ -269,12 +283,19 @@ pub struct ParsedModelConfig {
     pub service_target_resolver: ServiceTargetResolver,
 }
 
+/// The parsed and verified temporal config
+#[derive(Debug, Clone)]
+pub struct ParsedTemporalConfig {
+    pub check_health: Option<ParsedModelConfig>,
+}
+
 /// The parsed and verified HIVE config
 #[derive(Debug, Clone)]
 pub struct ParsedHiveConfig {
     pub main_manager_model: ParsedModelConfig,
     pub sub_manager_model: ParsedModelConfig,
     pub worker_model: ParsedModelConfig,
+    pub temporal: ParsedTemporalConfig,
 }
 
 fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {

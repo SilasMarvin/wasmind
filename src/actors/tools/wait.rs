@@ -44,7 +44,7 @@ impl Wait {
 
     async fn handle_wait(&mut self, tool_call: ToolCall) {
         // Send agent status update first to stop LLM processing
-        let _ = self.broadcast(Message::Agent(AgentMessage {
+        self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.get_scope().clone(),
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
                 tool_call_id: tool_call.call_id.clone(),
@@ -56,7 +56,7 @@ impl Wait {
             }),
         }));
 
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(WAIT_TOOL_RESPONSE.to_string())),
         }));
@@ -72,7 +72,7 @@ impl Wait {
 
 #[async_trait::async_trait]
 impl Actor for Wait {
-    const ACTOR_ID: &'static str = "send_message";
+    const ACTOR_ID: &'static str = "wait";
 
     fn get_scope(&self) -> &Scope {
         &self.scope

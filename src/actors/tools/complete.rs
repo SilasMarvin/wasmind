@@ -50,7 +50,7 @@ impl Complete {
         }
 
         // Broadcast received
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::Complete,
@@ -63,7 +63,7 @@ impl Complete {
             match serde_json::from_value(tool_call.fn_arguments.clone()) {
                 Ok(input) => input,
                 Err(e) => {
-                    let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                    self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                         call_id: tool_call.call_id,
                         status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
                     }));
@@ -72,7 +72,7 @@ impl Complete {
             };
 
         // Send agent status update first to stop LLM processing
-        let _ = self.broadcast(Message::Agent(AgentMessage {
+        self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.get_scope().clone(),
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
                 tool_call_id: tool_call.call_id.clone(),
@@ -81,7 +81,7 @@ impl Complete {
         }));
 
         // Send tool call completion after Done status
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(format!(
                 "Task completed{}",
@@ -121,6 +121,6 @@ impl Actor for Complete {
     }
 
     async fn on_start(&mut self) {
-        let _ = self.broadcast(Message::ToolsAvailable(vec![Self::get_tool_schema()]));
+        self.broadcast(Message::ToolsAvailable(vec![Self::get_tool_schema()]));
     }
 }

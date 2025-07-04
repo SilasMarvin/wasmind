@@ -137,7 +137,7 @@ impl MCP {
 
         // Broadcast available tools
         if !tools.is_empty() {
-            let _ = self.broadcast(Message::ToolsAvailable(tools));
+            self.broadcast(Message::ToolsAvailable(tools));
         }
 
         Ok(())
@@ -153,7 +153,7 @@ impl MCP {
             }
         };
 
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::MCP,
@@ -172,7 +172,7 @@ impl MCP {
         let server = match self.servers.get(server_name) {
             Some(server) => Arc::clone(server),
             None => {
-                let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.call_id.clone(),
                     status: ToolCallStatus::Finished(Err(format!(
                         "Server not found: {}",

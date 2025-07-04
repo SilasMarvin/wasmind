@@ -88,7 +88,7 @@ impl SendManagerMessage {
         };
 
         // Send the SubAgentMessage to the parent manager
-        let _ = self.broadcast(Message::Agent(AgentMessage {
+        self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.parent_scope,
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
                 message: input.message,
@@ -97,7 +97,7 @@ impl SendManagerMessage {
 
         // Maybe broadcast a request to wait
         if input.wait.unwrap_or_default() {
-            let _ = self.broadcast(Message::Agent(AgentMessage {
+            self.broadcast(Message::Agent(AgentMessage {
                 agent_id: self.scope.clone(),
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
@@ -113,7 +113,7 @@ impl SendManagerMessage {
         }
 
         // Send tool success response
-        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.call_id,
             status: ToolCallStatus::Finished(Ok(
                 SEND_MANAGER_MESSAGE_SUCCESS_TOOL_RESPONSE.to_string()

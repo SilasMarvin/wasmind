@@ -1,33 +1,40 @@
+use genai::chat::ChatRequest;
 use std::time::{Duration, Instant};
-
 use tokio::sync::broadcast;
 
 use crate::{
-    actors::{Actor, ActorMessage, AssistantRequest},
-    config::ParsedModelConfig,
+    actors::{
+        Actor, ActorMessage, AssistantRequest, agent::TemporalAgent,
+        assistant::chat_history_to_request,
+    },
+    config::ParsedConfig,
     scope::Scope,
 };
 
-pub struct WorkerHealthActor {
+use super::tools::{
+    flag_issue_for_review::FlagIssueForReview, report_progress_normal::ReportProgressNormal,
+};
+
+pub struct CheckHealthActor {
     tx: broadcast::Sender<ActorMessage>,
     #[allow(dead_code)]
-    config: ParsedModelConfig,
+    config: ParsedConfig,
     scope: Scope,
     check_interval: Duration,
     last_check: Instant,
     last_assistant_request: Option<AssistantRequest>,
 }
 
-impl WorkerHealthActor {
+impl CheckHealthActor {
     pub fn new(
+        config: ParsedConfig,
         tx: broadcast::Sender<ActorMessage>,
-        config: ParsedModelConfig,
         scope: Scope,
         check_interval: Duration,
     ) -> Self {
         Self {
-            tx,
             config,
+            tx,
             scope,
             check_interval,
             last_check: Instant::now(),
@@ -38,13 +45,39 @@ impl WorkerHealthActor {
     pub fn handle_assistant_request(&mut self, assistant_request: AssistantRequest) {
         self.last_assistant_request = Some(assistant_request.clone());
         if self.last_check.elapsed() >= self.check_interval {
+            let parsed_model_config = self
+                .config
+                .hive
+                .temporal
+                .check_health
+                .as_ref()
+                .unwrap_or(&self.config.hive.worker_model)
+                .clone();
+
+            // TODO: Improve how are generating the transcript - maybe we can shorten it / make it cleaner
+            let mut request: ChatRequest = chat_history_to_request(assistant_request.messages);
+            request = request.with_system(assistant_request.system);
+            let task = format!(
+                "Analyze the folllowing transcript:\n<transcript>{}</transcript>",
+                serde_json::to_string_pretty(&request).unwrap()
+            );
+
+            TemporalAgent::new(
+                self.tx.clone(),
+                task,
+                parsed_model_config,
+                self.scope.clone(),
+            )
+            .with_actors([FlagIssueForReview::ACTOR_ID, ReportProgressNormal::ACTOR_ID])
+            .run();
+
             self.last_check = Instant::now();
         }
     }
 }
 
 #[async_trait::async_trait]
-impl Actor for WorkerHealthActor {
+impl Actor for CheckHealthActor {
     const ACTOR_ID: &'static str = "temporal_worker_health";
 
     fn get_scope(&self) -> &Scope {
