@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
-use std::time::Duration;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -69,6 +68,8 @@ pub enum ToolCallType {
     MCP,
 }
 
+pub type ToolCallResult = Result<String, String>;
+
 /// ToolCall Status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ToolCallStatus {
@@ -78,7 +79,7 @@ pub enum ToolCallStatus {
     },
     AwaitingUserYNConfirmation,
     ReceivedUserYNConfirmation(bool),
-    Finished(Result<String, String>),
+    Finished(ToolCallResult),
 }
 
 /// The result of an agent task
@@ -102,7 +103,7 @@ pub enum WaitReason {
         tool_call_id: String,
     },
     WaitingForTools {
-        tool_calls: HashMap<String, Option<String>>,
+        tool_calls: HashMap<String, Option<ToolCallResult>>,
     },
     WaitingForActors {
         pending_actors: Vec<String>,

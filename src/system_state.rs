@@ -190,8 +190,6 @@ pub struct SystemState {
     agents: HashMap<Scope, AgentTaskInfo>,
     /// Maximum number of lines to show per file in system prompt
     max_file_lines: usize,
-    /// Track whether the state has been modified since last check
-    modified: bool,
 }
 
 impl Default for SystemState {
@@ -201,7 +199,6 @@ impl Default for SystemState {
             current_plan: None,
             agents: HashMap::new(),
             max_file_lines: 50, // Max lines per file
-            modified: true,
         }
     }
 }
@@ -217,7 +214,6 @@ impl SystemState {
             current_plan: None,
             agents: HashMap::new(),
             max_file_lines: 50,
-            modified: true,
         }
     }
 
@@ -230,28 +226,24 @@ impl SystemState {
         _last_modified: std::time::SystemTime,
     ) {
         // Files are now managed by FileReader, just mark as modified
-        self.modified = true;
     }
 
     /// Remove a file from the system state
     /// Note: Files are now managed by FileReader, this method marks state as modified
     pub fn remove_file(&mut self, _path: &PathBuf) {
         // Files are now managed by FileReader, just mark as modified
-        self.modified = true;
     }
 
     /// Update the current task plan
     pub fn update_plan(&mut self, plan: TaskPlan) {
         self.current_plan = Some(plan);
-        self.modified = true;
     }
 
     /// Clear the current task plan
     pub fn clear_plan(&mut self) {
         if self.current_plan.is_some() {
             self.current_plan = None;
-            self.modified = true;
-        }
+            }
     }
 
     /// Get the current task plan
@@ -262,22 +254,19 @@ impl SystemState {
     /// Add or update a spawned agent
     pub fn add_agent(&mut self, agent_info: AgentTaskInfo) {
         self.agents.insert(agent_info.agent_id.clone(), agent_info);
-        self.modified = true;
     }
 
     /// Update an agent's task status
     pub fn update_agent_status(&mut self, agent_id: &Scope, status: AgentStatus) {
         if let Some(agent_info) = self.agents.get_mut(agent_id) {
             agent_info.status = status.into();
-            self.modified = true;
-        }
+            }
     }
 
     /// Remove an agent (when task is complete)
     pub fn remove_agent(&mut self, agent_id: &Scope) {
         if self.agents.remove(agent_id).is_some() {
-            self.modified = true;
-        }
+            }
     }
 
     /// Get all agents
@@ -498,15 +487,6 @@ impl SystemState {
         self.max_file_lines = max_lines;
     }
 
-    /// Check if the state has been modified
-    pub fn is_modified(&self) -> bool {
-        self.modified
-    }
-
-    /// Reset the modified flag
-    pub fn reset_modified(&mut self) {
-        self.modified = false;
-    }
 
     /// Render the system prompt with the given template and tools
     pub fn render_system_prompt(
@@ -1004,51 +984,6 @@ Current plan: active
         assert!(result.contains("Current plan: active"));
     }
 
-    #[test]
-    fn test_modified_flag_tracking() {
-        let mut state = SystemState::new();
-
-        // Initially modified (to ensure first render happens)
-        assert!(state.is_modified());
-
-        // Reset clears the flag
-        state.reset_modified();
-        assert!(!state.is_modified());
-
-        // Adding a file sets modified
-        state.update_file(
-            PathBuf::from("test.txt"),
-            "content".to_string(),
-            SystemTime::now(),
-        );
-        assert!(state.is_modified());
-
-        // Reset clears the flag
-        state.reset_modified();
-        assert!(!state.is_modified());
-
-        // Updating plan sets modified
-        state.update_plan(TaskPlan {
-            title: "Plan".to_string(),
-            tasks: vec![],
-        });
-        assert!(state.is_modified());
-
-        state.reset_modified();
-        assert!(!state.is_modified());
-
-        // Removing a file sets modified
-        let path = PathBuf::from("test.txt");
-        state.update_file(path.clone(), "content".to_string(), SystemTime::now());
-        state.reset_modified();
-        state.remove_file(&path);
-        assert!(state.is_modified());
-
-        // Clearing plan sets modified
-        state.reset_modified();
-        state.clear_plan();
-        assert!(state.is_modified());
-    }
 
     #[test]
     fn test_render_system_prompt_with_task() {

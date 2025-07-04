@@ -1,7 +1,11 @@
 use genai::{
     Client,
-    chat::{ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool, ToolResponse},
+    chat::{
+        ChatMessage, ChatRequest, ChatRole, ContentPart, MessageContent, Tool, ToolCall,
+        ToolResponse,
+    },
 };
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
@@ -18,8 +22,8 @@ use crate::{
 };
 
 use super::{
-    Action, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage,
-    UserContext, WaitReason,
+    Action, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentTaskResult,
+    InterAgentMessage, ToolCallResult, UserContext, WaitReason,
 };
 
 /// Helper functions for formatting messages used in chat requests and tests
@@ -68,7 +72,7 @@ pub struct PendingMessage {
     /// Optional user content part (only one at a time, new input replaces old)
     user_content: Option<genai::chat::ContentPart>,
     /// System message parts that accumulate from sub-agents
-    system_parts: Vec<String>,
+    system_parts: Vec<ChatSystemMessage>,
 }
 
 impl PendingMessage {
@@ -88,26 +92,24 @@ impl PendingMessage {
     }
 
     /// Add a system message part
-    pub fn add_system_part(&mut self, message: String) {
+    pub fn add_system_part(&mut self, message: ChatSystemMessage) {
         self.system_parts.push(message);
     }
 
-    /// Convert to Vec<ChatMessage> for LLM submission
+    /// Convert to Vec<ChatHistoryMessage> for LLM submission
     /// System messages come first, then user message
     /// Returns empty vec if no content exists
-    pub fn to_chat_messages(&self) -> Vec<ChatMessage> {
+    pub fn to_chat_history_messages(&self) -> Vec<ChatHistoryMessage> {
         let mut messages = Vec::new();
 
         // Add system messages first
         for system_part in &self.system_parts {
-            messages.push(ChatMessage::system(system_part.clone()));
+            messages.push(ChatHistoryMessage::System(system_part.clone()));
         }
 
         // Add user message last if present
         if let Some(ref user_content) = self.user_content {
-            messages.push(ChatMessage::user(MessageContent::Parts(vec![
-                user_content.clone(),
-            ])));
+            messages.push(ChatHistoryMessage::User(vec![user_content.clone()]));
         }
 
         messages
@@ -120,12 +122,108 @@ impl PendingMessage {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ChatSystemMessage {
+    Other(String),
+    ManagerMessage(String),
+    SubAgentMessage {
+        message: String,
+        agent_id: Scope,
+    },
+    SubAgentComplete {
+        result: AgentTaskResult,
+        agent_id: Scope,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatHistoryToolResponse {
+    pub tool_call_id: String,
+    pub result: ToolCallResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AssistantMessage {
+    Text(String),
+    ToolCalls(Vec<ToolCall>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ChatHistoryMessage {
+    System(ChatSystemMessage),
+    User(Vec<ContentPart>),
+    Assistant(AssistantMessage),
+    ToolResponse(Vec<ChatHistoryToolResponse>),
+}
+
+/// Helper function to convert Vec<ChatHistoryMessage> into ChatRequest
+pub fn chat_history_to_request(messages: Vec<ChatHistoryMessage>) -> ChatRequest {
+    let mut chat_request = ChatRequest::default();
+
+    for message in messages {
+        match message {
+            ChatHistoryMessage::System(system_msg) => {
+                let content = match system_msg {
+                    ChatSystemMessage::ManagerMessage(msg) => format_manager_message(&msg),
+                    ChatSystemMessage::SubAgentMessage { message, agent_id } => {
+                        format_sub_agent_message(&message, &agent_id)
+                    }
+                    ChatSystemMessage::SubAgentComplete { result, agent_id } => match result {
+                        Ok(response) => format_agent_response_success(
+                            &agent_id,
+                            response.success,
+                            &response.summary,
+                        ),
+                        Err(err) => format_agent_response_failure(&agent_id, &err),
+                    },
+                    ChatSystemMessage::Other(msg) => msg,
+                };
+                chat_request = chat_request.append_message(ChatMessage::system(content));
+            }
+            ChatHistoryMessage::User(parts) => {
+                chat_request = chat_request
+                    .append_message(ChatMessage::user(MessageContent::Parts(parts)));
+            }
+            ChatHistoryMessage::Assistant(assistant_msg) => {
+                let content = match assistant_msg {
+                    AssistantMessage::Text(text) => MessageContent::Text(text),
+                    AssistantMessage::ToolCalls(tool_calls) => {
+                        MessageContent::ToolCalls(tool_calls)
+                    }
+                };
+                chat_request = chat_request.append_message(ChatMessage {
+                    role: ChatRole::Assistant,
+                    content,
+                    options: None,
+                });
+            }
+            ChatHistoryMessage::ToolResponse(responses) => {
+                let tool_responses: Vec<ToolResponse> = responses
+                    .into_iter()
+                    .map(|r| ToolResponse {
+                        call_id: r.tool_call_id,
+                        content: r.result.unwrap_or_else(|e| format!("Error: {}", e)),
+                    })
+                    .collect();
+
+                chat_request = chat_request.append_message(ChatMessage {
+                    role: ChatRole::Tool,
+                    content: MessageContent::ToolResponses(tool_responses),
+                    options: None,
+                });
+            }
+        }
+    }
+
+    chat_request
+}
+
 /// Assistant actor that handles AI interactions
 pub struct Assistant {
     tx: broadcast::Sender<ActorMessage>,
     config: ParsedModelConfig,
     client: Client,
-    chat_request: ChatRequest,
+    chat_history: Vec<ChatHistoryMessage>,
     system_state: SystemState,
     available_tools: Vec<Tool>,
     cancel_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
@@ -183,7 +281,7 @@ impl Assistant {
             tx,
             config,
             client,
-            chat_request: ChatRequest::default(),
+            chat_history: Vec::new(),
             system_state,
             available_tools: Vec::new(),
             cancel_handle: Arc::new(Mutex::new(None)),
@@ -247,16 +345,14 @@ impl Assistant {
     }
 
     fn handle_tool_call_update(&mut self, update: ToolCallUpdate) {
-        if let ToolCallStatus::Finished(result) = &update.status {
+        if let ToolCallStatus::Finished(result) = update.status {
             match &mut self.state {
                 AgentStatus::Wait {
                     reason: WaitReason::WaitingForTools { tool_calls },
                 } => {
-                    let content = result.clone().unwrap_or_else(|e| format!("Error: {}", e));
-
                     let found = match tool_calls.get_mut(&update.call_id) {
                         Some(call) => {
-                            *call = Some(content.to_string());
+                            *call = Some(result);
                             true
                         }
                         None => false,
@@ -265,16 +361,13 @@ impl Assistant {
                     if found && tool_calls.values().all(|x| x.is_some()) {
                         let pending_tool_responses = tool_calls
                             .drain()
-                            .map(|(call_id, content)| ToolResponse {
-                                call_id,
-                                content: content.unwrap(),
+                            .map(|(call_id, result)| ChatHistoryToolResponse {
+                                tool_call_id: call_id,
+                                result: result.unwrap(),
                             })
                             .collect();
-                        self.chat_request = self.chat_request.clone().append_message(ChatMessage {
-                            role: ChatRole::Tool,
-                            content: MessageContent::ToolResponses(pending_tool_responses),
-                            options: None,
-                        });
+                        self.chat_history
+                            .push(ChatHistoryMessage::ToolResponse(pending_tool_responses));
                         self.submit_pending_message(true);
                     }
                 }
@@ -289,15 +382,13 @@ impl Assistant {
                         return;
                     }
 
-                    let content = result.clone().unwrap_or_else(|e| format!("Error: {}", e));
-                    self.chat_request = self.chat_request.clone().append_message(ChatMessage {
-                        role: ChatRole::Tool,
-                        content: MessageContent::ToolResponses(vec![ToolResponse {
-                            call_id: update.call_id,
-                            content,
-                        }]),
-                        options: None,
-                    });
+                    self.chat_history
+                        .push(ChatHistoryMessage::ToolResponse(vec![
+                            ChatHistoryToolResponse {
+                                tool_call_id: update.call_id,
+                                result,
+                            },
+                        ]));
                 }
                 _ => (),
             }
@@ -308,7 +399,7 @@ impl Assistant {
         self.pending_message.set_user_content(content);
     }
 
-    fn add_system_message_part(&mut self, message: String) {
+    fn add_system_message_part(&mut self, message: ChatSystemMessage) {
         self.pending_message.add_system_part(message);
     }
 
@@ -321,11 +412,9 @@ impl Assistant {
             }
         }
 
-        let messages = self.pending_message.to_chat_messages();
+        let messages = self.pending_message.to_chat_history_messages();
         self.pending_message.clear();
-        for message in messages {
-            self.chat_request = self.chat_request.clone().append_message(message);
-        }
+        self.chat_history.extend(messages);
 
         self.submit_llm_request();
     }
@@ -347,14 +436,9 @@ impl Assistant {
             }
         }
 
-        self.maybe_rerender_system_prompt();
-
-        // Spawn the assist task
-        let tx = self.tx.clone();
-        let client = self.client.clone();
-        let config = self.config.clone();
-
-        let request = self.chat_request.clone();
+        let mut request: ChatRequest = chat_history_to_request(self.chat_history.clone());
+        request = request.with_system(self.render_system_prompt());
+        request = request.with_tools(self.available_tools.clone());
 
         // Debug log the full request
         tracing::debug!(
@@ -363,7 +447,12 @@ impl Assistant {
                 .unwrap_or_else(|e| format!("Failed to serialize request: {}", e))
         );
 
+        // Spawn the assist task
+        let tx = self.tx.clone();
+        let client = self.client.clone();
+        let config = self.config.clone();
         let scope = self.scope.clone();
+
         let handle = tokio::spawn(async move {
             if let Err(e) = do_assist(tx, client, request, config, scope, processing_id).await {
                 error!("Error in assist task: {:?}", e);
@@ -373,40 +462,34 @@ impl Assistant {
         *self.cancel_handle.lock().unwrap() = Some(handle);
     }
 
-    fn maybe_rerender_system_prompt(&mut self) {
-        if self.system_state.is_modified() {
-            // Build tool infos for system prompt
-            let tool_infos: Vec<ToolInfo> = self
-                .available_tools
-                .iter()
-                .filter_map(|tool| {
-                    tool.description.as_ref().map(|desc| ToolInfo {
-                        name: tool.name.clone(),
-                        description: desc.clone(),
-                    })
+    fn render_system_prompt(&mut self) -> String {
+        // Build tool infos for system prompt
+        let tool_infos: Vec<ToolInfo> = self
+            .available_tools
+            .iter()
+            .filter_map(|tool| {
+                tool.description.as_ref().map(|desc| ToolInfo {
+                    name: tool.name.clone(),
+                    description: desc.clone(),
                 })
-                .collect();
+            })
+            .collect();
 
-            // Render system prompt with tools and task description
-            match self.system_state.render_system_prompt_with_task_and_role(
-                &self.config.system_prompt,
-                &tool_infos,
-                self.whitelisted_commands.clone(),
-                self.task_description.clone(),
-                self.role.clone(),
-                self.scope,
-            ) {
-                Ok(rendered_prompt) => {
-                    self.chat_request = self
-                        .chat_request
-                        .clone()
-                        .with_system(&rendered_prompt)
-                        .with_tools(self.available_tools.clone());
-                    self.system_state.reset_modified();
-                }
-                Err(e) => {
-                    error!("Failed to re-render system prompt: {}", e);
-                }
+        // Render system prompt with tools and task description
+        match self.system_state.render_system_prompt_with_task_and_role(
+            &self.config.system_prompt,
+            &tool_infos,
+            self.whitelisted_commands.clone(),
+            self.task_description.clone(),
+            self.role.clone(),
+            self.scope,
+        ) {
+            Ok(rendered_prompt) => {
+                rendered_prompt
+            }
+            Err(e) => {
+                error!("Failed to render system prompt: {}", e);
+                "".to_string()
             }
         }
     }
@@ -537,8 +620,9 @@ impl Actor for Assistant {
                         AgentMessageType::InterAgentMessage(inter_agent_message) => {
                             match inter_agent_message {
                                 InterAgentMessage::Message { message } => {
-                                    let formatted_message = format_manager_message(&message);
-                                    self.add_system_message_part(formatted_message);
+                                    self.add_system_message_part(
+                                        ChatSystemMessage::ManagerMessage(message),
+                                    );
                                     match self.state.clone() {
                                         AgentStatus::Wait { reason } => match reason {
                                             WaitReason::WaitForSystem { .. } => {
@@ -641,13 +725,11 @@ impl Actor for Assistant {
                             return;
                         }
 
-                        self.chat_request = self.chat_request.clone().append_message(ChatMessage {
-                            role: ChatRole::Assistant,
-                            content: content.clone(),
-                            options: None,
-                        });
-                        match &content {
+                        match content {
                             MessageContent::ToolCalls(tool_calls) => {
+                                self.chat_history.push(ChatHistoryMessage::Assistant(
+                                    AssistantMessage::ToolCalls(tool_calls.clone()),
+                                ));
                                 let tool_calls = tool_calls
                                     .iter()
                                     .map(|tc| (tc.call_id.clone(), None))
@@ -659,11 +741,15 @@ impl Actor for Assistant {
                                     true,
                                 );
                             }
-                            _ => {
+                            MessageContent::Text(text) => {
+                                self.chat_history.push(ChatHistoryMessage::Assistant(
+                                    AssistantMessage::Text(text),
+                                ));
+
                                 if *crate::IS_HEADLESS.get().unwrap_or(&false) {
                                     // This is an error by the LLM it should only ever respond with
                                     // tool calls in headless mode
-                                    self.pending_message.add_system_part("ERROR! You responded without calling a tool. Try again and this time ensure you call a tool! If in doubt, use the `wait` tool.".to_string());
+                                    self.pending_message.add_system_part(ChatSystemMessage::Other("ERROR! You responded without calling a tool. Try again and this time ensure you call a tool! If in doubt, use the `wait` tool.".to_string()));
                                     self.submit_pending_message(false);
                                 } else {
                                     // If we have pending message content, submit it immediately when Idle
@@ -679,6 +765,7 @@ impl Actor for Assistant {
                                     }
                                 }
                             }
+                            _ => unimplemented!(),
                         }
                     }
                 }
@@ -754,7 +841,7 @@ impl Actor for Assistant {
                                     .update_agent_status(&agent_message.agent_id, status.clone());
 
                                 match status {
-                                    AgentStatus::Done(agent_task_result_ok) => {
+                                    AgentStatus::Done(agent_task_result) => {
                                         match self.state.clone() {
                                             AgentStatus::Wait {
                                                 reason: WaitReason::WaitForSystem { .. },
@@ -762,33 +849,21 @@ impl Actor for Assistant {
                                             | AgentStatus::Wait {
                                                 reason: WaitReason::WaitingForUserInput,
                                             } => {
-                                                let formatted_message = match agent_task_result_ok {
-                                                    Ok(response) => format_agent_response_success(
-                                                        &agent_message.agent_id,
-                                                        response.success,
-                                                        &response.summary,
-                                                    ),
-                                                    Err(err) => format_agent_response_failure(
-                                                        &agent_message.agent_id,
-                                                        &err,
-                                                    ),
-                                                };
-                                                self.add_system_message_part(formatted_message);
+                                                self.add_system_message_part(
+                                                    ChatSystemMessage::SubAgentComplete {
+                                                        agent_id: agent_message.agent_id,
+                                                        result: agent_task_result,
+                                                    },
+                                                );
                                                 self.submit_pending_message(false);
                                             }
                                             _ => {
-                                                let formatted_message = match agent_task_result_ok {
-                                                    Ok(response) => format_agent_response_success(
-                                                        &agent_message.agent_id,
-                                                        response.success,
-                                                        &response.summary,
-                                                    ),
-                                                    Err(err) => format_agent_response_failure(
-                                                        &agent_message.agent_id,
-                                                        &err,
-                                                    ),
-                                                };
-                                                self.add_system_message_part(formatted_message);
+                                                self.add_system_message_part(
+                                                    ChatSystemMessage::SubAgentComplete {
+                                                        agent_id: agent_message.agent_id,
+                                                        result: agent_task_result,
+                                                    },
+                                                );
                                             }
                                         }
                                     }
@@ -798,9 +873,10 @@ impl Actor for Assistant {
                             InterAgentMessage::Message {
                                 message: sub_agent_message,
                             } if agent_message.agent_id == self.scope => {
-                                let formatted_message =
-                                    format_sub_agent_message(&sub_agent_message, &message.scope);
-                                self.add_system_message_part(formatted_message);
+                                self.add_system_message_part(ChatSystemMessage::SubAgentMessage {
+                                    agent_id: agent_message.agent_id,
+                                    message: sub_agent_message,
+                                });
                                 match self.state.clone() {
                                     AgentStatus::Wait { reason } => match reason {
                                         WaitReason::WaitForSystem { .. }
@@ -995,16 +1071,12 @@ mod tests {
         // State should transition to Processing because task executes
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
-        // Chat request should contain the task as user message
-        let messages = &assistant.chat_request.messages;
-        assert!(!messages.is_empty());
+        // Chat history should contain the task as user message
+        assert!(!assistant.chat_history.is_empty());
 
         // Check that the last message is a user message with "Test task"
-        let last_message = messages.last().unwrap();
-        assert!(matches!(last_message.role, ChatRole::User));
-
-        // Check the content
-        if let MessageContent::Parts(parts) = &last_message.content {
+        let last_message = assistant.chat_history.last().unwrap();
+        if let ChatHistoryMessage::User(parts) = last_message {
             assert_eq!(parts.len(), 1);
             if let ContentPart::Text(text) = &parts[0] {
                 assert_eq!(text, "Test task");
@@ -1012,7 +1084,7 @@ mod tests {
                 panic!("Expected text content part");
             }
         } else {
-            panic!("Expected Parts content");
+            panic!("Expected User message");
         }
     }
 
@@ -1164,8 +1236,6 @@ mod tests {
         )
         .await;
 
-        // System state should be modified
-        assert!(assistant.system_state.is_modified());
     }
 
     #[tokio::test]
@@ -1182,8 +1252,6 @@ mod tests {
         )
         .await;
 
-        // System state should be modified
-        assert!(assistant.system_state.is_modified());
     }
 
     #[tokio::test]
@@ -1198,8 +1266,6 @@ mod tests {
 
         send_message(&mut assistant, Message::PlanUpdated(plan)).await;
 
-        // System state should be modified
-        assert!(assistant.system_state.is_modified());
     }
 
     // Assistant Response Tests
@@ -1442,8 +1508,6 @@ mod tests {
         assert_eq!(assistant.spawned_agents_scope.len(), 1);
         assert_eq!(assistant.spawned_agents_scope[0], spawned_agent_id);
 
-        // System state should be modified
-        assert!(assistant.system_state.is_modified());
     }
 
     // Inter-Agent Message Tests
@@ -1538,12 +1602,14 @@ mod tests {
         )
         .await;
 
-        let last_message = assistant.chat_request.messages.pop().unwrap();
+        // Convert chat_history to verify the message was added properly
+        let chat_request = chat_history_to_request(assistant.chat_history.clone());
+        let last_message = chat_request.messages.last().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
         if let genai::chat::MessageContent::Text(content) = &last_message.content {
             assert!(content.contains("Task completed"));
         } else {
-            panic!("Expected ToolResponses content");
+            panic!("Expected Text content");
         }
     }
 
@@ -1673,7 +1739,7 @@ mod tests {
         let parent_scope = Scope::new();
         let mut assistant = create_test_assistant_with_parent(vec![], None, parent_scope);
 
-        let initial_messages_count = assistant.chat_request.messages.len();
+        let initial_messages_count = assistant.chat_history.len();
 
         // Set to WaitForSystem
         assistant.set_state(
@@ -1704,11 +1770,12 @@ mod tests {
 
         // Verify that a system response was added
         assert_eq!(
-            assistant.chat_request.messages.len(),
+            assistant.chat_history.len(),
             initial_messages_count + 1
         );
 
-        let last_message = assistant.chat_request.messages.pop().unwrap();
+        let chat_request = chat_history_to_request(assistant.chat_history.clone());
+        let last_message = chat_request.messages.last().unwrap();
 
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
 
@@ -1727,7 +1794,7 @@ mod tests {
         // Add sub-agent to tracked scopes
         assistant.spawned_agents_scope.push(sub_agent_scope);
 
-        let initial_messages_count = assistant.chat_request.messages.len();
+        let initial_messages_count = assistant.chat_history.len();
 
         assistant.set_state(
             AgentStatus::Wait {
@@ -1757,11 +1824,12 @@ mod tests {
 
         // Verify that the message was added
         assert_eq!(
-            assistant.chat_request.messages.len(),
+            assistant.chat_history.len(),
             initial_messages_count + 1
         );
 
-        let last_message = assistant.chat_request.messages.pop().unwrap();
+        let chat_request = chat_history_to_request(assistant.chat_history.clone());
+        let last_message = chat_request.messages.last().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
     }
 
@@ -1779,7 +1847,7 @@ mod tests {
             true,
         );
 
-        let initial_messages_count = assistant.chat_request.messages.len();
+        let initial_messages_count = assistant.chat_history.len();
 
         // Send tool completion
         send_message(
@@ -1799,13 +1867,14 @@ mod tests {
             }
         ));
 
-        // Tool response should be added to chat_request
+        // Tool response should be added to chat_history
         assert_eq!(
-            assistant.chat_request.messages.len(),
+            assistant.chat_history.len(),
             initial_messages_count + 1
         );
 
-        let last_message = assistant.chat_request.messages.last().unwrap();
+        let chat_request = chat_history_to_request(assistant.chat_history.clone());
+        let last_message = chat_request.messages.last().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::Tool));
 
         if let genai::chat::MessageContent::ToolResponses(responses) = &last_message.content {
@@ -1831,7 +1900,7 @@ mod tests {
             true,
         );
 
-        let initial_messages_count = assistant.chat_request.messages.len();
+        let initial_messages_count = assistant.chat_history.len();
 
         // Send tool completion
         send_message(
@@ -1851,13 +1920,14 @@ mod tests {
             }
         ));
 
-        // Should not be added to chat_request
+        // Should be added to chat_history
         assert_eq!(
-            assistant.chat_request.messages.len(),
+            assistant.chat_history.len(),
             initial_messages_count + 1
         );
 
-        let last_message = assistant.chat_request.messages.last().unwrap();
+        let chat_request = chat_history_to_request(assistant.chat_history.clone());
+        let last_message = chat_request.messages.last().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::Tool));
         if let genai::chat::MessageContent::ToolResponses(responses) = &last_message.content {
             assert_eq!(responses.len(), 1);
@@ -1891,7 +1961,7 @@ mod tests {
         .await;
 
         // Only the latest user message should be kept
-        let messages = assistant.pending_message.to_chat_messages();
+        let messages = assistant.pending_message.to_chat_history_messages();
         assert_eq!(messages.len(), 1);
     }
 
@@ -1954,7 +2024,6 @@ mod tests {
         )
         .await;
 
-        assert!(assistant.system_state.is_modified());
 
         // Trigger submit
         send_message(
@@ -1963,8 +2032,6 @@ mod tests {
         )
         .await;
 
-        // System state should be reset after submit
-        assert!(!assistant.system_state.is_modified());
     }
 
     // Edge Case Tests
@@ -2205,10 +2272,8 @@ mod tests {
         )
         .await;
 
-        // Reset system state modified flag after spawn
-        assistant.system_state.reset_modified();
 
-        let initial_messages_count = assistant.chat_request.messages.len();
+        let initial_messages_count = assistant.chat_history.len();
 
         // Set to Wait
         assistant.set_state(
@@ -2241,12 +2306,13 @@ mod tests {
 
         // Verify that interrupt tool response and agent response were added
         assert_eq!(
-            assistant.chat_request.messages.len(),
+            assistant.chat_history.len(),
             initial_messages_count + 1
         );
 
         // Check the last message is a system message with agent response
-        let last_message = assistant.chat_request.messages.last().unwrap();
+        let chat_request = chat_history_to_request(assistant.chat_history.clone());
+        let last_message = chat_request.messages.last().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
         if let MessageContent::Text(text) = &last_message.content {
             assert!(text.contains("sub_agent_complete"));
@@ -2284,10 +2350,8 @@ mod tests {
         )
         .await;
 
-        // Reset system state modified flag after spawn
-        assistant.system_state.reset_modified();
 
-        let initial_messages_count = assistant.chat_request.messages.len();
+        let initial_messages_count = assistant.chat_history.len();
 
         // Set to Wait
         assistant.set_state(
@@ -2317,12 +2381,13 @@ mod tests {
 
         // Verify messages were added
         assert_eq!(
-            assistant.chat_request.messages.len(),
+            assistant.chat_history.len(),
             initial_messages_count + 1
         );
 
         // Check the last message contains failure information
-        let last_message = assistant.chat_request.messages.last().unwrap();
+        let chat_request = chat_history_to_request(assistant.chat_history.clone());
+        let last_message = chat_request.messages.last().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
         if let MessageContent::Text(text) = &last_message.content {
             assert!(text.contains("sub_agent_complete"));
@@ -2348,7 +2413,7 @@ mod tests {
             }
         ));
 
-        let initial_messages_count = assistant.chat_request.messages.len();
+        let initial_messages_count = assistant.chat_history.len();
 
         // Send sub-agent task completion
         send_message_with_scope(
@@ -2369,13 +2434,14 @@ mod tests {
         // Should remain in WaitingForUserInput (no automatic submission)
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
-        // No new messages should be added to chat_request
+        // Messages should be added to chat_history
         assert_eq!(
-            assistant.chat_request.messages.len(),
+            assistant.chat_history.len(),
             initial_messages_count + 1
         );
 
-        let last_message = assistant.chat_request.messages.last().unwrap();
+        let chat_request = chat_history_to_request(assistant.chat_history.clone());
+        let last_message = chat_request.messages.last().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::System));
         if let MessageContent::Text(text) = &last_message.content {
             assert!(text.contains("Background task completed"));
@@ -2397,7 +2463,7 @@ mod tests {
         let processing_id = Uuid::new_v4();
         assistant.set_state(AgentStatus::Processing { id: processing_id }, true);
 
-        let initial_messages_count = assistant.chat_request.messages.len();
+        let initial_messages_count = assistant.chat_history.len();
 
         // Send sub-agent task completion
         send_message_with_scope(
@@ -2421,9 +2487,9 @@ mod tests {
             AgentStatus::Processing { id } if id == processing_id
         ));
 
-        // No new messages should be added to chat_request
+        // No new messages should be added to chat_history
         assert_eq!(
-            assistant.chat_request.messages.len(),
+            assistant.chat_history.len(),
             initial_messages_count
         );
 
@@ -2450,7 +2516,7 @@ mod tests {
             true,
         );
 
-        let initial_messages_count = assistant.chat_request.messages.len();
+        let initial_messages_count = assistant.chat_history.len();
 
         // Send sub-agent task completion
         send_message_with_scope(
@@ -2476,9 +2542,9 @@ mod tests {
             }
         ));
 
-        // No new messages should be added to chat_request
+        // No new messages should be added to chat_history
         assert_eq!(
-            assistant.chat_request.messages.len(),
+            assistant.chat_history.len(),
             initial_messages_count
         );
 
@@ -2505,7 +2571,7 @@ mod tests {
             true,
         );
 
-        let initial_messages_count = assistant.chat_request.messages.len();
+        let initial_messages_count = assistant.chat_history.len();
 
         // Send sub-agent task completion
         send_message_with_scope(
@@ -2530,9 +2596,9 @@ mod tests {
             }
         ));
 
-        // No new messages should be added to chat_request
+        // No new messages should be added to chat_history
         assert_eq!(
-            assistant.chat_request.messages.len(),
+            assistant.chat_history.len(),
             initial_messages_count
         );
 

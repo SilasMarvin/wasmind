@@ -72,8 +72,6 @@ pub enum FileCacheError {
 
 pub type Result<T, E = FileCacheError> = std::result::Result<T, E>;
 
-// --- Structs ---
-
 /// A single, contiguous chunk of a file's content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileSlice {
@@ -930,12 +928,12 @@ mod tests {
         assert!(error_msg.contains("\"path\":"));
         assert!(error_msg.contains("\"size_bytes\":"));
         assert!(error_msg.contains("\"total_lines\":"));
-        
+
         // Verify it's valid JSON by parsing the metadata part
         let metadata_start = error_msg.find("File metadata: ").unwrap() + "File metadata: ".len();
         let json_str = &error_msg[metadata_start..];
         let json: serde_json::Value = serde_json::from_str(json_str).unwrap();
-        
+
         assert!(json["path"].as_str().unwrap().contains("large.txt"));
         assert!(json["size_bytes"].as_u64().unwrap() > SMALL_FILE_SIZE_BYTES);
         assert!(json["total_lines"].as_u64().unwrap() > 1000);
