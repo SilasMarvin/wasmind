@@ -5,11 +5,13 @@ pub mod context;
 #[cfg(feature = "audio")]
 pub mod microphone;
 pub mod state_system;
+pub mod temporal;
 pub mod tools;
 pub mod tui;
 
 use crate::scope::Scope;
-use genai::chat::ToolCall;
+use assistant::ChatHistoryMessage;
+use genai::chat::{Tool, ToolCall};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -147,6 +149,7 @@ pub enum AgentType {
     Worker,
 }
 
+/// Messages between two agents or agents and their tools
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentMessageType {
     AgentSpawned {
@@ -171,6 +174,13 @@ pub enum UserContext {
     ClipboardCaptured(Result<String, String>), // Ok(text) or Err(error message)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssistantRequest {
+    system: String,
+    tools: Vec<Tool>,
+    messages: Vec<ChatHistoryMessage>,
+}
+
 /// The various messages actors can send
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
@@ -182,6 +192,7 @@ pub enum Message {
     UserContext(UserContext),
 
     // Assistant messages
+    AssistantRequest(AssistantRequest),
     AssistantToolCall(ToolCall),
     AssistantResponse {
         id: Uuid,

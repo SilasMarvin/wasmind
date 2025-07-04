@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct Scope(Uuid);
 
 #[cfg(feature = "test-utils")]

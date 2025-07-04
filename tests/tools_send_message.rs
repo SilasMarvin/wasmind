@@ -50,7 +50,7 @@ async fn test_send_message_tool() {
         tx.clone(),
         scope.clone(),
         manager_scope.clone(),
-        vec![SendMessage::ACTOR_ID],
+        [SendMessage::ACTOR_ID],
         None,
         None,
         vec![],

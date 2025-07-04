@@ -4,7 +4,13 @@ use tokio::sync::broadcast;
 use crate::{
     actors::{
         Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
-        InterAgentMessage, Message, agent::Agent, tui::TuiActor,
+        InterAgentMessage, Message,
+        agent::Agent,
+        tools::{
+            complete::Complete, planner::Planner, send_message::SendMessage,
+            spawn_agent::SpawnAgent, wait::Wait,
+        },
+        tui::TuiActor,
     },
     config::ParsedConfig,
     scope::Scope,
@@ -48,15 +54,15 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
         Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
 
         // Create the Main Manager agent
-        let main_manager = Agent::new_with_scope(
+        let main_manager = Agent::new(
             tx.clone(),
             crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
             None,
             config.clone(),
-            ROOT_AGENT_SCOPE,
             Scope::new(), // parent_scope means nothing for the MainManager
             AgentType::MainManager
-        );
+        ).with_scope(ROOT_AGENT_SCOPE)
+        .with_actors([Planner::ACTOR_ID, SpawnAgent::ACTOR_ID, SendMessage::ACTOR_ID, Wait::ACTOR_ID]);
 
         // Start the Main Manager
         main_manager.run();
@@ -109,15 +115,15 @@ pub fn start_headless_hive(
         #[cfg(feature = "audio")]
         Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
 
-        let main_manager = Agent::new_with_scope(
+        let main_manager = Agent::new(
             tx.clone(),
             crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
             Some(initial_prompt),
             config.clone(),
-            ROOT_AGENT_SCOPE,
             Scope::new(), // parent_scope means nothing for the MainManager 
             AgentType::MainManager
-        );
+        ).with_scope(ROOT_AGENT_SCOPE)
+        .with_actors([Planner::ACTOR_ID, SpawnAgent::ACTOR_ID, SendMessage::ACTOR_ID, Wait::ACTOR_ID, Complete::ACTOR_ID]);
 
         // Start the Main Manager
         main_manager.run();

@@ -7,7 +7,10 @@ use genai::{
 };
 use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, Mutex},
+};
 use tokio::sync::broadcast;
 use tracing::error;
 use uuid::Uuid;
@@ -181,8 +184,8 @@ pub fn chat_history_to_request(messages: Vec<ChatHistoryMessage>) -> ChatRequest
                 chat_request = chat_request.append_message(ChatMessage::system(content));
             }
             ChatHistoryMessage::User(parts) => {
-                chat_request = chat_request
-                    .append_message(ChatMessage::user(MessageContent::Parts(parts)));
+                chat_request =
+                    chat_request.append_message(ChatMessage::user(MessageContent::Parts(parts)));
             }
             ChatHistoryMessage::Assistant(assistant_msg) => {
                 let content = match assistant_msg {
@@ -231,7 +234,7 @@ pub struct Assistant {
     task_description: Option<String>,
     scope: Scope,
     parent_scope: Scope,
-    spawned_agents_scope: Vec<Scope>,
+    spawned_agents_scope: BTreeSet<Scope>,
     /// Whitelisted commands for the system prompt
     whitelisted_commands: Vec<String>,
     state: AgentStatus,
@@ -249,7 +252,7 @@ impl Assistant {
         tx: broadcast::Sender<ActorMessage>,
         scope: Scope,
         parent_scope: Scope,
-        required_actors: Vec<&'static str>,
+        required_actors: impl Into<BTreeSet<&'static str>>,
         task_description: Option<String>,
         role: Option<String>,
         whitelisted_commands: Vec<String>,
@@ -259,6 +262,7 @@ impl Assistant {
             .with_service_target_resolver(config.service_target_resolver.clone())
             .build();
 
+        let required_actors = required_actors.into();
         let state = if required_actors.is_empty() {
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForUserInput,
@@ -290,7 +294,7 @@ impl Assistant {
             task_description,
             scope,
             parent_scope,
-            spawned_agents_scope: vec![],
+            spawned_agents_scope: BTreeSet::new(),
             whitelisted_commands,
             role,
         };
@@ -484,9 +488,7 @@ impl Assistant {
             self.role.clone(),
             self.scope,
         ) {
-            Ok(rendered_prompt) => {
-                rendered_prompt
-            }
+            Ok(rendered_prompt) => rendered_prompt,
             Err(e) => {
                 error!("Failed to render system prompt: {}", e);
                 "".to_string()
@@ -591,12 +593,13 @@ impl Actor for Assistant {
     }
 
     async fn on_stop(&mut self) {
-        for scope in self.spawned_agents_scope.drain(..) {
+        for scope in self.spawned_agents_scope.clone() {
             let _ = self.tx.send(ActorMessage {
                 scope,
                 message: Message::Action(Action::Exit),
             });
         }
+        self.spawned_agents_scope.clear();
     }
 
     async fn handle_message(&mut self, message: ActorMessage) {
@@ -787,7 +790,7 @@ impl Actor for Assistant {
                             if !tool_calls.contains_key(&tool_call_id) {
                                 return;
                             }
-                            self.spawned_agents_scope.push(message.agent_id.clone());
+                            self.spawned_agents_scope.insert(message.agent_id.clone());
                             let agent_info = crate::system_state::AgentTaskInfo::new(
                                 message.agent_id.clone(),
                                 agent_type,
@@ -910,7 +913,7 @@ mod tests {
 
     // Test Coverage for Assistant Handle Message and State Transitions
     fn create_test_assistant(
-        required_actors: Vec<&'static str>,
+        required_actors: impl Into<BTreeSet<&'static str>>,
         task_description: Option<String>,
     ) -> Assistant {
         use crate::config::Config;
@@ -940,7 +943,7 @@ mod tests {
     }
 
     fn create_test_assistant_with_parent(
-        required_actors: Vec<&'static str>,
+        required_actors: impl Into<BTreeSet<&'static str>>,
         task_description: Option<String>,
         parent_scope: Scope,
     ) -> Assistant {
@@ -988,7 +991,7 @@ mod tests {
 
     #[test]
     fn test_initial_state_with_required_actors() {
-        let assistant = create_test_assistant(vec!["tool1", "tool2"], None);
+        let assistant = create_test_assistant(["tool1", "tool2"], None);
         assert!(matches!(
             assistant.state,
             AgentStatus::Wait {
@@ -999,7 +1002,7 @@ mod tests {
 
     #[test]
     fn test_initial_state_without_required_actors() {
-        let assistant = create_test_assistant(vec![], None);
+        let assistant = create_test_assistant([], None);
         assert!(matches!(
             assistant.state,
             AgentStatus::Wait {
@@ -1010,7 +1013,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_initial_state_without_required_actors_with_task() {
-        let assistant = create_test_assistant(vec![], Some("Test task".to_string()));
+        let assistant = create_test_assistant([], Some("Test task".to_string()));
         // Should immediately go to Processing
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
     }
@@ -1019,7 +1022,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_awaiting_actors_to_idle_transition() {
-        let mut assistant = create_test_assistant(vec!["tool1", "tool2"], None);
+        let mut assistant = create_test_assistant(["tool1", "tool2"], None);
 
         // Send first ActorReady
         send_message(
@@ -1054,7 +1057,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_awaiting_actors_to_idle_with_task_execution() {
-        let mut assistant = create_test_assistant(vec!["tool1"], Some("Test task".to_string()));
+        let mut assistant = create_test_assistant(["tool1"], Some("Test task".to_string()));
 
         // Verify task is stored
         assert_eq!(assistant.task_description, Some("Test task".to_string()));
@@ -1090,7 +1093,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_actor_ready_ignored_when_not_waiting() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Already in WaitingForUserInput
         assert!(matches!(
@@ -1122,7 +1125,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tools_available_message() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         let tool1 = Tool {
             name: "test_tool1".to_string(),
@@ -1168,7 +1171,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_input_when_waiting_for_input() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Verify in WaitingForUserInput
         assert!(matches!(
@@ -1191,7 +1194,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_input_when_not_waiting_accumulates() {
-        let mut assistant = create_test_assistant(vec!["tool1"], None);
+        let mut assistant = create_test_assistant(["tool1"], None);
 
         // In WaitingForActors state
         assert!(matches!(
@@ -1224,7 +1227,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_read_message() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         send_message(
             &mut assistant,
@@ -1235,12 +1238,11 @@ mod tests {
             },
         )
         .await;
-
     }
 
     #[tokio::test]
     async fn test_file_edited_message() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         send_message(
             &mut assistant,
@@ -1251,28 +1253,26 @@ mod tests {
             },
         )
         .await;
-
     }
 
     #[tokio::test]
     async fn test_plan_updated_message() {
         use crate::actors::tools::planner::TaskPlan;
 
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let plan = TaskPlan {
             title: "Test Plan".to_string(),
             tasks: vec![],
         };
 
         send_message(&mut assistant, Message::PlanUpdated(plan)).await;
-
     }
 
     // Assistant Response Tests
 
     #[tokio::test]
     async fn test_assistant_response_with_text() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let processing_id = Uuid::new_v4();
 
         // Manually set to Processing state
@@ -1306,7 +1306,7 @@ mod tests {
     async fn test_assistant_response_with_tool_calls() {
         use genai::chat::ToolCall;
 
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let processing_id = Uuid::new_v4();
 
         // Manually set to Processing state
@@ -1347,7 +1347,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_assistant_response_old_processing_id_ignored() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let current_id = Uuid::new_v4();
         let old_id = Uuid::new_v4();
 
@@ -1375,7 +1375,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_update_single_tool() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
@@ -1403,7 +1403,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_update_multiple_tools() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Set up WaitingForTools state with multiple tools
         let mut tool_calls = std::collections::HashMap::new();
@@ -1450,7 +1450,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_update_with_error() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         let mut tool_calls = std::collections::HashMap::new();
         tool_calls.insert("call_123".to_string(), None);
@@ -1481,7 +1481,7 @@ mod tests {
     async fn test_agent_spawned_message() {
         use crate::actors::AgentType;
 
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let spawned_agent_id = Scope::new();
 
         assistant.state = AgentStatus::Wait {
@@ -1506,8 +1506,7 @@ mod tests {
 
         // Should add to spawned agents
         assert_eq!(assistant.spawned_agents_scope.len(), 1);
-        assert_eq!(assistant.spawned_agents_scope[0], spawned_agent_id);
-
+        assert!(assistant.spawned_agents_scope.contains(&spawned_agent_id));
     }
 
     // Inter-Agent Message Tests
@@ -1515,7 +1514,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_message_when_waiting() {
         let parent_scope = Scope::new();
-        let mut assistant = create_test_assistant_with_parent(vec![], None, parent_scope);
+        let mut assistant = create_test_assistant_with_parent([], None, parent_scope);
 
         // Verify in WaitingForUserInput
         assert!(matches!(
@@ -1545,11 +1544,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_sub_agent_message_when_waiting() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.push(sub_agent_scope);
+        assistant.spawned_agents_scope.insert(sub_agent_scope);
 
         // Verify in WaitingForUserInput
         assert!(matches!(
@@ -1579,12 +1578,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_sub_agent_status_update() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let sub_agent_id = Scope::new();
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.push(sub_agent_scope);
+        assistant.spawned_agents_scope.insert(sub_agent_scope);
 
         // Send sub-agent status update
         send_message_with_scope(
@@ -1617,7 +1616,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_updates_to_wait_for_duration() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
@@ -1660,7 +1659,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_updates_to_wait_for_plan_approval() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
@@ -1704,7 +1703,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_message_during_plan_approval_wait() {
         let parent_scope = Scope::new();
-        let mut assistant = create_test_assistant_with_parent(vec![], None, parent_scope);
+        let mut assistant = create_test_assistant_with_parent([], None, parent_scope);
 
         // Set to WaitingForPlanApproval
         assistant.set_state(
@@ -1737,7 +1736,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_message_during_wait_for_duration() {
         let parent_scope = Scope::new();
-        let mut assistant = create_test_assistant_with_parent(vec![], None, parent_scope);
+        let mut assistant = create_test_assistant_with_parent([], None, parent_scope);
 
         let initial_messages_count = assistant.chat_history.len();
 
@@ -1769,10 +1768,7 @@ mod tests {
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
         // Verify that a system response was added
-        assert_eq!(
-            assistant.chat_history.len(),
-            initial_messages_count + 1
-        );
+        assert_eq!(assistant.chat_history.len(), initial_messages_count + 1);
 
         let chat_request = chat_history_to_request(assistant.chat_history.clone());
         let last_message = chat_request.messages.last().unwrap();
@@ -1788,11 +1784,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_sub_agent_message_during_system_wait() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.push(sub_agent_scope);
+        assistant.spawned_agents_scope.insert(sub_agent_scope);
 
         let initial_messages_count = assistant.chat_history.len();
 
@@ -1823,10 +1819,7 @@ mod tests {
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
         // Verify that the message was added
-        assert_eq!(
-            assistant.chat_history.len(),
-            initial_messages_count + 1
-        );
+        assert_eq!(assistant.chat_history.len(), initial_messages_count + 1);
 
         let chat_request = chat_history_to_request(assistant.chat_history.clone());
         let last_message = chat_request.messages.last().unwrap();
@@ -1835,7 +1828,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_completion_during_plan_approval_wait() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Set to WaitingForManager
         assistant.set_state(
@@ -1868,10 +1861,7 @@ mod tests {
         ));
 
         // Tool response should be added to chat_history
-        assert_eq!(
-            assistant.chat_history.len(),
-            initial_messages_count + 1
-        );
+        assert_eq!(assistant.chat_history.len(), initial_messages_count + 1);
 
         let chat_request = chat_history_to_request(assistant.chat_history.clone());
         let last_message = chat_request.messages.last().unwrap();
@@ -1888,7 +1878,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_completion_during_wait_for_system() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Set to WaitForDuration
         assistant.set_state(
@@ -1921,10 +1911,7 @@ mod tests {
         ));
 
         // Should be added to chat_history
-        assert_eq!(
-            assistant.chat_history.len(),
-            initial_messages_count + 1
-        );
+        assert_eq!(assistant.chat_history.len(), initial_messages_count + 1);
 
         let chat_request = chat_history_to_request(assistant.chat_history.clone());
         let last_message = chat_request.messages.last().unwrap();
@@ -1942,7 +1929,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pending_messages_accumulate() {
-        let mut assistant = create_test_assistant(vec!["tool1"], None);
+        let mut assistant = create_test_assistant(["tool1"], None);
 
         // In WaitingForActors, messages should accumulate
         send_message(
@@ -1967,7 +1954,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_assistant_response_with_pending_messages() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let processing_id = Uuid::new_v4();
 
         // Add pending message
@@ -2003,7 +1990,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_system_prompt_rerender_on_submit() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Add a tool to trigger system prompt update
         let tool = Tool {
@@ -2024,21 +2011,19 @@ mod tests {
         )
         .await;
 
-
         // Trigger submit
         send_message(
             &mut assistant,
             Message::UserContext(UserContext::UserTUIInput("Test".to_string())),
         )
         .await;
-
     }
 
     // Edge Case Tests
 
     #[tokio::test]
     async fn test_multiple_actor_ready_messages() {
-        let mut assistant = create_test_assistant(vec!["tool1"], None);
+        let mut assistant = create_test_assistant(["tool1"], None);
 
         // Send ActorReady
         send_message(
@@ -2077,7 +2062,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_update_for_unknown_call_id() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
@@ -2110,7 +2095,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_message_filtering_by_scope() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let unrelated_scope = Scope::new();
 
         // Send message from unrelated scope - should be ignored
@@ -2137,7 +2122,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_state_transitions() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         // Set up WaitingForTools with multiple tools
         let mut tool_calls = std::collections::HashMap::new();
@@ -2215,13 +2200,13 @@ mod tests {
     // Test on_stop behavior
     #[tokio::test]
     async fn test_on_stop_sends_exit_to_sub_agents() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let sub_agent_1 = Scope::new();
         let sub_agent_2 = Scope::new();
 
         // Add sub-agents
-        assistant.spawned_agents_scope.push(sub_agent_1);
-        assistant.spawned_agents_scope.push(sub_agent_2);
+        assistant.spawned_agents_scope.insert(sub_agent_1);
+        assistant.spawned_agents_scope.insert(sub_agent_2);
 
         // Create a receiver to capture messages
         let mut rx = assistant.tx.subscribe();
@@ -2246,7 +2231,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sub_agent_completion_during_wait_for_duration() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
 
         let sub_agent_scope = Scope::new();
         // assistant.spawned_agents_scope.push(sub_agent_scope);
@@ -2271,7 +2256,6 @@ mod tests {
             }),
         )
         .await;
-
 
         let initial_messages_count = assistant.chat_history.len();
 
@@ -2305,10 +2289,7 @@ mod tests {
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
         // Verify that interrupt tool response and agent response were added
-        assert_eq!(
-            assistant.chat_history.len(),
-            initial_messages_count + 1
-        );
+        assert_eq!(assistant.chat_history.len(), initial_messages_count + 1);
 
         // Check the last message is a system message with agent response
         let chat_request = chat_history_to_request(assistant.chat_history.clone());
@@ -2326,7 +2307,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sub_agent_completion_during_wait_for_duration_failure() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let sub_agent_scope = Scope::new();
 
         assistant.state = AgentStatus::Wait {
@@ -2349,7 +2330,6 @@ mod tests {
             }),
         )
         .await;
-
 
         let initial_messages_count = assistant.chat_history.len();
 
@@ -2380,10 +2360,7 @@ mod tests {
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
         // Verify messages were added
-        assert_eq!(
-            assistant.chat_history.len(),
-            initial_messages_count + 1
-        );
+        assert_eq!(assistant.chat_history.len(), initial_messages_count + 1);
 
         // Check the last message contains failure information
         let chat_request = chat_history_to_request(assistant.chat_history.clone());
@@ -2401,9 +2378,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_sub_agent_completion_during_waiting_for_user_input() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let sub_agent_scope = Scope::new();
-        assistant.spawned_agents_scope.push(sub_agent_scope);
+        assistant.spawned_agents_scope.insert(sub_agent_scope);
 
         // Verify in WaitingForUserInput
         assert!(matches!(
@@ -2435,10 +2412,7 @@ mod tests {
         assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
 
         // Messages should be added to chat_history
-        assert_eq!(
-            assistant.chat_history.len(),
-            initial_messages_count + 1
-        );
+        assert_eq!(assistant.chat_history.len(), initial_messages_count + 1);
 
         let chat_request = chat_history_to_request(assistant.chat_history.clone());
         let last_message = chat_request.messages.last().unwrap();
@@ -2452,12 +2426,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_sub_agent_completion_during_processing() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let sub_agent_id = Scope::new();
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.push(sub_agent_scope);
+        assistant.spawned_agents_scope.insert(sub_agent_scope);
 
         // Set to Processing state
         let processing_id = Uuid::new_v4();
@@ -2488,10 +2462,7 @@ mod tests {
         ));
 
         // No new messages should be added to chat_history
-        assert_eq!(
-            assistant.chat_history.len(),
-            initial_messages_count
-        );
+        assert_eq!(assistant.chat_history.len(), initial_messages_count);
 
         // But pending message should contain the agent response
         assert!(assistant.pending_message.has_content());
@@ -2499,12 +2470,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_sub_agent_completion_during_waiting_for_tools() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let sub_agent_id = Scope::new();
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.push(sub_agent_scope);
+        assistant.spawned_agents_scope.insert(sub_agent_scope);
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
@@ -2543,10 +2514,7 @@ mod tests {
         ));
 
         // No new messages should be added to chat_history
-        assert_eq!(
-            assistant.chat_history.len(),
-            initial_messages_count
-        );
+        assert_eq!(assistant.chat_history.len(), initial_messages_count);
 
         // But pending message should contain the agent response
         assert!(assistant.pending_message.has_content());
@@ -2554,12 +2522,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_sub_agent_completion_during_waiting_for_plan_approval() {
-        let mut assistant = create_test_assistant(vec![], None);
+        let mut assistant = create_test_assistant([], None);
         let sub_agent_id = Scope::new();
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.push(sub_agent_scope);
+        assistant.spawned_agents_scope.insert(sub_agent_scope);
 
         // Set to WaitingForPlanApproval
         assistant.set_state(
@@ -2597,10 +2565,7 @@ mod tests {
         ));
 
         // No new messages should be added to chat_history
-        assert_eq!(
-            assistant.chat_history.len(),
-            initial_messages_count
-        );
+        assert_eq!(assistant.chat_history.len(), initial_messages_count);
 
         // But pending message should contain the agent response
         assert!(assistant.pending_message.has_content());

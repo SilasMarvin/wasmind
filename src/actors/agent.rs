@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 use tokio::sync::{Mutex, broadcast::Sender};
 
 use crate::{
@@ -32,7 +32,7 @@ pub struct AgentSpawnedResponse {
     pub agent_role: String,
 }
 
-/// Agent instance that can be either a Manager or Worker
+/// Agent builder
 pub struct Agent {
     tx: Sender<ActorMessage>,
     pub r#type: AgentType,
@@ -43,6 +43,7 @@ pub struct Agent {
     pub parent_scope: Scope,
     /// Agent scope
     pub scope: Scope,
+    pub actors: BTreeSet<&'static str>,
 }
 
 impl Agent {
@@ -64,147 +65,200 @@ impl Agent {
             parent_scope,
             scope: id,
             role,
+            actors: BTreeSet::new(),
         }
     }
 
-    pub fn new_with_scope(
-        tx: Sender<ActorMessage>,
-        role: String,
-        task_description: Option<String>,
-        config: ParsedConfig,
-        scope: Scope,
-        parent_scope: Scope,
-        r#type: AgentType,
-    ) -> Self {
-        Self {
-            tx,
-            r#type,
-            config,
-            task_description,
-            scope,
-            parent_scope,
-            role,
-        }
+    pub fn with_scope(mut self, scope: Scope) -> Self {
+        self.scope = scope;
+        self
     }
 
-    /// Get the required actors for this agent's assistant type
-    pub fn get_required_actors(&self) -> Vec<&'static str> {
-        match &self.r#type {
-            AgentType::SubManager | AgentType::MainManager => {
-                let actors = vec![
-                    Planner::ACTOR_ID,
-                    SpawnAgent::ACTOR_ID,
-                    SendMessage::ACTOR_ID,
-                    Complete::ACTOR_ID,
-                    Wait::ACTOR_ID,
-                ];
+    pub fn with_task(mut self, task: String) -> Self {
+        self.task_description = Some(task);
+        self
+    }
 
-                actors
-            }
-            AgentType::Worker => {
-                vec![
-                    Command::ACTOR_ID,
-                    FileReaderActor::ACTOR_ID,
-                    EditFile::ACTOR_ID,
-                    Planner::ACTOR_ID,
-                    MCP::ACTOR_ID,
-                    Complete::ACTOR_ID,
-                    SendManagerMessage::ACTOR_ID,
-                ]
-            }
-        }
+    pub fn with_actors(mut self, actors: impl Into<BTreeSet<&'static str>>) -> Self {
+        self.actors = actors.into();
+        self
     }
 
     /// Run the agent - start their actors
     #[tracing::instrument(name = "agent_run", skip(self), fields(agent_id = %self.scope, type = ?self.r#type, role = %self.role))]
     pub fn run(self) {
-        // Create shared file reader
+        let config = match self.r#type {
+            AgentType::MainManager => self.config.hive.main_manager_model.clone(),
+            AgentType::SubManager => self.config.hive.sub_manager_model.clone(),
+            AgentType::Worker => self.config.hive.worker_model.clone(),
+        };
+
         let file_reader = Arc::new(Mutex::new(FileReader::default()));
 
-        match &self.r#type {
-            AgentType::SubManager | AgentType::MainManager => {
-                let config = if self.r#type == AgentType::MainManager {
-                    self.config.hive.main_manager_model.clone()
-                } else {
-                    self.config.hive.sub_manager_model.clone()
-                };
+        Assistant::new(
+            config,
+            self.tx.clone(),
+            self.scope.clone(),
+            self.parent_scope.clone(),
+            self.actors.clone(),
+            self.task_description.clone(),
+            Some(self.role.clone()),
+            self.config.whitelisted_commands.clone(),
+            Some(file_reader.clone()),
+        )
+        .run();
 
-                Assistant::new(
-                    config,
-                    self.tx.clone(),
-                    self.scope.clone(),
-                    self.parent_scope.clone(),
-                    self.get_required_actors(),
-                    self.task_description.clone(),
-                    Some(self.role.clone()),
-                    self.config.whitelisted_commands.clone(),
-                    Some(file_reader.clone()),
-                )
-                .run();
-
-                SendMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-                Planner::new(
-                    self.config.clone(),
-                    self.tx.clone(),
-                    self.scope.clone(),
-                    self.r#type,
-                    Some(self.parent_scope.clone()),
-                )
-                .run();
-                SpawnAgent::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-                Wait::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-
-                Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-            }
-            AgentType::Worker => {
-                Assistant::new(
-                    self.config.hive.worker_model.clone(),
-                    self.tx.clone(),
-                    self.scope.clone(),
-                    self.parent_scope.clone(),
-                    self.get_required_actors(),
-                    self.task_description.clone(),
-                    Some(self.role.clone()),
-                    self.config.whitelisted_commands.clone(),
-                    Some(file_reader.clone()),
-                )
-                .run();
-
-                SendManagerMessage::new(
-                    self.config.clone(),
-                    self.tx.clone(),
-                    self.scope.clone(),
-                    self.parent_scope.clone(),
-                )
-                .run();
-                Planner::new(
-                    self.config.clone(),
-                    self.tx.clone(),
-                    self.scope.clone(),
-                    self.r#type,
-                    Some(self.parent_scope.clone()),
-                )
-                .run();
-
-                Command::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-                FileReaderActor::new(
-                    self.config.clone(),
-                    self.tx.clone(),
-                    file_reader.clone(),
-                    self.scope.clone(),
-                )
-                .run();
-                EditFile::new(
-                    self.config.clone(),
-                    self.tx.clone(),
-                    file_reader,
-                    self.scope.clone(),
-                )
-                .run();
-                MCP::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-
-                Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-            }
+        if self.actors.contains(Planner::ACTOR_ID) {
+            Planner::new(
+                self.config.clone(),
+                self.tx.clone(),
+                self.scope.clone(),
+                self.r#type,
+                Some(self.parent_scope.clone()),
+            )
+            .run();
         }
+
+        if self.actors.contains(FileReaderActor::ACTOR_ID) {
+            FileReaderActor::new(
+                self.config.clone(),
+                self.tx.clone(),
+                file_reader.clone(),
+                self.scope.clone(),
+            )
+            .run();
+        }
+        if self.actors.contains(EditFile::ACTOR_ID) {
+            EditFile::new(
+                self.config.clone(),
+                self.tx.clone(),
+                file_reader.clone(),
+                self.scope.clone(),
+            )
+            .run();
+        }
+
+        if self.actors.contains(Command::ACTOR_ID) {
+            Command::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        }
+
+        if self.actors.contains(SendMessage::ACTOR_ID) {
+            SendMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        }
+
+        if self.actors.contains(SendManagerMessage::ACTOR_ID) {
+            SendManagerMessage::new(
+                self.config.clone(),
+                self.tx.clone(),
+                self.scope.clone(),
+                self.parent_scope.clone(),
+            )
+            .run();
+        }
+
+        if self.actors.contains(SpawnAgent::ACTOR_ID) {
+            SpawnAgent::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        }
+
+        if self.actors.contains(Wait::ACTOR_ID) {
+            Wait::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        }
+
+        if self.actors.contains(Complete::ACTOR_ID) {
+            Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        }
+
+        if self.actors.contains(MCP::ACTOR_ID) {
+            MCP::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        }
+
+        // match &self.r#type {
+        //     AgentType::SubManager | AgentType::MainManager => {
+        //         let config = if self.r#type == AgentType::MainManager {
+        //             self.config.hive.main_manager_model.clone()
+        //         } else {
+        //             self.config.hive.sub_manager_model.clone()
+        //         };
+        //
+        //         Assistant::new(
+        //             config,
+        //             self.tx.clone(),
+        //             self.scope.clone(),
+        //             self.parent_scope.clone(),
+        //             self.get_required_actors(),
+        //             self.task_description.clone(),
+        //             Some(self.role.clone()),
+        //             self.config.whitelisted_commands.clone(),
+        //             None,
+        //         )
+        //         .run();
+        //
+        //         SendMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        //         Planner::new(
+        //             self.config.clone(),
+        //             self.tx.clone(),
+        //             self.scope.clone(),
+        //             self.r#type,
+        //             Some(self.parent_scope.clone()),
+        //         )
+        //         .run();
+        //         SpawnAgent::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        //         Wait::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        //
+        //         Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        //     }
+        //     AgentType::Worker => {
+        //         // Create shared file reader
+        //         let file_reader = Arc::new(Mutex::new(FileReader::default()));
+        //
+        //         Assistant::new(
+        //             self.config.hive.worker_model.clone(),
+        //             self.tx.clone(),
+        //             self.scope.clone(),
+        //             self.parent_scope.clone(),
+        //             self.get_required_actors(),
+        //             self.task_description.clone(),
+        //             Some(self.role.clone()),
+        //             self.config.whitelisted_commands.clone(),
+        //             Some(file_reader.clone()),
+        //         )
+        //         .run();
+        //
+        //         SendManagerMessage::new(
+        //             self.config.clone(),
+        //             self.tx.clone(),
+        //             self.scope.clone(),
+        //             self.parent_scope.clone(),
+        //         )
+        //         .run();
+        //         Planner::new(
+        //             self.config.clone(),
+        //             self.tx.clone(),
+        //             self.scope.clone(),
+        //             self.r#type,
+        //             Some(self.parent_scope.clone()),
+        //         )
+        //         .run();
+        //
+        //         Command::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        //         FileReaderActor::new(
+        //             self.config.clone(),
+        //             self.tx.clone(),
+        //             file_reader.clone(),
+        //             self.scope.clone(),
+        //         )
+        //         .run();
+        //         EditFile::new(
+        //             self.config.clone(),
+        //             self.tx.clone(),
+        //             file_reader,
+        //             self.scope.clone(),
+        //         )
+        //         .run();
+        //         MCP::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        //
+        //         Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        //     }
+        // }
     }
 }

@@ -39,7 +39,7 @@ async fn test_complete_tool() {
         tx.clone(),
         scope,
         Scope::new(), // Parent scope is irrelevant for this test
-        vec![Complete::ACTOR_ID],
+        [Complete::ACTOR_ID],
         None,
         None,
         vec![],
