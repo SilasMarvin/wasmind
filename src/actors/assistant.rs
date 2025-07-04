@@ -278,27 +278,11 @@ impl Assistant {
                         self.submit_pending_message(true);
                     }
                 }
-                // Don't submit pending messages while WaitingForPlanApproval
-                // We need to wait for a message from our manager
+                // Don't submit pending messages while WaitingForManager or WaitForSystem
                 AgentStatus::Wait {
                     reason: WaitReason::WaitingForManager { tool_call_id },
-                } => {
-                    if tool_call_id != &update.call_id {
-                        return;
-                    }
-
-                    let content = result.clone().unwrap_or_else(|e| format!("Error: {}", e));
-                    self.chat_request = self.chat_request.clone().append_message(ChatMessage {
-                        role: ChatRole::Tool,
-                        content: MessageContent::ToolResponses(vec![ToolResponse {
-                            call_id: update.call_id,
-                            content,
-                        }]),
-                        options: None,
-                    });
                 }
-                // Wait is a special function
-                AgentStatus::Wait {
+                | AgentStatus::Wait {
                     reason: WaitReason::WaitForSystem { tool_call_id, .. },
                 } => {
                     if tool_call_id != &update.call_id {
@@ -314,7 +298,6 @@ impl Assistant {
                         }]),
                         options: None,
                     });
-                    self.submit_pending_message(true);
                 }
                 _ => (),
             }
@@ -736,11 +719,22 @@ impl Actor for Assistant {
                     // These are our own status updates broadcasted from tool calls
                     AgentMessageType::InterAgentMessage(inter_agent_message) => {
                         match inter_agent_message {
-                            InterAgentMessage::StatusUpdateRequest { status } => {
-                                self.set_state(status.clone(), true);
-                                if matches!(status, AgentStatus::Done(..)) {
-                                    // When we are done we shutdown
-                                    let _ = self.broadcast(Message::Action(Action::Exit));
+                            InterAgentMessage::StatusUpdateRequest {
+                                status,
+                                tool_call_id,
+                            } => {
+                                if let AgentStatus::Wait {
+                                    reason: WaitReason::WaitingForTools { tool_calls },
+                                } = self.state.clone()
+                                {
+                                    if !tool_calls.contains_key(&tool_call_id) {
+                                        return;
+                                    }
+                                    self.set_state(status.clone(), true);
+                                    if matches!(status, AgentStatus::Done(..)) {
+                                        // When we are done we shutdown
+                                        let _ = self.broadcast(Message::Action(Action::Exit));
+                                    }
                                 }
                             }
                             _ => (),
@@ -839,96 +833,6 @@ mod tests {
     use super::*;
 
     // Test Coverage for Assistant Handle Message and State Transitions
-    //
-    // ## States (AgentStatus)
-    //
-    // 1. **Wait** with various `WaitReason` variants:
-    //    - `WaitingForActors { pending_actors }` - waiting for required actors to initialize
-    //    - `WaitingForUserInput` - waiting for user to provide input
-    //    - `WaitingForTools { tool_calls }` - waiting for tool execution results
-    //    - `WaitForDuration { tool_call_id, timestamp, duration }` - waiting for time delay
-    //    - `WaitingForPlanApproval { tool_call_id }` - waiting for manager plan approval
-    //
-    // 2. **Processing { id }** - actively making LLM request
-    //
-    // ## Messages Handled by Scope
-    //
-    // ### 1. Messages from Parent Scope (Manager → This Agent)
-    // - `Message::Agent(AgentMessage)` where `agent_id == self.scope`
-    //   - `InterAgentMessage::Message { message }` - manager sending instructions
-    //
-    // ### 2. Messages from Own Scope (Tools/System → This Agent)
-    // - `Message::ActorReady { actor_id }` - actor initialization complete
-    // - `Message::ToolsAvailable(tools)` - tools broadcasting availability
-    // - `Message::ToolCallUpdate(update)` - tool execution status updates
-    // - `Message::UserContext(UserContext::UserTUIInput)` - user text input
-    // - `Message::FileRead { path, content, last_modified }` - file read notification
-    // - `Message::FileEdited { path, content, last_modified }` - file edit notification
-    // - `Message::PlanUpdated(plan)` - plan state changed
-    // - `Message::AssistantResponse { id, content }` - LLM response
-    // - `Message::Agent(AgentMessage)`:
-    //   - `AgentSpawned { agent_type, role, task_description, tool_call_id }` - sub-agent created
-    //   - `AgentRemoved` - sub-agent terminated (TODO in code)
-    //   - `InterAgentMessage::TaskStatusUpdate { status }` - tool updating agent status
-    //
-    // ### 3. Messages from Sub-Agent Scopes (Sub-Agents → This Agent)
-    // - `Message::Agent(AgentMessage)`:
-    //   - `InterAgentMessage::TaskStatusUpdate { status }` - sub-agent status updates
-    //   - `InterAgentMessage::Message { message }` - sub-agent sending message up
-    //
-    // ## State Transitions
-    //
-    // 1. **Initial State Selection**:
-    //    - With required actors → `WaitingForActors`
-    //    - Without required actors → `WaitingForUserInput`
-    //    - Without required actors + task → `Processing` (immediate)
-    //
-    // 2. **From WaitingForActors**:
-    //    - All actors ready + no task → `WaitingForUserInput`
-    //    - All actors ready + task → `Processing`
-    //
-    // 3. **From WaitingForUserInput**:
-    //    - User input received → `Processing`
-    //    - Manager message received → `Processing`
-    //    - Sub-agent message received → `Processing`
-    //
-    // 4. **From Processing**:
-    //    - LLM returns tool calls → `WaitingForTools`
-    //    - LLM returns text + pending messages → `Processing` (re-submit)
-    //    - LLM returns text + no pending → `WaitingForUserInput`
-    //
-    // 5. **From WaitingForTools**:
-    //    - All tools complete → `Processing`
-    //    - Tool requests duration wait → `WaitForDuration`
-    //    - Tool requests plan approval → `WaitingForPlanApproval`
-    //
-    // 6. **From WaitingForPlanApproval**:
-    //    - Manager/Sub-agent message received → `Processing`
-    //    - (Tool will handle approval completion)
-    //
-    // 7. **From WaitForDuration**:
-    //    - Manager/Sub-agent message received → `Processing` with interrupt tool response
-    //    - Sub-agent completion (Done status) → `Processing` with interrupt tool response
-    //    - (Tool will handle timeout completion)
-    //
-    // ## Special Behaviors
-    //
-    // 1. **Sub-Agent Completion Handling**:
-    //    - When in `WaitForDuration`: Interrupts wait, adds response to system queue, submits LLM request
-    //    - When in other states: Adds response to pending system messages (no automatic submission)
-    //
-    // ## Edge Cases to Test
-    //
-    // 1. Multiple actor ready messages
-    // 2. Tool responses arriving out of order
-    // 3. Old/cancelled processing responses
-    // 4. Multiple pending messages accumulating
-    // 5. State changes during tool execution
-    // 6. Sub-agent lifecycle (spawn, status updates, removal)
-    // 7. System state updates (files, plans)
-    // 8. Parent vs sub-agent message filtering
-    // 9. Sub-agent completion in various states
-
     fn create_test_assistant(
         required_actors: Vec<&'static str>,
         task_description: Option<String>,
@@ -1624,20 +1528,23 @@ mod tests {
             &mut assistant,
             Message::Agent(crate::actors::AgentMessage {
                 agent_id: sub_agent_id,
-                message: AgentMessageType::InterAgentMessage(
-                    InterAgentMessage::StatusUpdateRequest {
-                        status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
-                            summary: "Task completed".to_string(),
-                            success: true,
-                        })),
-                    },
-                ),
+                message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
+                    status: AgentStatus::Done(Ok(crate::actors::AgentTaskResultOk {
+                        summary: "Task completed".to_string(),
+                        success: true,
+                    })),
+                }),
             }),
         )
         .await;
 
-        // System state should be modified to track sub-agent status
-        assert!(assistant.system_state.is_modified());
+        let last_message = assistant.chat_request.messages.pop().unwrap();
+        assert!(matches!(last_message.role, genai::chat::ChatRole::System));
+        if let genai::chat::MessageContent::Text(content) = &last_message.content {
+            assert!(content.contains("Task completed"));
+        } else {
+            panic!("Expected ToolResponses content");
+        }
     }
 
     // State Transition Tests
@@ -1664,6 +1571,7 @@ mod tests {
                 agent_id: agent_scope,
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
+                        tool_call_id: "call_123".to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitForSystem {
                                 tool_call_id: "call_123".to_string(),
@@ -1706,6 +1614,7 @@ mod tests {
                 agent_id: agent_scope,
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
+                        tool_call_id: "call_123".to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitingForManager {
                                 tool_call_id: "call_123".to_string(),
@@ -1909,7 +1818,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tool_completion_during_wait_for_duration() {
+    async fn test_tool_completion_during_wait_for_system() {
         let mut assistant = create_test_assistant(vec![], None);
 
         // Set to WaitForDuration
@@ -1929,15 +1838,20 @@ mod tests {
             &mut assistant,
             Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: "wait_call_456".to_string(),
-                status: ToolCallStatus::Finished(Ok("Wait completed".to_string())),
+                status: ToolCallStatus::Finished(Ok("Waiting...".to_string())),
             }),
         )
         .await;
 
-        // Should transition to Processing
-        assert!(matches!(assistant.state, AgentStatus::Processing { .. }));
+        // Should stay in waiting for system
+        assert!(matches!(
+            assistant.state,
+            AgentStatus::Wait {
+                reason: WaitReason::WaitForSystem { .. }
+            }
+        ));
 
-        // Tool response should be added to chat_request
+        // Should not be added to chat_request
         assert_eq!(
             assistant.chat_request.messages.len(),
             initial_messages_count + 1
@@ -1945,11 +1859,10 @@ mod tests {
 
         let last_message = assistant.chat_request.messages.last().unwrap();
         assert!(matches!(last_message.role, genai::chat::ChatRole::Tool));
-
         if let genai::chat::MessageContent::ToolResponses(responses) = &last_message.content {
             assert_eq!(responses.len(), 1);
             assert_eq!(responses[0].call_id, "wait_call_456");
-            assert_eq!(responses[0].content, "Wait completed");
+            assert_eq!(responses[0].content, "Waiting...");
         } else {
             panic!("Expected ToolResponses content");
         }
@@ -2170,7 +2083,7 @@ mod tests {
             true,
         );
 
-        // Tool 1 requests state change to WaitForDuration
+        // Tool 1 requests state change to WaitForSystem
         let agent_scope = assistant.scope.clone();
         send_message(
             &mut assistant,
@@ -2178,6 +2091,7 @@ mod tests {
                 agent_id: agent_scope,
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
+                        tool_call_id: "call_1".to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitForSystem {
                                 tool_call_id: "call_1".to_string(),
@@ -2189,7 +2103,7 @@ mod tests {
         )
         .await;
 
-        // Should transition to WaitForDuration
+        // Should transition to WaitForSystem
         if let AgentStatus::Wait {
             reason: WaitReason::WaitForSystem { tool_call_id, .. },
         } = &assistant.state
@@ -2199,8 +2113,7 @@ mod tests {
             panic!("Expected WaitForDuration state");
         }
 
-        // Tool 2 can also update state - this is valid behavior
-        // Tools can transition the assistant to different states as needed
+        // Tool 2 can no longer update the state
         let agent_scope = assistant.scope.clone();
         send_message(
             &mut assistant,
@@ -2208,6 +2121,7 @@ mod tests {
                 agent_id: agent_scope,
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
+                        tool_call_id: "call_2".to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitingForManager {
                                 tool_call_id: "call_2".to_string(),
@@ -2219,12 +2133,13 @@ mod tests {
         )
         .await;
 
-        // State should now be WaitingForPlanApproval - tools can transition states
+        // State should now be WaitingForSystem - tools can only transition state when being
+        // waited upon
         if let AgentStatus::Wait {
-            reason: WaitReason::WaitingForManager { tool_call_id },
+            reason: WaitReason::WaitForSystem { tool_call_id },
         } = &assistant.state
         {
-            assert_eq!(tool_call_id, "call_2");
+            assert_eq!(tool_call_id, "call_1");
         } else {
             panic!("Expected WaitingForPlanApproval state");
         }

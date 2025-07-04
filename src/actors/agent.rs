@@ -17,7 +17,10 @@ use crate::{
     scope::Scope,
 };
 
-use super::{ActorMessage, AgentType, tools::file_reader::FileReader};
+use super::{
+    ActorMessage, AgentType,
+    tools::{file_reader::FileReader, wait::Wait},
+};
 
 /// Role name for the main manager agent
 pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
@@ -93,6 +96,7 @@ impl Agent {
                     SpawnAgent::ACTOR_ID,
                     SendMessage::ACTOR_ID,
                     Complete::ACTOR_ID,
+                    Wait::ACTOR_ID,
                 ];
 
                 actors
@@ -125,7 +129,6 @@ impl Agent {
                     self.config.hive.sub_manager_model.clone()
                 };
 
-                // Managers only get planning and agent management tools
                 Assistant::new(
                     config,
                     self.tx.clone(),
@@ -138,6 +141,7 @@ impl Agent {
                     Some(file_reader.clone()),
                 )
                 .run();
+
                 SendMessage::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 Planner::new(
                     self.config.clone(),
@@ -148,11 +152,11 @@ impl Agent {
                 )
                 .run();
                 SpawnAgent::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+                Wait::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
 
                 Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
             }
             AgentType::Worker => {
-                // Workers get all execution tools
                 Assistant::new(
                     self.config.hive.worker_model.clone(),
                     self.tx.clone(),
@@ -165,6 +169,23 @@ impl Agent {
                     Some(file_reader.clone()),
                 )
                 .run();
+
+                SendManagerMessage::new(
+                    self.config.clone(),
+                    self.tx.clone(),
+                    self.scope.clone(),
+                    self.parent_scope.clone(),
+                )
+                .run();
+                Planner::new(
+                    self.config.clone(),
+                    self.tx.clone(),
+                    self.scope.clone(),
+                    self.r#type,
+                    Some(self.parent_scope.clone()),
+                )
+                .run();
+
                 Command::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
                 FileReaderActor::new(
                     self.config.clone(),
@@ -180,24 +201,9 @@ impl Agent {
                     self.scope.clone(),
                 )
                 .run();
-                Planner::new(
-                    self.config.clone(),
-                    self.tx.clone(),
-                    self.scope.clone(),
-                    self.r#type,
-                    Some(self.parent_scope.clone()),
-                )
-                .run();
                 MCP::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
-                Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
 
-                SendManagerMessage::new(
-                    self.config.clone(),
-                    self.tx.clone(),
-                    self.scope.clone(),
-                    self.parent_scope.clone(),
-                )
-                .run();
+                Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
             }
         }
     }

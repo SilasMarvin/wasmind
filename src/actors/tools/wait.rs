@@ -1,5 +1,3 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
 use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage, Message,
     ToolCallStatus, ToolCallUpdate, WaitReason,
@@ -7,35 +5,16 @@ use crate::actors::{
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 use genai::chat::{Tool, ToolCall};
-use serde::Deserialize;
 use tokio::sync::broadcast;
 
+pub const WAIT_TOOL_RESPONSE: &str = "Waiting...";
+
 pub const WAIT_TOOL_NAME: &str = "wait";
-pub const WAIT_TOOL_DESCRIPTION: &str = "Wait for a specified number of seconds. You will be woken up when the duration ends or by important system messages.";
+pub const WAIT_TOOL_DESCRIPTION: &str = "Pause and wait for a new system / sub agent message.";
 pub const WAIT_TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
-    "properties": {
-        "duration": {
-            "type": "integer",
-            "description": "The number of seconds to wait for."
-        }
-    },
-    "required": ["duration"]
+    "required": []
 }"#;
-
-#[derive(Debug, Deserialize)]
-struct WaitInput {
-    duration: u64,
-}
-
-/// Format send message success message
-pub fn format_wait_response(duration: u64) -> String {
-    format!("Waited for {duration} seconds")
-}
-
-pub fn format_wait_response_interupted(duration: u64, asked: u64) -> String {
-    format!("Wait interrupted - waited for {duration}/{asked} seconds")
-}
 
 /// Wait tool actor for managers to wait X seconds
 pub struct Wait {
@@ -64,51 +43,23 @@ impl Wait {
     }
 
     async fn handle_wait(&mut self, tool_call: ToolCall) {
-        let input: WaitInput = match serde_json::from_value(tool_call.fn_arguments) {
-            Ok(input) => input,
-            Err(e) => {
-                let error_msg = format!("Invalid wait arguments: {}", e);
-                let _ = self.tx.send(ActorMessage {
-                    scope: self.scope,
-                    message: Message::ToolCallUpdate(ToolCallUpdate {
-                        call_id: tool_call.call_id,
-                        status: ToolCallStatus::Finished(Err(error_msg)),
-                    }),
-                });
-                return;
-            }
-        };
-
         // Send agent status update first to stop LLM processing
         let _ = self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.get_scope().clone(),
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
+                tool_call_id: tool_call.call_id.clone(),
                 status: AgentStatus::Wait {
                     reason: WaitReason::WaitForSystem {
                         tool_call_id: tool_call.call_id.clone(),
-                        timestamp: SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs(),
-                        duration: Duration::from_secs(input.duration),
                     },
                 },
             }),
         }));
 
-        let local_tx = self.tx.clone();
-        let local_scope = self.scope.clone();
-        let secs = input.duration;
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(secs)).await;
-            let _ = local_tx.send(ActorMessage {
-                scope: local_scope,
-                message: Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
-                    status: ToolCallStatus::Finished(Ok(format_wait_response(input.duration))),
-                }),
-            });
-        });
+        let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+            call_id: tool_call.call_id,
+            status: ToolCallStatus::Finished(Ok(WAIT_TOOL_RESPONSE.to_string())),
+        }));
     }
 
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {

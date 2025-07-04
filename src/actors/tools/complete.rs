@@ -75,6 +75,7 @@ impl Complete {
         let _ = self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.get_scope().clone(),
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
+                tool_call_id: tool_call.call_id.clone(),
                 status: AgentStatus::Done(Ok(agent_task_result.clone())),
             }),
         }));

@@ -111,6 +111,7 @@ async fn test_send_manager_message_tool() {
             Message::Agent(agent_msg) => match &agent_msg.message {
                 AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
                     status,
+                    ..
                 }) if agent_msg.agent_id == scope => match status {
                     AgentStatus::Processing { .. } => {
                         assert!(seen_user_input, "Processing must come after UserContext");

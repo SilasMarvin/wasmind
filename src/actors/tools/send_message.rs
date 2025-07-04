@@ -1,6 +1,6 @@
 use crate::actors::{
-    Actor, ActorMessage, AgentMessage, AgentMessageType, InterAgentMessage, Message,
-    ToolCallStatus, ToolCallUpdate,
+    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage, Message,
+    ToolCallStatus, ToolCallUpdate, WaitReason,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -20,6 +20,10 @@ pub const SEND_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
         "message": {
             "type": "string",
             "description": "The message to send"
+        },
+        "wait": {
+            "type": "bool",
+            "description": "If `true` pause and wait for a response else continue performing actions (default `false`)"
         }
     },
     "required": ["agent_id", "message"]
@@ -29,6 +33,7 @@ pub const SEND_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
 struct SendMessageInput {
     agent_id: String,
     message: String,
+    wait: Option<bool>,
 }
 
 /// Format send message success message
@@ -101,6 +106,23 @@ impl SendMessage {
                 message: input.message,
             }),
         }));
+
+        // Maybe broadcast a request to wait
+        if input.wait.unwrap_or_default() {
+            let _ = self.broadcast(Message::Agent(AgentMessage {
+                agent_id: self.scope.clone(),
+                message: AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::StatusUpdateRequest {
+                        tool_call_id: tool_call.call_id.clone(),
+                        status: AgentStatus::Wait {
+                            reason: WaitReason::WaitForSystem {
+                                tool_call_id: tool_call.call_id.clone(),
+                            },
+                        },
+                    },
+                ),
+            }));
+        }
 
         // Send tool success response
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {

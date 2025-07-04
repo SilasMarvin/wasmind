@@ -266,6 +266,7 @@ impl Planner {
                 agent_id: self.scope.clone(),
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
+                        tool_call_id: tool_call_id.to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitingForManager {
                                 tool_call_id: tool_call_id.to_owned(),

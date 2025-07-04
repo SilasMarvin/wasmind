@@ -41,6 +41,10 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
                 },
                 "required": ["agent_role", "task_description", "agent_type"]
             }
+        },
+        "wait": {
+            "type": "bool",
+            "description": "If `true` pause and wait for a response from your spawned agents else continue performing actions (default `false`)"
         }
     },
     "required": ["agents_to_spawn"]

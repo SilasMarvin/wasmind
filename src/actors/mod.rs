@@ -125,7 +125,10 @@ pub enum InterAgentMessage {
     /// Agent task status update
     StatusUpdate { status: AgentStatus },
     /// Request to update agent status
-    StatusUpdateRequest { status: AgentStatus },
+    StatusUpdateRequest {
+        tool_call_id: String,
+        status: AgentStatus,
+    },
     /// Message between agents
     Message { message: String },
 }
@@ -216,61 +219,8 @@ pub enum Message {
 // Some variants contain external types that don't implement these traits
 impl PartialEq for Message {
     fn eq(&self, other: &Self) -> bool {
+        // TODO: Fill this out
         match (self, other) {
-            (Message::Action(a), Message::Action(b)) => a == b,
-            (Message::UserContext(a), Message::UserContext(b)) => a == b,
-            (Message::ToolCallUpdate(a), Message::ToolCallUpdate(b)) => a == b,
-            (Message::Agent(a), Message::Agent(b)) => a == b,
-            (Message::ActorReady { actor_id: a }, Message::ActorReady { actor_id: b }) => a == b,
-            (Message::PlanUpdated(plan1), Message::PlanUpdated(plan2)) => plan1 == plan2,
-
-            // AssistantToolCall - compare call_id
-            (Message::AssistantToolCall(a), Message::AssistantToolCall(b)) => {
-                a.call_id == b.call_id
-            }
-
-            // AssistantResponse - compare by id
-            (
-                Message::AssistantResponse { id: id1, .. },
-                Message::AssistantResponse { id: id2, .. },
-            ) => id1 == id2,
-
-            // ToolsAvailable - compare tool names
-            (Message::ToolsAvailable(tools1), Message::ToolsAvailable(tools2)) => {
-                tools1.len() == tools2.len()
-                    && tools1
-                        .iter()
-                        .zip(tools2.iter())
-                        .all(|(t1, t2)| t1.name == t2.name)
-            }
-
-            // FileRead and FileEdited - compare path and content, skip SystemTime
-            (
-                Message::FileRead {
-                    path: path1,
-                    content: content1,
-                    last_modified: _,
-                },
-                Message::FileRead {
-                    path: path2,
-                    content: content2,
-                    last_modified: _,
-                },
-            ) => path1 == path2 && content1 == content2,
-            (
-                Message::FileEdited {
-                    path: path1,
-                    content: content1,
-                    last_modified: _,
-                },
-                Message::FileEdited {
-                    path: path2,
-                    content: content2,
-                    last_modified: _,
-                },
-            ) => path1 == path2 && content1 == content2,
-
-            // Different variants are never equal
             _ => false,
         }
     }

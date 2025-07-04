@@ -1,6 +1,6 @@
 use crate::actors::{
-    Actor, ActorMessage, AgentMessage, AgentMessageType, InterAgentMessage, Message,
-    ToolCallStatus, ToolCallUpdate,
+    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage, Message,
+    ToolCallStatus, ToolCallUpdate, WaitReason,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -21,12 +21,17 @@ pub const SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
             "description": "The message to send to your manager"
         }
     },
+    "wait": {
+        "type": "bool",
+        "description": "If `true` pause and wait for a response from your manager else continue performing actions (default `false`)"
+    }
     "required": ["message"]
 }"#;
 
 #[derive(Debug, Deserialize)]
 struct SendManagerMessageInput {
     message: String,
+    wait: Option<bool>,
 }
 
 /// SendManagerMessage tool actor for agents to send messages to their manager
@@ -89,6 +94,23 @@ impl SendManagerMessage {
                 message: input.message,
             }),
         }));
+
+        // Maybe broadcast a request to wait
+        if input.wait.unwrap_or_default() {
+            let _ = self.broadcast(Message::Agent(AgentMessage {
+                agent_id: self.scope.clone(),
+                message: AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::StatusUpdateRequest {
+                        tool_call_id: tool_call.call_id.clone(),
+                        status: AgentStatus::Wait {
+                            reason: WaitReason::WaitingForManager {
+                                tool_call_id: tool_call.call_id.clone(),
+                            },
+                        },
+                    },
+                ),
+            }));
+        }
 
         // Send tool success response
         let _ = self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
