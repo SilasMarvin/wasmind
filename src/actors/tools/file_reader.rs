@@ -6,7 +6,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
-use tokio::sync::{Mutex, broadcast};
+use std::sync::Mutex;
+use tokio::sync::broadcast;
 
 use crate::actors::ActorMessage;
 use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
@@ -590,7 +591,7 @@ impl FileReaderActor {
         end_line: Option<i32>,
         tool_call_id: &str,
     ) {
-        let mut file_reader = self.file_reader.lock().await;
+        let mut file_reader = self.file_reader.lock().unwrap();
 
         let result = file_reader.get_or_read_file_content(path, start_line, end_line);
 

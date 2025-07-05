@@ -22,7 +22,7 @@ pub const SEND_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
             "description": "The message to send"
         },
         "wait": {
-            "type": "bool",
+            "type": "boolean",
             "description": "If `true` pause and wait for a response else continue performing actions (default `false`)"
         }
     },

@@ -183,7 +183,7 @@ impl AgentTaskInfo {
 #[derive(Debug)]
 pub struct SystemState {
     /// File reader for accessing cached file contents
-    file_reader: Option<Arc<tokio::sync::Mutex<FileReader>>>,
+    file_reader: Option<Arc<std::sync::Mutex<FileReader>>>,
     /// Current task plan if any
     current_plan: Option<TaskPlan>,
     /// Spawned agents and their tasks
@@ -208,7 +208,7 @@ impl SystemState {
         Self::default()
     }
 
-    pub fn with_file_reader(file_reader: Arc<tokio::sync::Mutex<FileReader>>) -> Self {
+    pub fn with_file_reader(file_reader: Arc<std::sync::Mutex<FileReader>>) -> Self {
         Self {
             file_reader: Some(file_reader),
             current_plan: None,
@@ -296,7 +296,7 @@ impl SystemState {
     /// Check if a file is currently loaded
     pub fn has_file(&self, path: &PathBuf) -> bool {
         if let Some(file_reader) = &self.file_reader {
-            let reader = file_reader.blocking_lock();
+            let reader = file_reader.lock().unwrap();
             reader.get_cached_entry(path).is_some()
         } else {
             false
@@ -306,7 +306,7 @@ impl SystemState {
     /// Get the number of currently loaded files
     pub fn file_count(&self) -> usize {
         if let Some(file_reader) = &self.file_reader {
-            let reader = file_reader.blocking_lock();
+            let reader = file_reader.lock().unwrap();
             reader.list_cached_paths().len()
         } else {
             0
@@ -316,7 +316,7 @@ impl SystemState {
     /// Generate the files section for the system prompt
     pub fn render_files_section(&self) -> String {
         if let Some(file_reader) = &self.file_reader {
-            let reader = file_reader.blocking_lock();
+            let reader = file_reader.lock().unwrap();
             let cached_paths = reader.list_cached_paths();
 
             if cached_paths.is_empty() {
@@ -390,7 +390,7 @@ impl SystemState {
     pub fn to_template_context(&self) -> serde_json::Value {
         // Get files from FileReader
         let files_list: Vec<serde_json::Value> = if let Some(file_reader) = &self.file_reader {
-            let reader = file_reader.blocking_lock();
+            let reader = file_reader.lock().unwrap();
             let cached_paths = reader.list_cached_paths();
             let mut sorted_paths = cached_paths.clone();
             sorted_paths.sort();

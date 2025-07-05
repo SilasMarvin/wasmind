@@ -11,7 +11,7 @@ use hive::scope::Scope;
 use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;
-use tokio::sync::Mutex;
+use std::sync::Mutex;
 use tokio::sync::broadcast;
 use wiremock::MockServer;
 

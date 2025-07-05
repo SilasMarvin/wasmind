@@ -262,7 +262,7 @@ impl Assistant {
         task_description: Option<String>,
         role: Option<String>,
         whitelisted_commands: Vec<String>,
-        file_reader: Option<Arc<tokio::sync::Mutex<crate::actors::tools::file_reader::FileReader>>>,
+        file_reader: Option<Arc<std::sync::Mutex<crate::actors::tools::file_reader::FileReader>>>,
     ) -> Self {
         let client = Client::builder()
             .with_service_target_resolver(config.service_target_resolver.clone())

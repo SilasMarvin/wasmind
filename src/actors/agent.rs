@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, sync::Arc, time::Duration};
-use tokio::sync::{Mutex, broadcast::Sender};
+use std::sync::Mutex;
+use tokio::sync::broadcast::Sender;
 
 use crate::{
     actors::{

@@ -22,7 +22,7 @@ pub const SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
         }
     },
     "wait": {
-        "type": "bool",
+        "type": "boolean",
         "description": "If `true` pause and wait for a response from your manager else continue performing actions (default `false`)"
     }
     "required": ["message"]

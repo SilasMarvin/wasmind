@@ -3,7 +3,8 @@ use snafu::{ResultExt, Snafu};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::{Mutex, broadcast};
+use std::sync::Mutex;
+use tokio::sync::broadcast;
 use tracing::info;
 
 use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
@@ -360,7 +361,7 @@ impl EditFile {
     }
 
     async fn execute_edits(&mut self, path: &str, edits: Vec<Edit>, tool_call_id: &str) {
-        let mut file_reader = self.file_reader.lock().await;
+        let mut file_reader = self.file_reader.lock().unwrap();
 
         let result = self.file_editor.apply_edits(path, edits, &mut file_reader);
 

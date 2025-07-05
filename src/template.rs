@@ -316,7 +316,7 @@ Working directory: {{ cwd }}"#;
         file_reader.read_and_cache_file(&data_path, None, None).unwrap();
 
         // Create SystemState with FileReader
-        let file_reader_arc = Arc::new(tokio::sync::Mutex::new(file_reader));
+        let file_reader_arc = Arc::new(std::sync::Mutex::new(file_reader));
         let system_state = SystemState::with_file_reader(file_reader_arc);
 
         let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
@@ -739,7 +739,7 @@ Tools available: {{ tools|length }}"#;
         file_reader.read_and_cache_file(&file2_path, Some(1), Some(2)).unwrap();
 
         // Create SystemState with FileReader
-        let file_reader_arc = Arc::new(tokio::sync::Mutex::new(file_reader));
+        let file_reader_arc = Arc::new(std::sync::Mutex::new(file_reader));
         let system_state = SystemState::with_file_reader(file_reader_arc);
 
         // Create template context
@@ -792,7 +792,7 @@ Tools available: {{ tools|length }}"#;
         file_reader.read_and_cache_file(&file_path, Some(3), Some(6)).unwrap();
 
         // Create SystemState with FileReader
-        let file_reader_arc = Arc::new(tokio::sync::Mutex::new(file_reader));
+        let file_reader_arc = Arc::new(std::sync::Mutex::new(file_reader));
         let system_state = SystemState::with_file_reader(file_reader_arc);
 
         // Create template context

@@ -49,7 +49,7 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
             }
         },
         "wait": {
-            "type": "bool",
+            "type": "boolean",
             "description": "If `true` pause and wait for a response from your spawned agents else continue performing actions (default `false`)"
         }
     },
