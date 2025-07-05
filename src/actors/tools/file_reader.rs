@@ -1,4 +1,4 @@
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::{Tool, ToolCall};
 use snafu::{ResultExt, Snafu};
 use std::collections::HashMap;
 use std::fs;
@@ -520,18 +520,18 @@ impl FileReaderActor {
         }
     }
 
-    #[tracing::instrument(name = "file_reader_tool_call", skip(self, tool_call), fields(call_id = %tool_call.call_id, function = %tool_call.fn_name))]
+    #[tracing::instrument(name = "file_reader_tool_call", skip(self, tool_call), fields(call_id = %tool_call.id, function = %tool_call.function.name))]
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.fn_name != TOOL_NAME {
+        if tool_call.function.name != TOOL_NAME {
             return;
         }
 
         // Parse the arguments
-        let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
+        let args = match serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments) {
             Ok(args) => args,
             Err(e) => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
+                    call_id: tool_call.id,
                     status: ToolCallStatus::Finished(Err(format!(
                         "Failed to parse arguments: {}",
                         e
@@ -546,7 +546,7 @@ impl FileReaderActor {
             Some(p) => p,
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
+                    call_id: tool_call.id,
                     status: ToolCallStatus::Finished(Err(
                         "Missing required field: path".to_string()
                     )),
@@ -571,7 +571,7 @@ impl FileReaderActor {
         };
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id.clone(),
+            call_id: tool_call.id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::ReadFile,
                 friendly_command_display,
@@ -579,7 +579,7 @@ impl FileReaderActor {
         }));
 
         // Execute the read
-        self.execute_read(path, start_line, end_line, &tool_call.call_id)
+        self.execute_read(path, start_line, end_line, &tool_call.id)
             .await;
     }
 
@@ -644,9 +644,12 @@ impl Actor for FileReaderActor {
 
     async fn on_start(&mut self) {
         let tool = Tool {
-            name: TOOL_NAME.to_string(),
-            description: Some(TOOL_DESCRIPTION.to_string()),
-            schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: TOOL_NAME.to_string(),
+                description: TOOL_DESCRIPTION.to_string(),
+                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap(),
+            },
         };
 
         self.broadcast(Message::ToolsAvailable(vec![tool]));

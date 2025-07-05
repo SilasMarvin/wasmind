@@ -121,7 +121,7 @@ impl FlagIssueForReview {
 
         // Send tool call completion
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id,
+            call_id: tool_call.id,
             status: ToolCallStatus::Finished(Ok(format!(
                 "Issue flagged for review: {}",
                 issue_summary

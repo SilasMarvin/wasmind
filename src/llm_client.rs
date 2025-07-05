@@ -30,7 +30,6 @@ pub enum LLMError {
     },
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionCall {
     pub name: String,
@@ -156,27 +155,19 @@ impl LLMClient {
     }
 
     pub async fn chat(
-        &self, 
+        &self,
         model: &str,
-        system_prompt: Option<&str>,
-        messages: Vec<ChatMessage>,
-        tools: Option<Vec<Tool>>
+        system_prompt: &str,
+        mut messages: Vec<ChatMessage>,
+        tools: Option<Vec<Tool>>,
     ) -> Result<ChatResponse, LLMError> {
         let url = format!("{}/v1/chat/completions", self.base_url);
-        
-        let mut request_messages = Vec::new();
-        
-        // Add system message if provided
-        if let Some(system) = system_prompt {
-            request_messages.push(ChatMessage::system(system));
-        }
-        
-        // Add conversation messages
-        request_messages.extend(messages);
-        
+
+        messages.insert(0, ChatMessage::system(system_prompt));
+
         let request = ChatRequest {
             model: model.to_string(),
-            messages: request_messages,
+            messages,
             tools,
         };
 
@@ -304,7 +295,11 @@ mod tests {
 
         let assistant_msg = ChatMessage::assistant("Hi there!");
         match assistant_msg {
-            ChatMessage::Assistant { content, tool_calls, .. } => {
+            ChatMessage::Assistant {
+                content,
+                tool_calls,
+                ..
+            } => {
                 assert_eq!(content, Some("Hi there!".to_string()));
                 assert!(tool_calls.is_none());
             }
@@ -313,7 +308,11 @@ mod tests {
 
         let tool_msg = ChatMessage::tool("call_123", "get_weather", "{\"temp\": 72}");
         match tool_msg {
-            ChatMessage::Tool { tool_call_id, name, content } => {
+            ChatMessage::Tool {
+                tool_call_id,
+                name,
+                content,
+            } => {
                 assert_eq!(tool_call_id, "call_123");
                 assert_eq!(name, "get_weather");
                 assert_eq!(content, "{\"temp\": 72}");
@@ -353,10 +352,9 @@ mod tests {
             tools: None,
         };
 
-        let json = serde_json::to_value(&request).unwrap();
-        assert_eq!(json["model"], "gpt-4");
-        assert_eq!(json["messages"].as_array().unwrap().len(), 2);
-        assert!(!json.as_object().unwrap().contains_key("tools"));
+        let json_string = serde_json::to_string(&request).unwrap();
+        let expected = r#"{"model":"gpt-4","messages":[{"role":"system","content":"You are helpful"},{"role":"user","content":"Hello"}]}"#;
+        assert_eq!(json_string, expected);
     }
 
     #[test]
@@ -381,10 +379,9 @@ mod tests {
             tools: Some(vec![tool]),
         };
 
-        let json = serde_json::to_value(&request).unwrap();
-        assert!(json["tools"].is_array());
-        assert_eq!(json["tools"][0]["type"], "function");
-        assert_eq!(json["tools"][0]["function"]["name"], "get_weather");
+        let json_string = serde_json::to_string(&request).unwrap();
+        let expected = r#"{"model":"gpt-4","messages":[{"role":"user","content":"What's the weather?"}],"tools":[{"type":"function","function":{"name":"get_weather","description":"Get the weather","parameters":{"properties":{"location":{"type":"string"}},"type":"object"}}}]}"#;
+        assert_eq!(json_string, expected);
     }
 
     #[test]
@@ -413,7 +410,12 @@ mod tests {
         assert_eq!(response.id, "chatcmpl-123");
         assert_eq!(response.model, "gpt-4");
         assert_eq!(response.choices.len(), 1);
-        assert_eq!(response.choices[0].message.content, Some("Hello! How can I help you?".to_string()));
+        match &response.choices[0].message {
+            ChatMessage::Assistant { content, .. } => {
+                assert_eq!(content, &Some("Hello! How can I help you?".to_string()));
+            }
+            _ => panic!("Expected Assistant message"),
+        }
         assert_eq!(response.usage.as_ref().unwrap().total_tokens, 30);
     }
 
@@ -439,12 +441,21 @@ mod tests {
 
         let message: ChatMessage = serde_json::from_value(message_json).unwrap();
         match message {
-            ChatMessage::Assistant { content, tool_calls, reasoning_content, thinking_blocks, .. } => {
+            ChatMessage::Assistant {
+                content,
+                tool_calls,
+                reasoning_content,
+                thinking_blocks,
+                ..
+            } => {
                 assert_eq!(content, Some("I'll check the weather for you".to_string()));
                 assert!(tool_calls.is_some());
                 assert_eq!(tool_calls.as_ref().unwrap().len(), 1);
                 assert_eq!(tool_calls.as_ref().unwrap()[0].id, "call_123");
-                assert_eq!(reasoning_content, Some("The user wants weather information".to_string()));
+                assert_eq!(
+                    reasoning_content,
+                    Some("The user wants weather information".to_string())
+                );
                 assert!(thinking_blocks.is_some());
             }
             _ => panic!("Expected Assistant message"),
@@ -463,9 +474,7 @@ mod tests {
     #[tokio::test]
     async fn test_chat_request_building() {
         let _client = LLMClient::new(None);
-        let messages = vec![
-            ChatMessage::user("Hello, how are you?"),
-        ];
+        let messages = vec![ChatMessage::user("Hello, how are you?")];
 
         // This test just verifies the request can be built properly
         // In a real test environment, you'd mock the HTTP response
@@ -477,10 +486,9 @@ mod tests {
             ],
             tools: None,
         };
-        
+
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["model"], "gpt-4");
         assert_eq!(json["messages"].as_array().unwrap().len(), 2);
     }
 }
-

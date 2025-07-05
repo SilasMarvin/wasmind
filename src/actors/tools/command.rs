@@ -1,4 +1,4 @@
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::{Tool, ToolCall};
 use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::sync::broadcast;
@@ -95,14 +95,14 @@ impl Command {
         )
     }
 
-    #[tracing::instrument(name = "command_tool_call", skip(self, tool_call), fields(call_id = %tool_call.call_id, function = %tool_call.fn_name))]
+    #[tracing::instrument(name = "command_tool_call", skip(self, tool_call), fields(call_id = %tool_call.id, function = %tool_call.function.name))]
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.fn_name != TOOL_NAME {
+        if tool_call.function.name != TOOL_NAME {
             return;
         }
 
         // Parse the arguments
-        let args = serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments).unwrap();
+        let args = serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments).unwrap();
 
         // Extract command and arguments
         let command = args.get("command").and_then(|v| v.as_str()).unwrap();
@@ -131,7 +131,7 @@ impl Command {
         let args_string = args_array.join(" ");
         let friendly_command_display = format!("{command} {args_string}");
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id.clone(),
+            call_id: tool_call.id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::Command,
                 friendly_command_display,
@@ -164,7 +164,7 @@ impl Command {
                 &args_array,
                 directory.as_deref(),
                 timeout,
-                &tool_call.call_id,
+                &tool_call.id,
                 self.scope.clone(),
             )
             .await;
@@ -176,7 +176,7 @@ impl Command {
                 &args_array,
                 directory.as_deref(),
                 timeout,
-                &tool_call.call_id,
+                &tool_call.id,
                 self.scope.clone(),
             )
             .await;
@@ -187,11 +187,11 @@ impl Command {
                 args: args_array.clone(),
                 directory,
                 timeout,
-                tool_call_id: tool_call.call_id.clone(),
+                tool_call_id: tool_call.id.clone(),
             });
 
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call.call_id,
+                call_id: tool_call.id,
                 status: ToolCallStatus::AwaitingUserYNConfirmation,
             }));
         }
@@ -395,9 +395,12 @@ impl Actor for Command {
 
     async fn on_start(&mut self) {
         let tool = Tool {
-            name: TOOL_NAME.to_string(),
-            description: Some(TOOL_DESCRIPTION.to_string()),
-            schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: TOOL_NAME.to_string(),
+                description: TOOL_DESCRIPTION.to_string(),
+                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap(),
+            },
         };
 
         self.broadcast(Message::ToolsAvailable(vec![tool]));

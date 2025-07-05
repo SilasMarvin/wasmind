@@ -51,14 +51,6 @@ pub enum Error {
         source: xcap::XCapError,
     },
 
-    #[snafu(display("Error with GenAI"))]
-    Genai {
-        #[snafu(implicit)]
-        location: Location,
-        #[snafu(source)]
-        source: genai::Error,
-    },
-
     #[snafu(whatever, display("{message}"))]
     Whatever {
         message: String,

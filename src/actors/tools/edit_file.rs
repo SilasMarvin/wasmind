@@ -1,4 +1,4 @@
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::{Tool, ToolCall};
 use snafu::{ResultExt, Snafu};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -301,16 +301,16 @@ impl EditFile {
     }
 
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.fn_name != TOOL_NAME {
+        if tool_call.function.name != TOOL_NAME {
             return;
         }
 
         // Parse the arguments
-        let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
+        let args = match serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments) {
             Ok(args) => args,
             Err(e) => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
+                    call_id: tool_call.id,
                     status: ToolCallStatus::Finished(Err(format!(
                         "Failed to parse arguments: {}",
                         e
@@ -325,7 +325,7 @@ impl EditFile {
             Some(p) => p,
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
+                    call_id: tool_call.id,
                     status: ToolCallStatus::Finished(Err(
                         "Missing required field: path".to_string()
                     )),
@@ -339,7 +339,7 @@ impl EditFile {
             Ok(edits) => edits,
             Err(e) => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
+                    call_id: tool_call.id,
                     status: ToolCallStatus::Finished(Err(e.to_string())),
                 }));
                 return;
@@ -349,7 +349,7 @@ impl EditFile {
         let friendly_command_display = format!("Apply {} edits to {}", edits.len(), path);
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id.clone(),
+            call_id: tool_call.id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::EditFile,
                 friendly_command_display,
@@ -357,7 +357,7 @@ impl EditFile {
         }));
 
         // Execute the edits
-        self.execute_edits(path, edits, &tool_call.call_id).await;
+        self.execute_edits(path, edits, &tool_call.id).await;
     }
 
     async fn execute_edits(&mut self, path: &str, edits: Vec<Edit>, tool_call_id: &str) {
@@ -413,9 +413,12 @@ impl Actor for EditFile {
         info!("EditFile tool starting - broadcasting availability");
 
         let tool = Tool {
-            name: TOOL_NAME.to_string(),
-            description: Some(TOOL_DESCRIPTION.to_string()),
-            schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: TOOL_NAME.to_string(),
+                description: TOOL_DESCRIPTION.to_string(),
+                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap(),
+            },
         };
 
         self.broadcast(Message::ToolsAvailable(vec![tool]));

@@ -4,7 +4,7 @@ use crate::actors::{
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::{Tool, ToolCall};
 use tokio::sync::broadcast;
 
 pub const WAIT_TOOL_RESPONSE: &str = "Waiting...";
@@ -33,12 +33,13 @@ impl Wait {
 
     pub fn get_tool_schema() -> Tool {
         Tool {
-            name: WAIT_TOOL_NAME.to_string(),
-            description: Some(WAIT_TOOL_DESCRIPTION.to_string()),
-            schema: Some(
-                serde_json::from_str(WAIT_TOOL_INPUT_SCHEMA)
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: WAIT_TOOL_NAME.to_string(),
+                description: WAIT_TOOL_DESCRIPTION.to_string(),
+                parameters: serde_json::from_str(WAIT_TOOL_INPUT_SCHEMA)
                     .expect("Invalid WAIT_TOOL_INPUT_SCHEMA"),
-            ),
+            },
         }
     }
 
@@ -47,23 +48,23 @@ impl Wait {
         self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.get_scope().clone(),
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
-                tool_call_id: tool_call.call_id.clone(),
+                tool_call_id: tool_call.id.clone(),
                 status: AgentStatus::Wait {
                     reason: WaitReason::WaitForSystem {
-                        tool_call_id: tool_call.call_id.clone(),
+                        tool_call_id: tool_call.id.clone(),
                     },
                 },
             }),
         }));
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id,
+            call_id: tool_call.id,
             status: ToolCallStatus::Finished(Ok(WAIT_TOOL_RESPONSE.to_string())),
         }));
     }
 
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        match tool_call.fn_name.as_str() {
+        match tool_call.function.name.as_str() {
             WAIT_TOOL_NAME => self.handle_wait(tool_call).await,
             _ => {}
         }

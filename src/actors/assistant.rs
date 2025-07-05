@@ -1,6 +1,4 @@
-use crate::llm_client::{
-    LLMClient, ChatMessage, Tool,
-};
+use crate::llm_client::{ChatMessage, LLMClient, LLMError, Tool};
 use std::{
     collections::BTreeSet,
     sync::{Arc, Mutex},
@@ -11,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     SResult,
-    actors::{Actor, AssistantRequest, Message, ToolCallStatus, ToolCallUpdate, PendingToolCall},
+    actors::{Actor, AssistantRequest, Message, PendingToolCall, ToolCallStatus, ToolCallUpdate},
     config::ParsedModelConfig,
     scope::Scope,
     system_state::SystemState,
@@ -19,8 +17,8 @@ use crate::{
 };
 
 use super::{
-    Action, ActorMessage, AgentMessage, AgentMessageType, AgentStatus,
-    InterAgentMessage, UserContext, WaitReason,
+    Action, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage,
+    UserContext, WaitReason,
 };
 
 /// Helper functions for formatting messages used in chat requests and tests
@@ -241,7 +239,8 @@ impl Assistant {
         // Add new tools to existing tools
         for new_tool in new_tools {
             // Remove any existing tool with the same name
-            self.available_tools.retain(|t| t.function.name != new_tool.function.name);
+            self.available_tools
+                .retain(|t| t.function.name != new_tool.function.name);
             // Add the new tool
             self.available_tools.push(new_tool);
         }
@@ -261,10 +260,21 @@ impl Assistant {
                         None => false,
                     };
 
-                    if found && tool_calls.values().all(|pending_call| pending_call.result.is_some()) {
+                    if found
+                        && tool_calls
+                            .values()
+                            .all(|pending_call| pending_call.result.is_some())
+                    {
                         for (call_id, pending_call) in tool_calls.drain() {
-                            let content = pending_call.result.unwrap().unwrap_or_else(|e| format!("Error: {}", e));
-                            self.chat_history.push(ChatMessage::tool(call_id, pending_call.tool_name, content));
+                            let content = pending_call
+                                .result
+                                .unwrap()
+                                .unwrap_or_else(|e| format!("Error: {}", e));
+                            self.chat_history.push(ChatMessage::tool(
+                                call_id,
+                                pending_call.tool_name,
+                                content,
+                            ));
                         }
                         self.submit_pending_message(true);
                     }
@@ -281,7 +291,11 @@ impl Assistant {
                     }
 
                     let content = result.unwrap_or_else(|e| format!("Error: {}", e));
-                    self.chat_history.push(ChatMessage::tool(update.call_id, "system_tool", content));
+                    self.chat_history.push(ChatMessage::tool(
+                        update.call_id,
+                        "system_tool",
+                        content,
+                    ));
                 }
                 _ => (),
             }
@@ -355,7 +369,18 @@ impl Assistant {
         let tools = self.available_tools.clone();
 
         let handle = tokio::spawn(async move {
-            if let Err(e) = do_assist(tx, client, system_prompt, messages, tools, config, scope, processing_id).await {
+            if let Err(e) = do_assist(
+                tx,
+                client,
+                system_prompt,
+                messages,
+                tools,
+                config,
+                scope,
+                processing_id,
+            )
+            .await
+            {
                 error!("Error in assist task: {:?}", e);
             }
         });
@@ -403,19 +428,15 @@ async fn do_assist(
     config: ParsedModelConfig,
     scope: Scope,
     processing_id: Uuid,
-) -> SResult<()> {
+) -> Result<(), LLMError> {
     let resp = client
         .chat(
             &config.model_name,
-            Some(&system_prompt),
+            &system_prompt,
             messages,
-            if tools.is_empty() { None } else { Some(tools) }
+            if tools.is_empty() { None } else { Some(tools) },
         )
-        .await
-        .map_err(|e| crate::Error::Whatever { 
-            message: e.to_string(),
-            source: Some(Box::new(e))
-        })?;
+        .await?;
 
     // Debug log the full response
     tracing::debug!(
@@ -427,7 +448,7 @@ async fn do_assist(
 
     if let Some(choice) = resp.choices.first() {
         let assistant_message = &choice.message;
-        
+
         // Send response
         let _ = tx.send(ActorMessage {
             scope,
@@ -438,7 +459,11 @@ async fn do_assist(
         });
 
         // Handle tool calls if any
-        if let ChatMessage::Assistant { tool_calls: Some(tool_calls), .. } = assistant_message {
+        if let ChatMessage::Assistant {
+            tool_calls: Some(tool_calls),
+            ..
+        } = assistant_message
+        {
             for tool_call in tool_calls {
                 let _ = tx.send(ActorMessage {
                     scope,
@@ -527,9 +552,7 @@ impl Actor for Assistant {
                         AgentMessageType::InterAgentMessage(inter_agent_message) => {
                             match inter_agent_message {
                                 InterAgentMessage::Message { message } => {
-                                    self.add_system_message(
-                                        format_manager_message(&message)
-                                    );
+                                    self.add_system_message(format_manager_message(&message));
                                     match self.state.clone() {
                                         AgentStatus::Wait { reason } => match reason {
                                             WaitReason::WaitForSystem { .. } => {
@@ -632,24 +655,36 @@ impl Actor for Assistant {
                         }
 
                         match content {
-                            ChatMessage::Assistant { tool_calls: Some(tool_calls), .. } => {
+                            ChatMessage::Assistant {
+                                tool_calls: Some(ref tool_calls),
+                                ..
+                            } => {
                                 // Handle tool calls
                                 self.chat_history.push(content.clone());
                                 let tool_calls_map = tool_calls
                                     .iter()
-                                    .map(|tc| (tc.id.clone(), PendingToolCall {
-                                        tool_name: tc.function.name.clone(),
-                                        result: None,
-                                    }))
+                                    .map(|tc| {
+                                        (
+                                            tc.id.clone(),
+                                            PendingToolCall {
+                                                tool_name: tc.function.name.clone(),
+                                                result: None,
+                                            },
+                                        )
+                                    })
                                     .collect();
                                 self.set_state(
                                     AgentStatus::Wait {
-                                        reason: WaitReason::WaitingForTools { tool_calls: tool_calls_map },
+                                        reason: WaitReason::WaitingForTools {
+                                            tool_calls: tool_calls_map,
+                                        },
                                     },
                                     true,
                                 );
                             }
-                            ChatMessage::Assistant { content: Some(_), .. } => {
+                            ChatMessage::Assistant {
+                                content: Some(_), ..
+                            } => {
                                 // Handle text response
                                 self.chat_history.push(content.clone());
 
@@ -674,7 +709,10 @@ impl Actor for Assistant {
                             }
                             _ => {
                                 // Handle unexpected message types
-                                tracing::warn!("Received unexpected message type in assistant response: {:?}", content);
+                                tracing::warn!(
+                                    "Received unexpected message type in assistant response: {:?}",
+                                    content
+                                );
                             }
                         }
                     }
@@ -744,9 +782,10 @@ impl Actor for Assistant {
                                 // Alternatively we could add a dummy tool response but this seems more reasonable
                                 if matches!(
                                     self.chat_history.last(),
-                                    Some(ChatHistoryMessage::Assistant(
-                                        AssistantMessage::ToolCalls(_)
-                                    ))
+                                    Some(ChatMessage::Assistant {
+                                        tool_calls: Some(_),
+                                        ..
+                                    })
                                 ) {
                                     self.chat_history.pop();
                                 }
@@ -798,7 +837,10 @@ impl Actor for Assistant {
                                                 response.success,
                                                 &response.summary,
                                             ),
-                                            Err(err) => format_agent_response_failure(&agent_message.agent_id, err),
+                                            Err(err) => format_agent_response_failure(
+                                                &agent_message.agent_id,
+                                                err,
+                                            ),
                                         };
                                         self.add_system_message(formatted_message);
 
@@ -820,9 +862,10 @@ impl Actor for Assistant {
                             InterAgentMessage::Message {
                                 message: sub_agent_message,
                             } if agent_message.agent_id == self.scope => {
-                                self.add_system_message(
-                                    format_sub_agent_message(&sub_agent_message, &agent_message.agent_id)
-                                );
+                                self.add_system_message(format_sub_agent_message(
+                                    &sub_agent_message,
+                                    &agent_message.agent_id,
+                                ));
                                 match self.state.clone() {
                                     AgentStatus::Wait { reason } => match reason {
                                         WaitReason::WaitForSystem { .. }
@@ -851,6 +894,7 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::config::ParsedConfig;
+    use crate::llm_client::ToolCall;
 
     use super::*;
 
@@ -1058,20 +1102,26 @@ mod tests {
         let mut assistant = create_test_assistant([], None);
 
         let tool1 = Tool {
-            name: "test_tool1".to_string(),
-            description: Some("Test tool 1".to_string()),
-            schema: Some(serde_json::Value::Null),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: "test_tool1".to_string(),
+                description: "Test tool 1".to_string(),
+                parameters: serde_json::Value::Null,
+            },
         };
         let tool2 = Tool {
-            name: "test_tool2".to_string(),
-            description: Some("Test tool 2".to_string()),
-            schema: Some(serde_json::Value::Null),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: "test_tool2".to_string(),
+                description: "Test tool 2".to_string(),
+                parameters: serde_json::Value::Null,
+            },
         };
 
         // Send tools available
         send_message(&mut assistant, Message::ToolsAvailable(vec![tool1.clone()])).await;
         assert_eq!(assistant.available_tools.len(), 1);
-        assert_eq!(assistant.available_tools[0].name, "test_tool1");
+        assert_eq!(assistant.available_tools[0].function.name, "test_tool1");
 
         // Send more tools - should add to existing
         send_message(&mut assistant, Message::ToolsAvailable(vec![tool2.clone()])).await;
@@ -1079,9 +1129,12 @@ mod tests {
 
         // Send duplicate tool - should replace
         let tool1_updated = Tool {
-            name: "test_tool1".to_string(),
-            description: Some("Updated test tool 1".to_string()),
-            schema: Some(serde_json::Value::Null),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: "test_tool1".to_string(),
+                description: "Updated test tool 1".to_string(),
+                parameters: serde_json::Value::Null,
+            },
         };
         send_message(&mut assistant, Message::ToolsAvailable(vec![tool1_updated])).await;
         assert_eq!(assistant.available_tools.len(), 2);
@@ -1089,11 +1142,11 @@ mod tests {
         let updated_tool = assistant
             .available_tools
             .iter()
-            .find(|t| t.name == "test_tool1")
+            .find(|t| t.function.name == "test_tool1")
             .expect("test_tool1 should exist");
         assert_eq!(
-            updated_tool.description,
-            Some("Updated test tool 1".to_string())
+            updated_tool.function.description,
+            "Updated test tool 1".to_string()
         );
     }
 
@@ -1218,7 +1271,7 @@ mod tests {
             &mut assistant,
             Message::AssistantResponse {
                 id: processing_id,
-                content: MessageContent::Text("Response text".to_string()),
+                content: ChatMessage::assistant("Response text"),
             },
         )
         .await;
@@ -1234,8 +1287,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_assistant_response_with_tool_calls() {
-        use genai::chat::ToolCall;
-
         let mut assistant = create_test_assistant([], None);
         let processing_id = Uuid::new_v4();
 
@@ -1248,9 +1299,13 @@ mod tests {
         );
 
         let tool_call = ToolCall {
-            call_id: "call_123".to_string(),
-            fn_name: "test_tool".to_string(),
-            fn_arguments: serde_json::Value::Null,
+            id: "call_123".to_string(),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::Function {
+                name: "test_tool".to_string(),
+                arguments: "null".to_string(),
+            },
+            index: None,
         };
 
         // Send assistant response with tool calls
@@ -1258,7 +1313,7 @@ mod tests {
             &mut assistant,
             Message::AssistantResponse {
                 id: processing_id,
-                content: MessageContent::ToolCalls(vec![tool_call]),
+                content: ChatMessage::assistant_with_tools(vec![tool_call]),
             },
         )
         .await;
@@ -1289,7 +1344,7 @@ mod tests {
             &mut assistant,
             Message::AssistantResponse {
                 id: old_id,
-                content: MessageContent::Text("Old response".to_string()),
+                content: ChatMessage::assistant("Old response"),
             },
         )
         .await;
@@ -1309,7 +1364,13 @@ mod tests {
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
-        tool_calls.insert("call_123".to_string(), None);
+        tool_calls.insert(
+            "call_123".to_string(),
+            PendingToolCall {
+                tool_name: "test_tool".to_string(),
+                result: None,
+            },
+        );
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForTools { tool_calls },
@@ -1337,8 +1398,20 @@ mod tests {
 
         // Set up WaitingForTools state with multiple tools
         let mut tool_calls = std::collections::HashMap::new();
-        tool_calls.insert("call_1".to_string(), None);
-        tool_calls.insert("call_2".to_string(), None);
+        tool_calls.insert(
+            "call_1".to_string(),
+            PendingToolCall {
+                tool_name: "test_tool1".to_string(),
+                result: None,
+            },
+        );
+        tool_calls.insert(
+            "call_2".to_string(),
+            PendingToolCall {
+                tool_name: "test_tool2".to_string(),
+                result: None,
+            },
+        );
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForTools { tool_calls },
@@ -1383,7 +1456,13 @@ mod tests {
         let mut assistant = create_test_assistant([], None);
 
         let mut tool_calls = std::collections::HashMap::new();
-        tool_calls.insert("call_123".to_string(), None);
+        tool_calls.insert(
+            "call_123".to_string(),
+            PendingToolCall {
+                tool_name: "test_tool".to_string(),
+                result: None,
+            },
+        );
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForTools { tool_calls },
@@ -1416,7 +1495,13 @@ mod tests {
 
         assistant.state = AgentStatus::Wait {
             reason: WaitReason::WaitingForTools {
-                tool_calls: HashMap::from([("call_123".to_string(), None)]),
+                tool_calls: HashMap::from([(
+                    "call_123".to_string(),
+                    PendingToolCall {
+                        tool_name: "test_tool".to_string(),
+                        result: None,
+                    },
+                )]),
             },
         };
 
@@ -1548,7 +1633,13 @@ mod tests {
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
-        tool_calls.insert("call_123".to_string(), None);
+        tool_calls.insert(
+            "call_123".to_string(),
+            PendingToolCall {
+                tool_name: "test_tool".to_string(),
+                result: None,
+            },
+        );
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForTools { tool_calls },
@@ -1591,7 +1682,13 @@ mod tests {
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
-        tool_calls.insert("call_123".to_string(), None);
+        tool_calls.insert(
+            "call_123".to_string(),
+            PendingToolCall {
+                tool_name: "test_tool".to_string(),
+                result: None,
+            },
+        );
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForTools { tool_calls },
@@ -1788,7 +1885,12 @@ mod tests {
         assert_eq!(assistant.chat_history.len(), initial_messages_count + 1);
 
         let last_message = assistant.chat_history.last().unwrap();
-        if let ChatMessage::Tool { tool_call_id, content, .. } = last_message {
+        if let ChatMessage::Tool {
+            tool_call_id,
+            content,
+            ..
+        } = last_message
+        {
             assert_eq!(tool_call_id, "plan_call_123");
             assert_eq!(content, "Plan submitted for approval");
         } else {
@@ -1834,7 +1936,12 @@ mod tests {
         assert_eq!(assistant.chat_history.len(), initial_messages_count + 1);
 
         let last_message = assistant.chat_history.last().unwrap();
-        if let ChatMessage::Tool { tool_call_id, content, .. } = last_message {
+        if let ChatMessage::Tool {
+            tool_call_id,
+            content,
+            ..
+        } = last_message
+        {
             assert_eq!(tool_call_id, "wait_call_456");
             assert_eq!(content, "Waiting...");
         } else {
@@ -1865,8 +1972,11 @@ mod tests {
         .await;
 
         // Only the latest user message should be kept
-        let messages = assistant.pending_message.to_chat_history_messages();
-        assert_eq!(messages.len(), 1);
+        assert_eq!(
+            assistant.pending_message.user_content,
+            Some("Message 2".to_string())
+        );
+        assert_eq!(assistant.pending_message.system_messages.len(), 0);
     }
 
     #[tokio::test]
@@ -1877,7 +1987,7 @@ mod tests {
         // Add pending message
         assistant
             .pending_message
-            .set_user_content(ContentPart::Text("Pending message".to_string()));
+            .set_user_content("Pending message".to_string());
 
         // Set to Processing
         assistant.set_state(
@@ -1892,7 +2002,7 @@ mod tests {
             &mut assistant,
             Message::AssistantResponse {
                 id: processing_id,
-                content: MessageContent::Text("Response".to_string()),
+                content: ChatMessage::assistant("Response"),
             },
         )
         .await;
@@ -1911,9 +2021,12 @@ mod tests {
 
         // Add a tool to trigger system prompt update
         let tool = Tool {
-            name: "test_tool".to_string(),
-            description: Some("Test tool".to_string()),
-            schema: Some(serde_json::Value::Null),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: "test_tool".to_string(),
+                description: "Test tool".to_string(),
+                parameters: serde_json::Value::Null,
+            },
         };
         send_message(&mut assistant, Message::ToolsAvailable(vec![tool])).await;
 
@@ -1983,7 +2096,13 @@ mod tests {
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
-        tool_calls.insert("call_123".to_string(), None);
+        tool_calls.insert(
+            "call_123".to_string(),
+            PendingToolCall {
+                tool_name: "test_tool".to_string(),
+                result: None,
+            },
+        );
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForTools { tool_calls },
@@ -2043,8 +2162,20 @@ mod tests {
 
         // Set up WaitingForTools with multiple tools
         let mut tool_calls = std::collections::HashMap::new();
-        tool_calls.insert("call_1".to_string(), None);
-        tool_calls.insert("call_2".to_string(), None);
+        tool_calls.insert(
+            "call_1".to_string(),
+            PendingToolCall {
+                tool_name: "test_tool1".to_string(),
+                result: None,
+            },
+        );
+        tool_calls.insert(
+            "call_2".to_string(),
+            PendingToolCall {
+                tool_name: "test_tool2".to_string(),
+                result: None,
+            },
+        );
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForTools { tool_calls },
@@ -2155,7 +2286,13 @@ mod tests {
 
         assistant.state = AgentStatus::Wait {
             reason: WaitReason::WaitingForTools {
-                tool_calls: HashMap::from([("spawn_123".to_string(), None)]),
+                tool_calls: HashMap::from([(
+                    "spawn_123".to_string(),
+                    PendingToolCall {
+                        tool_name: "spawn_agent".to_string(),
+                        result: None,
+                    },
+                )]),
             },
         };
 
@@ -2227,7 +2364,13 @@ mod tests {
 
         assistant.state = AgentStatus::Wait {
             reason: WaitReason::WaitingForTools {
-                tool_calls: HashMap::from([("spawn_456".to_string(), None)]),
+                tool_calls: HashMap::from([(
+                    "spawn_456".to_string(),
+                    PendingToolCall {
+                        tool_name: "spawn_agent".to_string(),
+                        result: None,
+                    },
+                )]),
             },
         };
 
@@ -2390,7 +2533,13 @@ mod tests {
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
-        tool_calls.insert("call_123".to_string(), None);
+        tool_calls.insert(
+            "call_123".to_string(),
+            PendingToolCall {
+                tool_name: "test_tool".to_string(),
+                result: None,
+            },
+        );
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForTools { tool_calls },

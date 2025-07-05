@@ -1,4 +1,4 @@
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::{Tool, ToolCall};
 use std::fmt;
 use tokio::sync::broadcast;
 
@@ -149,16 +149,16 @@ impl Planner {
     }
 
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.fn_name != TOOL_NAME {
+        if tool_call.function.name != TOOL_NAME {
             return;
         }
 
         // Parse the arguments
-        let args = match serde_json::from_value::<serde_json::Value>(tool_call.fn_arguments) {
+        let args = match serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments) {
             Ok(args) => args,
             Err(e) => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
+                    call_id: tool_call.id,
                     status: ToolCallStatus::Finished(Err(format!(
                         "Failed to parse planner arguments: {}",
                         e
@@ -172,7 +172,7 @@ impl Planner {
             Some(action) => action,
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
+                    call_id: tool_call.id,
                     status: ToolCallStatus::Finished(Err("Missing 'action' field".to_string())),
                 }));
                 return;
@@ -180,14 +180,14 @@ impl Planner {
         };
 
         let _response_content = match action {
-            "create" => self.handle_create_plan(&args, &tool_call.call_id).await,
+            "create" => self.handle_create_plan(&args, &tool_call.id).await,
             "update" | "complete" | "start" | "skip" => {
-                self.handle_update_plan(action, &args, &tool_call.call_id)
+                self.handle_update_plan(action, &args, &tool_call.id)
                     .await
             }
             _ => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
+                    call_id: tool_call.id,
                     status: ToolCallStatus::Finished(Err(format!("Unknown action: {}", action))),
                 }));
                 return;
@@ -410,9 +410,12 @@ impl Actor for Planner {
 
     async fn on_start(&mut self) {
         let tool = Tool {
-            name: TOOL_NAME.to_string(),
-            description: Some(TOOL_DESCRIPTION.to_string()),
-            schema: Some(serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap()),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: TOOL_NAME.to_string(),
+                description: TOOL_DESCRIPTION.to_string(),
+                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap(),
+            },
         };
 
         self.broadcast(Message::ToolsAvailable(vec![tool]));

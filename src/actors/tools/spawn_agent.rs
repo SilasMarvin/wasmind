@@ -1,4 +1,4 @@
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::{Tool, ToolCall};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::info;
@@ -81,13 +81,13 @@ impl SpawnAgent {
     }
 
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.fn_name != TOOL_NAME {
+        if tool_call.function.name != TOOL_NAME {
             return;
         }
 
         // Send received status
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id.clone(),
+            call_id: tool_call.id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::SpawnAgent,
                 friendly_command_display: "Processing request to spawn agents...".to_string(),
@@ -95,11 +95,11 @@ impl SpawnAgent {
         }));
 
         // Parse input
-        let input: SpawnAgentsInput = match serde_json::from_value(tool_call.fn_arguments) {
+        let input: SpawnAgentsInput = match serde_json::from_str(&tool_call.function.arguments) {
             Ok(input) => input,
             Err(e) => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
+                    call_id: tool_call.id,
                     status: ToolCallStatus::Finished(Err(format!("Invalid input schema: {}. Ensure 'agents_to_spawn' is a non-empty array of valid agent definitions.", e))),
                 }));
                 return;
@@ -109,7 +109,7 @@ impl SpawnAgent {
         // Schema validation (minItems: 1) should ideally catch this, but an explicit check is good.
         if input.agents_to_spawn.is_empty() {
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call.call_id,
+                call_id: tool_call.id,
                 status: ToolCallStatus::Finished(Err("No agents specified in 'agents_to_spawn' array. At least one agent must be provided.".to_string())),
             }));
             return;
@@ -160,7 +160,7 @@ impl SpawnAgent {
                         agent_def.agent_type, agent_def.agent_role
                     );
                     self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                        call_id: tool_call.call_id.clone(),
+                        call_id: tool_call.id.clone(),
                         status: ToolCallStatus::Finished(Err(error_msg)),
                     }));
                     return;
@@ -174,7 +174,7 @@ impl SpawnAgent {
                     agent_type: agent.r#type,
                     role: agent.role.clone(),
                     task_description: agent_def.task_description.clone(),
-                    tool_call_id: tool_call.call_id.clone(),
+                    tool_call_id: tool_call.id.clone(),
                 },
             }));
 
@@ -219,7 +219,7 @@ impl SpawnAgent {
         );
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id,
+            call_id: tool_call.id,
             status: ToolCallStatus::Finished(Ok(response)),
         }));
     }
@@ -255,12 +255,13 @@ impl Actor for SpawnAgent {
 
         // Send tool availability
         let tool = Tool {
-            name: TOOL_NAME.to_string(),                     // Uses updated TOOL_NAME
-            description: Some(TOOL_DESCRIPTION.to_string()), // Uses updated TOOL_DESCRIPTION
-            schema: Some(
-                serde_json::from_str(TOOL_INPUT_SCHEMA)
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: TOOL_NAME.to_string(),                     // Uses updated TOOL_NAME
+                description: TOOL_DESCRIPTION.to_string(), // Uses updated TOOL_DESCRIPTION
+                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA)
                     .expect("TOOL_INPUT_SCHEMA must be valid JSON"),
-            ),
+            },
         };
 
         self.broadcast(Message::ToolsAvailable(vec![tool]));

@@ -4,7 +4,7 @@ use crate::actors::{
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::{Tool, ToolCall};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 
@@ -62,24 +62,25 @@ impl SendManagerMessage {
 
     pub fn get_tool_schema() -> Tool {
         Tool {
-            name: SEND_MANAGER_MESSAGE_TOOL_NAME.to_string(),
-            description: Some(SEND_MANAGER_MESSAGE_TOOL_DESCRIPTION.to_string()),
-            schema: Some(
-                serde_json::from_str(SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA)
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: SEND_MANAGER_MESSAGE_TOOL_NAME.to_string(),
+                description: SEND_MANAGER_MESSAGE_TOOL_DESCRIPTION.to_string(),
+                parameters: serde_json::from_str(SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA)
                     .expect("Invalid SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA"),
-            ),
+            },
         }
     }
 
     async fn handle_send_manager_message(&mut self, tool_call: ToolCall) {
-        let input: SendManagerMessageInput = match serde_json::from_value(tool_call.fn_arguments) {
+        let input: SendManagerMessageInput = match serde_json::from_str(&tool_call.function.arguments) {
             Ok(input) => input,
             Err(e) => {
                 let error_msg = format!("Invalid send_manager_message arguments: {}", e);
                 let _ = self.tx.send(ActorMessage {
                     scope: self.scope,
                     message: Message::ToolCallUpdate(ToolCallUpdate {
-                        call_id: tool_call.call_id,
+                        call_id: tool_call.id,
                         status: ToolCallStatus::Finished(Err(error_msg)),
                     }),
                 });
@@ -101,10 +102,10 @@ impl SendManagerMessage {
                 agent_id: self.scope.clone(),
                 message: AgentMessageType::InterAgentMessage(
                     InterAgentMessage::StatusUpdateRequest {
-                        tool_call_id: tool_call.call_id.clone(),
+                        tool_call_id: tool_call.id.clone(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitingForManager {
-                                tool_call_id: tool_call.call_id.clone(),
+                                tool_call_id: tool_call.id.clone(),
                             },
                         },
                     },
@@ -114,7 +115,7 @@ impl SendManagerMessage {
 
         // Send tool success response
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id,
+            call_id: tool_call.id,
             status: ToolCallStatus::Finished(Ok(
                 SEND_MANAGER_MESSAGE_SUCCESS_TOOL_RESPONSE.to_string()
             )),
@@ -122,7 +123,7 @@ impl SendManagerMessage {
     }
 
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        match tool_call.fn_name.as_str() {
+        match tool_call.function.name.as_str() {
             SEND_MANAGER_MESSAGE_TOOL_NAME => self.handle_send_manager_message(tool_call).await,
             _ => {}
         }

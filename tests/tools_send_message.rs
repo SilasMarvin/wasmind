@@ -140,8 +140,8 @@ async fn test_send_message_tool() {
             }
             Message::AssistantToolCall(tool_call) => {
                 assert!(seen_processing, "Tool call must come after Processing");
-                assert_eq!(tool_call.fn_name, SEND_MESSAGE_TOOL_NAME);
-                assert_eq!(tool_call.call_id, "send_message_call");
+                assert_eq!(tool_call.function.name, SEND_MESSAGE_TOOL_NAME);
+                assert_eq!(tool_call.id, "send_message_call");
                 seen_tool_call = true;
             }
             Message::ToolCallUpdate(update) => {

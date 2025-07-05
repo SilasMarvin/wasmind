@@ -19,15 +19,15 @@ pub fn create_test_config_with_mock_endpoint(mock_endpoint: String) -> ParsedCon
     let mut config = Config::new(true).unwrap();
 
     // Use gpt-4o for all models
-    config.hive.main_manager_model.name = "gpt-4o".to_string();
-    config.hive.sub_manager_model.name = "gpt-4o".to_string();
-    config.hive.worker_model.name = "gpt-4o".to_string();
+    config.hive.main_manager_model.model_name = "gpt-4o".to_string();
+    config.hive.sub_manager_model.model_name = "gpt-4o".to_string();
+    config.hive.worker_model.model_name = "gpt-4o".to_string();
 
-    // Set mock endpoints (needs /v1/ suffix for genai client)
+    // Set mock endpoint via litellm_params
     let endpoint_with_v1 = format!("{}/v1/", mock_endpoint);
-    config.hive.main_manager_model.endpoint = Some(endpoint_with_v1.clone());
-    config.hive.sub_manager_model.endpoint = Some(endpoint_with_v1.clone());
-    config.hive.worker_model.endpoint = Some(endpoint_with_v1);
+    config.hive.main_manager_model.litellm_params.insert("api_base".to_string(), serde_json::Value::String(endpoint_with_v1.clone()));
+    config.hive.sub_manager_model.litellm_params.insert("api_base".to_string(), serde_json::Value::String(endpoint_with_v1.clone()));
+    config.hive.worker_model.litellm_params.insert("api_base".to_string(), serde_json::Value::String(endpoint_with_v1));
 
     // Override system prompt templates to just use agent ID for easier testing
     config.hive.main_manager_model.system_prompt = Some("{{id}}".to_string());
