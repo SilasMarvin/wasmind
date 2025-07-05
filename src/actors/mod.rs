@@ -9,8 +9,8 @@ pub mod temporal;
 pub mod tools;
 pub mod tui;
 
-use crate::scope::Scope;
 use crate::llm_client::{Tool, ToolCall};
+use crate::scope::Scope;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -107,9 +107,11 @@ pub struct AgentTaskResultOk {
 pub enum WaitReason {
     WaitingForUserInput,
     WaitForSystem {
+        tool_name: Option<String>,
         tool_call_id: String,
     },
     WaitingForManager {
+        tool_name: Option<String>,
         tool_call_id: String,
     },
     WaitingForTools {

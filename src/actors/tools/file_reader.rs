@@ -718,6 +718,80 @@ mod tests {
     }
 
     #[test]
+    fn test_omitted_lines_formatting_comprehensive() {
+        // Test case 1: Omitted lines at the beginning
+        let slice_from_middle = FileSlice {
+            start_line: 8,
+            end_line: 12,
+            content: "8|[2024-01-01 00:00:08] WARN: High memory usage detected\n9|[2024-01-01 00:00:09] DEBUG: Running garbage collection\n10|[2024-01-01 00:00:10] INFO: Garbage collection completed\n11|[2024-01-01 00:00:11] ERROR: Connection timeout occurred\n12|[2024-01-01 00:00:12] WARN: Retrying connection".to_string(),
+        };
+
+        let content_from_middle = FileContent::Partial {
+            slices: vec![slice_from_middle],
+            total_lines: 15,
+        };
+
+        let result = content_from_middle.get_numbered_content();
+        
+        // Should have omitted lines at beginning and end
+        assert!(result.contains("[... 7 lines omitted ...]")); // Lines 1-7 omitted
+        assert!(result.contains("8|[2024-01-01 00:00:08] WARN: High memory usage detected"));
+        assert!(result.contains("12|[2024-01-01 00:00:12] WARN: Retrying connection"));
+        assert!(result.contains("[... 3 lines omitted ...]")); // Lines 13-15 omitted
+
+        // Test case 2: Multiple gaps
+        let slice1 = FileSlice {
+            start_line: 1,
+            end_line: 2,
+            content: "1|first line\n2|second line".to_string(),
+        };
+        let slice2 = FileSlice {
+            start_line: 5,
+            end_line: 6,
+            content: "5|fifth line\n6|sixth line".to_string(),
+        };
+        let slice3 = FileSlice {
+            start_line: 10,
+            end_line: 10,
+            content: "10|tenth line".to_string(),
+        };
+
+        let content_with_gaps = FileContent::Partial {
+            slices: vec![slice1, slice2, slice3],
+            total_lines: 12,
+        };
+
+        let result_gaps = content_with_gaps.get_numbered_content();
+        
+        // Verify all the omitted sections
+        assert!(result_gaps.contains("1|first line"));
+        assert!(result_gaps.contains("2|second line"));
+        assert!(result_gaps.contains("[... 2 lines omitted ...]")); // Lines 3-4
+        assert!(result_gaps.contains("5|fifth line"));
+        assert!(result_gaps.contains("6|sixth line"));
+        assert!(result_gaps.contains("[... 3 lines omitted ...]")); // Lines 7-9
+        assert!(result_gaps.contains("10|tenth line"));
+        assert!(result_gaps.contains("[... 2 lines omitted ...]")); // Lines 11-12
+
+        // Test case 3: No omitted lines (contiguous)
+        let slice_start = FileSlice {
+            start_line: 1,
+            end_line: 3,
+            content: "1|line one\n2|line two\n3|line three".to_string(),
+        };
+
+        let content_full = FileContent::Partial {
+            slices: vec![slice_start],
+            total_lines: 3,
+        };
+
+        let result_full = content_full.get_numbered_content();
+        assert!(!result_full.contains("omitted")); // No omitted lines
+        assert!(result_full.contains("1|line one"));
+        assert!(result_full.contains("3|line three"));
+    }
+
+    #[test]
     fn test_file_content_merge_slice_non_overlapping() {
         let slice1 = FileSlice {
             start_line: 1,

@@ -182,8 +182,7 @@ impl Planner {
         let _response_content = match action {
             "create" => self.handle_create_plan(&args, &tool_call.id).await,
             "update" | "complete" | "start" | "skip" => {
-                self.handle_update_plan(action, &args, &tool_call.id)
-                    .await
+                self.handle_update_plan(action, &args, &tool_call.id).await
             }
             _ => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
@@ -269,6 +268,7 @@ impl Planner {
                         tool_call_id: tool_call_id.to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitingForManager {
+                                tool_name: Some(TOOL_NAME.to_string()),
                                 tool_call_id: tool_call_id.to_owned(),
                             },
                         },

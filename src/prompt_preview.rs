@@ -1,11 +1,15 @@
 use snafu::{ResultExt, Snafu};
-use std::path::PathBuf;
-use std::time::SystemTime;
+use std::fs;
+use std::sync::{Arc, Mutex};
+use tempfile::TempDir;
 
 use crate::{
     actors::{
         AgentType,
-        tools::planner::{Task, TaskPlan, TaskStatus},
+        tools::{
+            file_reader::FileReader,
+            planner::{Task, TaskPlan, TaskStatus},
+        },
     },
     config::{Config, ParsedConfig},
     system_state::{SystemState, SystemStateError},
@@ -90,12 +94,12 @@ impl PromptPreviewScenarios {
 
     /// Create a demo system state with files
     fn create_state_with_files(&self) -> SystemState {
-        let mut state = SystemState::new();
+        // Create temporary directory and files for preview
+        let temp_dir = TempDir::new().expect("Failed to create temp dir for preview");
+        let file_reader = Arc::new(Mutex::new(FileReader::default()));
 
-        // Add some example files
-        state.update_file(
-            PathBuf::from("src/main.rs"),
-            r#"use std::env;
+        // Create example files
+        let main_rs_content = r#"use std::env;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -106,14 +110,9 @@ fn main() {
         println!("Hello, World!");
     }
 }
-"#
-            .to_string(),
-            SystemTime::now(),
-        );
+"#;
 
-        state.update_file(
-            PathBuf::from("README.md"),
-            r#"# My Project
+        let readme_content = r#"# My Project
 
 This is a simple Rust project that greets the user.
 
@@ -128,14 +127,9 @@ cargo run -- YourName
 - Command line argument parsing
 - Friendly greetings
 - Cross-platform compatibility
-"#
-            .to_string(),
-            SystemTime::now(),
-        );
+"#;
 
-        state.update_file(
-            PathBuf::from("config.toml"),
-            r#"[database]
+        let config_content = r#"[database]
 host = "localhost"
 port = 5432
 name = "myapp"
@@ -143,10 +137,76 @@ name = "myapp"
 [logging]
 level = "info"
 file = "app.log"
-"#
-            .to_string(),
-            SystemTime::now(),
-        );
+"#;
+
+        // Write files to temp directory
+        let main_path = temp_dir.path().join("src").join("main.rs");
+        fs::create_dir_all(main_path.parent().unwrap()).expect("Failed to create src dir");
+        fs::write(&main_path, main_rs_content).expect("Failed to write main.rs");
+
+        let readme_path = temp_dir.path().join("README.md");
+        fs::write(&readme_path, readme_content).expect("Failed to write README.md");
+
+        let config_path = temp_dir.path().join("config.toml");
+        fs::write(&config_path, config_content).expect("Failed to write config.toml");
+
+        // Create a large file to demonstrate partial reading
+        let large_file_content = r#"// Large data file with many lines
+line 1: data entry
+line 2: more data
+line 3: even more data
+line 4: lots of data here
+line 5: continuing with data
+line 6: data keeps going
+line 7: more and more data
+line 8: still more data
+line 9: data never ends
+line 10: final line of data
+"#;
+
+        let large_file_path = temp_dir.path().join("large_data.txt");
+        fs::write(&large_file_path, large_file_content).expect("Failed to write large file");
+
+        // Create another file to demonstrate reading from the middle
+        let log_file_content = r#"[2024-01-01 00:00:01] INFO: Application started
+[2024-01-01 00:00:02] DEBUG: Loading configuration
+[2024-01-01 00:00:03] INFO: Configuration loaded successfully
+[2024-01-01 00:00:04] DEBUG: Connecting to database
+[2024-01-01 00:00:05] INFO: Database connection established
+[2024-01-01 00:00:06] DEBUG: Starting background tasks
+[2024-01-01 00:00:07] INFO: Background tasks started
+[2024-01-01 00:00:08] WARN: High memory usage detected
+[2024-01-01 00:00:09] DEBUG: Running garbage collection
+[2024-01-01 00:00:10] INFO: Garbage collection completed
+[2024-01-01 00:00:11] ERROR: Connection timeout occurred
+[2024-01-01 00:00:12] WARN: Retrying connection
+[2024-01-01 00:00:13] INFO: Connection restored
+[2024-01-01 00:00:14] DEBUG: Processing requests
+[2024-01-01 00:00:15] INFO: All systems operational
+"#;
+
+        let log_file_path = temp_dir.path().join("app.log");
+        fs::write(&log_file_path, log_file_content).expect("Failed to write log file");
+
+        // Cache files in FileReader
+        {
+            let mut reader = file_reader.lock().unwrap();
+            reader.read_and_cache_file(&main_path, None, None).ok();
+            reader.read_and_cache_file(&readme_path, None, None).ok();
+            reader.read_and_cache_file(&config_path, None, None).ok();
+            
+            // Read only the first 3 lines of the large file to demonstrate partial reading from start
+            reader.read_and_cache_file(&large_file_path, Some(1), Some(3)).ok();
+            
+            // Read lines 8-12 of the log file to demonstrate reading from middle
+            reader.read_and_cache_file(&log_file_path, Some(8), Some(12)).ok();
+        }
+
+        // Create SystemState with FileReader
+        let mut state = SystemState::with_file_reader(file_reader);
+
+        // Keep temp_dir alive by storing it (this is a bit of a hack for preview)
+        std::mem::forget(temp_dir);
 
         state
     }
@@ -542,19 +602,6 @@ file = "app.log"
         self.show_complete()?;
         self.show_full()?;
         self.show_agent_types()?;
-
-        println!("\n{}", "=".repeat(80));
-        println!("KEY INSIGHTS:");
-        println!("• File contents appear in XML tags in system prompt, not in tool responses");
-        println!("• Plans are tracked with individual task status in XML format");
-        println!("• Agents are shown with their roles, tasks, and status in XML format");
-        println!(
-            "• Different agent types see the same information but with different instructions"
-        );
-        println!("• Token usage scales with loaded content - monitor for context limits");
-        println!("• Template variables allow dynamic prompt construction with XML structure");
-        println!("{}", "=".repeat(80));
-
         Ok(())
     }
 }

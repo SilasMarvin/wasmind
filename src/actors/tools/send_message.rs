@@ -3,8 +3,8 @@ use crate::actors::{
     ToolCallStatus, ToolCallUpdate, WaitReason,
 };
 use crate::config::ParsedConfig;
-use crate::scope::Scope;
 use crate::llm_client::{Tool, ToolCall};
+use crate::scope::Scope;
 use serde::Deserialize;
 use tokio::sync::broadcast;
 
@@ -117,6 +117,7 @@ impl SendMessage {
                         tool_call_id: tool_call.id.clone(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitForSystem {
+                                tool_name: Some(SEND_MESSAGE_TOOL_NAME.to_string()),
                                 tool_call_id: tool_call.id.clone(),
                             },
                         },

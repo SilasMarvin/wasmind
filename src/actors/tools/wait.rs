@@ -3,8 +3,8 @@ use crate::actors::{
     ToolCallStatus, ToolCallUpdate, WaitReason,
 };
 use crate::config::ParsedConfig;
-use crate::scope::Scope;
 use crate::llm_client::{Tool, ToolCall};
+use crate::scope::Scope;
 use tokio::sync::broadcast;
 
 pub const WAIT_TOOL_RESPONSE: &str = "Waiting...";
@@ -51,6 +51,7 @@ impl Wait {
                 tool_call_id: tool_call.id.clone(),
                 status: AgentStatus::Wait {
                     reason: WaitReason::WaitForSystem {
+                        tool_name: Some(WAIT_TOOL_NAME.to_string()),
                         tool_call_id: tool_call.id.clone(),
                     },
                 },

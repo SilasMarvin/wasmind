@@ -106,6 +106,7 @@ impl SendManagerMessage {
                         tool_call_id: tool_call.id.clone(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitingForManager {
+                                tool_name: Some(SEND_MANAGER_MESSAGE_TOOL_NAME.to_string()),
                                 tool_call_id: tool_call.id.clone(),
                             },
                         },

@@ -1,4 +1,6 @@
-use crate::llm_client::{ChatMessage, LLMClient, LLMError, Tool};
+use crate::{
+    llm_client::{ChatMessage, LLMClient, LLMError, Tool},
+};
 use std::{
     collections::BTreeSet,
     sync::{Arc, Mutex},
@@ -8,7 +10,6 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::{
-    SResult,
     actors::{Actor, AssistantRequest, Message, PendingToolCall, ToolCallStatus, ToolCallUpdate},
     config::ParsedModelConfig,
     scope::Scope,
@@ -281,10 +282,19 @@ impl Assistant {
                 }
                 // Don't submit pending messages while WaitingForManager or WaitForSystem
                 AgentStatus::Wait {
-                    reason: WaitReason::WaitingForManager { tool_call_id },
+                    reason:
+                        WaitReason::WaitingForManager {
+                            tool_name,
+                            tool_call_id,
+                        },
                 }
                 | AgentStatus::Wait {
-                    reason: WaitReason::WaitForSystem { tool_call_id, .. },
+                    reason:
+                        WaitReason::WaitForSystem {
+                            tool_name,
+                            tool_call_id,
+                            ..
+                        },
                 } => {
                     if tool_call_id != &update.call_id {
                         return;
@@ -293,7 +303,7 @@ impl Assistant {
                     let content = result.unwrap_or_else(|e| format!("Error: {}", e));
                     self.chat_history.push(ChatMessage::tool(
                         update.call_id,
-                        "system_tool",
+                        tool_name.clone().unwrap_or("system_tool".to_string()),
                         content,
                     ));
                 }
@@ -428,6 +438,9 @@ async fn do_assist(
     scope: Scope,
     processing_id: Uuid,
 ) -> Result<(), LLMError> {
+    // Filter out wait tool calls as those are just noise
+    let messages = crate::utils::filter_wait_tool_calls(&messages);
+
     let resp = client
         .chat(
             &config.model_name,
@@ -590,7 +603,7 @@ impl Actor for Assistant {
                         if pending_actors.is_empty() {
                             // If we have a task to execute do it!
                             // Otherwise wait for user input
-                            if let Some(task_description) = self.task_description.take() {
+                            if let Some(task_description) = self.task_description.clone() {
                                 self.pending_message.set_user_content(task_description);
                                 self.submit_pending_message(true);
                             } else {
@@ -627,20 +640,6 @@ impl Actor for Assistant {
                     }
                 }
 
-                Message::FileRead {
-                    path,
-                    content,
-                    last_modified,
-                } => {
-                    self.system_state.update_file(path, content, last_modified);
-                }
-                Message::FileEdited {
-                    path,
-                    content,
-                    last_modified,
-                } => {
-                    self.system_state.update_file(path, content, last_modified);
-                }
                 Message::PlanUpdated(plan) => {
                     self.system_state.update_plan(plan);
                 }
@@ -792,7 +791,10 @@ impl Actor for Assistant {
 
                                 self.set_state(
                                     AgentStatus::Wait {
-                                        reason: WaitReason::WaitingForManager { tool_call_id },
+                                        reason: WaitReason::WaitingForManager {
+                                            tool_name: None,
+                                            tool_call_id,
+                                        },
                                     },
                                     true,
                                 );
@@ -905,7 +907,7 @@ mod tests {
     ) -> Assistant {
         let parsed_config = ParsedModelConfig {
             model_name: "filler".to_string(),
-            system_prompt: "filler".to_string(),
+            system_prompt: "Test system prompt with task: {{ task }}".to_string(),
             litellm_params: HashMap::new(),
             base_url: "http://localhost:9999".to_string(),
         };
@@ -933,7 +935,7 @@ mod tests {
     ) -> Assistant {
         let parsed_config = ParsedModelConfig {
             model_name: "filler".to_string(),
-            system_prompt: "filler".to_string(),
+            system_prompt: "Test system prompt with task: {{ task }}".to_string(),
             litellm_params: HashMap::new(),
             base_url: "http://localhost:9999".to_string(),
         };
@@ -1653,6 +1655,7 @@ mod tests {
                         tool_call_id: "call_123".to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitForSystem {
+                                tool_name: None,
                                 tool_call_id: "call_123".to_string(),
                             },
                         },
@@ -1702,6 +1705,7 @@ mod tests {
                         tool_call_id: "call_123".to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitingForManager {
+                                tool_name: None,
                                 tool_call_id: "call_123".to_string(),
                             },
                         },
@@ -1729,6 +1733,7 @@ mod tests {
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForManager {
+                    tool_name: None,
                     tool_call_id: "call_123".to_string(),
                 },
             },
@@ -1764,6 +1769,7 @@ mod tests {
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitForSystem {
+                    tool_name: None,
                     tool_call_id: "call_123".to_string(),
                 },
             },
@@ -1812,6 +1818,7 @@ mod tests {
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitForSystem {
+                    tool_name: None,
                     tool_call_id: "call_456".to_string(),
                 },
             },
@@ -1850,6 +1857,7 @@ mod tests {
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForManager {
+                    tool_name: None,
                     tool_call_id: "plan_call_123".to_string(),
                 },
             },
@@ -1901,6 +1909,7 @@ mod tests {
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitForSystem {
+                    tool_name: None,
                     tool_call_id: "wait_call_456".to_string(),
                 },
             },
@@ -2189,6 +2198,7 @@ mod tests {
                         tool_call_id: "call_1".to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitForSystem {
+                                tool_name: None,
                                 tool_call_id: "call_1".to_string(),
                             },
                         },
@@ -2219,6 +2229,7 @@ mod tests {
                         tool_call_id: "call_2".to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitingForManager {
+                                tool_name: None,
                                 tool_call_id: "call_2".to_string(),
                             },
                         },
@@ -2231,7 +2242,11 @@ mod tests {
         // State should now be WaitingForSystem - tools can only transition state when being
         // waited upon
         if let AgentStatus::Wait {
-            reason: WaitReason::WaitForSystem { tool_call_id },
+            reason:
+                WaitReason::WaitForSystem {
+                    tool_name: None,
+                    tool_call_id,
+                },
         } = &assistant.state
         {
             assert_eq!(tool_call_id, "call_1");
@@ -2312,6 +2327,7 @@ mod tests {
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitForSystem {
+                    tool_name: None,
                     tool_call_id: "wait_call_123".to_string(),
                 },
             },
@@ -2390,6 +2406,7 @@ mod tests {
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitForSystem {
+                    tool_name: None,
                     tool_call_id: "wait_call_456".to_string(),
                 },
             },
@@ -2588,6 +2605,7 @@ mod tests {
         assistant.set_state(
             AgentStatus::Wait {
                 reason: WaitReason::WaitingForManager {
+                    tool_name: None,
                     tool_call_id: "plan_123".to_string(),
                 },
             },

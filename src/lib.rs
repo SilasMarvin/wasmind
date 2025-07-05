@@ -9,6 +9,7 @@ pub mod prompt_preview;
 pub mod scope;
 pub mod system_state;
 pub mod template;
+pub mod utils;
 
 use actors::Message;
 use hive::ROOT_AGENT_SCOPE;

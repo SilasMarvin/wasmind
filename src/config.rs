@@ -299,8 +299,6 @@ impl TryFrom<Config> for ParsedConfig {
         let whitelisted_commands = value.whitelisted_commands;
         let auto_approve_commands = value.auto_approve_commands;
 
-        println!("THE VALUE: {:?}", value.hive);
-
         let base_url = format!("http://localhost:{}", value.hive.litellm.port);
         let hive = ParsedHiveConfig {
             main_manager_model: parse_model_config(
@@ -550,8 +548,6 @@ pub fn parse_key_combination(input: &str) -> Option<KeyBinding> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_deserialize() {}
 }

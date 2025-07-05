@@ -11,7 +11,6 @@ use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, 
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
-use super::file_reader::FileCacheError;
 
 pub const TOOL_NAME: &str = "edit_file";
 pub const TOOL_DESCRIPTION: &str = "Applies a list of edits to a file atomically. This is the primary tool for modifying files. Each edit targets a specific line range. The tool processes edits from the bottom of the file to the top to ensure line number integrity during the operation.";

@@ -210,21 +210,14 @@ mod tests {
     #[test]
     fn test_template_with_files_and_plan() {
         use crate::system_state::SystemState;
-        use std::path::PathBuf;
-        use std::time::SystemTime;
 
-        let mut system_state = SystemState::new();
-        system_state.update_file(
-            PathBuf::from("test.txt"),
-            "Hello World".to_string(),
-            SystemTime::now(),
-        );
+        let system_state = SystemState::new();
 
         let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
 
         let template = "Files loaded: {{ files.count }}";
         let result = render_template(template, &context).unwrap();
-        // Note: This test now returns 0 since files are managed by FileReader, not SystemState directly
+        // Files are managed by FileReader, so SystemState without FileReader has 0 files
         assert_eq!(result, "Files loaded: 0");
     }
 

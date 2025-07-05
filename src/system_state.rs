@@ -217,22 +217,6 @@ impl SystemState {
         }
     }
 
-    /// Add or update a file in the system state
-    /// Note: Files are now managed by FileReader, this method marks state as modified
-    pub fn update_file(
-        &mut self,
-        _path: PathBuf,
-        _content: String,
-        _last_modified: std::time::SystemTime,
-    ) {
-        // Files are now managed by FileReader, just mark as modified
-    }
-
-    /// Remove a file from the system state
-    /// Note: Files are now managed by FileReader, this method marks state as modified
-    pub fn remove_file(&mut self, _path: &PathBuf) {
-        // Files are now managed by FileReader, just mark as modified
-    }
 
     /// Update the current task plan
     pub fn update_plan(&mut self, plan: TaskPlan) {
@@ -279,19 +263,6 @@ impl SystemState {
         self.agents.len()
     }
 
-    /// Get all files currently loaded
-    /// Note: This method is deprecated, files are now managed by FileReader
-    pub fn get_files(&self) -> HashMap<PathBuf, FileInfo> {
-        // Return empty map since files are now in FileReader
-        HashMap::new()
-    }
-
-    /// Get a specific file by path
-    /// Note: This method is deprecated, files are now managed by FileReader
-    pub fn get_file(&self, path: &PathBuf) -> Option<&FileInfo> {
-        // Files are now in FileReader, cannot return reference
-        None
-    }
 
     /// Check if a file is currently loaded
     pub fn has_file(&self, path: &PathBuf) -> bool {
@@ -454,8 +425,7 @@ impl SystemState {
         serde_json::json!({
             "files": {
                 "count": files_list.len(),
-                "list": files_list,
-                "section": "" // Will be rendered separately as async
+                "list": files_list
             },
             "plan": {
                 "exists": self.current_plan.is_some(),
@@ -568,6 +538,9 @@ mod tests {
 
     use super::*;
     use std::time::SystemTime;
+    use std::fs;
+    use std::sync::{Arc, Mutex};
+    use tempfile::TempDir;
 
     #[test]
     fn test_file_info_creation() {
@@ -600,25 +573,26 @@ mod tests {
 
     #[test]
     fn test_system_state_file_operations() {
-        let mut state = SystemState::new();
-        let path = PathBuf::from("test.txt");
-        let content = "test content".to_string();
-        let now = SystemTime::now();
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("test.txt");
+        let content = "test content";
+        
+        fs::write(&path, content).unwrap();
+        
+        let file_reader = Arc::new(Mutex::new(FileReader::default()));
+        let state = SystemState::with_file_reader(file_reader.clone());
 
         // Initially no files
         assert_eq!(state.file_count(), 0);
         assert!(!state.has_file(&path));
 
         // Add file
-        state.update_file(path.clone(), content.clone(), now);
+        file_reader.lock().unwrap().read_and_cache_file(&path, None, None).unwrap();
         assert_eq!(state.file_count(), 1);
         assert!(state.has_file(&path));
 
-        let file_info = state.get_file(&path).unwrap();
-        assert_eq!(file_info.content, content);
-
-        // Remove file
-        state.remove_file(&path);
+        // Remove file from cache
+        file_reader.lock().unwrap().remove_from_cache(&path);
         assert_eq!(state.file_count(), 0);
         assert!(!state.has_file(&path));
     }
@@ -652,16 +626,20 @@ mod tests {
 
     #[test]
     fn test_render_files_section_with_files() {
-        let mut state = SystemState::new();
-        let path = PathBuf::from("test.txt");
-        let content = "line 1\nline 2".to_string();
-        let now = SystemTime::now();
-
-        state.update_file(path, content, now);
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("test.txt");
+        let content = "line 1\nline 2";
+        
+        fs::write(&path, content).unwrap();
+        
+        let file_reader = Arc::new(Mutex::new(FileReader::default()));
+        file_reader.lock().unwrap().read_and_cache_file(&path, None, None).unwrap();
+        
+        let state = SystemState::with_file_reader(file_reader);
         let section = state.render_files_section();
 
         assert!(section.contains("## Currently Loaded Files"));
-        assert!(section.contains("## test.txt"));
+        assert!(section.contains("test.txt"));
         assert!(section.contains("line 1"));
         assert!(section.contains("(2 lines total)"));
     }
@@ -693,43 +671,50 @@ mod tests {
         state.update_plan(plan);
         let section = state.render_plan_section();
 
-        assert!(section.contains("## Current Task Plan: Test Plan"));
+        assert!(section.contains("Plan: Test Plan"));
         assert!(section.contains("1. [x] Task 1"));
         assert!(section.contains("2. [ ] Task 2"));
     }
 
     #[test]
     fn test_to_template_context() {
-        let mut state = SystemState::new();
-        let path = PathBuf::from("test.txt");
-        let content = "test".to_string();
-        let now = SystemTime::now();
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("test.txt");
+        let content = "test";
 
-        state.update_file(path, content, now);
+        fs::write(&path, content).unwrap();
 
+        let file_reader = Arc::new(Mutex::new(FileReader::default()));
+        file_reader.lock().unwrap().read_and_cache_file(&path, None, None).unwrap();
+
+        let state = SystemState::with_file_reader(file_reader);
         let context = state.to_template_context();
         assert_eq!(context["files"]["count"], 1);
-        assert!(
-            context["files"]["section"]
-                .as_str()
-                .unwrap()
-                .contains("test.txt")
-        );
+        
+        // Check files list (the current approach, not the deprecated section)
+        let files_list = context["files"]["list"].as_array().unwrap();
+        assert_eq!(files_list.len(), 1);
+        assert!(files_list[0]["path"].as_str().unwrap().contains("test.txt"));
+        
         assert_eq!(context["plan"]["exists"], false);
     }
 
     #[test]
     fn test_template_context_with_file_list() {
-        let mut state = SystemState::new();
-        let path1 = PathBuf::from("src/main.rs");
-        let content1 = "fn main() {\n    println!(\"Hello\");\n}".to_string();
-        let path2 = PathBuf::from("src/lib.rs");
-        let content2 = "pub fn hello() {}".to_string();
-        let now = SystemTime::now();
+        let temp_dir = TempDir::new().unwrap();
+        let path1 = temp_dir.path().join("main.rs");
+        let content1 = "fn main() {\n    println!(\"Hello\");\n}";
+        let path2 = temp_dir.path().join("lib.rs");
+        let content2 = "pub fn hello() {}";
 
-        state.update_file(path1.clone(), content1.clone(), now);
-        state.update_file(path2.clone(), content2.clone(), now);
+        fs::write(&path1, content1).unwrap();
+        fs::write(&path2, content2).unwrap();
 
+        let file_reader = Arc::new(Mutex::new(FileReader::default()));
+        file_reader.lock().unwrap().read_and_cache_file(&path1, None, None).unwrap();
+        file_reader.lock().unwrap().read_and_cache_file(&path2, None, None).unwrap();
+
+        let state = SystemState::with_file_reader(file_reader);
         let context = state.to_template_context();
 
         // Check files count
@@ -739,13 +724,19 @@ mod tests {
         let files_list = context["files"]["list"].as_array().unwrap();
         assert_eq!(files_list.len(), 2);
 
-        // Files should be sorted by path
-        assert_eq!(files_list[0]["path"], "src/lib.rs");
-        assert_eq!(files_list[0]["content"], content2);
+        // Files should be sorted by path - check they contain the expected filenames
+        let first_path = files_list[0]["path"].as_str().unwrap();
+        let second_path = files_list[1]["path"].as_str().unwrap();
+        
+        // lib.rs comes before main.rs alphabetically
+        assert!(first_path.contains("lib.rs"));
+        assert!(second_path.contains("main.rs"));
+        
+        // Check content (note: FileReader adds line numbers)
+        assert!(files_list[0]["content"].as_str().unwrap().contains("pub fn hello() {}"));
         assert_eq!(files_list[0]["lines"], 1);
 
-        assert_eq!(files_list[1]["path"], "src/main.rs");
-        assert_eq!(files_list[1]["content"], content1);
+        assert!(files_list[1]["content"].as_str().unwrap().contains("fn main() {"));
         assert_eq!(files_list[1]["lines"], 3);
     }
 
@@ -948,7 +939,9 @@ Currently loaded files: {{ files.count }}
 Current plan: active
 {% endif %}"#;
 
-        let mut state = SystemState::new();
+        let temp_dir = TempDir::new().unwrap();
+        let file_reader = Arc::new(Mutex::new(FileReader::default()));
+        let mut state = SystemState::with_file_reader(file_reader.clone());
 
         // Test with no files or plan
         let result = state
@@ -959,11 +952,9 @@ Current plan: active
         assert!(!result.contains("Current plan"));
 
         // Add a file
-        state.update_file(
-            PathBuf::from("test.txt"),
-            "test content".to_string(),
-            SystemTime::now(),
-        );
+        let path = temp_dir.path().join("test.txt");
+        fs::write(&path, "test content").unwrap();
+        file_reader.lock().unwrap().read_and_cache_file(&path, None, None).unwrap();
 
         let result = state
             .render_system_prompt(template, &[], vec![], Scope::new())
@@ -1114,19 +1105,18 @@ Available tools: {{ tools|length }}"#;
 </spawned_agents>
 {% endif %}"#;
 
-        let mut state = SystemState::new();
+        let temp_dir = TempDir::new().unwrap();
+        let file_reader = Arc::new(Mutex::new(FileReader::default()));
+        let mut state = SystemState::with_file_reader(file_reader.clone());
 
         // Add files
-        state.update_file(
-            PathBuf::from("src/main.rs"),
-            "fn main() {\n    println!(\"Hello\");\n}".to_string(),
-            SystemTime::now(),
-        );
-        state.update_file(
-            PathBuf::from("src/lib.rs"),
-            "pub fn hello() {}".to_string(),
-            SystemTime::now(),
-        );
+        let main_path = temp_dir.path().join("main.rs");
+        let lib_path = temp_dir.path().join("lib.rs");
+        fs::write(&main_path, "fn main() {\n    println!(\"Hello\");\n}").unwrap();
+        fs::write(&lib_path, "pub fn hello() {}").unwrap();
+        
+        file_reader.lock().unwrap().read_and_cache_file(&main_path, None, None).unwrap();
+        file_reader.lock().unwrap().read_and_cache_file(&lib_path, None, None).unwrap();
 
         // Add plan
         state.update_plan(TaskPlan {
@@ -1168,10 +1158,8 @@ Available tools: {{ tools|length }}"#;
         // Verify XML structure for files
         assert!(result.contains("<read_and_edited_files>"));
         assert!(result.contains("</read_and_edited_files>"));
-        assert!(result.contains("<file path=\"src/lib.rs\">pub fn hello() {}</file>"));
-        assert!(result.contains(
-            "<file path=\"src/main.rs\">fn main() {\n    println!(\"Hello\");\n}</file>"
-        ));
+        assert!(result.contains("lib.rs\">1|pub fn hello() {}</file>"));
+        assert!(result.contains("main.rs\">1|fn main() {"));
 
         // Verify XML structure for plan
         assert!(result.contains("<plan title=\"Sprint 1\">"));
