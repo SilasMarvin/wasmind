@@ -256,7 +256,8 @@ impl Agent {
                 self.config.clone(),
                 self.tx.clone(),
                 self.scope.clone(),
-                Duration::from_secs(10),
+                self.parent_scope.clone(),
+                Duration::from_secs(30),
             )
             .run();
         }

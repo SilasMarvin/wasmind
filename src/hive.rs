@@ -166,8 +166,9 @@ pub fn start_headless_hive(
         // Listen for exit signals and broadcast them
         loop {
             let msg = rx.recv().await.expect("Error receiving in hive");
-            let message_json = serde_json::to_string(&msg).unwrap_or_else(|_| format!("{:?}", msg));
-            tracing::debug!(name = "hive_message", message = %message_json, message_type = std::any::type_name::<Message>());
+
+            let message_json = serde_json::to_string(&msg).unwrap();
+            tracing::debug!(name = "hive_message", message_type = std::any::type_name::<Message>(), message = %message_json);
 
             match msg.message {
                 Message::Action(Action::Exit) if msg.scope == ROOT_AGENT_SCOPE => {

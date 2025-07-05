@@ -447,6 +447,7 @@ mod tests {
     use super::*;
     use std::env;
     use tokio::process::Command as TokioCommand;
+    use tempfile::TempDir;
 
     #[test]
     fn test_smart_truncate_small_output() {
@@ -528,26 +529,24 @@ mod tests {
     #[tokio::test]
     async fn test_touch_command_creates_file_in_current_dir() {
         // Create a temp directory for testing
-        let temp_dir = env::temp_dir().join(format!("hive_test_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&temp_dir).expect("Failed to create temp dir");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let temp_path = temp_dir.path();
 
         // Run touch command with current_dir set
         let test_file = "test_file.txt";
         let mut child = TokioCommand::new("touch");
-        child.arg(test_file).current_dir(&temp_dir);
+        child.arg(test_file).current_dir(temp_path);
 
         let output = child.output().await.expect("Failed to execute touch");
         assert!(output.status.success(), "Touch command should succeed");
 
         // Verify file was created in the correct directory
-        let expected_path = temp_dir.join(test_file);
+        let expected_path = temp_path.join(test_file);
         assert!(
             expected_path.exists(),
             "File should exist in temp directory"
         );
-
-        // Cleanup
-        std::fs::remove_dir_all(&temp_dir).ok();
+        // No cleanup needed - tempfile handles it
     }
 
     #[tokio::test]
@@ -570,17 +569,17 @@ mod tests {
     #[tokio::test]
     async fn test_command_with_custom_directory() {
         // Test that commands can run in a specified directory
-        let temp_dir = env::temp_dir().join(format!("hive_test_{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&temp_dir).expect("Failed to create temp dir");
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let temp_path = temp_dir.path();
 
         // Create a test file in the temp directory
         let test_file = "custom_dir_test.txt";
-        std::fs::write(temp_dir.join(test_file), "test content")
+        std::fs::write(temp_path.join(test_file), "test content")
             .expect("Failed to write test file");
 
         // Run ls command in the temp directory
         let mut child = TokioCommand::new("ls");
-        child.current_dir(&temp_dir);
+        child.current_dir(temp_path);
 
         let output = child.output().await.expect("Failed to execute ls");
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -590,8 +589,6 @@ mod tests {
             stdout.contains(test_file),
             "ls output should contain test file"
         );
-
-        // Cleanup
-        std::fs::remove_dir_all(&temp_dir).ok();
+        // No cleanup needed - tempfile handles it
     }
 }

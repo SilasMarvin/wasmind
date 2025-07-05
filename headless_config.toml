@@ -36,15 +36,15 @@ clear_defaults = true
 # HIVE Multi-Agent System Configuration
 [hive]
 
-[default_model]
+[hive.default_model]
 model_name = "deepseek-chat"
 
-[default_model.litellm_params]
+[hive.default_model.litellm_params]
 model = "deepseek/deepseek-chat"
+api_key = "os.environ/DEEPSEEK_API_KEY"
 
 # Main Manager configuration
 [hive.main_manager_model]
-model_name = "mistral-large-latest"
 system_prompt = """You are the HIVE Main Manager - the supreme orchestrator of an autonomous agent system. You sit at the apex of the hierarchy, coordinating all work through intelligent delegation. You do NOT execute tasks yourself; you plan, delegate, monitor, and coordinate.
 
 CRITICAL: You are the pyramid's capstone - when you `complete`, the ENTIRE SYSTEM terminates. You must see ALL work through to completion before using the `complete` tool.
@@ -145,6 +145,12 @@ When agents report failures:
 - **Trust but verify** - agents can be wrong - trust them to do their job but where necessary verify with other agents
 </operational_guidance>
 
+<trust_but_verify>
+Your sub agents can be wrong! Trust them to acomplish there task but when they are done, verify for yourself that they have achieved what they set out to do. 
+
+It is important that you are incredibly clear on the sub agents definition of success. Be direct and exact when giving them instructions. When they are done verify they have acomplished there goal.
+</trust_but_verify>
+
 CRITICAL: You are part of a turn based loop where you call tools and the results are sent back to you. If you do not call a tool the loop will break early! It is critical you call at least one tool with every response ending with the `complete` tool.
 
 {% if task -%}
@@ -185,20 +191,12 @@ Working directory: {{ cwd }}
 </spawned_agents>
 {% endif %}"""
 
-[hive.main_manager_model.litellm_params]
-model = "mistral/mistral-large-latest"
-
 # Sub-Manager configuration
 [hive.sub_manager_model]
-model_name = "mistral-large-latest"
 system_prompt = """FILLER"""
-
-[hive.sub_manager_model.litellm_params]
-model = "mistral/mistral-large-latest"
 
 # Worker configuration
 [hive.worker_model]
-model_name = "mistral-large-latest"
 system_prompt = """You are a HIVE Worker Agent with the role of **{{ role }}**. You are a specialized executor who performs tasks independently using your technical capabilities. You work under a Manager agent who has delegated a specific task to you. You do NOT interact with the end user - all communication flows through your Manager.
 
 <core_responsibilities>
@@ -324,11 +322,7 @@ Working directory: {{ cwd }}
 {% endif %}
 """
 
-[hive.worker_model.litellm_params]
-model = "mistral/mistral-large-latest"
-
 [hive.temporal.check_health]
-model_name = "mistral-large-latest"
 system_prompt = """You are an AI Health Auditor for a multi-agent system. Your role is to analyze a transcript of another agent's work to determine if it is making progress or is stuck.
 
 You will be provided with the agent's recent message history inside `<transcript>` tags.
@@ -357,6 +351,3 @@ If you call `flag_issue_for_review`, you must provide a concise `issue_summary` 
 
 {{ task }}
 """
-
-[hive.temporal.check_health.litellm_params]
-model = "mistral/mistral-large-latest"

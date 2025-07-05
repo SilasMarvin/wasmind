@@ -326,7 +326,6 @@ impl Assistant {
         self.submit_llm_request();
     }
 
-    #[tracing::instrument(name = "llm_request", skip(self))]
     fn submit_llm_request(&mut self) {
         let processing_id = Uuid::new_v4();
         self.set_state(
@@ -353,11 +352,11 @@ impl Assistant {
 
         // Debug log the request data
         tracing::debug!(
-            "LLM Request: model={}, messages={}, tools={}, system_prompt={}",
+            "LLM Request: model={}, messages_len={}, tools_len={}, messages=\n=====SYSTEM=====\n{system_prompt}\n=====MESSAGES=====\n{}",
             self.config.model_name,
             self.chat_history.len(),
             self.available_tools.len(),
-            system_prompt
+            serde_json::to_string_pretty(&self.chat_history).unwrap()
         );
 
         // Spawn the assist task
@@ -591,7 +590,8 @@ impl Actor for Assistant {
                         if pending_actors.is_empty() {
                             // If we have a task to execute do it!
                             // Otherwise wait for user input
-                            if let Some(_) = self.task_description {
+                            if let Some(task_description) = self.task_description.take() {
+                                self.pending_message.set_user_content(task_description);
                                 self.submit_pending_message(true);
                             } else {
                                 self.set_state(
@@ -903,15 +903,12 @@ mod tests {
         required_actors: impl Into<BTreeSet<&'static str>>,
         task_description: Option<String>,
     ) -> Assistant {
-        use crate::config::Config;
-
-        let mut config = Config::load_default(true).unwrap();
-        // Set the config model names to something that won't waste tokens
-        config.hive.main_manager_model.model_name = "test-model".to_string();
-        config.hive.sub_manager_model.model_name = "test-model".to_string();
-        config.hive.worker_model.model_name = "test-model".to_string();
-        let parsed_config: ParsedConfig = config.try_into().unwrap();
-        let parsed_config = parsed_config.hive.main_manager_model;
+        let parsed_config = ParsedModelConfig {
+            model_name: "filler".to_string(),
+            system_prompt: "filler".to_string(),
+            litellm_params: HashMap::new(),
+            base_url: "http://localhost:9999".to_string(),
+        };
 
         let (tx, _) = broadcast::channel(10);
         let scope = Scope::new();
@@ -934,14 +931,12 @@ mod tests {
         task_description: Option<String>,
         parent_scope: Scope,
     ) -> Assistant {
-        use crate::config::Config;
-
-        let mut config = Config::load_default(true).unwrap();
-        config.hive.main_manager_model.model_name = "test-model".to_string();
-        config.hive.sub_manager_model.model_name = "test-model".to_string();
-        config.hive.worker_model.model_name = "test-model".to_string();
-        let parsed_config: ParsedConfig = config.try_into().unwrap();
-        let parsed_config = parsed_config.hive.main_manager_model;
+        let parsed_config = ParsedModelConfig {
+            model_name: "filler".to_string(),
+            system_prompt: "filler".to_string(),
+            litellm_params: HashMap::new(),
+            base_url: "http://localhost:9999".to_string(),
+        };
 
         let (tx, _) = broadcast::channel(10);
         let scope = Scope::new();

@@ -3,8 +3,8 @@ use crate::actors::{
     ToolCallStatus, ToolCallUpdate, WaitReason,
 };
 use crate::config::ParsedConfig;
-use crate::scope::Scope;
 use crate::llm_client::{Tool, ToolCall};
+use crate::scope::Scope;
 use serde::Deserialize;
 use tokio::sync::broadcast;
 
@@ -24,7 +24,7 @@ pub const SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
     "wait": {
         "type": "boolean",
         "description": "If `true` pause and wait for a response from your manager else continue performing actions (default `false`)"
-    }
+    },
     "required": ["message"]
 }"#;
 
@@ -73,20 +73,21 @@ impl SendManagerMessage {
     }
 
     async fn handle_send_manager_message(&mut self, tool_call: ToolCall) {
-        let input: SendManagerMessageInput = match serde_json::from_str(&tool_call.function.arguments) {
-            Ok(input) => input,
-            Err(e) => {
-                let error_msg = format!("Invalid send_manager_message arguments: {}", e);
-                let _ = self.tx.send(ActorMessage {
-                    scope: self.scope,
-                    message: Message::ToolCallUpdate(ToolCallUpdate {
-                        call_id: tool_call.id,
-                        status: ToolCallStatus::Finished(Err(error_msg)),
-                    }),
-                });
-                return;
-            }
-        };
+        let input: SendManagerMessageInput =
+            match serde_json::from_str(&tool_call.function.arguments) {
+                Ok(input) => input,
+                Err(e) => {
+                    let error_msg = format!("Invalid send_manager_message arguments: {}", e);
+                    let _ = self.tx.send(ActorMessage {
+                        scope: self.scope,
+                        message: Message::ToolCallUpdate(ToolCallUpdate {
+                            call_id: tool_call.id,
+                            status: ToolCallStatus::Finished(Err(error_msg)),
+                        }),
+                    });
+                    return;
+                }
+            };
 
         // Send the SubAgentMessage to the parent manager
         self.broadcast(Message::Agent(AgentMessage {

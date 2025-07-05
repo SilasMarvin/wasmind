@@ -370,8 +370,10 @@ impl LiteLLMManager {
             .arg("sh")
             .arg(&config.image)
             .arg("-c")
-            .arg(format!("echo '{}' > /tmp/config.yaml && litellm --config /tmp/config.yaml --detailed_debug", 
-                config_content.replace("'", "'\"'\"'")));
+            .arg(format!(
+                "echo '{}' > /tmp/config.yaml && litellm --config /tmp/config.yaml",
+                config_content.replace("'", "'\"'\"'")
+            ));
 
         info!("Running docker command: {:?}", cmd);
 

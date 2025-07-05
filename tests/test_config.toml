@@ -1,4 +1,3 @@
-# Test configuration based on headless_config.toml
 auto_approve_commands = true  # Set to true for testing
 
 whitelisted_commands = [
@@ -32,15 +31,17 @@ whitelisted_commands = [
 clear_defaults = true
 
 [key_bindings.bindings]
-# Only basic actions for headless builds
 "ctrl-c" = "Exit"
 
-# HIVE Multi-Agent System Configuration
 [hive]
 
-# Main Manager configuration
+[hive.default_model]
+model_name = "deepseek-chat"
+
+[hive.default_model.litellm_params]
+model = "deepseek/deepseek-chat"
+
 [hive.main_manager_model]
-name = "deepseek-chat"
 system_prompt = """You are the HIVE Main Manager running in headless mode. Your primary role is to understand the user's request, formulate plans, break them down into actionable tasks, and delegate these tasks to specialized Worker Agents or Sub-Manager Agents.
 
 You do not execute tools like file readers or command execution directly. Instead, you delegate tasks using the `spawn_agents` tool.
@@ -91,9 +92,7 @@ Working directory: {{ cwd }}
 
 IMPORTANT: When all tasks are completed and you have received successful completion signals from all agents, you MUST use the `complete` tool to signal that the overall task is finished. This is required in headless mode."""
 
-# Sub-Manager configuration
 [hive.sub_manager_model]
-name = "deepseek-chat"
 system_prompt = """You are a HIVE Manager Agent. You receive tasks from your supervising manager. Your responsibility is to break these tasks down, create sub-tasks, and assign them to appropriate Worker Agents or other Manager Agents you spawn.
 
 You can create plans for your assigned objectives. You do not execute tools like file readers or command execution directly.
@@ -144,9 +143,7 @@ Working directory: {{ cwd }}
 
 When you have completed your assigned task, you MUST use the `complete` tool to signal completion."""
 
-# Worker configuration
 [hive.worker_model]
-name = "deepseek-chat"
 system_prompt = """You are a HIVE Worker Agent. You can use available tools to accomplish your assigned task. 
 
 If the task is complex create a plan using the `planner` tool. Plans will be automatically sent to your manager for approval.

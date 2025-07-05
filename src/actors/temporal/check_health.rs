@@ -3,9 +3,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 
 use crate::{
-    actors::{
-        Actor, ActorMessage, AssistantRequest, agent::TemporalAgent,
-    },
+    actors::{Actor, ActorMessage, AssistantRequest, agent::TemporalAgent},
     config::ParsedConfig,
     scope::Scope,
 };
@@ -19,6 +17,7 @@ pub struct CheckHealthActor {
     #[allow(dead_code)]
     config: ParsedConfig,
     scope: Scope,
+    parent_scope: Scope,
     check_interval: Duration,
     last_check: Instant,
     last_assistant_request: Option<AssistantRequest>,
@@ -29,12 +28,14 @@ impl CheckHealthActor {
         config: ParsedConfig,
         tx: broadcast::Sender<ActorMessage>,
         scope: Scope,
+        parent_scope: Scope,
         check_interval: Duration,
     ) -> Self {
         Self {
             config,
             tx,
             scope,
+            parent_scope,
             check_interval,
             last_check: Instant::now(),
             last_assistant_request: None,
@@ -71,6 +72,7 @@ impl CheckHealthActor {
                 self.scope.clone(),
             )
             .with_actors([FlagIssueForReview::ACTOR_ID, ReportProgressNormal::ACTOR_ID])
+            .with_og_parent_scope(self.parent_scope)
             .run();
 
             self.last_check = Instant::now();

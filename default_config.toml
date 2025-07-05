@@ -45,17 +45,22 @@ clear_defaults = false
 # HIVE Multi-Agent System Configuration
 [hive]
 
+# Default model configuration - used as fallback when model_name or litellm_params are not specified for specific models
+[hive.default_model]
+model_name = "gpt-4o"
+
+[hive.default_model.litellm_params]
+model = "openai/gpt-4o"
+api_key = "os.environ/OPENAI_API_KEY"
+
 # Main Manager configuration
 [hive.main_manager_model]
-model_name = "gpt-4o"
 system_prompt = """FILLER"""
 
 # Sub-Manager configuration (for managers spawned by other managers)
 [hive.sub_manager_model]
-model_name = "gpt-4o"
 system_prompt = """FILLER"""
 
 # Worker configuration
 [hive.worker_model]
-name = "gpt-4o"
 system_prompt = """FILLER"""

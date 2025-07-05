@@ -24,6 +24,9 @@ pub enum ConfigError {
     #[snafu(transparent)]
     IO { source: io::Error },
 
+    #[snafu(display("No model specified for: {model_for} and no default model"))]
+    MissingModel { model_for: String },
+
     #[snafu(display("Error deserializing config. Double check all fields are valid"))]
     TomlDeserialize {
         #[snafu(source)]
@@ -165,9 +168,15 @@ struct KeyConfig {
 /// The model configuration we deserialize directly from toml
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct ModelConfig {
-    pub model_name: String,
+    pub model_name: Option<String>,
     pub system_prompt: String,
-    pub litellm_params: Table,
+    pub litellm_params: Option<Table>,
+}
+
+#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+pub struct DefaultModelConfig {
+    pub model_name: Option<String>,
+    pub litellm_params: Option<Table>,
 }
 
 /// LiteLLM configuration
@@ -233,6 +242,9 @@ pub struct TemporalConfig {
 /// HIVE multi-agent configuration
 #[derive(Deserialize, Default, Debug, Clone)]
 pub struct HiveConfig {
+    /// Default model configuration to use as fallback
+    #[serde(default)]
+    pub default_model: Option<DefaultModelConfig>,
     /// Model configuration for the main manager agent
     #[serde(default)]
     pub main_manager_model: ModelConfig,
@@ -287,17 +299,47 @@ impl TryFrom<Config> for ParsedConfig {
         let whitelisted_commands = value.whitelisted_commands;
         let auto_approve_commands = value.auto_approve_commands;
 
+        println!("THE VALUE: {:?}", value.hive);
+
         let base_url = format!("http://localhost:{}", value.hive.litellm.port);
         let hive = ParsedHiveConfig {
-            main_manager_model: parse_model_config(value.hive.main_manager_model, &base_url),
-            sub_manager_model: parse_model_config(value.hive.sub_manager_model, &base_url),
-            worker_model: parse_model_config(value.hive.worker_model, &base_url),
+            main_manager_model: parse_model_config(
+                value.hive.main_manager_model,
+                &value.hive.default_model,
+                &base_url,
+            )
+            .ok_or(ConfigError::MissingModel {
+                model_for: "main_manager_model".to_string(),
+            })?,
+            sub_manager_model: parse_model_config(
+                value.hive.sub_manager_model,
+                &value.hive.default_model,
+                &base_url,
+            )
+            .ok_or(ConfigError::MissingModel {
+                model_for: "sub_manager_model".to_string(),
+            })?,
+            worker_model: parse_model_config(
+                value.hive.worker_model,
+                &value.hive.default_model,
+                &base_url,
+            )
+            .ok_or(ConfigError::MissingModel {
+                model_for: "worker_model".to_string(),
+            })?,
             temporal: ParsedTemporalConfig {
                 check_health: value
                     .hive
                     .temporal
                     .check_health
-                    .map(|config| parse_model_config(config, &base_url)),
+                    .map(|config| {
+                        parse_model_config(config, &value.hive.default_model, &base_url).ok_or(
+                            ConfigError::MissingModel {
+                                model_for: "temporal.check_health".to_string(),
+                            },
+                        )
+                    })
+                    .transpose()?,
             },
             litellm: value.hive.litellm,
         };
@@ -384,16 +426,32 @@ fn convert_toml_to_json(toml: toml::Value) -> serde_json::Value {
     }
 }
 
-fn parse_model_config(model_config: ModelConfig, base_url: &str) -> ParsedModelConfig {
-    ParsedModelConfig {
-        model_name: model_config.model_name,
-        system_prompt: model_config.system_prompt,
-        litellm_params: model_config
-            .litellm_params
-            .into_iter()
-            .map(|(key, value)| (key, convert_toml_to_json(value)))
-            .collect(),
-        base_url: base_url.to_string(),
+fn parse_model_config(
+    model_config: ModelConfig,
+    default_model: &Option<DefaultModelConfig>,
+    base_url: &str,
+) -> Option<ParsedModelConfig> {
+    println!("THE DEFAULT MODEL: {:?}", default_model);
+    if let Some(model_name) = model_config.model_name.or(default_model
+        .as_ref()
+        .map(|dm| dm.model_name.clone())
+        .flatten())
+        && let Some(litellm_params) = model_config.litellm_params.or(default_model
+            .as_ref()
+            .map(|dm| dm.litellm_params.clone())
+            .flatten())
+    {
+        Some(ParsedModelConfig {
+            model_name,
+            system_prompt: model_config.system_prompt,
+            litellm_params: litellm_params
+                .into_iter()
+                .map(|(key, value)| (key, convert_toml_to_json(value)))
+                .collect(),
+            base_url: base_url.to_string(),
+        })
+    } else {
+        None
     }
 }
 
