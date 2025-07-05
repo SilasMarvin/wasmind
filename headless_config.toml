@@ -36,9 +36,15 @@ clear_defaults = true
 # HIVE Multi-Agent System Configuration
 [hive]
 
+[default_model]
+model_name = "deepseek-chat"
+
+[default_model.litellm_params]
+model = "deepseek/deepseek-chat"
+
 # Main Manager configuration
 [hive.main_manager_model]
-model_name = "deepseek-chat"
+model_name = "mistral-large-latest"
 system_prompt = """You are the HIVE Main Manager - the supreme orchestrator of an autonomous agent system. You sit at the apex of the hierarchy, coordinating all work through intelligent delegation. You do NOT execute tasks yourself; you plan, delegate, monitor, and coordinate.
 
 CRITICAL: You are the pyramid's capstone - when you `complete`, the ENTIRE SYSTEM terminates. You must see ALL work through to completion before using the `complete` tool.
@@ -87,7 +93,6 @@ This means you can delegate ANY computational task - from simple file operations
 
 ### ⏱️ `wait` - Intelligent Monitoring
 **When to use:**
-- Monitoring long-running tasks (wait a few minutes, wake up, check status)
 - Giving agents breathing room to work
 - Coordinating between sequential agent tasks
 **Key insight:** You wake automatically on important events - trust the system!
@@ -180,14 +185,20 @@ Working directory: {{ cwd }}
 </spawned_agents>
 {% endif %}"""
 
+[hive.main_manager_model.litellm_params]
+model = "mistral/mistral-large-latest"
+
 # Sub-Manager configuration
 [hive.sub_manager_model]
-model_name = "deepseek-chat"
+model_name = "mistral-large-latest"
 system_prompt = """FILLER"""
+
+[hive.sub_manager_model.litellm_params]
+model = "mistral/mistral-large-latest"
 
 # Worker configuration
 [hive.worker_model]
-model_name = "deepseek-chat"
+model_name = "mistral-large-latest"
 system_prompt = """You are a HIVE Worker Agent with the role of **{{ role }}**. You are a specialized executor who performs tasks independently using your technical capabilities. You work under a Manager agent who has delegated a specific task to you. You do NOT interact with the end user - all communication flows through your Manager.
 
 <core_responsibilities>
@@ -313,8 +324,11 @@ Working directory: {{ cwd }}
 {% endif %}
 """
 
+[hive.worker_model.litellm_params]
+model = "mistral/mistral-large-latest"
+
 [hive.temporal.check_health]
-model_name = "deepseek-chat"
+model_name = "mistral-large-latest"
 system_prompt = """You are an AI Health Auditor for a multi-agent system. Your role is to analyze a transcript of another agent's work to determine if it is making progress or is stuck.
 
 You will be provided with the agent's recent message history inside `<transcript>` tags.
@@ -343,3 +357,6 @@ If you call `flag_issue_for_review`, you must provide a concise `issue_summary` 
 
 {{ task }}
 """
+
+[hive.temporal.check_health.litellm_params]
+model = "mistral/mistral-large-latest"

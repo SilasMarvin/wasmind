@@ -148,8 +148,7 @@ pub struct LLMClient {
 }
 
 impl LLMClient {
-    pub fn new(base_url: Option<String>) -> Self {
-        let base_url = base_url.unwrap_or_else(|| "http://localhost:4000".to_string());
+    pub fn new(base_url: String) -> Self {
         let client = reqwest::Client::new();
         Self { base_url, client }
     }
@@ -464,16 +463,16 @@ mod tests {
 
     #[test]
     fn test_llm_client_creation() {
-        let client = LLMClient::new(None);
+        let client = LLMClient::new("http://localhost:4000".to_string());
         assert_eq!(client.base_url, "http://localhost:4000");
 
-        let custom_client = LLMClient::new(Some("http://custom:8080".to_string()));
+        let custom_client = LLMClient::new("http://custom:8080".to_string());
         assert_eq!(custom_client.base_url, "http://custom:8080");
     }
 
     #[tokio::test]
     async fn test_chat_request_building() {
-        let _client = LLMClient::new(None);
+        let _client = LLMClient::new("http://localhost:4000".to_string());
         let messages = vec![ChatMessage::user("Hello, how are you?")];
 
         // This test just verifies the request can be built properly

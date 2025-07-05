@@ -159,7 +159,7 @@ impl Assistant {
         whitelisted_commands: Vec<String>,
         file_reader: Option<Arc<std::sync::Mutex<crate::actors::tools::file_reader::FileReader>>>,
     ) -> Self {
-        let client = LLMClient::new(None);
+        let client = LLMClient::new(config.base_url.clone());
 
         let required_actors = required_actors.into();
         let state = if required_actors.is_empty() {

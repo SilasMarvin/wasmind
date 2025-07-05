@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, sync::Arc, time::Duration};
 use std::sync::Mutex;
+use std::{collections::BTreeSet, sync::Arc, time::Duration};
 use tokio::sync::broadcast::Sender;
 
 use crate::{

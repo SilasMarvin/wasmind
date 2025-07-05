@@ -4,10 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use snafu::{ResultExt, Snafu};
 use std::{collections::HashMap, fs, io, path::PathBuf};
+use toml::Table;
 
 use crate::actors::Action;
-
-const DEFAULT_SYSTEM_PROMPT: &str = "You are a helpful assistant.";
 
 pub type KeyBinding = Vec<KeyEvent>;
 
@@ -167,9 +166,60 @@ struct KeyConfig {
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct ModelConfig {
     pub model_name: String,
-    pub system_prompt: Option<String>,
-    #[serde(flatten)]
-    pub litellm_params: HashMap<String, serde_json::Value>,
+    pub system_prompt: String,
+    pub litellm_params: Table,
+}
+
+/// LiteLLM configuration
+#[derive(Deserialize, Debug, Clone)]
+pub struct LiteLLMConfig {
+    /// Docker image to use
+    #[serde(default = "default_litellm_image")]
+    pub image: String,
+
+    /// Port to expose LiteLLM on
+    #[serde(default = "default_litellm_port")]
+    pub port: u16,
+
+    /// Container name (for easy management)
+    #[serde(default = "default_container_name")]
+    pub container_name: String,
+
+    /// Whether to remove container on exit
+    #[serde(default = "default_auto_remove")]
+    pub auto_remove: bool,
+
+    /// Additional env var overrides
+    #[serde(default)]
+    pub env_overrides: HashMap<String, String>,
+}
+
+fn default_litellm_image() -> String {
+    "ghcr.io/berriai/litellm:main-latest".to_string()
+}
+
+fn default_litellm_port() -> u16 {
+    4000
+}
+
+fn default_container_name() -> String {
+    "hive-litellm".to_string()
+}
+
+fn default_auto_remove() -> bool {
+    false
+}
+
+impl Default for LiteLLMConfig {
+    fn default() -> Self {
+        Self {
+            image: default_litellm_image(),
+            port: default_litellm_port(),
+            container_name: default_container_name(),
+            auto_remove: default_auto_remove(),
+            env_overrides: HashMap::new(),
+        }
+    }
 }
 
 /// Temporal worker configuration
@@ -195,6 +245,9 @@ pub struct HiveConfig {
     /// Temporal worker configurations
     #[serde(default)]
     pub temporal: TemporalConfig,
+    /// LiteLLM configuration
+    #[serde(default)]
+    pub litellm: LiteLLMConfig,
 }
 
 /// An MCP Config
@@ -234,14 +287,27 @@ impl TryFrom<Config> for ParsedConfig {
         let whitelisted_commands = value.whitelisted_commands;
         let auto_approve_commands = value.auto_approve_commands;
 
+        let base_url = format!("http://localhost:{}", value.hive.litellm.port);
         let hive = ParsedHiveConfig {
-            main_manager_model: parse_model_config(value.hive.main_manager_model),
-            sub_manager_model: parse_model_config(value.hive.sub_manager_model),
-            worker_model: parse_model_config(value.hive.worker_model),
+            main_manager_model: parse_model_config(value.hive.main_manager_model, &base_url),
+            sub_manager_model: parse_model_config(value.hive.sub_manager_model, &base_url),
+            worker_model: parse_model_config(value.hive.worker_model, &base_url),
             temporal: ParsedTemporalConfig {
-                check_health: value.hive.temporal.check_health.map(parse_model_config),
+                check_health: value
+                    .hive
+                    .temporal
+                    .check_health
+                    .map(|config| parse_model_config(config, &base_url)),
             },
+            litellm: value.hive.litellm,
         };
+
+        tracing::error!("THE PARSED HIVE CONFIG:\n{:?}", hive);
+
+        tracing::error!(
+            "THE PARSED HIVE CONFIG FOR THE WORKER_MODEL\n{:?}",
+            hive.worker_model
+        );
 
         Ok(Self {
             keys,
@@ -277,6 +343,7 @@ pub struct ParsedModelConfig {
     pub model_name: String,
     pub system_prompt: String,
     pub litellm_params: HashMap<String, serde_json::Value>,
+    pub base_url: String,
 }
 
 /// The parsed and verified temporal config
@@ -292,15 +359,41 @@ pub struct ParsedHiveConfig {
     pub sub_manager_model: ParsedModelConfig,
     pub worker_model: ParsedModelConfig,
     pub temporal: ParsedTemporalConfig,
+    pub litellm: LiteLLMConfig,
 }
 
-fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
+fn convert_toml_to_json(toml: toml::Value) -> serde_json::Value {
+    match toml {
+        toml::Value::String(s) => serde_json::Value::String(s),
+        toml::Value::Integer(i) => serde_json::Value::Number(i.into()),
+        toml::Value::Float(f) => {
+            let n = serde_json::Number::from_f64(f).expect("float infinite and nan not allowed");
+            serde_json::Value::Number(n)
+        }
+        toml::Value::Boolean(b) => serde_json::Value::Bool(b),
+        toml::Value::Array(arr) => {
+            serde_json::Value::Array(arr.into_iter().map(convert_toml_to_json).collect())
+        }
+        toml::Value::Table(table) => serde_json::Value::Object(
+            table
+                .into_iter()
+                .map(|(k, v)| (k, convert_toml_to_json(v)))
+                .collect(),
+        ),
+        toml::Value::Datetime(dt) => serde_json::Value::String(dt.to_string()),
+    }
+}
+
+fn parse_model_config(model_config: ModelConfig, base_url: &str) -> ParsedModelConfig {
     ParsedModelConfig {
         model_name: model_config.model_name,
-        system_prompt: model_config
-            .system_prompt
-            .unwrap_or(DEFAULT_SYSTEM_PROMPT.to_string()),
-        litellm_params: model_config.litellm_params,
+        system_prompt: model_config.system_prompt,
+        litellm_params: model_config
+            .litellm_params
+            .into_iter()
+            .map(|(key, value)| (key, convert_toml_to_json(value)))
+            .collect(),
+        base_url: base_url.to_string(),
     }
 }
 
@@ -395,4 +488,12 @@ pub fn parse_key_combination(input: &str) -> Option<KeyBinding> {
     let key_code = key_code?;
     let key_event = KeyEvent::new(key_code, modifiers);
     Some(vec![key_event])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize() {}
 }

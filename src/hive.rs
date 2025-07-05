@@ -13,6 +13,7 @@ use crate::{
         tui::TuiActor,
     },
     config::ParsedConfig,
+    litellm_manager::{LiteLLMConfig, LiteLLMManager},
     scope::Scope,
 };
 
@@ -45,6 +46,23 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
     // Spawn the HIVE system task
     runtime.spawn(async move {
         let mut rx = tx.subscribe();
+
+        // Start LiteLLM Docker container
+        let litellm_config = LiteLLMConfig {
+            port: config.hive.litellm.port,
+            image: config.hive.litellm.image.clone(),
+            container_name: config.hive.litellm.container_name.clone(),
+            auto_remove: config.hive.litellm.auto_remove,
+            env_overrides: config.hive.litellm.env_overrides.clone(),
+        };
+        let _litellm_manager = match LiteLLMManager::start(&litellm_config, &config).await {
+            Ok(manager) => manager,
+            Err(e) => {
+                tracing::error!("Failed to start LiteLLM container: {}", e);
+                let _ = exit_tx.send(());
+                return;
+            }
+        };
 
         // Create and run TUI and Context actors (these are shared across all agents)
         TuiActor::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
@@ -108,6 +126,23 @@ pub fn start_headless_hive(
     let message_tx = tx.clone();
     runtime.spawn(async move {
         let mut rx = tx.subscribe();
+
+        // Start LiteLLM Docker container
+        let litellm_config = LiteLLMConfig {
+            port: config.hive.litellm.port,
+            image: config.hive.litellm.image.clone(),
+            container_name: config.hive.litellm.container_name.clone(),
+            auto_remove: config.hive.litellm.auto_remove,
+            env_overrides: config.hive.litellm.env_overrides.clone(),
+        };
+        let _litellm_manager = match LiteLLMManager::start(&litellm_config, &config).await {
+            Ok(manager) => manager,
+            Err(e) => {
+                tracing::error!("Failed to start LiteLLM container: {}", e);
+                let _ = exit_tx.send(());
+                return;
+            }
+        };
 
         // Create and run Context and Microphone actors (no TUI in headless mode)
         #[cfg(feature = "gui")]
