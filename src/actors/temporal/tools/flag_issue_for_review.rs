@@ -3,7 +3,7 @@ use crate::actors::{
     ToolCallUpdate,
 };
 use crate::scope::Scope;
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::{Tool, ToolCall};
 use serde_json::json;
 use tokio::sync::broadcast;
 
@@ -40,31 +40,32 @@ impl FlagIssueForReview {
 
     pub fn get_tool_schema() -> Tool {
         Tool {
-            name: Self::TOOL_NAME.to_string(),
-            description: Some(
-                "Flags that the analyzed agent appears to be stuck or in a loop.".to_string(),
-            ),
-            schema: Some(json!({
-                "type": "object",
-                "properties": {
-                    "issue_summary": {
-                        "type": "string",
-                        "description": "A one-sentence summary of why the agent seems stuck. Example: 'The agent is repeatedly trying to access a file that does not exist.'"
-                    }
-                },
-                "required": ["issue_summary"]
-            })),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: Self::TOOL_NAME.to_string(),
+                description: "Flags that the analyzed agent appears to be stuck or in a loop.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "issue_summary": {
+                            "type": "string",
+                            "description": "A one-sentence summary of why the agent seems stuck. Example: 'The agent is repeatedly trying to access a file that does not exist.'"
+                        }
+                    },
+                    "required": ["issue_summary"]
+                }),
+            },
         }
     }
 
     pub async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.fn_name != Self::TOOL_NAME {
+        if tool_call.function.name != Self::TOOL_NAME {
             return;
         }
 
         // Broadcast received
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id.clone(),
+            call_id: tool_call.id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::FlagIssueForReview,
                 friendly_command_display: "Flagging issue for review".to_string(),
@@ -72,11 +73,12 @@ impl FlagIssueForReview {
         }));
 
         // Parse input
-        let issue_summary = match tool_call.fn_arguments.get("issue_summary") {
+        let arguments: serde_json::Value = serde_json::from_str(&tool_call.function.arguments).unwrap_or_default();
+        let issue_summary = match arguments.get("issue_summary") {
             Some(summary) => summary.as_str().unwrap_or("Unknown issue"),
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id,
+                    call_id: tool_call.id,
                     status: ToolCallStatus::Finished(Err(
                         "Missing issue_summary parameter".to_string()
                     )),
@@ -92,7 +94,7 @@ impl FlagIssueForReview {
                 agent_id: self.og_scope.clone(),
                 message: crate::actors::AgentMessageType::InterAgentMessage(
                     crate::actors::InterAgentMessage::InterruptAndForceWaitForManager {
-                        tool_call_id: tool_call.call_id.clone(),
+                        tool_call_id: tool_call.id.clone(),
                     },
                 ),
             }),

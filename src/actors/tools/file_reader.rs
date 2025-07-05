@@ -5,8 +5,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::SystemTime;
 use std::sync::Mutex;
+use std::time::SystemTime;
 use tokio::sync::broadcast;
 
 use crate::actors::ActorMessage;
@@ -39,7 +39,6 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
 
 // --- Error Handling with Snafu ---
 #[derive(Debug, Snafu)]
-#[snafu(visibility(pub))]
 pub enum FileCacheError {
     #[snafu(display("Failed to read file metadata for '{}': {}", path.display(), source))]
     ReadMetadata { source: io::Error, path: PathBuf },

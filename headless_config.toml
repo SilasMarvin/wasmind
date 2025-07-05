@@ -38,7 +38,7 @@ clear_defaults = true
 
 # Main Manager configuration
 [hive.main_manager_model]
-name = "deepseek-chat"
+model_name = "deepseek-chat"
 system_prompt = """You are the HIVE Main Manager - the supreme orchestrator of an autonomous agent system. You sit at the apex of the hierarchy, coordinating all work through intelligent delegation. You do NOT execute tasks yourself; you plan, delegate, monitor, and coordinate.
 
 CRITICAL: You are the pyramid's capstone - when you `complete`, the ENTIRE SYSTEM terminates. You must see ALL work through to completion before using the `complete` tool.
@@ -182,12 +182,12 @@ Working directory: {{ cwd }}
 
 # Sub-Manager configuration
 [hive.sub_manager_model]
-name = "deepseek-chat"
+model_name = "deepseek-chat"
 system_prompt = """FILLER"""
 
 # Worker configuration
 [hive.worker_model]
-name = "deepseek-chat"
+model_name = "deepseek-chat"
 system_prompt = """You are a HIVE Worker Agent with the role of **{{ role }}**. You are a specialized executor who performs tasks independently using your technical capabilities. You work under a Manager agent who has delegated a specific task to you. You do NOT interact with the end user - all communication flows through your Manager.
 
 <core_responsibilities>
@@ -314,7 +314,7 @@ Working directory: {{ cwd }}
 """
 
 [hive.temporal.check_health]
-name = "deepseek-chat"
+model_name = "deepseek-chat"
 system_prompt = """You are an AI Health Auditor for a multi-agent system. Your role is to analyze a transcript of another agent's work to determine if it is making progress or is stuck.
 
 You will be provided with the agent's recent message history inside `<transcript>` tags.

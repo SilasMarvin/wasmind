@@ -1,11 +1,10 @@
-use genai::chat::ChatRequest;
+use crate::llm_client::ChatRequest;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 
 use crate::{
     actors::{
         Actor, ActorMessage, AssistantRequest, agent::TemporalAgent,
-        assistant::chat_history_to_request,
     },
     config::ParsedConfig,
     scope::Scope,
@@ -55,8 +54,11 @@ impl CheckHealthActor {
                 .clone();
 
             // TODO: Improve how are generating the transcript - maybe we can shorten it / make it cleaner
-            let mut request: ChatRequest = chat_history_to_request(assistant_request.messages);
-            request = request.with_system(assistant_request.system);
+            let request = ChatRequest {
+                model: parsed_model_config.model_name.clone(),
+                messages: assistant_request.messages.clone(),
+                tools: Some(assistant_request.tools.clone()),
+            };
             let task = format!(
                 "Analyze the folllowing transcript:\n<transcript>{}</transcript>",
                 serde_json::to_string_pretty(&request).unwrap()

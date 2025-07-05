@@ -1,10 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
-use genai::{
-    ServiceTarget,
-    resolver::{AuthData, Endpoint, ServiceTargetResolver},
-};
 use serde::{Deserialize, Serialize};
+use serde_json;
 use snafu::{ResultExt, Snafu};
 use std::{collections::HashMap, fs, io, path::PathBuf};
 
@@ -169,11 +166,10 @@ struct KeyConfig {
 /// The model configuration we deserialize directly from toml
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct ModelConfig {
-    pub name: String,
+    pub model_name: String,
     pub system_prompt: Option<String>,
-    pub endpoint: Option<String>,
-    pub auth: Option<String>,
-    pub adapter: Option<String>,
+    #[serde(flatten)]
+    pub litellm_params: HashMap<String, serde_json::Value>,
 }
 
 /// Temporal worker configuration
@@ -278,9 +274,9 @@ pub struct ParsedKeyConfig {
 /// The parsed and verified model config
 #[derive(Debug, Clone)]
 pub struct ParsedModelConfig {
-    pub name: String,
+    pub model_name: String,
     pub system_prompt: String,
-    pub service_target_resolver: ServiceTargetResolver,
+    pub litellm_params: HashMap<String, serde_json::Value>,
 }
 
 /// The parsed and verified temporal config
@@ -299,57 +295,12 @@ pub struct ParsedHiveConfig {
 }
 
 fn parse_model_config(model_config: ModelConfig) -> ParsedModelConfig {
-    let model_name = model_config.name.clone();
-    let service_target_resolver = ServiceTargetResolver::from_resolver_fn(
-        move |service_target: ServiceTarget| -> Result<ServiceTarget, genai::resolver::Error> {
-            let ServiceTarget {
-                model,
-                endpoint,
-                auth,
-            } = service_target;
-            let model = model_config
-                .adapter
-                .map(|adapter| {
-                    serde_json::from_value(serde_json::json!({
-                        "adapter_kind": adapter,
-                        "model_name": model_config.name,
-                    }))
-                    .unwrap()
-                })
-                .unwrap_or(model);
-            let endpoint = model_config
-                .endpoint
-                .map(|endpoint| Endpoint::from_owned(endpoint))
-                .unwrap_or(endpoint);
-            let auth = match model_config.auth {
-                None => auth,
-                Some(s) => match std::env::var(&s) {
-                    Ok(value) => {
-                        tracing::debug!("Successfully loaded auth from environment variable");
-                        AuthData::Key(value)
-                    }
-                    Err(_) => {
-                        tracing::debug!(
-                            "Auth environment variable not found, using FromEnv auth method"
-                        );
-                        AuthData::FromEnv(s)
-                    }
-                },
-            };
-            Ok(ServiceTarget {
-                endpoint,
-                auth,
-                model,
-            })
-        },
-    );
-
     ParsedModelConfig {
-        name: model_name,
-        service_target_resolver,
+        model_name: model_config.model_name,
         system_prompt: model_config
             .system_prompt
             .unwrap_or(DEFAULT_SYSTEM_PROMPT.to_string()),
+        litellm_params: model_config.litellm_params,
     }
 }
 

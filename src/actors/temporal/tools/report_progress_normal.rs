@@ -2,7 +2,7 @@ use crate::actors::{
     Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
 };
 use crate::scope::Scope;
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::{Tool, ToolCall};
 use serde_json::json;
 use tokio::sync::broadcast;
 
@@ -21,26 +21,27 @@ impl ReportProgressNormal {
 
     pub fn get_tool_schema() -> Tool {
         Tool {
-            name: Self::TOOL_NAME.to_string(),
-            description: Some(
-                "Report that the analyzed agent is healthy and making normal progress.".to_string(),
-            ),
-            schema: Some(json!({
-                "type": "object",
-                "properties": {},
-                "required": []
-            })),
+            tool_type: "function".to_string(),
+            function: crate::llm_client::ToolFunction {
+                name: Self::TOOL_NAME.to_string(),
+                description: "Report that the analyzed agent is healthy and making normal progress.".to_string(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }),
+            },
         }
     }
 
     pub async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.fn_name != Self::TOOL_NAME {
+        if tool_call.function.name != Self::TOOL_NAME {
             return;
         }
 
         // Broadcast received
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id.clone(),
+            call_id: tool_call.id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::ReportProgressNormal,
                 friendly_command_display: "Reporting normal progress".to_string(),
@@ -52,7 +53,7 @@ impl ReportProgressNormal {
 
         // Send tool call completion
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id,
+            call_id: tool_call.id,
             status: ToolCallStatus::Finished(Ok("Agent progress reported as normal".to_string())),
         }));
     }

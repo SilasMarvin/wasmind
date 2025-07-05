@@ -1,4 +1,4 @@
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::ToolCall;
 use rmcp::{
     RoleClient,
     model::CallToolRequestParam,
@@ -72,7 +72,7 @@ impl MCP {
     }
 
     async fn start_servers(&mut self) -> MResult<()> {
-        let mut tools = Vec::new();
+        let mut tools: Vec<crate::llm_client::Tool> = Vec::new();
 
         for (server_name, server_config) in &self.config.mcp_servers {
             info!(
@@ -125,11 +125,14 @@ impl MCP {
                 "MCP server started successfully"
             );
 
-            // Convert MCP tools to genai Tools
-            tools.extend(mcp_tools.into_iter().map(|tool| Tool {
-                name: tool.name.to_string(),
-                description: tool.description.map(|x| x.to_string()),
-                schema: Some(serde_json::to_value(tool.input_schema).unwrap()),
+            // Convert MCP tools to LLM Tools
+            tools.extend(mcp_tools.into_iter().map(|tool| crate::llm_client::Tool {
+                tool_type: "function".to_string(),
+                function: crate::llm_client::ToolFunction {
+                    name: tool.name.to_string(),
+                    description: tool.description.map(|x| x.to_string()).unwrap_or_default(),
+                    parameters: serde_json::to_value(tool.input_schema).unwrap(),
+                },
             }));
 
             self.servers.insert(server_name.clone(), Arc::new(service));
@@ -145,7 +148,7 @@ impl MCP {
 
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
         // Check if this tool call is for an MCP function
-        let server_name = match self.func_to_server.get(&tool_call.fn_name) {
+        let server_name = match self.func_to_server.get(&tool_call.function.name) {
             Some(name) => name.clone(),
             None => {
                 // Not an MCP tool, ignore
@@ -154,10 +157,10 @@ impl MCP {
         };
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.call_id.clone(),
+            call_id: tool_call.id.clone(),
             status: ToolCallStatus::Received {
                 r#type: ToolCallType::MCP,
-                friendly_command_display: format!("MCP: {} ({})", tool_call.fn_name, server_name),
+                friendly_command_display: format!("MCP: {} ({})", tool_call.function.name, server_name),
             },
         }));
 
@@ -173,7 +176,7 @@ impl MCP {
             Some(server) => Arc::clone(server),
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.call_id.clone(),
+                    call_id: tool_call.id.clone(),
                     status: ToolCallStatus::Finished(Err(format!(
                         "Server not found: {}",
                         server_name
@@ -183,10 +186,10 @@ impl MCP {
             }
         };
 
-        let tool_call_id = tool_call.call_id.clone();
-        let tool_name = tool_call.fn_name.clone();
-        let fn_name = tool_call.fn_name.clone();
-        let fn_arguments = tool_call.fn_arguments.clone();
+        let tool_call_id = tool_call.id.clone();
+        let tool_name = tool_call.function.name.clone();
+        let fn_name = tool_call.function.name.clone();
+        let fn_arguments = tool_call.function.arguments.clone();
         let server_name_task = server_name.to_string();
 
         // Spawn the MCP tool execution in a separate task
@@ -200,7 +203,7 @@ impl MCP {
             let result = server
                 .call_tool(CallToolRequestParam {
                     name: fn_name.into(),
-                    arguments: Some(serde_json::from_value(fn_arguments).unwrap()),
+                    arguments: Some(serde_json::from_str(&fn_arguments).unwrap()),
                 })
                 .await;
 
@@ -256,13 +259,13 @@ impl MCP {
 
         // Store the handle so we can cancel it later if needed
         let running_call = RunningMCPCall {
-            tool_call_id: tool_call.call_id.clone(),
+            tool_call_id: tool_call.id.clone(),
             server_name: server_name.to_string(),
-            tool_name: tool_call.fn_name.clone(),
+            tool_name: tool_call.function.name.clone(),
             handle,
         };
 
-        self.running_calls.insert(tool_call.call_id, running_call);
+        self.running_calls.insert(tool_call.id, running_call);
     }
 
     fn cleanup_completed_calls(&mut self) {

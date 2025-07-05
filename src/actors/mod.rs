@@ -10,14 +10,20 @@ pub mod tools;
 pub mod tui;
 
 use crate::scope::Scope;
-use assistant::ChatHistoryMessage;
-use genai::chat::{Tool, ToolCall};
+use crate::llm_client::{Tool, ToolCall};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
 use uuid::Uuid;
+
+/// Pending tool call information including name and result
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PendingToolCall {
+    pub tool_name: String,
+    pub result: Option<ToolCallResult>,
+}
 
 /// Actions users can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -107,7 +113,7 @@ pub enum WaitReason {
         tool_call_id: String,
     },
     WaitingForTools {
-        tool_calls: HashMap<String, Option<ToolCallResult>>,
+        tool_calls: HashMap<String, PendingToolCall>,
     },
     WaitingForActors {
         pending_actors: Vec<String>,
@@ -182,7 +188,7 @@ pub enum UserContext {
 pub struct AssistantRequest {
     system: String,
     tools: Vec<Tool>,
-    messages: Vec<ChatHistoryMessage>,
+    messages: Vec<crate::llm_client::ChatMessage>,
 }
 
 /// The various messages actors can send
@@ -200,12 +206,12 @@ pub enum Message {
     AssistantToolCall(ToolCall),
     AssistantResponse {
         id: Uuid,
-        content: genai::chat::MessageContent,
+        content: crate::llm_client::ChatMessage,
     },
 
     // Tool messages
     ToolCallUpdate(ToolCallUpdate),
-    ToolsAvailable(Vec<genai::chat::Tool>),
+    ToolsAvailable(Vec<crate::llm_client::Tool>),
 
     // System state update messages
     FileRead {
