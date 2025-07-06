@@ -156,7 +156,7 @@ impl FileContent {
                         // Overlapping or adjacent slices - merge them
                         if slice.end_line > last.end_line {
                             // Extend the content
-                            let last_lines: Vec<&str> = last.content.lines().collect();
+                            // let last_lines: Vec<&str> = last.content.lines().collect();
                             let new_lines: Vec<&str> = slice.content.lines().collect();
 
                             // Calculate how many lines to take from the new slice
@@ -203,8 +203,8 @@ impl FileReader {
     pub fn read_and_cache_file<P: AsRef<Path>>(
         &mut self,
         path: P,
-        start_line: Option<i32>,
-        end_line: Option<i32>,
+        start_line: Option<usize>,
+        end_line: Option<usize>,
     ) -> Result<()> {
         let path_ref = path.as_ref();
 
@@ -248,12 +248,12 @@ impl FileReader {
                 FileContent::Full(contents)
             }
             (Some(start), Some(end)) => {
+                let start: usize = start.into();
+                let end: usize = end.into();
+
                 // Validate line numbers
-                if start < 1
-                    || start as usize > total_lines
-                    || end < start
-                    || end as usize > total_lines
-                {
+                // Don't error if end is too large this is a common mistake and not worth reporting
+                if start < 1 || start > total_lines || end < start {
                     return Err(FileCacheError::ReadFile {
                         source: io::Error::new(
                             io::ErrorKind::InvalidInput,
@@ -266,18 +266,16 @@ impl FileReader {
                     });
                 }
 
-                let actual_end = end as usize;
-
                 // Create numbered content for the slice
-                let slice_lines: Vec<String> = lines[(start as usize - 1)..actual_end]
+                let slice_lines: Vec<String> = lines[(start - 1)..lines.len().min(end)]
                     .iter()
                     .enumerate()
-                    .map(|(i, line)| format!("{}|{}", start as usize + i, line))
+                    .map(|(i, line)| format!("{}|{}", start + i, line))
                     .collect();
 
                 let slice = FileSlice {
-                    start_line: start as usize,
-                    end_line: actual_end,
+                    start_line: start,
+                    end_line: end,
                     content: slice_lines.join("\n"),
                 };
 
@@ -362,8 +360,8 @@ impl FileReader {
     pub fn get_or_read_file_content<P: AsRef<Path> + Clone>(
         &mut self,
         path: P,
-        start_line: Option<i32>,
-        end_line: Option<i32>,
+        start_line: Option<usize>,
+        end_line: Option<usize>,
     ) -> Result<String> {
         let path_ref = path.as_ref();
         let canonical_path = fs::canonicalize(path_ref).context(CanonicalizePathSnafu {
@@ -376,7 +374,7 @@ impl FileReader {
                 // Full file read - check if modified
                 self.has_been_modified(path_ref)?
             }
-            (Some(_), Some(_)) => {
+            (Some(start), Some(end)) => {
                 // Partial read - check if we have this slice or file was modified
                 if self.has_been_modified(path_ref)? {
                     true
@@ -386,9 +384,6 @@ impl FileReader {
                         FileContent::Full(_) => false, // We have the full file
                         FileContent::Partial { slices, .. } => {
                             // Check if the requested range is already covered
-                            let start = start_line.unwrap() as usize;
-                            let end = end_line.unwrap() as usize;
-
                             !slices
                                 .iter()
                                 .any(|slice| slice.start_line <= start && slice.end_line >= end)
@@ -415,16 +410,11 @@ impl FileReader {
                 if let Some(existing_entry) = self.cache.get(&canonical_path).cloned() {
                     if !self.has_been_modified(path_ref)? {
                         // File hasn't changed, we can merge slices
-                        let metadata = fs::metadata(path_ref).context(ReadMetadataSnafu {
-                            path: path_ref.to_path_buf(),
-                        })?;
-
                         let contents = fs::read_to_string(path_ref).context(ReadFileSnafu {
                             path: path_ref.to_path_buf(),
                         })?;
 
                         let lines: Vec<&str> = contents.lines().collect();
-                        let total_lines = lines.len();
 
                         let actual_end = end as usize;
 
@@ -565,6 +555,33 @@ impl FileReaderActor {
             .and_then(|v| v.as_i64())
             .map(|v| v as i32);
 
+        if let Some(start_line) = start_line
+            && start_line < 0
+        {
+            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                call_id: tool_call.id,
+                status: ToolCallStatus::Finished(Err(format!(
+                    "Invalid start_line: {start_line} - lines are 1-indexed."
+                ))),
+            }));
+            return;
+        }
+
+        if let Some(end_line) = end_line
+            && end_line < 0
+        {
+            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                call_id: tool_call.id,
+                status: ToolCallStatus::Finished(Err(format!(
+                    "Invalid end_line: {end_line} - lines are 1-indexed."
+                ))),
+            }));
+            return;
+        }
+
+        let start_line = start_line.map(|x| x as usize);
+        let end_line = end_line.map(|x| x as usize);
+
         let friendly_command_display = match (start_line, end_line) {
             (Some(start), Some(end)) => format!("Read file: {} (lines {}-{})", path, start, end),
             _ => format!("Read file: {}", path),
@@ -586,8 +603,8 @@ impl FileReaderActor {
     async fn execute_read(
         &mut self,
         path: &str,
-        start_line: Option<i32>,
-        end_line: Option<i32>,
+        start_line: Option<usize>,
+        end_line: Option<usize>,
         tool_call_id: &str,
     ) {
         let mut file_reader = self.file_reader.lock().unwrap();
@@ -732,7 +749,7 @@ mod tests {
         };
 
         let result = content_from_middle.get_numbered_content();
-        
+
         // Should have omitted lines at beginning and end
         assert!(result.contains("[... 7 lines omitted ...]")); // Lines 1-7 omitted
         assert!(result.contains("8|[2024-01-01 00:00:08] WARN: High memory usage detected"));
@@ -762,7 +779,7 @@ mod tests {
         };
 
         let result_gaps = content_with_gaps.get_numbered_content();
-        
+
         // Verify all the omitted sections
         assert!(result_gaps.contains("1|first line"));
         assert!(result_gaps.contains("2|second line"));
@@ -909,8 +926,6 @@ mod tests {
         assert!(!cached_content.contains("1|line 1"));
         assert!(!cached_content.contains("5|line 5"));
     }
-
-
 
     #[test]
     fn test_file_reader_slice_merging() {

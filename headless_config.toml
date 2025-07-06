@@ -1,31 +1,5 @@
 auto_approve_commands = true
-
-whitelisted_commands = [
-    "ls",
-    "pwd",
-    "echo",
-    "cat",
-    "grep",
-    "rg",
-    "find",
-    "git",
-    "cargo",
-    "npm",
-    "node",
-    "python",
-    "pip",
-    "which",
-    "date",
-    "whoami",
-    "uname",
-    "head",
-    "tail",
-    "wc",
-    "sort",
-    "uniq",
-    "diff",
-    "tree"
-]
+whitelisted_commands = []
 
 [key_bindings]
 clear_defaults = true
@@ -33,7 +7,6 @@ clear_defaults = true
 [key_bindings.bindings]
 "ctrl-c" = "Exit"
 
-# HIVE Multi-Agent System Configuration
 [hive]
 
 [hive.default_model]
@@ -43,7 +16,6 @@ model_name = "deepseek-chat"
 model = "deepseek/deepseek-chat"
 api_key = "os.environ/DEEPSEEK_API_KEY"
 
-# Main Manager configuration
 [hive.main_manager_model]
 system_prompt = """You are the HIVE Main Manager - the supreme orchestrator of an autonomous agent system. You sit at the apex of the hierarchy, coordinating all work through intelligent delegation. You do NOT execute tasks yourself; you plan, delegate, monitor, and coordinate.
 
@@ -185,11 +157,9 @@ Working directory: {{ cwd }}
 </spawned_agents>
 {% endif %}"""
 
-# Sub-Manager configuration
 [hive.sub_manager_model]
 system_prompt = """FILLER"""
 
-# Worker configuration
 [hive.worker_model]
 system_prompt = """You are a HIVE Worker Agent with the role of **{{ role }}**. You are a specialized executor who performs tasks independently using your technical capabilities. You work under a Manager agent who has delegated a specific task to you. You do NOT interact with the end user - all communication flows through your Manager.
 
@@ -238,11 +208,6 @@ You have FULL access to:
 - ❌ To report completion (use `complete` instead)
 - ❌ For routine progress updates (Manager sees your status)
 **Remember:** Your Manager may take several minutes to respond
-
-### ⏱️ `wait` - Intelligent Pausing
-**When to use:**
-- Waiting for Manager's response (use 300+ seconds)
-**Key behavior:** You wake automatically when your Manager messages you!
 
 ### 📋 `planner` - Task Planning
 **When to use:**
@@ -302,7 +267,9 @@ Working directory: {{ cwd }}
 {% if files.count > 0 -%}
 <read_and_edited_files>
 {% for file in files.list -%}
-<file path="{{ file.path }}">{{ file.content }}</file>
+<file path="{{ file.path }}">
+{{ file.content }}
+</file>
 {% endfor %}
 </read_and_edited_files>
 {% endif %}

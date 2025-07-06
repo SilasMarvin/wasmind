@@ -11,6 +11,7 @@ use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, 
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
+use super::file_reader::FileCacheError;
 
 pub const TOOL_NAME: &str = "edit_file";
 pub const TOOL_DESCRIPTION: &str = "Applies a list of edits to a file atomically. This is the primary tool for modifying files. Each edit targets a specific line range. The tool processes edits from the bottom of the file to the top to ensure line number integrity during the operation.";
@@ -29,7 +30,7 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
                 "properties": {
                     "start_line": {
                         "type": "integer",
-                        "description": "The line number to start the edit on (inclusive)."
+                        "description": "The line number to start the edit on (inclusive). Line numbers start a 1."
                     },
                     "end_line": {
                         "type": "integer",
@@ -95,6 +96,9 @@ pub enum EditFileError {
         source: std::io::Error,
         path: PathBuf,
     },
+
+    #[snafu(display("Failed to update file cache after making edits {}", source))]
+    FileCache { source: FileCacheError },
 }
 
 pub type Result<T, E = EditFileError> = std::result::Result<T, E>;
@@ -183,6 +187,8 @@ impl FileEditor {
         // Sort edits in descending order by start_line
         edits.sort_by(|a, b| b.start_line.cmp(&a.start_line));
 
+        let mut applied_edits = vec![];
+
         // Apply each edit
         for edit in edits {
             // Validate line numbers
@@ -203,6 +209,7 @@ impl FileEditor {
                 for (i, line) in new_lines.into_iter().enumerate() {
                     lines.insert(insert_pos + i, line);
                 }
+                applied_edits.push(edit);
             } else {
                 // Replace or delete lines
                 if edit.end_line < edit.start_line || edit.end_line > total_lines {
@@ -226,6 +233,8 @@ impl FileEditor {
                         lines.insert(edit.start_line - 1 + i, line);
                     }
                 }
+
+                applied_edits.push(edit);
             }
         }
 
@@ -236,11 +245,23 @@ impl FileEditor {
         })?;
 
         // Update the cache with new content
-        file_reader
-            .read_and_cache_file(&canonical_path, None, None)
-            .map_err(|_| EditFileError::FileModified {
-                path: canonical_path.clone(),
-            })?;
+        // This isn't the most efficient method but it works
+        for edit in applied_edits {
+            let (start_line, end_line) = if edit.end_line == (edit.start_line - 1) {
+                (
+                    edit.start_line,
+                    edit.start_line + edit.new_content.lines().count(),
+                )
+            } else {
+                (
+                    edit.start_line,
+                    (edit.start_line + edit.new_content.lines().count()).max(edit.end_line),
+                )
+            };
+            file_reader
+                .read_and_cache_file(&canonical_path, Some(start_line), Some(end_line))
+                .context(FileCacheSnafu)?;
+        }
 
         Ok(format!(
             "Successfully edited file: {}",
@@ -475,7 +496,9 @@ mod tests {
         let editor = FileEditor::new();
         let mut file_reader = super::super::file_reader::FileReader::default();
         let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("this_file_definitely_does_not_exist_123456789.txt");
+        let file_path = temp_dir
+            .path()
+            .join("this_file_definitely_does_not_exist_123456789.txt");
 
         // Try to edit a file that doesn't exist
         let edits = vec![Edit {
@@ -484,11 +507,7 @@ mod tests {
             new_content: "new line".to_string(),
         }];
 
-        let result = editor.apply_edits(
-            file_path.to_str().unwrap(),
-            edits,
-            &mut file_reader,
-        );
+        let result = editor.apply_edits(file_path.to_str().unwrap(), edits, &mut file_reader);
 
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
@@ -501,11 +520,7 @@ mod tests {
             new_content: "new line".to_string(),
         }];
 
-        let result = editor.apply_edits(
-            file_path.to_str().unwrap(),
-            edits,
-            &mut file_reader,
-        );
+        let result = editor.apply_edits(file_path.to_str().unwrap(), edits, &mut file_reader);
 
         println!("{:?}", result);
 
