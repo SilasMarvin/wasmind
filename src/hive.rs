@@ -17,10 +17,10 @@ use crate::{
     scope::Scope,
 };
 
-#[cfg(feature = "gui")]
-use crate::actors::context::Context;
-#[cfg(feature = "audio")]
-use crate::actors::microphone::Microphone;
+// #[cfg(feature = "gui")]
+// use crate::actors::context::Context;
+// #[cfg(feature = "audio")]
+// use crate::actors::microphone::Microphone;
 
 pub const ROOT_AGENT_SCOPE: Scope =
     Scope::from_uuid(uuid::uuid!("29443a2e-78e1-4983-975a-d68b0e6c4cf0"));
@@ -66,10 +66,10 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
 
         // Create and run TUI and Context actors (these are shared across all agents)
         TuiActor::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
-        #[cfg(feature = "gui")]
-        Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
-        #[cfg(feature = "audio")]
-        Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+        // #[cfg(feature = "gui")]
+        // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+        // #[cfg(feature = "audio")]
+        // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
 
         // Create the Main Manager agent
         let main_manager = Agent::new(
@@ -144,11 +144,11 @@ pub fn start_headless_hive(
             }
         };
 
-        // Create and run Context and Microphone actors (no TUI in headless mode)
-        #[cfg(feature = "gui")]
-        Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
-        #[cfg(feature = "audio")]
-        Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+        // // Create and run Context and Microphone actors (no TUI in headless mode)
+        // #[cfg(feature = "gui")]
+        // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+        // #[cfg(feature = "audio")]
+        // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
 
         let main_manager = Agent::new(
             tx.clone(),

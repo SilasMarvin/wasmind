@@ -795,6 +795,9 @@ impl Actor for Assistant {
                                     }
                                 }
                             }
+                            // TODO: Maybe move this so it doesn't require the scope to be ours?
+                            // We would also need to just listen to every message from every scope
+                            // where the `agent_id` is ours.
                             InterAgentMessage::InterruptAndForceWaitForManager { tool_call_id } => {
                                 // If the last message is a tool call pop it off
                                 // Most APIs error if a ToolCall is not followed by a ToolResponse

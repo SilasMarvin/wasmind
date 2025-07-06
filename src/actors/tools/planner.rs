@@ -92,7 +92,7 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
         "action": {
             "type": "string",
             "enum": ["create", "update", "complete", "start", "skip"],
-            "description": "The action to perform on the task plan"
+            "description": "The action to perform on the task plan. If you already have an existing plan `create` will replace it."
         },
         "title": {
             "type": "string",

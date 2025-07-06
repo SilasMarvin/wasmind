@@ -696,7 +696,7 @@ mod tests {
 
         assert_eq!(slice.start_line, 5);
         assert_eq!(slice.end_line, 7);
-        assert!(slice.content.contains("5|line 5"));
+        assert_eq!(slice.content, "5|line 5\n6|line 6\n7|line 7");
     }
 
     #[test]
@@ -726,12 +726,8 @@ mod tests {
         };
 
         let numbered = content.get_numbered_content();
-        assert!(numbered.contains("1|line 1"));
-        assert!(numbered.contains("2|line 2"));
-        assert!(numbered.contains("[... 2 lines omitted ...]"));
-        assert!(numbered.contains("5|line 5"));
-        assert!(numbered.contains("6|line 6"));
-        assert!(numbered.contains("[... 4 lines omitted ...]"));
+        let expected = "1|line 1\n2|line 2\n[... 2 lines omitted ...]\n5|line 5\n6|line 6\n[... 4 lines omitted ...]";
+        assert_eq!(numbered, expected);
     }
 
     #[test]
@@ -751,10 +747,8 @@ mod tests {
         let result = content_from_middle.get_numbered_content();
 
         // Should have omitted lines at beginning and end
-        assert!(result.contains("[... 7 lines omitted ...]")); // Lines 1-7 omitted
-        assert!(result.contains("8|[2024-01-01 00:00:08] WARN: High memory usage detected"));
-        assert!(result.contains("12|[2024-01-01 00:00:12] WARN: Retrying connection"));
-        assert!(result.contains("[... 3 lines omitted ...]")); // Lines 13-15 omitted
+        let expected = "[... 7 lines omitted ...]\n8|[2024-01-01 00:00:08] WARN: High memory usage detected\n9|[2024-01-01 00:00:09] DEBUG: Running garbage collection\n10|[2024-01-01 00:00:10] INFO: Garbage collection completed\n11|[2024-01-01 00:00:11] ERROR: Connection timeout occurred\n12|[2024-01-01 00:00:12] WARN: Retrying connection\n[... 3 lines omitted ...]";
+        assert_eq!(result, expected);
 
         // Test case 2: Multiple gaps
         let slice1 = FileSlice {
@@ -781,14 +775,8 @@ mod tests {
         let result_gaps = content_with_gaps.get_numbered_content();
 
         // Verify all the omitted sections
-        assert!(result_gaps.contains("1|first line"));
-        assert!(result_gaps.contains("2|second line"));
-        assert!(result_gaps.contains("[... 2 lines omitted ...]")); // Lines 3-4
-        assert!(result_gaps.contains("5|fifth line"));
-        assert!(result_gaps.contains("6|sixth line"));
-        assert!(result_gaps.contains("[... 3 lines omitted ...]")); // Lines 7-9
-        assert!(result_gaps.contains("10|tenth line"));
-        assert!(result_gaps.contains("[... 2 lines omitted ...]")); // Lines 11-12
+        let expected_gaps = "1|first line\n2|second line\n[... 2 lines omitted ...]\n5|fifth line\n6|sixth line\n[... 3 lines omitted ...]\n10|tenth line\n[... 2 lines omitted ...]";
+        assert_eq!(result_gaps, expected_gaps);
 
         // Test case 3: No omitted lines (contiguous)
         let slice_start = FileSlice {
@@ -803,9 +791,8 @@ mod tests {
         };
 
         let result_full = content_full.get_numbered_content();
-        assert!(!result_full.contains("omitted")); // No omitted lines
-        assert!(result_full.contains("1|line one"));
-        assert!(result_full.contains("3|line three"));
+        let expected_full = "1|line one\n2|line two\n3|line three";
+        assert_eq!(result_full, expected_full);
     }
 
     #[test]
@@ -864,8 +851,7 @@ mod tests {
             assert_eq!(slices.len(), 1);
             assert_eq!(slices[0].start_line, 1);
             assert_eq!(slices[0].end_line, 5);
-            assert!(slices[0].content.contains("1|line 1"));
-            assert!(slices[0].content.contains("5|line 5"));
+            assert_eq!(slices[0].content, "1|line 1\n2|line 2\n3|line 3\n4|line 4\n5|line 5");
         } else {
             panic!("Expected partial content");
         }
@@ -920,11 +906,8 @@ mod tests {
         let cached = file_reader.get_cached_content(&file_path);
         assert!(cached.is_some());
         let cached_content = cached.unwrap();
-        assert!(cached_content.contains("2|line 2"));
-        assert!(cached_content.contains("3|line 3"));
-        assert!(cached_content.contains("4|line 4"));
-        assert!(!cached_content.contains("1|line 1"));
-        assert!(!cached_content.contains("5|line 5"));
+        let expected = "[... 1 lines omitted ...]\n2|line 2\n3|line 3\n4|line 4\n[... 1 lines omitted ...]";
+        assert_eq!(cached_content, expected);
     }
 
     #[test]
@@ -949,9 +932,8 @@ mod tests {
 
         // Check that slices were merged
         let cached = file_reader.get_cached_content(&file_path).unwrap();
-        assert!(cached.contains("1|line 1"));
-        assert!(cached.contains("6|line 6"));
-        assert!(cached.contains("[... 4 lines omitted ...]"));
+        let expected_merged = "1|line 1\n2|line 2\n3|line 3\n4|line 4\n5|line 5\n6|line 6\n[... 4 lines omitted ...]";
+        assert_eq!(cached, expected_merged);
     }
 
     #[test]

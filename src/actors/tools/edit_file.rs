@@ -247,20 +247,16 @@ impl FileEditor {
         // Update the cache with new content
         // This isn't the most efficient method but it works
         for edit in applied_edits {
-            let (start_line, end_line) = if edit.end_line == (edit.start_line - 1) {
-                (
+            let lines_count = edit.new_content.lines().count();
+            if lines_count > 0 {
+                let (start_line, end_line) = (
                     edit.start_line,
-                    edit.start_line + edit.new_content.lines().count(),
-                )
-            } else {
-                (
-                    edit.start_line,
-                    (edit.start_line + edit.new_content.lines().count()).max(edit.end_line),
-                )
-            };
-            file_reader
-                .read_and_cache_file(&canonical_path, Some(start_line), Some(end_line))
-                .context(FileCacheSnafu)?;
+                    edit.start_line + lines_count - 1
+                );
+                file_reader
+                    .read_and_cache_file(&canonical_path, Some(start_line), Some(end_line))
+                    .context(FileCacheSnafu)?;
+            }
         }
 
         Ok(format!(

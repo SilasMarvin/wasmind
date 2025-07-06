@@ -11,8 +11,6 @@ pub mod system_state;
 pub mod template;
 pub mod utils;
 
-use actors::Message;
-use hive::ROOT_AGENT_SCOPE;
 use snafu::{Location, Snafu};
 use std::sync::{LazyLock, OnceLock};
 use tokio::runtime;
@@ -107,14 +105,15 @@ pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
 
 pub fn run_main_program() -> SResult<()> {
     use config::{Config, ParsedConfig};
-    use key_bindings::KeyBindingManager;
-    #[cfg(feature = "gui")]
-    use key_bindings::RdevToCrosstermConverter;
-    #[cfg(feature = "gui")]
-    use rdev::{Event, EventType, listen};
+    // use key_bindings::KeyBindingManager;
     use snafu::ResultExt;
     use tokio::runtime;
-    use tracing::{error, info};
+    use tracing::info;
+
+    // #[cfg(feature = "gui")]
+    // use key_bindings::RdevToCrosstermConverter;
+    // #[cfg(feature = "gui")]
+    // use rdev::{Event, EventType, listen};
 
     IS_HEADLESS.set(true).unwrap();
 
@@ -130,56 +129,39 @@ pub fn run_main_program() -> SResult<()> {
     // Start the HIVE multi-agent system
     let hive_handle = hive::start_hive(&runtime, parsed_config.clone());
 
-    #[cfg(feature = "gui")]
-    {
-        let mut key_binding_manager = KeyBindingManager::from(&parsed_config.keys);
-        let mut rdev_converter = RdevToCrosstermConverter::new();
+    // let mut key_binding_manager = KeyBindingManager::from(&parsed_config.keys);
+    // let mut rdev_converter = RdevToCrosstermConverter::new();
 
-        // Clone the message sender for the callback
-        let message_tx = hive_handle.message_tx.clone();
+    // let callback = move |event: Event| match event.event_type {
+    //     EventType::KeyPress(key) => {
+    //         if let Some(key_event) = rdev_converter.handle_key_press(key) {
+    //             let actions = key_binding_manager.handle_event(key_event);
+    //             for action in actions {
+    //                 if let Err(e) = message_tx.send(actors::ActorMessage {
+    //                     scope: ROOT_AGENT_SCOPE,
+    //                     message: Message::Action(action),
+    //                 }) {
+    //                     error!("Error sending action to actors: {:?}", e);
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     EventType::KeyRelease(key) => {
+    //         rdev_converter.handle_key_release(key);
+    //     }
+    //     _ => (),
+    // };
+    //
+    // info!("Starting global key listener");
+    //
+    // // This will block and has to be in the main thread
+    // if let Err(error) = listen(callback) {
+    //     error!("Error listening for global key events: {:?}", error)
+    // }
 
-        // Spawn a thread to monitor for exit
-        std::thread::spawn(move || {
-            // Wait for exit signal from HIVE system
-            let _ = hive_handle.exit_rx.recv();
-            info!("Received exit signal from HIVE system, exiting...");
-            std::process::exit(0);
-        });
-
-        let callback = move |event: Event| match event.event_type {
-            EventType::KeyPress(key) => {
-                if let Some(key_event) = rdev_converter.handle_key_press(key) {
-                    let actions = key_binding_manager.handle_event(key_event);
-                    for action in actions {
-                        if let Err(e) = message_tx.send(actors::ActorMessage {
-                            scope: ROOT_AGENT_SCOPE,
-                            message: Message::Action(action),
-                        }) {
-                            error!("Error sending action to actors: {:?}", e);
-                        }
-                    }
-                }
-            }
-            EventType::KeyRelease(key) => {
-                rdev_converter.handle_key_release(key);
-            }
-            _ => (),
-        };
-
-        info!("Starting global key listener");
-
-        // This will block and has to be in the main thread
-        if let Err(error) = listen(callback) {
-            error!("Error listening for global key events: {:?}", error)
-        }
-    }
-
-    #[cfg(not(feature = "gui"))]
-    {
-        // Wait for exit signal from HIVE system
-        let _ = hive_handle.exit_rx.recv();
-        info!("Received exit signal from HIVE system, exiting...");
-    }
+    // Wait for exit signal from HIVE system
+    let _ = hive_handle.exit_rx.recv();
+    info!("Received exit signal from HIVE system, exiting...");
 
     Ok(())
 }
