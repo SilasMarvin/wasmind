@@ -52,7 +52,7 @@ async fn test_send_message_tool() {
         manager_scope.clone(),
         [SendMessage::ACTOR_ID],
         None,
-        None,
+        "Filler".to_string(),
         vec![],
         None,
     );

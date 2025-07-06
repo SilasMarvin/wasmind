@@ -204,6 +204,11 @@ pub enum Message {
     UserContext(UserContext),
 
     // Assistant messages
+    AssistantSpawned {
+        scope: Scope,
+        role: String,
+        task: Option<String>,
+    },
     AssistantRequest(AssistantRequest),
     AssistantToolCall(ToolCall),
     AssistantResponse {

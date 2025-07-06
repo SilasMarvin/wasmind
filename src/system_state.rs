@@ -217,7 +217,6 @@ impl SystemState {
         }
     }
 
-
     /// Update the current task plan
     pub fn update_plan(&mut self, plan: TaskPlan) {
         self.current_plan = Some(plan);
@@ -227,7 +226,7 @@ impl SystemState {
     pub fn clear_plan(&mut self) {
         if self.current_plan.is_some() {
             self.current_plan = None;
-            }
+        }
     }
 
     /// Get the current task plan
@@ -244,13 +243,12 @@ impl SystemState {
     pub fn update_agent_status(&mut self, agent_id: &Scope, status: AgentStatus) {
         if let Some(agent_info) = self.agents.get_mut(agent_id) {
             agent_info.status = status.into();
-            }
+        }
     }
 
     /// Remove an agent (when task is complete)
     pub fn remove_agent(&mut self, agent_id: &Scope) {
-        if self.agents.remove(agent_id).is_some() {
-            }
+        if self.agents.remove(agent_id).is_some() {}
     }
 
     /// Get all agents
@@ -262,7 +260,6 @@ impl SystemState {
     pub fn agent_count(&self) -> usize {
         self.agents.len()
     }
-
 
     /// Check if a file is currently loaded
     pub fn has_file(&self, path: &PathBuf) -> bool {
@@ -457,51 +454,6 @@ impl SystemState {
         self.max_file_lines = max_lines;
     }
 
-
-    /// Render the system prompt with the given template and tools
-    pub fn render_system_prompt(
-        &self,
-        prompt_template: &str,
-        tools: &[ToolInfo],
-        whitelisted_commands: Vec<String>,
-        agent_id: Scope,
-    ) -> Result<String> {
-        self.render_system_prompt_with_task(
-            prompt_template,
-            tools,
-            whitelisted_commands,
-            None,
-            agent_id,
-        )
-    }
-
-    /// Render the system prompt with the given template, tools, and task description
-    pub fn render_system_prompt_with_task(
-        &self,
-        prompt_template: &str,
-        tools: &[ToolInfo],
-        whitelisted_commands: Vec<String>,
-        task_description: Option<String>,
-        agent_id: Scope,
-    ) -> Result<String> {
-        // Check if it's a template
-        if !template::is_template(prompt_template) {
-            return Ok(prompt_template.to_string());
-        }
-
-        // Build template context with task
-        let context = TemplateContext::with_task(
-            tools.to_vec(),
-            whitelisted_commands,
-            self,
-            task_description,
-            agent_id,
-        );
-
-        // Render the template
-        template::render_template(prompt_template, &context).context(TemplateRenderFailedSnafu)
-    }
-
     /// Render the system prompt with the given template, tools, task description, and role
     pub fn render_system_prompt_with_task_and_role(
         &self,
@@ -509,7 +461,7 @@ impl SystemState {
         tools: &[ToolInfo],
         whitelisted_commands: Vec<String>,
         task_description: Option<String>,
-        role: Option<String>,
+        role: String,
         agent_id: Scope,
     ) -> Result<String> {
         // Check if it's a template
@@ -518,7 +470,7 @@ impl SystemState {
         }
 
         // Build template context with task and role
-        let context = TemplateContext::with_task_and_role(
+        let context = TemplateContext::new(
             tools.to_vec(),
             whitelisted_commands,
             self,
@@ -537,9 +489,9 @@ mod tests {
     use crate::actors::tools::planner::{Task, TaskStatus};
 
     use super::*;
-    use std::time::SystemTime;
     use std::fs;
     use std::sync::{Arc, Mutex};
+    use std::time::SystemTime;
     use tempfile::TempDir;
 
     #[test]
@@ -576,9 +528,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().join("test.txt");
         let content = "test content";
-        
+
         fs::write(&path, content).unwrap();
-        
+
         let file_reader = Arc::new(Mutex::new(FileReader::default()));
         let state = SystemState::with_file_reader(file_reader.clone());
 
@@ -587,7 +539,11 @@ mod tests {
         assert!(!state.has_file(&path));
 
         // Add file
-        file_reader.lock().unwrap().read_and_cache_file(&path, None, None).unwrap();
+        file_reader
+            .lock()
+            .unwrap()
+            .read_and_cache_file(&path, None, None)
+            .unwrap();
         assert_eq!(state.file_count(), 1);
         assert!(state.has_file(&path));
 
@@ -617,18 +573,21 @@ mod tests {
         assert!(state.get_plan().is_none());
     }
 
-
     #[test]
     fn test_render_files_section_with_files() {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().join("test.txt");
         let content = "line 1\nline 2";
-        
+
         fs::write(&path, content).unwrap();
-        
+
         let file_reader = Arc::new(Mutex::new(FileReader::default()));
-        file_reader.lock().unwrap().read_and_cache_file(&path, None, None).unwrap();
-        
+        file_reader
+            .lock()
+            .unwrap()
+            .read_and_cache_file(&path, None, None)
+            .unwrap();
+
         let state = SystemState::with_file_reader(file_reader);
         let section = state.render_files_section();
 
@@ -637,7 +596,6 @@ mod tests {
         assert!(section.contains("line 1"));
         assert!(section.contains("(2 lines total)"));
     }
-
 
     #[test]
     fn test_render_plan_section_with_plan() {
@@ -664,7 +622,6 @@ mod tests {
         assert!(section.contains("2. [ ] Task 2"));
     }
 
-
     #[test]
     fn test_template_context_with_file_list() {
         let temp_dir = TempDir::new().unwrap();
@@ -677,8 +634,16 @@ mod tests {
         fs::write(&path2, content2).unwrap();
 
         let file_reader = Arc::new(Mutex::new(FileReader::default()));
-        file_reader.lock().unwrap().read_and_cache_file(&path1, None, None).unwrap();
-        file_reader.lock().unwrap().read_and_cache_file(&path2, None, None).unwrap();
+        file_reader
+            .lock()
+            .unwrap()
+            .read_and_cache_file(&path1, None, None)
+            .unwrap();
+        file_reader
+            .lock()
+            .unwrap()
+            .read_and_cache_file(&path2, None, None)
+            .unwrap();
 
         let state = SystemState::with_file_reader(file_reader);
         let context = state.to_template_context();
@@ -693,16 +658,26 @@ mod tests {
         // Files should be sorted by path - check they contain the expected filenames
         let first_path = files_list[0]["path"].as_str().unwrap();
         let second_path = files_list[1]["path"].as_str().unwrap();
-        
+
         // lib.rs comes before main.rs alphabetically
         assert!(first_path.contains("lib.rs"));
         assert!(second_path.contains("main.rs"));
-        
+
         // Check content (note: FileReader adds line numbers)
-        assert!(files_list[0]["content"].as_str().unwrap().contains("pub fn hello() {}"));
+        assert!(
+            files_list[0]["content"]
+                .as_str()
+                .unwrap()
+                .contains("pub fn hello() {}")
+        );
         assert_eq!(files_list[0]["lines"], 1);
 
-        assert!(files_list[1]["content"].as_str().unwrap().contains("fn main() {"));
+        assert!(
+            files_list[1]["content"]
+                .as_str()
+                .unwrap()
+                .contains("fn main() {")
+        );
         assert_eq!(files_list[1]["lines"], 3);
     }
 
@@ -807,5 +782,4 @@ mod tests {
         assert_eq!(in_progress_agent["task"], "Test feature X");
         assert_eq!(in_progress_agent["status_icon"], "[~]");
     }
-
 }

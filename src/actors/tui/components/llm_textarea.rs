@@ -4,28 +4,15 @@ use tuirealm::{
     props::{Alignment, Borders, Color, Style, TextModifiers},
     ratatui::{
         layout::Rect,
-        widgets::{Block, Paragraph},
+        widgets::{Block, Paragraph, Wrap},
     },
 };
 
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 
-pub fn get_block<'a>(props: Borders, title: (String, Alignment), focus: bool) -> Block<'a> {
-    Block::default()
-        .borders(props.sides)
-        .border_style(if focus {
-            props.style()
-        } else {
-            Style::default().fg(Color::Reset).bg(Color::Reset)
-        })
-        .border_type(props.modifiers)
-        .title(title.0)
-        .title_alignment(title.1)
-}
-
 #[derive(MockComponent)]
 pub struct LLMTextAreaComponent {
-    component: LLMTextArea,
+    pub component: LLMTextArea,
 }
 
 impl LLMTextAreaComponent {
@@ -37,6 +24,11 @@ impl LLMTextAreaComponent {
             },
         }
     }
+
+    pub fn get_height(&self, area: Rect) -> usize {
+        let paragraph = self.component.build_paragraph();
+        paragraph.line_count(area.width)
+    }
 }
 
 struct LLMTextArea {
@@ -44,58 +36,28 @@ struct LLMTextArea {
     state: State,
 }
 
+impl LLMTextArea {
+    fn build_paragraph(&self) -> Paragraph {
+        let text = self.state().unwrap_one().unwrap_string();
+
+        let focus = self
+            .props
+            .get_or(Attribute::Focus, AttrValue::Flag(false))
+            .unwrap_flag();
+
+        Paragraph::new(text)
+            .block(Block::bordered())
+            .style(Style::new())
+            .alignment(Alignment::Left)
+            .wrap(Wrap { trim: true })
+    }
+}
+
 impl MockComponent for LLMTextArea {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         // Check if visible
         if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
-            // Get properties
-            let text = self.state.clone().unwrap_one().unwrap_string();
-            let alignment = self
-                .props
-                .get_or(Attribute::TextAlign, AttrValue::Alignment(Alignment::Left))
-                .unwrap_alignment();
-            let foreground = self
-                .props
-                .get_or(Attribute::Foreground, AttrValue::Color(Color::Reset))
-                .unwrap_color();
-            let background = self
-                .props
-                .get_or(Attribute::Background, AttrValue::Color(Color::Reset))
-                .unwrap_color();
-            let modifiers = self
-                .props
-                .get_or(
-                    Attribute::TextProps,
-                    AttrValue::TextModifiers(TextModifiers::empty()),
-                )
-                .unwrap_text_modifiers();
-            let title = self
-                .props
-                .get_or(
-                    Attribute::Title,
-                    AttrValue::Title((String::default(), Alignment::Center)),
-                )
-                .unwrap_title();
-            let borders = self
-                .props
-                .get_or(Attribute::Borders, AttrValue::Borders(Borders::default()))
-                .unwrap_borders();
-            let focus = self
-                .props
-                .get_or(Attribute::Focus, AttrValue::Flag(false))
-                .unwrap_flag();
-            frame.render_widget(
-                Paragraph::new(text)
-                    .block(get_block(borders, title, focus))
-                    .style(
-                        Style::default()
-                            .fg(foreground)
-                            .bg(background)
-                            .add_modifier(modifiers),
-                    )
-                    .alignment(alignment),
-                area,
-            );
+            frame.render_widget(self.build_paragraph(), area);
         }
     }
 

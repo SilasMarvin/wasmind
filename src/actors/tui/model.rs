@@ -7,6 +7,8 @@ use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBrid
 use tuirealm::{Application, EventListenerCfg, ListenerError, Update};
 
 use crate::actors::ActorMessage;
+use crate::actors::tui::components::chat::{CHAT_SCOPE, ChatAreaComponent};
+use crate::actors::tui::components::graph::GRAPH_SCOPE;
 use crate::actors::tui::components::llm_textarea::LLMTextAreaComponent;
 use crate::hive::ROOT_AGENT_SCOPE;
 use crate::scope::Scope;
@@ -70,34 +72,20 @@ where
             self.terminal
                 .draw(|f| {
                     let chunks = Layout::default()
-                        .direction(Direction::Vertical)
+                        .direction(Direction::Horizontal)
                         .margin(1)
                         .constraints(
-                            [
-                                Constraint::Length(3), // Clock
-                                Constraint::Length(3), // Letter Counter
-                                Constraint::Length(3), // Digit Counter
-                                Constraint::Length(1), // Label
-                            ]
-                            .as_ref(),
+                            [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
                         )
                         .split(f.area());
-                    self.app.view(&ROOT_AGENT_SCOPE, f, chunks[0]);
-                    // self.app.view(&Id::Clock, f, chunks[0]);
-                    // self.app.view(&Id::LetterCounter, f, chunks[1]);
-                    // self.app.view(&Id::DigitCounter, f, chunks[2]);
-                    // self.app.view(&Id::Label, f, chunks[3]);
+                    // self.app.view(&GRAPH_SCOPE, f, chunks[0]);
+                    self.app.view(&CHAT_SCOPE, f, chunks[1]);
                 })
                 .is_ok()
         );
     }
 
     pub fn init_app(rx: Receiver<ActorMessage>) -> Application<Scope, TuiMessage, ActorMessage> {
-        // Setup application
-        // NOTE: NoUserEvent is a shorthand to tell tui-realm we're not going to use any custom user event
-        // NOTE: the event listener is configured to use the default crossterm input listener and to raise a Tick event each second
-        // which we will use to update the clock
-
         let mut app: Application<Scope, TuiMessage, ActorMessage> = Application::init(
             EventListenerCfg::default()
                 .crossterm_input_listener(Duration::from_millis(20), 3)
@@ -112,13 +100,13 @@ where
 
         assert!(
             app.mount(
-                ROOT_AGENT_SCOPE.clone(),
-                Box::new(LLMTextAreaComponent::new()),
+                CHAT_SCOPE.clone(),
+                Box::new(ChatAreaComponent::new()),
                 Vec::default()
             )
             .is_ok()
         );
-        assert!(app.active(&ROOT_AGENT_SCOPE).is_ok());
+        assert!(app.active(&CHAT_SCOPE).is_ok());
 
         app
     }

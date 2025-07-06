@@ -194,16 +194,20 @@ line 10: final line of data
             reader.read_and_cache_file(&main_path, None, None).ok();
             reader.read_and_cache_file(&readme_path, None, None).ok();
             reader.read_and_cache_file(&config_path, None, None).ok();
-            
+
             // Read only the first 3 lines of the large file to demonstrate partial reading from start
-            reader.read_and_cache_file(&large_file_path, Some(1), Some(3)).ok();
-            
+            reader
+                .read_and_cache_file(&large_file_path, Some(1), Some(3))
+                .ok();
+
             // Read lines 8-12 of the log file to demonstrate reading from middle
-            reader.read_and_cache_file(&log_file_path, Some(8), Some(12)).ok();
+            reader
+                .read_and_cache_file(&log_file_path, Some(8), Some(12))
+                .ok();
         }
 
         // Create SystemState with FileReader
-        let mut state = SystemState::with_file_reader(file_reader);
+        let state = SystemState::with_file_reader(file_reader);
 
         // Keep temp_dir alive by storing it (this is a bit of a hack for preview)
         std::mem::forget(temp_dir);
@@ -406,7 +410,13 @@ line 10: final line of data
     }
 
     /// Render system prompt for a given state
-    fn render_prompt(&self, state: &SystemState, agent_type: Option<&str>) -> Result<String> {
+    fn render_prompt(
+        &self,
+        state: &SystemState,
+        agent_type: Option<&str>,
+        role: &str,
+        task: &str,
+    ) -> Result<String> {
         let tools = Self::create_mock_tools();
 
         // Get the appropriate system prompt based on agent type
@@ -419,10 +429,12 @@ line 10: final line of data
 
         if is_template(system_prompt) {
             let rendered = state
-                .render_system_prompt(
+                .render_system_prompt_with_task_and_role(
                     system_prompt,
                     &tools,
                     self.config.whitelisted_commands.clone(),
+                    Some(task.to_string()),
+                    role.to_string(),
                     crate::scope::Scope::new(), // Preview scope - dummy ID
                 )
                 .context(RenderFailedSnafu)?;
@@ -448,6 +460,13 @@ line 10: final line of data
         println!("{}", "=".repeat(80));
         println!("{}", description);
         println!();
+
+        // Show agent role and task
+        let role = "Filler Role";
+        let task = "Some filler task you should do very well";
+        println!("AGENT INFO:");
+        println!("Role: {role}");
+        println!("Task: {task}");
 
         // Show state summary
         println!("STATE SUMMARY:");
@@ -485,7 +504,7 @@ line 10: final line of data
         println!("RENDERED SYSTEM PROMPT ({}):", agent_label.to_uppercase());
         println!("{}", "▼".repeat(80));
 
-        let rendered = self.render_prompt(state, agent_type)?;
+        let rendered = self.render_prompt(state, agent_type, role, task)?;
         println!("{}", rendered);
 
         println!("{}", "▲".repeat(80));

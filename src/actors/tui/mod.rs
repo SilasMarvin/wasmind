@@ -6,6 +6,7 @@ use tuirealm::{PollStrategy, Update};
 
 mod components;
 mod model;
+mod utils;
 
 use crate::{config::ParsedConfig, scope::Scope};
 

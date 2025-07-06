@@ -25,7 +25,7 @@ pub struct TemplateContext {
     /// Agent's unique identifier (scope)
     pub id: String,
     /// Agent's role (e.g., "Software Engineer", "QA Tester", "Project Lead Manager")
-    pub role: Option<String>,
+    pub role: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -35,68 +35,13 @@ pub struct ToolInfo {
 }
 
 impl TemplateContext {
-    /// Create a new template context with system state
+    /// Create a new template context with system state, task description, and role
     pub fn new(
         tools: Vec<ToolInfo>,
         whitelisted_commands: Vec<String>,
         system_state: &SystemState,
-        agent_id: Scope,
-    ) -> Self {
-        let cwd = std::env::current_dir()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
-
-        Self {
-            tools,
-            current_datetime: chrono::Utc::now()
-                .format("%Y-%m-%d %H:%M:%S UTC")
-                .to_string(),
-            os: std::env::consts::OS.to_string(),
-            arch: std::env::consts::ARCH.to_string(),
-            cwd,
-            whitelisted_commands,
-            system_state: system_state.to_template_context(),
-            task: None,
-            id: agent_id.to_string(),
-            role: None,
-        }
-    }
-
-    /// Create a new template context with system state and task description
-    pub fn with_task(
-        tools: Vec<ToolInfo>,  
-        whitelisted_commands: Vec<String>,
-        system_state: &SystemState,
         task_description: Option<String>,
-        agent_id: Scope,
-    ) -> Self {
-        let cwd = std::env::current_dir()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|_| "unknown".to_string());
-
-        Self {
-            tools,
-            current_datetime: chrono::Utc::now()
-                .format("%Y-%m-%d %H:%M:%S UTC")
-                .to_string(),
-            os: std::env::consts::OS.to_string(),
-            arch: std::env::consts::ARCH.to_string(),
-            cwd,
-            whitelisted_commands,
-            system_state: system_state.to_template_context(),
-            task: task_description,
-            id: agent_id.to_string(),
-            role: None,
-        }
-    }
-
-    /// Create a new template context with system state, task description, and role
-    pub fn with_task_and_role(
-        tools: Vec<ToolInfo>,
-        whitelisted_commands: Vec<String>,
-        system_state: &SystemState,
-        task_description: Option<String>,
-        role: Option<String>,
+        role: String,
         agent_id: Scope,
     ) -> Self {
         let cwd = std::env::current_dir()
@@ -181,8 +126,6 @@ mod tests {
         assert!(!is_template("Hello World!"));
     }
 
-
-
     #[test]
     fn test_system_prompt_template() {
         use crate::system_state::SystemState;
@@ -201,6 +144,8 @@ mod tests {
             ],
             vec!["ls".to_string(), "cat".to_string()],
             &system_state,
+            None,
+            "Filler Role".to_string(),
             Scope::new(),
         );
 
@@ -238,7 +183,14 @@ Working directory: {{ cwd }}"#;
         use crate::system_state::SystemState;
 
         let system_state = SystemState::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            None,
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         let template = "Current directory: {{ cwd }}";
         let result = render_template(template, &context).unwrap();
@@ -253,28 +205,39 @@ Working directory: {{ cwd }}"#;
     fn test_xml_template_with_files_list() {
         use crate::actors::tools::file_reader::FileReader;
         use crate::system_state::SystemState;
-        use std::sync::Arc;
         use std::fs;
+        use std::sync::Arc;
         use tempfile::TempDir;
 
         // Create temporary files
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("config.toml");
         let data_path = temp_dir.path().join("data.json");
-        
+
         fs::write(&config_path, "[settings]\nvalue = 42").unwrap();
         fs::write(&data_path, r#"{"key": "value"}"#).unwrap();
 
         // Create FileReader and load files
         let mut file_reader = FileReader::default();
-        file_reader.read_and_cache_file(&config_path, None, None).unwrap();
-        file_reader.read_and_cache_file(&data_path, None, None).unwrap();
+        file_reader
+            .read_and_cache_file(&config_path, None, None)
+            .unwrap();
+        file_reader
+            .read_and_cache_file(&data_path, None, None)
+            .unwrap();
 
         // Create SystemState with FileReader
         let file_reader_arc = Arc::new(std::sync::Mutex::new(file_reader));
         let system_state = SystemState::with_file_reader(file_reader_arc);
 
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            None,
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         let template = r#"Files:
 {% for file in files.list -%}
@@ -301,7 +264,14 @@ Working directory: {{ cwd }}"#;
         use crate::system_state::SystemState;
 
         let system_state = SystemState::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            None,
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         // Test invalid template syntax
         let invalid_template = "Hello {{ name"; // Missing closing braces
@@ -333,7 +303,14 @@ Working directory: {{ cwd }}"#;
         use crate::system_state::SystemState;
 
         let system_state = SystemState::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            None,
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         // Test template that gracefully handles missing data
         let template = r#"System State Report:
@@ -405,7 +382,14 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
             },
         );
 
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            None,
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         let template = r#"Active Agents:
 {% for agent in agents.list -%}
@@ -424,7 +408,14 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
 
         let system_state = SystemState::new();
         let commands = vec!["ls".to_string(), "git".to_string(), "cargo".to_string()];
-        let context = TemplateContext::new(vec![], commands, &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            commands,
+            &system_state,
+            None,
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         // Test template with whitelisted_commands
         let template = r#"Allowed commands:
@@ -449,7 +440,14 @@ No commands whitelisted
         use crate::system_state::SystemState;
 
         let system_state = SystemState::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            None,
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         let template = r#"{% if whitelisted_commands and whitelisted_commands|length > 0 -%}
 Commands: {{ whitelisted_commands|join(", ") }}
@@ -482,7 +480,14 @@ No whitelisted commands available
             ],
         });
 
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            None,
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         let template = r#"{% if plan.exists -%}
 Current Plan: {{ plan.data.title }}
@@ -505,7 +510,14 @@ Tasks:
 
         let system_state = SystemState::new();
         let test_scope = Scope::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state, test_scope);
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            None,
+            "Filler Role".to_string(),
+            test_scope,
+        );
 
         // Test template that uses the agent id
         let template = r#"Agent ID: {{ id }}
@@ -528,11 +540,12 @@ Agent {{ id }} is ready to assist."#;
         let test_scope = Scope::new();
         let task_description = Some("Implement feature X".to_string());
 
-        let context = TemplateContext::with_task(
+        let context = TemplateContext::new(
             vec![],
             vec![],
             &system_state,
             task_description.clone(),
+            "Filler Role".to_string(),
             test_scope,
         );
 
@@ -580,7 +593,7 @@ Your assigned task: {{ task }}
 
 Remember that you are Agent {{ id }}. Always include your ID when communicating important updates."#;
 
-        let context = TemplateContext::with_task(
+        let context = TemplateContext::new(
             vec![ToolInfo {
                 name: "test_tool".to_string(),
                 description: "A test tool".to_string(),
@@ -588,6 +601,7 @@ Remember that you are Agent {{ id }}. Always include your ID when communicating 
             vec![],
             &system_state,
             Some("Test the new feature".to_string()),
+            "Filler Role".to_string(),
             test_scope,
         );
 
@@ -621,11 +635,7 @@ Remember that you are Agent {{ id }}. Always include your ID when communicating 
         // Test template that uses role
         let template = r#"You are a {{ role }} agent.
 
-{% if role -%}
 Your role: {{ role }}
-{% else -%}
-No specific role assigned.
-{% endif %}
 
 {% if task -%}
 Your task: {{ task }}
@@ -634,24 +644,8 @@ Your task: {{ task }}
 Agent ID: {{ id }}
 Tools available: {{ tools|length }}"#;
 
-        // Test without role
-        let context = TemplateContext::with_task(
-            vec![ToolInfo {
-                name: "test_tool".to_string(),
-                description: "A test tool".to_string(),
-            }],
-            vec![],
-            &system_state,
-            Some("Build a web app".to_string()),
-            test_scope,
-        );
-
-        let result = render_template(template, &context).unwrap();
-        assert!(result.contains("No specific role assigned"));
-        assert!(result.contains("Your task: Build a web app"));
-
         // Test with role
-        let context = TemplateContext::with_task_and_role(
+        let context = TemplateContext::new(
             vec![ToolInfo {
                 name: "test_tool".to_string(),
                 description: "A test tool".to_string(),
@@ -659,7 +653,7 @@ Tools available: {{ tools|length }}"#;
             vec![],
             &system_state,
             Some("Build a web app".to_string()),
-            Some("Software Engineer".to_string()),
+            "Software Engineer".to_string(),
             test_scope,
         );
 
@@ -676,29 +670,44 @@ Tools available: {{ tools|length }}"#;
     fn test_template_with_file_reader_integration() {
         use crate::actors::tools::file_reader::FileReader;
         use crate::system_state::SystemState;
-        use std::sync::Arc;
         use std::fs;
+        use std::sync::Arc;
         use tempfile::TempDir;
 
         // Create temporary files
         let temp_dir = TempDir::new().unwrap();
         let file1_path = temp_dir.path().join("config.rs");
         let file2_path = temp_dir.path().join("main.rs");
-        
+
         fs::write(&file1_path, "pub const VERSION: &str = \"1.0.0\";").unwrap();
-        fs::write(&file2_path, "fn main() {\n    println!(\"Hello, world!\");\n}").unwrap();
+        fs::write(
+            &file2_path,
+            "fn main() {\n    println!(\"Hello, world!\");\n}",
+        )
+        .unwrap();
 
         // Create FileReader and load files
         let mut file_reader = FileReader::default();
-        file_reader.read_and_cache_file(&file1_path, None, None).unwrap();
-        file_reader.read_and_cache_file(&file2_path, Some(1), Some(2)).unwrap();
+        file_reader
+            .read_and_cache_file(&file1_path, None, None)
+            .unwrap();
+        file_reader
+            .read_and_cache_file(&file2_path, Some(1), Some(2))
+            .unwrap();
 
         // Create SystemState with FileReader
         let file_reader_arc = Arc::new(std::sync::Mutex::new(file_reader));
         let system_state = SystemState::with_file_reader(file_reader_arc);
 
         // Create template context
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            Some("Build a web app".to_string()),
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         // Test file count template
         let template = "Files loaded: {{ files.count }}";
@@ -731,36 +740,46 @@ Tools available: {{ tools|length }}"#;
     fn test_file_reader_integration_with_partial_content() {
         use crate::actors::tools::file_reader::FileReader;
         use crate::system_state::SystemState;
-        use std::sync::Arc;
         use std::fs;
+        use std::sync::Arc;
         use tempfile::TempDir;
 
         // Create temporary file with multiple lines
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("large_file.rs");
-        let content = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10";
+        let content =
+            "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10";
         fs::write(&file_path, content).unwrap();
 
         // Create FileReader and load partial content
         let mut file_reader = FileReader::default();
         // Read only lines 3-6
-        file_reader.read_and_cache_file(&file_path, Some(3), Some(6)).unwrap();
+        file_reader
+            .read_and_cache_file(&file_path, Some(3), Some(6))
+            .unwrap();
 
         // Create SystemState with FileReader
         let file_reader_arc = Arc::new(std::sync::Mutex::new(file_reader));
         let system_state = SystemState::with_file_reader(file_reader_arc);
 
         // Create template context
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            Some("Build a web app".to_string()),
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         // Test that partial content is rendered with omitted lines indicators
         let template = r#"{% for file in files.list -%}
 {{ file.content }}
 {% endfor %}"#;
         let result = render_template(template, &context).unwrap();
-        
+
         // Debug output removed for cleaner test output
-        
+
         // Should contain the omitted lines indicators and the actual content
         assert!(result.contains("[... 2 lines omitted ...]")); // Lines 1-2 omitted
         assert!(result.contains("3|line 3"));
@@ -810,6 +829,8 @@ Whitelisted commands: {{ whitelisted_commands|join(', ') }}
             ],
             vec!["ls".to_string(), "cat".to_string(), "git".to_string()],
             &system_state,
+            Some("Build a web app".to_string()),
+            "Filler Role".to_string(),
             Scope::new(),
         );
 
@@ -832,7 +853,14 @@ Whitelisted commands: {{ whitelisted_commands|join(', ') }}
 
         let plain_prompt = "You are a helpful assistant.";
         let system_state = SystemState::new();
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+        let context = TemplateContext::new(
+            vec![],
+            vec![],
+            &system_state,
+            Some("Build a web app".to_string()),
+            "Filler Role".to_string(),
+            Scope::new(),
+        );
 
         // Should return the same string if it's not a template
         assert!(!is_template(plain_prompt));
@@ -841,5 +869,4 @@ Whitelisted commands: {{ whitelisted_commands|join(', ') }}
         let result = render_template(plain_prompt, &context).unwrap();
         assert_eq!(result, plain_prompt);
     }
-
 }

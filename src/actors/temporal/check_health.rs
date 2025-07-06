@@ -70,6 +70,7 @@ impl CheckHealthActor {
                 task,
                 parsed_model_config,
                 self.scope.clone(),
+                "Expert LLM Assistant Health Checker".to_string(),
             )
             .with_actors([FlagIssueForReview::ACTOR_ID, ReportProgressNormal::ACTOR_ID])
             .with_og_parent_scope(self.parent_scope)

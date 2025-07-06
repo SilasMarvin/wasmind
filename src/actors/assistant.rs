@@ -142,7 +142,7 @@ pub struct Assistant {
     whitelisted_commands: Vec<String>,
     state: AgentStatus,
     /// Agent's role (e.g., "Software Engineer", "QA Tester", "Project Lead Manager")
-    role: Option<String>,
+    role: String,
 }
 
 /// The assistant
@@ -157,7 +157,7 @@ impl Assistant {
         parent_scope: Scope,
         required_actors: impl Into<BTreeSet<&'static str>>,
         task_description: Option<String>,
-        role: Option<String>,
+        role: String,
         whitelisted_commands: Vec<String>,
         file_reader: Option<Arc<std::sync::Mutex<crate::actors::tools::file_reader::FileReader>>>,
     ) -> Self {
@@ -199,6 +199,12 @@ impl Assistant {
             whitelisted_commands,
             role,
         };
+
+        s.broadcast(Message::AssistantSpawned {
+            scope: s.scope.clone(),
+            role: s.role.clone(),
+            task: s.task_description.clone(),
+        });
 
         // If we have a task and we aren't waiting on actors just submit it here
         // We handle the case where we have a task and are waiting on actors in the handle_message
@@ -947,7 +953,7 @@ mod tests {
             parent_scope,
             required_actors,
             task_description,
-            None,
+            "filler role".to_string(),
             vec![],
             None,
         )
@@ -974,7 +980,7 @@ mod tests {
             parent_scope,
             required_actors,
             task_description,
-            None,
+            "filler role".to_string(),
             vec![],
             None,
         )

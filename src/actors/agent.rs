@@ -47,6 +47,7 @@ pub struct TemporalAgent {
     pub actors: BTreeSet<&'static str>,
     pub og_scope: Scope,
     pub og_parent_scope: Option<Scope>,
+    pub role: String,
 }
 
 impl TemporalAgent {
@@ -55,6 +56,7 @@ impl TemporalAgent {
         task_description: String,
         parsed_model_config: ParsedModelConfig,
         og_scope: Scope,
+        role: String,
     ) -> Self {
         Self {
             scope: Scope::new(),
@@ -64,6 +66,7 @@ impl TemporalAgent {
             og_scope,
             actors: BTreeSet::new(),
             og_parent_scope: None,
+            role,
         }
     }
 
@@ -87,7 +90,7 @@ impl TemporalAgent {
             Scope::new(), // Temporal agent's don't care about parent scopes so we set it randomly
             self.actors.clone(),
             Some(self.task_description.clone()),
-            None,
+            self.role.clone(),
             vec![],
             None,
         )
@@ -179,7 +182,7 @@ impl Agent {
             self.parent_scope.clone(),
             self.actors.clone(),
             self.task_description.clone(),
-            Some(self.role),
+            self.role,
             self.config.whitelisted_commands.clone(),
             Some(file_reader.clone()),
         )

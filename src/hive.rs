@@ -47,6 +47,9 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
     runtime.spawn(async move {
         let mut rx = tx.subscribe();
 
+        // Create the TUI before waiting for LiteLLM to come up
+        TuiActor::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+
         // Start LiteLLM Docker container
         let litellm_config = LiteLLMConfig {
             port: config.hive.litellm.port,
@@ -64,8 +67,6 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
             }
         };
 
-        // Create and run TUI and Context actors (these are shared across all agents)
-        TuiActor::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
         // #[cfg(feature = "gui")]
         // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
         // #[cfg(feature = "audio")]
