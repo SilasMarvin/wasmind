@@ -1,6 +1,4 @@
-use crate::{
-    llm_client::{ChatMessage, LLMClient, LLMError, Tool},
-};
+use crate::llm_client::{ChatMessage, LLMClient, LLMError, Tool};
 use std::{
     collections::BTreeSet,
     sync::{Arc, Mutex},
@@ -895,7 +893,6 @@ impl Actor for Assistant {
 mod tests {
     use std::collections::HashMap;
 
-    use crate::config::ParsedConfig;
     use crate::llm_client::ToolCall;
 
     use super::*;
@@ -2642,5 +2639,115 @@ mod tests {
 
         // But pending message should contain the agent response
         assert!(assistant.pending_message.has_content());
+    }
+
+    #[tokio::test]
+    async fn test_interrupt_and_force_wait_for_manager() {
+        let mut assistant = create_test_assistant_with_parent(BTreeSet::new(), None, Scope::new());
+        assistant.set_state(AgentStatus::Processing { id: Uuid::new_v4() }, true);
+
+        // Add some tool calls to chat history
+        let tool_call_id = "test_tool_123".to_string();
+        assistant
+            .chat_history
+            .push(ChatMessage::assistant_with_tools(vec![
+                crate::llm_client::ToolCall {
+                    id: tool_call_id.clone(),
+                    tool_type: "function".to_string(),
+                    function: crate::llm_client::Function {
+                        name: "test_tool".to_string(),
+                        arguments: "{}".to_string(),
+                    },
+                    index: Some(0),
+                },
+            ]));
+
+        let initial_history_len = assistant.chat_history.len();
+
+        let agent_scope = assistant.scope.clone();
+        send_message(
+            &mut assistant,
+            Message::Agent(AgentMessage {
+                agent_id: agent_scope, // Must match assistant's scope
+                message: AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::InterruptAndForceWaitForManager {
+                        tool_call_id: "manager_123".to_string(),
+                    },
+                ),
+            }),
+        )
+        .await;
+
+        // Should transition to WaitingForManager
+        assert!(matches!(
+            assistant.state,
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForManager { .. }
+            }
+        ));
+
+        // Tool calls should be removed from chat history
+        assert!(assistant.chat_history.len() == initial_history_len - 1);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_tool_status_updates() {
+        let mut assistant = create_test_assistant(BTreeSet::new(), None);
+        let tool_call_id_1 = "tool_1".to_string();
+        let tool_call_id_2 = "tool_2".to_string();
+
+        // Create initial tool calls map
+        let mut tool_calls = HashMap::new();
+        tool_calls.insert(
+            tool_call_id_1.clone(),
+            PendingToolCall {
+                tool_name: "tool1".to_string(),
+                result: None,
+            },
+        );
+        tool_calls.insert(
+            tool_call_id_2.clone(),
+            PendingToolCall {
+                tool_name: "tool2".to_string(),
+                result: None,
+            },
+        );
+
+        // Set state to WaitingForTools with multiple tool calls
+        assistant.set_state(
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { tool_calls },
+            },
+            true,
+        );
+
+        // First tool completes successfully
+        send_message(
+            &mut assistant,
+            Message::ToolCallUpdate(ToolCallUpdate {
+                call_id: tool_call_id_1.clone(),
+                status: ToolCallStatus::Finished(Ok("Tool 1 completed".to_string())),
+            }),
+        )
+        .await;
+
+        // Second tool also completes
+        send_message(
+            &mut assistant,
+            Message::ToolCallUpdate(ToolCallUpdate {
+                call_id: tool_call_id_2.clone(),
+                status: ToolCallStatus::Finished(Ok("Tool 2 completed".to_string())),
+            }),
+        )
+        .await;
+
+        // Both tools have completed, so state should change from WaitingForTools
+        // to either WaitingForUserInput (if processing completes) or continue processing
+        assert!(!matches!(
+            assistant.state,
+            AgentStatus::Wait {
+                reason: WaitReason::WaitingForTools { .. }
+            }
+        ));
     }
 }

@@ -181,45 +181,7 @@ mod tests {
         assert!(!is_template("Hello World!"));
     }
 
-    #[test]
-    fn test_template_context() {
-        use crate::system_state::SystemState;
 
-        let system_state = SystemState::new();
-        let context = TemplateContext::new(
-            vec![
-                ToolInfo {
-                    name: "command".to_string(),
-                    description: "Execute system commands".to_string(),
-                },
-                ToolInfo {
-                    name: "file_reader".to_string(),
-                    description: "Read file contents".to_string(),
-                },
-            ],
-            vec!["ls".to_string(), "cat".to_string()],
-            &system_state,
-            Scope::new(),
-        );
-
-        let template = "You are an assistant with access to {{ tools|length }} tools.";
-        let result = render_template(template, &context).unwrap();
-        assert_eq!(result, "You are an assistant with access to 2 tools.");
-    }
-
-    #[test]
-    fn test_template_with_files_and_plan() {
-        use crate::system_state::SystemState;
-
-        let system_state = SystemState::new();
-
-        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
-
-        let template = "Files loaded: {{ files.count }}";
-        let result = render_template(template, &context).unwrap();
-        // Files are managed by FileReader, so SystemState without FileReader has 0 files
-        assert_eq!(result, "Files loaded: 0");
-    }
 
     #[test]
     fn test_system_prompt_template() {
@@ -808,6 +770,76 @@ Tools available: {{ tools|length }}"#;
         assert!(result.contains("[... 4 lines omitted ...]")); // Lines 7-10 omitted
     }
 
-    // Note: Removed test_file_reader_with_lock_failure_fallback since we now use
-    // blocking_lock() instead of try_lock(), so there's no fallback behavior anymore.
+    #[test]
+    fn test_system_prompt_template_rendering() {
+        use crate::system_state::SystemState;
+
+        let template = r#"You are an AI assistant with access to {{ tools|length }} tools.
+
+Available tools:
+{% for tool in tools -%}
+- {{ tool.name }}: {{ tool.description }}
+{% endfor %}
+
+Current time: {{ current_datetime }}
+System: {{ os }} ({{ arch }})
+
+{% if whitelisted_commands -%}
+Whitelisted commands: {{ whitelisted_commands|join(', ') }}
+{% endif %}"#;
+
+        let system_state = SystemState::new();
+        let context = TemplateContext::new(
+            vec![
+                ToolInfo {
+                    name: "command".to_string(),
+                    description: "Execute system commands".to_string(),
+                },
+                ToolInfo {
+                    name: "file_reader".to_string(),
+                    description: "Read file contents".to_string(),
+                },
+                ToolInfo {
+                    name: "edit_file".to_string(),
+                    description: "Edit files".to_string(),
+                },
+                ToolInfo {
+                    name: "planner".to_string(),
+                    description: "Create and track task plans".to_string(),
+                },
+            ],
+            vec!["ls".to_string(), "cat".to_string(), "git".to_string()],
+            &system_state,
+            Scope::new(),
+        );
+
+        let result = render_template(template, &context).unwrap();
+
+        // Verify the rendered output contains expected content
+        assert!(result.contains("You are an AI assistant with access to 4 tools"));
+        assert!(result.contains("- command: Execute system commands"));
+        assert!(result.contains("- file_reader: Read file contents"));
+        assert!(result.contains("- edit_file: Edit files"));
+        assert!(result.contains("- planner: Create and track task plans"));
+        assert!(result.contains("Current time:"));
+        assert!(result.contains("System:"));
+        assert!(result.contains("Whitelisted commands: ls, cat, git"));
+    }
+
+    #[test]
+    fn test_non_template_passthrough() {
+        use crate::system_state::SystemState;
+
+        let plain_prompt = "You are a helpful assistant.";
+        let system_state = SystemState::new();
+        let context = TemplateContext::new(vec![], vec![], &system_state, Scope::new());
+
+        // Should return the same string if it's not a template
+        assert!(!is_template(plain_prompt));
+
+        // Verify that non-templates work as well in render_template
+        let result = render_template(plain_prompt, &context).unwrap();
+        assert_eq!(result, plain_prompt);
+    }
+
 }

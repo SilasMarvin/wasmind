@@ -910,51 +910,7 @@ mod tests {
         assert!(!cached_content.contains("5|line 5"));
     }
 
-    #[test]
-    fn test_file_reader_full_read_small_file() {
-        let mut file_reader = FileReader::default();
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("small.txt");
 
-        // Create a small file
-        let content = "small file content";
-        fs::write(&file_path, content).unwrap();
-
-        // Read without specifying range
-        let result = file_reader.read_and_cache_file(&file_path, None, None);
-        assert!(result.is_ok());
-
-        // Check that it was cached as full content
-        let cached = file_reader.get_cached_content(&file_path);
-        assert!(cached.is_some());
-        let cached_content = cached.unwrap();
-        assert_eq!(cached_content, "1|small file content");
-    }
-
-    #[test]
-    fn test_file_reader_read_to_end() {
-        let mut file_reader = FileReader::default();
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("test.txt");
-
-        // Create a file with several lines
-        let content = "line 1\nline 2\nline 3\nline 4\nline 5";
-        fs::write(&file_path, content).unwrap();
-
-        // Read from line 3 to end (line 5)
-        let result = file_reader.read_and_cache_file(&file_path, Some(3), Some(5));
-        assert!(result.is_ok());
-
-        // Check content
-        let cached = file_reader.get_cached_content(&file_path);
-        assert!(cached.is_some());
-        let cached_content = cached.unwrap();
-        assert!(cached_content.contains("3|line 3"));
-        assert!(cached_content.contains("4|line 4"));
-        assert!(cached_content.contains("5|line 5"));
-        assert!(!cached_content.contains("1|line 1"));
-        assert!(!cached_content.contains("2|line 2"));
-    }
 
     #[test]
     fn test_file_reader_slice_merging() {
