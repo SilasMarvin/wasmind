@@ -49,7 +49,7 @@ impl Actor for TuiActor {
 
 fn start_model(tx: Sender<ActorMessage>) {
     // Setup model
-    let mut model = Model::new(tx.subscribe());
+    let mut model = Model::new(tx);
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
     let _ = model.terminal.enable_raw_mode();

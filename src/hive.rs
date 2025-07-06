@@ -23,7 +23,7 @@ use crate::{
 // use crate::actors::microphone::Microphone;
 
 pub const MAIN_MANAGER_SCOPE: Scope =
-    Scope::from_uuid(uuid::uuid!("29443a2e-78e1-4983-975a-d68b0e6c4cf0"));
+    Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-000000000000"));
 pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
 
 /// Handle for communicating with the HIVE system

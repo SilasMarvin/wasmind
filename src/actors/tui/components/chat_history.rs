@@ -7,21 +7,84 @@ use crate::{
     actors::{AssistantRequest, tui::components::llm_textarea::LLMTextAreaComponent},
     scope::Scope,
 };
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Offset};
+use ratatui::style::Style;
+use ratatui::widgets::{Block, Paragraph, Widget, Wrap};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State, StateValue,
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
 
+const MESSAGE_GAP: i32 = 1;
+
 // TODO: We need to create display widgets for plans, generic tool calls, file read and edited,
 // etc...
 
+#[derive(Clone)]
 struct AssistantInfo {
     role: String,
     assistant_type: AgentType,
     task_description: Option<String>,
     last_assistant_request: Option<AssistantRequest>,
+    pending_user_message: Option<String>,
+}
+
+impl Widget for AssistantInfo {
+    fn render(self, mut area: Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        // Render top role title
+        let title_paragraph = Paragraph::new(self.role)
+            .block(Block::bordered())
+            .style(Style::new())
+            .alignment(Alignment::Center);
+        let offset_y = title_paragraph.line_count(area.width);
+        title_paragraph.render(area, buf);
+        area = area.offset(Offset {
+            x: 0,
+            y: offset_y as i32 + MESSAGE_GAP,
+        });
+
+        // Render chat history
+        if let Some(last_assistant_request) = self.last_assistant_request {
+            for message in last_assistant_request.messages {
+                let content = serde_json::to_string_pretty(&message).unwrap();
+                let title_paragraph = Paragraph::new(content)
+                    .block(Block::bordered())
+                    .style(Style::new())
+                    .alignment(Alignment::Left);
+                let offset_y = title_paragraph.line_count(area.width);
+                title_paragraph.render(area, buf);
+                area = area.offset(Offset {
+                    x: 0,
+                    y: offset_y as i32 + MESSAGE_GAP,
+                });
+            }
+        } else {
+            let content = "No messages from the assistant yet".to_string();
+            let title_paragraph = Paragraph::new(content)
+                .block(Block::bordered())
+                .style(Style::new())
+                .alignment(Alignment::Center);
+            let offset_y = title_paragraph.line_count(area.width);
+            title_paragraph.render(area, buf);
+            area = area.offset(Offset {
+                x: 0,
+                y: offset_y as i32 + MESSAGE_GAP,
+            });
+        }
+
+        // Render pending message
+        if let Some(pending_message) = self.pending_user_message {
+            let pending_message_paragraph = Paragraph::new(pending_message)
+                .block(Block::bordered())
+                .style(Style::new())
+                .alignment(Alignment::Center);
+            pending_message_paragraph.render(area, buf);
+        }
+    }
 }
 
 #[derive(MockComponent)]
@@ -42,8 +105,10 @@ impl ChatHistoryComponent {
                         assistant_type: AgentType::MainManager,
                         task_description: None,
                         last_assistant_request: None,
+                        pending_user_message: None,
                     },
                 )]),
+                active_scope: MAIN_MANAGER_SCOPE.clone(),
             },
         }
     }
@@ -52,13 +117,23 @@ impl ChatHistoryComponent {
 struct ChatHistory {
     props: Props,
     state: State,
+    active_scope: Scope,
     chat_history_map: HashMap<Scope, AssistantInfo>,
 }
 
 impl MockComponent for ChatHistory {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         // Check if visible
-        if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {}
+        if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
+            if let Some(info) = self.chat_history_map.get(&self.active_scope) {
+                frame.render_widget(info.clone(), area);
+            } else {
+                tracing::error!(
+                    "Trying to retrieve a scope that does not exist: {}",
+                    self.active_scope
+                );
+            }
+        }
     }
 
     fn query(&self, attr: Attribute) -> Option<AttrValue> {
@@ -82,27 +157,48 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
     fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
         match ev {
             Event::User(actor_message) => match actor_message.message {
+                crate::actors::Message::UserContext(crate::actors::UserContext::UserTUIInput(
+                    input,
+                )) => {
+                    if let Some(actor_info) = self
+                        .component
+                        .chat_history_map
+                        .get_mut(&actor_message.scope)
+                    {
+                        actor_info.pending_user_message = Some(input);
+                    }
+                }
                 // This is the real source of truth for what just got submitted by the LLM
-                crate::actors::Message::Agent(AgentMessage { agent_id, message }) => None,
-                crate::actors::Message::AssistantRequest(assistant_request) => None,
+                crate::actors::Message::AssistantRequest(assistant_request) => {
+                    if let Some(actor_info) = self
+                        .component
+                        .chat_history_map
+                        .get_mut(&actor_message.scope)
+                    {
+                        actor_info.last_assistant_request = Some(assistant_request);
+                    }
+                }
                 // These are intermediary artifacts that may be rolled back or changed by the real source of truth
-                crate::actors::Message::AssistantToolCall(tool_call) => None,
-                crate::actors::Message::AssistantResponse { id, content } => None,
-                crate::actors::Message::ToolCallUpdate(tool_call_update) => None,
+                crate::actors::Message::AssistantToolCall(tool_call) => (),
+                crate::actors::Message::AssistantResponse { id, content } => (),
+                crate::actors::Message::ToolCallUpdate(tool_call_update) => (),
                 crate::actors::Message::FileRead {
                     path,
                     content,
                     last_modified,
-                } => None,
+                } => (),
                 crate::actors::Message::FileEdited {
                     path,
                     content,
                     last_modified,
-                } => None,
-                crate::actors::Message::PlanUpdated(task_plan) => None,
-                _ => None,
+                } => (),
+                crate::actors::Message::PlanUpdated(task_plan) => (),
+                // This let's us track new agent creation
+                crate::actors::Message::Agent(AgentMessage { agent_id, message }) => (),
+                _ => (),
             },
-            _ => None,
+            _ => (),
         }
+        None
     }
 }

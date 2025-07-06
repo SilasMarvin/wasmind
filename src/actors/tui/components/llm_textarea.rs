@@ -76,8 +76,9 @@ impl MockComponent for LLMTextArea {
     fn perform(&mut self, cmd: Cmd) -> CmdResult {
         match cmd {
             Cmd::Submit => {
-                // TODO: Handle the state change when we submit
-                CmdResult::Changed(self.state())
+                let old_state = self.state.clone();
+                self.state = State::One(StateValue::String("".to_string()));
+                CmdResult::Submit(old_state)
             }
             Cmd::Type(char) => {
                 let text = self.state().unwrap_one().unwrap_string();
@@ -94,7 +95,7 @@ impl Component<TuiMessage, ActorMessage> for LLMTextAreaComponent {
         let cmd = match ev {
             Event::Keyboard(key_event) => match key_event.code {
                 tuirealm::event::Key::Backspace => todo!(),
-                tuirealm::event::Key::Enter => todo!(),
+                tuirealm::event::Key::Enter => Some(Cmd::Submit),
                 tuirealm::event::Key::Left => todo!(),
                 tuirealm::event::Key::Right => todo!(),
                 tuirealm::event::Key::Up => todo!(),
@@ -142,6 +143,9 @@ impl Component<TuiMessage, ActorMessage> for LLMTextAreaComponent {
             match self.perform(cmd) {
                 CmdResult::Changed(State::One(StateValue::String(typed_text))) => {
                     Some(TuiMessage::UpdatedUserTypedLLMMessage(typed_text))
+                }
+                CmdResult::Submit(State::One(StateValue::String(typed_text))) => {
+                    Some(TuiMessage::SubmittedUserTypedLLMMessage(typed_text))
                 }
                 _ => None,
             }

@@ -1,15 +1,15 @@
 use std::time::Duration;
 
-use tokio::sync::broadcast::Receiver;
+use tokio::sync::broadcast::{Receiver, Sender};
 use tuirealm::listener::{ListenerResult, Poll};
 use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, EventListenerCfg, ListenerError, Update};
 
-use crate::actors::ActorMessage;
 use crate::actors::tui::components::chat::{CHAT_SCOPE, ChatAreaComponent};
 use crate::actors::tui::components::graph::GRAPH_SCOPE;
 use crate::actors::tui::components::llm_textarea::LLMTextAreaComponent;
+use crate::actors::{ActorMessage, AgentMessageType, Message, UserContext};
 use crate::hive::MAIN_MANAGER_SCOPE;
 use crate::scope::Scope;
 
@@ -36,26 +36,25 @@ impl Poll<ActorMessage> for PollBroadcastWrapper {
 pub enum TuiMessage {
     ActorMessage(ActorMessage),
     UpdatedUserTypedLLMMessage(String),
+    SubmittedUserTypedLLMMessage(String),
 }
 
 pub struct Model<T>
 where
     T: TerminalAdapter,
 {
-    /// Application
     pub app: Application<Scope, TuiMessage, ActorMessage>,
-    /// Indicates that the application must quit
     pub quit: bool,
-    /// Tells whether to redraw interface
     pub redraw: bool,
-    /// Used to draw to terminal
     pub terminal: TerminalBridge<T>,
+    tx: Sender<ActorMessage>,
 }
 
 impl Model<CrosstermTerminalAdapter> {
-    pub fn new(rx: Receiver<ActorMessage>) -> Self {
+    pub fn new(tx: Sender<ActorMessage>) -> Self {
         Self {
-            app: Self::init_app(rx),
+            app: Self::init_app(tx.subscribe()),
+            tx,
             quit: false,
             redraw: true,
             terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
@@ -121,54 +120,18 @@ where
             // Set redraw
             self.redraw = true;
 
-            None
-
-            // Match message
-            // match msg {
-            //     Msg::AppClose => {
-            //         self.quit = true; // Terminate
-            //         None
-            //     }
-            //     Msg::Clock => None,
-            //     Msg::DigitCounterBlur => {
-            //         // Give focus to letter counter
-            //         assert!(self.app.active(&Id::LetterCounter).is_ok());
-            //         None
-            //     }
-            //     Msg::DigitCounterChanged(v) => {
-            //         // Update label
-            //         assert!(
-            //             self.app
-            //                 .attr(
-            //                     &Id::Label,
-            //                     Attribute::Text,
-            //                     AttrValue::String(format!("DigitCounter has now value: {v}"))
-            //                 )
-            //                 .is_ok()
-            //         );
-            //         None
-            //     }
-            //     Msg::LetterCounterBlur => {
-            //         // Give focus to digit counter
-            //         assert!(self.app.active(&Id::DigitCounter).is_ok());
-            //         None
-            //     }
-            //     Msg::LetterCounterChanged(v) => {
-            //         // Update label
-            //         assert!(
-            //             self.app
-            //                 .attr(
-            //                     &Id::Label,
-            //                     Attribute::Text,
-            //                     AttrValue::String(format!("LetterCounter has now value: {v}"))
-            //                 )
-            //                 .is_ok()
-            //         );
-            //         None
-            //     }
-            // }
-        } else {
-            None
+            match msg {
+                TuiMessage::ActorMessage(actor_message) => (),
+                TuiMessage::UpdatedUserTypedLLMMessage(_) => (),
+                TuiMessage::SubmittedUserTypedLLMMessage(message) => {
+                    let _ = self.tx.send(ActorMessage {
+                        scope: MAIN_MANAGER_SCOPE.clone(),
+                        message: Message::UserContext(UserContext::UserTUIInput(message)),
+                    });
+                }
+            }
         }
+
+        None
     }
 }

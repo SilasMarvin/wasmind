@@ -115,7 +115,7 @@ pub fn run_main_program() -> SResult<()> {
     // #[cfg(feature = "gui")]
     // use rdev::{Event, EventType, listen};
 
-    IS_HEADLESS.set(true).unwrap();
+    IS_HEADLESS.set(false).unwrap();
 
     let config = Config::new(false).context(ConfigSnafu)?;
     let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
