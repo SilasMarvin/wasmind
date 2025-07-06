@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use crate::actors::AgentType;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
+use crate::actors::{AgentMessage, AgentMessageType, AgentType};
+use crate::hive::{MAIN_MANAGER_ROLE, MAIN_MANAGER_SCOPE};
 use crate::{
     actors::{AssistantRequest, tui::components::llm_textarea::LLMTextAreaComponent},
     scope::Scope,
@@ -20,7 +21,7 @@ struct AssistantInfo {
     role: String,
     assistant_type: AgentType,
     task_description: Option<String>,
-    last_assistant_request: AssistantRequest,
+    last_assistant_request: Option<AssistantRequest>,
 }
 
 #[derive(MockComponent)]
@@ -34,7 +35,15 @@ impl ChatHistoryComponent {
             component: ChatHistory {
                 props: Props::default(),
                 state: State::One(StateValue::String("".to_string())),
-                chat_history_map: HashMap::new(),
+                chat_history_map: HashMap::from([(
+                    MAIN_MANAGER_SCOPE.clone(),
+                    AssistantInfo {
+                        role: MAIN_MANAGER_ROLE.to_string(),
+                        assistant_type: AgentType::MainManager,
+                        task_description: None,
+                        last_assistant_request: None,
+                    },
+                )]),
             },
         }
     }
@@ -43,7 +52,7 @@ impl ChatHistoryComponent {
 struct ChatHistory {
     props: Props,
     state: State,
-    chat_history_map: HashMap<Scope, AssistantRequest>,
+    chat_history_map: HashMap<Scope, AssistantInfo>,
 }
 
 impl MockComponent for ChatHistory {
@@ -74,12 +83,7 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
         match ev {
             Event::User(actor_message) => match actor_message.message {
                 // This is the real source of truth for what just got submitted by the LLM
-                crate::actors::Message::AssistantSpawned {
-                    scope,
-                    role,
-                    task,
-                    assistant_type,
-                } => None,
+                crate::actors::Message::Agent(AgentMessage { agent_id, message }) => None,
                 crate::actors::Message::AssistantRequest(assistant_request) => None,
                 // These are intermediary artifacts that may be rolled back or changed by the real source of truth
                 crate::actors::Message::AssistantToolCall(tool_call) => None,

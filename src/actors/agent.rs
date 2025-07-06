@@ -29,9 +29,6 @@ use super::{
     tools::{file_reader::FileReader, wait::Wait},
 };
 
-/// Role name for the main manager agent
-pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
-
 /// Response when spawning a new agent
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSpawnedResponse {

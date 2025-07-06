@@ -10,7 +10,7 @@ use crate::actors::ActorMessage;
 use crate::actors::tui::components::chat::{CHAT_SCOPE, ChatAreaComponent};
 use crate::actors::tui::components::graph::GRAPH_SCOPE;
 use crate::actors::tui::components::llm_textarea::LLMTextAreaComponent;
-use crate::hive::ROOT_AGENT_SCOPE;
+use crate::hive::MAIN_MANAGER_SCOPE;
 use crate::scope::Scope;
 
 struct PollBroadcastWrapper {

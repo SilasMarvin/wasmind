@@ -22,8 +22,9 @@ use crate::{
 // #[cfg(feature = "audio")]
 // use crate::actors::microphone::Microphone;
 
-pub const ROOT_AGENT_SCOPE: Scope =
+pub const MAIN_MANAGER_SCOPE: Scope =
     Scope::from_uuid(uuid::uuid!("29443a2e-78e1-4983-975a-d68b0e6c4cf0"));
+pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
 
 /// Handle for communicating with the HIVE system
 pub struct HiveHandle {
@@ -48,7 +49,7 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
         let mut rx = tx.subscribe();
 
         // Create the TUI before waiting for LiteLLM to come up
-        TuiActor::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+        TuiActor::new(config.clone(), tx.clone(), MAIN_MANAGER_SCOPE).run();
 
         // Start LiteLLM Docker container
         let litellm_config = LiteLLMConfig {
@@ -75,12 +76,12 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
         // Create the Main Manager agent
         let main_manager = Agent::new(
             tx.clone(),
-            crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
+            MAIN_MANAGER_ROLE.to_string(),
             None,
             config.clone(),
             Scope::new(), // parent_scope means nothing for the MainManager
             AgentType::MainManager,
-        ).with_scope(ROOT_AGENT_SCOPE)
+        ).with_scope(MAIN_MANAGER_SCOPE)
         .with_actors([Planner::ACTOR_ID, SpawnAgent::ACTOR_ID, SendMessage::ACTOR_ID, Wait::ACTOR_ID]);
 
         // Start the Main Manager
@@ -93,7 +94,7 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
             tracing::debug!(name = "hive_received_message", message = %message_json, message_type = std::any::type_name::<Message>());
 
             match msg.message {
-                Message::Action(Action::Exit) if msg.scope == ROOT_AGENT_SCOPE => {
+                Message::Action(Action::Exit) if msg.scope == MAIN_MANAGER_SCOPE => {
                     // This is a horrible hack to let the tui restore the terminal first
                     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                     // Notify main thread that we're exiting
@@ -153,12 +154,12 @@ pub fn start_headless_hive(
 
         let main_manager = Agent::new(
             tx.clone(),
-            crate::actors::agent::MAIN_MANAGER_ROLE.to_string(),
+            MAIN_MANAGER_ROLE.to_string(),
             Some(initial_prompt),
             config.clone(),
             Scope::new(), // parent_scope means nothing for the MainManager 
             AgentType::MainManager,
-        ).with_scope(ROOT_AGENT_SCOPE)
+        ).with_scope(MAIN_MANAGER_SCOPE)
         .with_actors([Planner::ACTOR_ID, SpawnAgent::ACTOR_ID, SendMessage::ACTOR_ID, Wait::ACTOR_ID, Complete::ACTOR_ID]);
 
         // Start the Main Manager
@@ -172,7 +173,7 @@ pub fn start_headless_hive(
             tracing::debug!(name = "hive_message", message_type = std::any::type_name::<Message>(), message = %message_json);
 
             match msg.message {
-                Message::Action(Action::Exit) if msg.scope == ROOT_AGENT_SCOPE => {
+                Message::Action(Action::Exit) if msg.scope == MAIN_MANAGER_SCOPE => {
                     let _ = exit_tx.send(());
                     break;
                 }
@@ -181,7 +182,7 @@ pub fn start_headless_hive(
                     message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdate {
                         status: AgentStatus::Done(res),
                     })
-                }) if agent_id == ROOT_AGENT_SCOPE => {
+                }) if agent_id == MAIN_MANAGER_SCOPE => {
                     match res {
                         Ok(agent_task_result) => {
                             if agent_task_result.success {
