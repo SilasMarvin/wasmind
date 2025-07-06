@@ -429,7 +429,6 @@ fn parse_model_config(
     default_model: &Option<DefaultModelConfig>,
     base_url: &str,
 ) -> Option<ParsedModelConfig> {
-    println!("THE DEFAULT MODEL: {:?}", default_model);
     if let Some(model_name) = model_config.model_name.or(default_model
         .as_ref()
         .map(|dm| dm.model_name.clone())

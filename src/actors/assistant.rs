@@ -17,10 +17,13 @@ use crate::{
 
 use super::{
     Action, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage,
-    UserContext, WaitReason,
+    UserContext, WaitReason, tools::wait::WAIT_TOOL_NAME,
 };
 
 /// Helper functions for formatting messages used in chat requests and tests
+
+const ATTEMPTED_WAIT_ERROR_MESSAGE: &'static str =
+    "ERROR: Attempted to wait when all sub agents are done. You must perform a different action.";
 
 /// Format an agent response for successful task completion
 pub fn format_agent_response_success(agent_id: &Scope, success: bool, summary: &str) -> String {
@@ -134,7 +137,7 @@ pub struct Assistant {
     task_description: Option<String>,
     scope: Scope,
     parent_scope: Scope,
-    spawned_agents_scope: BTreeSet<Scope>,
+    live_spawned_agents_scope: BTreeSet<Scope>,
     /// Whitelisted commands for the system prompt
     whitelisted_commands: Vec<String>,
     state: AgentStatus,
@@ -192,7 +195,7 @@ impl Assistant {
             task_description,
             scope,
             parent_scope,
-            spawned_agents_scope: BTreeSet::new(),
+            live_spawned_agents_scope: BTreeSet::new(),
             whitelisted_commands,
             role,
         };
@@ -358,15 +361,6 @@ impl Assistant {
             messages: self.chat_history.clone(),
         }));
 
-        // Debug log the request data
-        tracing::debug!(
-            "LLM Request: model={}, messages_len={}, tools_len={}, messages=\n=====SYSTEM=====\n{system_prompt}\n=====MESSAGES=====\n{}",
-            self.config.model_name,
-            self.chat_history.len(),
-            self.available_tools.len(),
-            serde_json::to_string_pretty(&self.chat_history).unwrap()
-        );
-
         // Spawn the assist task
         let tx = self.tx.clone();
         let client = self.client.clone();
@@ -438,6 +432,15 @@ async fn do_assist(
 ) -> Result<(), LLMError> {
     // Filter out wait tool calls as those are just noise
     let messages = crate::utils::filter_wait_tool_calls(&messages);
+
+    // Debug log the request data
+    tracing::debug!(
+        "LLM Request: model={} messages_len={}, tools_len={}, messages=\n=====SYSTEM=====\n{system_prompt}\n=====MESSAGES=====\n{}",
+        config.model_name,
+        messages.len(),
+        tools.len(),
+        serde_json::to_string_pretty(&messages).unwrap()
+    );
 
     let resp = client
         .chat(
@@ -525,20 +528,20 @@ impl Actor for Assistant {
     }
 
     fn get_scope_filters(&self) -> Vec<&Scope> {
-        self.spawned_agents_scope
+        self.live_spawned_agents_scope
             .iter()
             .chain([&self.scope, &self.parent_scope])
             .collect::<Vec<&Scope>>()
     }
 
     async fn on_stop(&mut self) {
-        for scope in self.spawned_agents_scope.clone() {
+        for scope in self.live_spawned_agents_scope.clone() {
             let _ = self.tx.send(ActorMessage {
                 scope,
                 message: Message::Action(Action::Exit),
             });
         }
-        self.spawned_agents_scope.clear();
+        self.live_spawned_agents_scope.clear();
     }
 
     async fn handle_message(&mut self, message: ActorMessage) {
@@ -732,7 +735,8 @@ impl Actor for Assistant {
                             if !tool_calls.contains_key(&tool_call_id) {
                                 return;
                             }
-                            self.spawned_agents_scope.insert(message.agent_id.clone());
+                            self.live_spawned_agents_scope
+                                .insert(message.agent_id.clone());
                             let agent_info = crate::system_state::AgentTaskInfo::new(
                                 message.agent_id.clone(),
                                 agent_type,
@@ -763,13 +767,31 @@ impl Actor for Assistant {
                                     reason: WaitReason::WaitingForTools { tool_calls },
                                 } = self.state.clone()
                                 {
-                                    if !tool_calls.contains_key(&tool_call_id) {
-                                        return;
-                                    }
-                                    self.set_state(status.clone(), true);
-                                    if matches!(status, AgentStatus::Done(..)) {
-                                        // When we are done we shutdown
-                                        self.broadcast(Message::Action(Action::Exit));
+                                    if let Some(tool_call) = tool_calls.get(&tool_call_id) {
+                                        // If we don't have any more live sub agents don't allow transitioning into WiatForSystem from the `wait` tool
+                                        // This is a special case catch for when a Manager calls the `wait` tool and all agents are done
+                                        if tool_call.tool_name == WAIT_TOOL_NAME
+                                            && self.live_spawned_agents_scope.is_empty()
+                                            && matches!(
+                                                status,
+                                                AgentStatus::Wait {
+                                                    reason: WaitReason::WaitForSystem { .. }
+                                                }
+                                            )
+                                        {
+                                            self.chat_history.push(ChatMessage::tool(
+                                                tool_call_id,
+                                                &tool_call.tool_name,
+                                                ATTEMPTED_WAIT_ERROR_MESSAGE,
+                                            ));
+                                            self.submit_pending_message(true);
+                                        } else {
+                                            self.set_state(status.clone(), true);
+                                            if matches!(status, AgentStatus::Done(..)) {
+                                                // When we are done we shutdown
+                                                self.broadcast(Message::Action(Action::Exit));
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -831,6 +853,9 @@ impl Actor for Assistant {
 
                                 match status {
                                     AgentStatus::Done(agent_task_result) => {
+                                        self.live_spawned_agents_scope
+                                            .remove(&agent_message.agent_id);
+
                                         let formatted_message = match &agent_task_result {
                                             Ok(response) => format_agent_response_success(
                                                 &agent_message.agent_id,
@@ -1514,8 +1539,12 @@ mod tests {
         .await;
 
         // Should add to spawned agents
-        assert_eq!(assistant.spawned_agents_scope.len(), 1);
-        assert!(assistant.spawned_agents_scope.contains(&spawned_agent_id));
+        assert_eq!(assistant.live_spawned_agents_scope.len(), 1);
+        assert!(
+            assistant
+                .live_spawned_agents_scope
+                .contains(&spawned_agent_id)
+        );
     }
 
     // Inter-Agent Message Tests
@@ -1557,7 +1586,7 @@ mod tests {
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.insert(sub_agent_scope);
+        assistant.live_spawned_agents_scope.insert(sub_agent_scope);
 
         // Verify in WaitingForUserInput
         assert!(matches!(
@@ -1592,7 +1621,7 @@ mod tests {
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.insert(sub_agent_scope);
+        assistant.live_spawned_agents_scope.insert(sub_agent_scope);
 
         // Send sub-agent status update
         send_message_with_scope(
@@ -1808,7 +1837,7 @@ mod tests {
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.insert(sub_agent_scope);
+        assistant.live_spawned_agents_scope.insert(sub_agent_scope);
 
         let initial_messages_count = assistant.chat_history.len();
 
@@ -2260,8 +2289,8 @@ mod tests {
         let sub_agent_2 = Scope::new();
 
         // Add sub-agents
-        assistant.spawned_agents_scope.insert(sub_agent_1);
-        assistant.spawned_agents_scope.insert(sub_agent_2);
+        assistant.live_spawned_agents_scope.insert(sub_agent_1);
+        assistant.live_spawned_agents_scope.insert(sub_agent_2);
 
         // Create a receiver to capture messages
         let mut rx = assistant.tx.subscribe();
@@ -2279,7 +2308,7 @@ mod tests {
         assert_eq!(exit_count, 2);
 
         // Spawned agents list should be empty
-        assert!(assistant.spawned_agents_scope.is_empty());
+        assert!(assistant.live_spawned_agents_scope.is_empty());
     }
 
     // Sub-Agent Completion Tests
@@ -2445,7 +2474,7 @@ mod tests {
     async fn test_sub_agent_completion_during_waiting_for_user_input() {
         let mut assistant = create_test_assistant([], None);
         let sub_agent_scope = Scope::new();
-        assistant.spawned_agents_scope.insert(sub_agent_scope);
+        assistant.live_spawned_agents_scope.insert(sub_agent_scope);
 
         // Verify in WaitingForUserInput
         assert!(matches!(
@@ -2494,7 +2523,7 @@ mod tests {
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.insert(sub_agent_scope);
+        assistant.live_spawned_agents_scope.insert(sub_agent_scope);
 
         // Set to Processing state
         let processing_id = Uuid::new_v4();
@@ -2538,7 +2567,7 @@ mod tests {
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.insert(sub_agent_scope);
+        assistant.live_spawned_agents_scope.insert(sub_agent_scope);
 
         // Set up WaitingForTools state
         let mut tool_calls = std::collections::HashMap::new();
@@ -2596,7 +2625,7 @@ mod tests {
         let sub_agent_scope = Scope::new();
 
         // Add sub-agent to tracked scopes
-        assistant.spawned_agents_scope.insert(sub_agent_scope);
+        assistant.live_spawned_agents_scope.insert(sub_agent_scope);
 
         // Set to WaitingForPlanApproval
         assistant.set_state(
