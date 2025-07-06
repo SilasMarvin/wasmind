@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::actors::AgentType;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::{
     actors::{AssistantRequest, tui::components::llm_textarea::LLMTextAreaComponent},
@@ -14,6 +15,13 @@ use tuirealm::{
 
 // TODO: We need to create display widgets for plans, generic tool calls, file read and edited,
 // etc...
+
+struct AssistantInfo {
+    role: String,
+    assistant_type: AgentType,
+    task_description: Option<String>,
+    last_assistant_request: AssistantRequest,
+}
 
 #[derive(MockComponent)]
 pub struct ChatHistoryComponent {
@@ -66,7 +74,12 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
         match ev {
             Event::User(actor_message) => match actor_message.message {
                 // This is the real source of truth for what just got submitted by the LLM
-                crate::actors::Message::AssistantSpawned { scope, role, task } => None,
+                crate::actors::Message::AssistantSpawned {
+                    scope,
+                    role,
+                    task,
+                    assistant_type,
+                } => None,
                 crate::actors::Message::AssistantRequest(assistant_request) => None,
                 // These are intermediary artifacts that may be rolled back or changed by the real source of truth
                 crate::actors::Message::AssistantToolCall(tool_call) => None,

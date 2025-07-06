@@ -200,12 +200,6 @@ impl Assistant {
             role,
         };
 
-        s.broadcast(Message::AssistantSpawned {
-            scope: s.scope.clone(),
-            role: s.role.clone(),
-            task: s.task_description.clone(),
-        });
-
         // If we have a task and we aren't waiting on actors just submit it here
         // We handle the case where we have a task and are waiting on actors in the handle_message
         // method
