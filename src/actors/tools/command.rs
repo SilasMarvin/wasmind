@@ -16,18 +16,18 @@ const TRUNCATION_HEAD_CHARS: usize = 4_000; // Keep first 4k chars
 const TRUNCATION_TAIL_CHARS: usize = 4_000; // Keep last 4k chars
 
 pub const TOOL_NAME: &str = "execute_command";
-pub const TOOL_DESCRIPTION: &str = "Execute a shell command with specified arguments in a stateless environment. Each command runs in a fresh, isolated environment without any session state from previous commands. E.G. pwd, git, ls, etc...";
+pub const TOOL_DESCRIPTION: &str = "Execute a bash command in a stateless environment. Commands are executed using 'bash -c', supporting all bash features including pipes (|), redirections (>, >>), command chaining (&&, ||), and other shell operators. Each command runs in a fresh, isolated bash environment without any session state from previous commands. Examples: echo 'test' > file.txt, ls | grep pattern, command1 && command2";
 pub const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
         "command": {
             "type": "string",
-            "description": "The shell command to execute"
+            "description": "The bash command to execute. Can include shell features like pipes, redirections, etc."
         },
         "args": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Arguments to pass to the shell command"
+            "description": "Additional arguments to append to the command. These will be joined with spaces."
         },
         "directory": {
             "type": "string",
@@ -216,10 +216,19 @@ impl Command {
         // Spawn the command in a separate task
         let handle = tokio::spawn(async move {
             let tool_call_id = tool_call_id_clone;
-            // Create the command
-            let mut child = tokio::process::Command::new(&command);
+            
+            // Build the full command string from command and args
+            let full_command = if args.is_empty() {
+                command.clone()
+            } else {
+                format!("{} {}", command, args.join(" "))
+            };
+            
+            // Always use bash -c to execute commands to support shell features
+            let mut child = tokio::process::Command::new("bash");
             child
-                .args(&args)
+                .arg("-c")
+                .arg(&full_command)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
 
@@ -236,7 +245,7 @@ impl Command {
             let child_process = match child.spawn() {
                 Ok(child) => child,
                 Err(e) => {
-                    let error_msg = format!("Failed to spawn command '{}': {}", command, e);
+                    let error_msg = format!("Failed to spawn bash command '{}': {}", full_command, e);
                     error!("{}", error_msg);
                     let _ = tx.send(ActorMessage {
                         scope,
@@ -256,7 +265,7 @@ impl Command {
             let output = match tokio::time::timeout(timeout_duration, output_future).await {
                 Ok(Ok(output)) => output,
                 Ok(Err(e)) => {
-                    let error_msg = format!("Failed to execute command '{}': {}", command, e);
+                    let error_msg = format!("Failed to execute bash command '{}': {}", full_command, e);
                     error!("{}", error_msg);
                     let _ = tx.send(ActorMessage {
                         scope,
@@ -271,7 +280,7 @@ impl Command {
                     // Timeout occurred
                     // Note: The process will be automatically killed when it goes out of scope
                     let error_msg =
-                        format!("Command '{}' timed out after {} seconds", command, timeout);
+                        format!("Bash command '{}' timed out after {} seconds", full_command, timeout);
                     error!("{}", error_msg);
                     let _ = tx.send(ActorMessage {
                         scope,
@@ -590,5 +599,80 @@ mod tests {
             "ls output should contain test file"
         );
         // No cleanup needed - tempfile handles it
+    }
+
+    #[tokio::test]
+    async fn test_bash_c_environment_inheritance() {
+        // Set a test environment variable
+        unsafe {
+            env::set_var("HIVE_TEST_VAR", "test_value_123");
+        }
+        
+        // Run bash -c to echo the environment variable
+        let mut child = TokioCommand::new("bash");
+        child.args(&["-c", "echo $HIVE_TEST_VAR"]);
+        
+        let output = child.output().await.expect("Failed to execute bash command");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        
+        // Should contain our test value
+        assert_eq!(stdout.trim(), "test_value_123");
+        
+        // Clean up
+        unsafe {
+            env::remove_var("HIVE_TEST_VAR");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_bash_c_shell_redirection() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let temp_path = temp_dir.path();
+        let test_file = temp_path.join("redirect_test.txt");
+        
+        // Run bash -c with redirection
+        let mut child = TokioCommand::new("bash");
+        child.args(&["-c", "echo 'Hello from bash' > redirect_test.txt"]);
+        child.current_dir(temp_path);
+        
+        let output = child.output().await.expect("Failed to execute bash command");
+        assert!(output.status.success());
+        
+        // Verify file was created with correct content
+        let content = std::fs::read_to_string(&test_file)
+            .expect("Failed to read redirected file");
+        assert_eq!(content.trim(), "Hello from bash");
+    }
+
+    #[tokio::test]
+    async fn test_bash_c_piping() {
+        // Test piping commands
+        let mut child = TokioCommand::new("bash");
+        child.args(&["-c", "echo 'line1\nline2\nline3' | grep line2"]);
+        
+        let output = child.output().await.expect("Failed to execute bash command");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        
+        assert!(output.status.success());
+        assert_eq!(stdout.trim(), "line2");
+    }
+
+    #[tokio::test]
+    async fn test_bash_c_command_chaining() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let temp_path = temp_dir.path();
+        
+        // Test && operator
+        let mut child = TokioCommand::new("bash");
+        child.args(&["-c", "touch file1.txt && touch file2.txt && echo 'both created'"]);
+        child.current_dir(temp_path);
+        
+        let output = child.output().await.expect("Failed to execute bash command");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        
+        assert!(output.status.success());
+        assert_eq!(stdout.trim(), "both created");
+        assert!(temp_path.join("file1.txt").exists());
+        assert!(temp_path.join("file2.txt").exists());
     }
 }
