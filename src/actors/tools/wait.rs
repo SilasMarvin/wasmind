@@ -44,6 +44,8 @@ impl Wait {
     }
 
     async fn handle_wait(&mut self, tool_call: ToolCall) {
+        // TODO: Broadcast received
+
         // Send agent status update first to stop LLM processing
         self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.get_scope().clone(),

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::actors::tui::utils::offset_y;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
-use crate::actors::{AgentMessage, AgentType};
+use crate::actors::{AgentMessage, AgentType, ToolCallStatus};
 use crate::hive::{MAIN_MANAGER_ROLE, MAIN_MANAGER_SCOPE};
 use crate::llm_client::ChatMessage;
 use crate::{actors::AssistantRequest, scope::Scope};
@@ -29,6 +29,7 @@ struct AssistantInfo {
     task_description: Option<String>,
     last_assistant_request: Option<AssistantRequest>,
     pending_user_message: Option<String>,
+    tool_call_updates: HashMap<String, ToolCallStatus>,
 }
 
 impl AssistantInfo {
@@ -127,6 +128,7 @@ impl ChatHistoryComponent {
                         task_description: None,
                         last_assistant_request: None,
                         pending_user_message: None,
+                        tool_call_updates: HashMap::new(),
                     },
                 )]),
                 active_scope: MAIN_MANAGER_SCOPE.clone(),

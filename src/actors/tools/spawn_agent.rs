@@ -7,7 +7,7 @@ use tracing::info;
 // It is imported from crate::actors::agent and used with serde_json::to_string in the original code.
 use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, AgentType, Message, ToolCallStatus,
-    ToolCallType, ToolCallUpdate,
+    ToolCallUpdate,
     agent::{Agent, AgentSpawnedResponse},
     temporal::check_health::CheckHealthActor,
     tools::{
@@ -88,10 +88,7 @@ impl SpawnAgent {
         // Send received status
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::SpawnAgent,
-                friendly_command_display: "Processing request to spawn agents...".to_string(),
-            },
+            status: ToolCallStatus::Received,
         }));
 
         // Parse input

@@ -1,5 +1,5 @@
 use crate::actors::{
-    Action, Actor, ActorMessage, AgentMessage, Message, ToolCallStatus, ToolCallType,
+    Action, Actor, ActorMessage, AgentMessage, Message, ToolCallStatus,
     ToolCallUpdate,
 };
 use crate::scope::Scope;
@@ -66,10 +66,7 @@ impl FlagIssueForReview {
         // Broadcast received
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::FlagIssueForReview,
-                friendly_command_display: "Flagging issue for review".to_string(),
-            },
+            status: ToolCallStatus::Received,
         }));
 
         // Parse input

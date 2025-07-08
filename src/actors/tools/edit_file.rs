@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use tokio::sync::broadcast;
 use tracing::info;
 
-use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
+use crate::actors::{Actor, ActorMessage, Message, ToolCallStatus, ToolCallUpdate};
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
@@ -394,14 +394,9 @@ impl EditFile {
             }
         };
 
-        let friendly_command_display = format!("Apply {} edits to {}", edits.len(), path);
-
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::EditFile,
-                friendly_command_display,
-            },
+            status: ToolCallStatus::Received,
         }));
 
         // Execute the edits

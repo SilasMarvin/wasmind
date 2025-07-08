@@ -1,5 +1,5 @@
 use crate::actors::{
-    Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallUpdate,
 };
 use crate::scope::Scope;
 use crate::llm_client::{Tool, ToolCall};
@@ -42,10 +42,7 @@ impl ReportProgressNormal {
         // Broadcast received
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::ReportProgressNormal,
-                friendly_command_display: "Reporting normal progress".to_string(),
-            },
+            status: ToolCallStatus::Received,
         }));
 
         // Shut everything down as it was fine

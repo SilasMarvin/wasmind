@@ -5,9 +5,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
-use crate::actors::{
-    Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
-};
+use crate::actors::{Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallUpdate};
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
@@ -102,7 +100,8 @@ impl Command {
         }
 
         // Parse the arguments
-        let args = serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments).unwrap();
+        let args =
+            serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments).unwrap();
 
         // Extract command and arguments
         let command = args.get("command").and_then(|v| v.as_str()).unwrap();
@@ -128,14 +127,9 @@ impl Command {
             .min(600)
             .max(1);
 
-        let args_string = args_array.join(" ");
-        let friendly_command_display = format!("{command} {args_string}");
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::Command,
-                friendly_command_display,
-            },
+            status: ToolCallStatus::Received,
         }));
 
         // Check if command is whitelisted
@@ -181,7 +175,6 @@ impl Command {
             )
             .await;
         } else {
-            // Await user confirmation (traditional behavior)
             self.pending_command = Some(PendingCommand {
                 command: command.to_string(),
                 args: args_array.clone(),
@@ -216,14 +209,14 @@ impl Command {
         // Spawn the command in a separate task
         let handle = tokio::spawn(async move {
             let tool_call_id = tool_call_id_clone;
-            
+
             // Build the full command string from command and args
             let full_command = if args.is_empty() {
                 command.clone()
             } else {
                 format!("{} {}", command, args.join(" "))
             };
-            
+
             // Always use bash -c to execute commands to support shell features
             let mut child = tokio::process::Command::new("bash");
             child
@@ -245,7 +238,8 @@ impl Command {
             let child_process = match child.spawn() {
                 Ok(child) => child,
                 Err(e) => {
-                    let error_msg = format!("Failed to spawn bash command '{}': {}", full_command, e);
+                    let error_msg =
+                        format!("Failed to spawn bash command '{}': {}", full_command, e);
                     error!("{}", error_msg);
                     let _ = tx.send(ActorMessage {
                         scope,
@@ -265,7 +259,8 @@ impl Command {
             let output = match tokio::time::timeout(timeout_duration, output_future).await {
                 Ok(Ok(output)) => output,
                 Ok(Err(e)) => {
-                    let error_msg = format!("Failed to execute bash command '{}': {}", full_command, e);
+                    let error_msg =
+                        format!("Failed to execute bash command '{}': {}", full_command, e);
                     error!("{}", error_msg);
                     let _ = tx.send(ActorMessage {
                         scope,
@@ -279,8 +274,10 @@ impl Command {
                 Err(_) => {
                     // Timeout occurred
                     // Note: The process will be automatically killed when it goes out of scope
-                    let error_msg =
-                        format!("Bash command '{}' timed out after {} seconds", full_command, timeout);
+                    let error_msg = format!(
+                        "Bash command '{}' timed out after {} seconds",
+                        full_command, timeout
+                    );
                     error!("{}", error_msg);
                     let _ = tx.send(ActorMessage {
                         scope,
@@ -455,8 +452,8 @@ impl Actor for Command {
 mod tests {
     use super::*;
     use std::env;
-    use tokio::process::Command as TokioCommand;
     use tempfile::TempDir;
+    use tokio::process::Command as TokioCommand;
 
     #[test]
     fn test_smart_truncate_small_output() {
@@ -607,17 +604,20 @@ mod tests {
         unsafe {
             env::set_var("HIVE_TEST_VAR", "test_value_123");
         }
-        
+
         // Run bash -c to echo the environment variable
         let mut child = TokioCommand::new("bash");
         child.args(&["-c", "echo $HIVE_TEST_VAR"]);
-        
-        let output = child.output().await.expect("Failed to execute bash command");
+
+        let output = child
+            .output()
+            .await
+            .expect("Failed to execute bash command");
         let stdout = String::from_utf8_lossy(&output.stdout);
-        
+
         // Should contain our test value
         assert_eq!(stdout.trim(), "test_value_123");
-        
+
         // Clean up
         unsafe {
             env::remove_var("HIVE_TEST_VAR");
@@ -629,18 +629,20 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let temp_path = temp_dir.path();
         let test_file = temp_path.join("redirect_test.txt");
-        
+
         // Run bash -c with redirection
         let mut child = TokioCommand::new("bash");
         child.args(&["-c", "echo 'Hello from bash' > redirect_test.txt"]);
         child.current_dir(temp_path);
-        
-        let output = child.output().await.expect("Failed to execute bash command");
+
+        let output = child
+            .output()
+            .await
+            .expect("Failed to execute bash command");
         assert!(output.status.success());
-        
+
         // Verify file was created with correct content
-        let content = std::fs::read_to_string(&test_file)
-            .expect("Failed to read redirected file");
+        let content = std::fs::read_to_string(&test_file).expect("Failed to read redirected file");
         assert_eq!(content.trim(), "Hello from bash");
     }
 
@@ -649,10 +651,13 @@ mod tests {
         // Test piping commands
         let mut child = TokioCommand::new("bash");
         child.args(&["-c", "echo 'line1\nline2\nline3' | grep line2"]);
-        
-        let output = child.output().await.expect("Failed to execute bash command");
+
+        let output = child
+            .output()
+            .await
+            .expect("Failed to execute bash command");
         let stdout = String::from_utf8_lossy(&output.stdout);
-        
+
         assert!(output.status.success());
         assert_eq!(stdout.trim(), "line2");
     }
@@ -661,15 +666,21 @@ mod tests {
     async fn test_bash_c_command_chaining() {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let temp_path = temp_dir.path();
-        
+
         // Test && operator
         let mut child = TokioCommand::new("bash");
-        child.args(&["-c", "touch file1.txt && touch file2.txt && echo 'both created'"]);
+        child.args(&[
+            "-c",
+            "touch file1.txt && touch file2.txt && echo 'both created'",
+        ]);
         child.current_dir(temp_path);
-        
-        let output = child.output().await.expect("Failed to execute bash command");
+
+        let output = child
+            .output()
+            .await
+            .expect("Failed to execute bash command");
         let stdout = String::from_utf8_lossy(&output.stdout);
-        
+
         assert!(output.status.success());
         assert_eq!(stdout.trim(), "both created");
         assert!(temp_path.join("file1.txt").exists());

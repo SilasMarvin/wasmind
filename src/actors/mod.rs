@@ -63,30 +63,12 @@ pub struct ToolCallUpdate {
     pub status: ToolCallStatus,
 }
 
-/// ToolCall Type
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ToolCallType {
-    Complete,
-    Command,
-    ReadFile,
-    EditFile,
-    Planner,
-    TaskCompleted,
-    SpawnAgent,
-    MCP,
-    ReportProgressNormal,
-    FlagIssueForReview,
-}
-
 pub type ToolCallResult = Result<String, String>;
 
 /// ToolCall Status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ToolCallStatus {
-    Received {
-        r#type: ToolCallType,
-        friendly_command_display: String,
-    },
+    Received,
     AwaitingUserYNConfirmation,
     ReceivedUserYNConfirmation(bool),
     Finished(ToolCallResult),

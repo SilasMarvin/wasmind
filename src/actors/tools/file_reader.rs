@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use tokio::sync::broadcast;
 
 use crate::actors::ActorMessage;
-use crate::actors::{Actor, Message, ToolCallStatus, ToolCallType, ToolCallUpdate};
+use crate::actors::{Actor, Message, ToolCallStatus, ToolCallUpdate};
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
@@ -582,17 +582,9 @@ impl FileReaderActor {
         let start_line = start_line.map(|x| x as usize);
         let end_line = end_line.map(|x| x as usize);
 
-        let friendly_command_display = match (start_line, end_line) {
-            (Some(start), Some(end)) => format!("Read file: {} (lines {}-{})", path, start, end),
-            _ => format!("Read file: {}", path),
-        };
-
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::ReadFile,
-                friendly_command_display,
-            },
+            status: ToolCallStatus::Received,
         }));
 
         // Execute the read

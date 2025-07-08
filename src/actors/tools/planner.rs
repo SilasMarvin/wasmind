@@ -4,7 +4,7 @@ use tokio::sync::broadcast;
 
 use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage,
-    Message, ToolCallStatus, ToolCallType, ToolCallUpdate, WaitReason,
+    Message, ToolCallStatus, ToolCallUpdate, WaitReason,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -244,13 +244,9 @@ impl Planner {
             tasks: task_list,
         };
 
-        let friendly_command_display = format!("Create task plan: {}", title);
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::Planner,
-                friendly_command_display,
-            },
+            status: ToolCallStatus::Received,
         }));
 
         // Store the plan
@@ -338,20 +334,9 @@ impl Planner {
 
         let task_index = task_number - 1;
 
-        let friendly_command_display = match action {
-            "update" => format!("Update task {} in plan", task_number),
-            "complete" => format!("Complete task {} in plan", task_number),
-            "start" => format!("Start task {} in plan", task_number),
-            "skip" => format!("Skip task {} in plan", task_number),
-            _ => unreachable!(),
-        };
-
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::Planner,
-                friendly_command_display,
-            },
+            status: ToolCallStatus::Received,
         }));
 
         // Update the task plan

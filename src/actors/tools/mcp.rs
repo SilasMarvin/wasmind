@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
 use crate::actors::{
-    Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -158,10 +158,7 @@ impl MCP {
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::MCP,
-                friendly_command_display: format!("MCP: {} ({})", tool_call.function.name, server_name),
-            },
+            status: ToolCallStatus::Received,
         }));
 
         self.execute_mcp_tool(tool_call, &server_name).await;

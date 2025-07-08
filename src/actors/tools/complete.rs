@@ -1,6 +1,6 @@
 use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentTaskResultOk,
-    InterAgentMessage, Message, ToolCallStatus, ToolCallType, ToolCallUpdate,
+    InterAgentMessage, Message, ToolCallStatus, ToolCallUpdate,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -55,10 +55,7 @@ impl Complete {
         // Broadcast received
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received {
-                r#type: ToolCallType::Complete,
-                friendly_command_display: "Calling complete".to_string(),
-            },
+            status: ToolCallStatus::Received,
         }));
 
         // Parse input
