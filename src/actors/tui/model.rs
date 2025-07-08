@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast::{Receiver, Sender};
 use tuirealm::listener::{ListenerResult, Poll};
@@ -34,6 +34,8 @@ impl Poll<ActorMessage> for PollBroadcastWrapper {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TuiMessage {
+    Batch(Vec<TuiMessage>),
+    Redraw,
     ActorMessage(ActorMessage),
     UpdatedUserTypedLLMMessage(String),
     SubmittedUserTypedLLMMessage(String),
@@ -70,6 +72,7 @@ where
         assert!(
             self.terminal
                 .draw(|f| {
+                    let start = Instant::now();
                     let chunks = Layout::default()
                         .direction(Direction::Horizontal)
                         .margin(1)
@@ -79,6 +82,8 @@ where
                         .split(f.area());
                     // self.app.view(&GRAPH_SCOPE, f, chunks[0]);
                     self.app.view(&CHAT_SCOPE, f, chunks[1]);
+                    let elapsed = start.elapsed().as_millis();
+                    tracing::error!("ELAPSED: {}", elapsed);
                 })
                 .is_ok()
         );
@@ -87,14 +92,14 @@ where
     pub fn init_app(rx: Receiver<ActorMessage>) -> Application<Scope, TuiMessage, ActorMessage> {
         let mut app: Application<Scope, TuiMessage, ActorMessage> = Application::init(
             EventListenerCfg::default()
-                .crossterm_input_listener(Duration::from_millis(20), 3)
+                .crossterm_input_listener(Duration::from_millis(5), 1)
                 .add_port(
                     Box::new(PollBroadcastWrapper { rx }),
-                    Duration::from_millis(20),
+                    Duration::from_millis(5),
                     1024,
                 )
                 .tick_interval(Duration::from_secs(1))
-                .poll_timeout(Duration::from_millis(10)),
+                .poll_timeout(Duration::from_millis(5)),
         );
 
         assert!(
@@ -121,6 +126,11 @@ where
             self.redraw = true;
 
             match msg {
+                TuiMessage::Batch(batch) => {
+                    for msg in batch {
+                        self.update(Some(msg));
+                    }
+                }
                 TuiMessage::ActorMessage(actor_message) => (),
                 TuiMessage::UpdatedUserTypedLLMMessage(_) => (),
                 TuiMessage::SubmittedUserTypedLLMMessage(message) => {
@@ -129,6 +139,7 @@ where
                         message: Message::UserContext(UserContext::UserTUIInput(message)),
                     });
                 }
+                TuiMessage::Redraw => (),
             }
         }
 

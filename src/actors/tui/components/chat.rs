@@ -1,11 +1,6 @@
-use std::collections::HashMap;
-
 use crate::actors::tui::utils;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
-use crate::{
-    actors::{AssistantRequest, tui::components::llm_textarea::LLMTextAreaComponent},
-    scope::Scope,
-};
+use crate::{actors::tui::components::llm_textarea::LLMTextAreaComponent, scope::Scope};
 use ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::props::Borders;
 use tuirealm::{
@@ -15,6 +10,7 @@ use tuirealm::{
 };
 
 use super::chat_history::ChatHistoryComponent;
+use super::scrollable::ScrollableComponent;
 
 pub const CHAT_SCOPE: Scope = Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-d68b0e6c4cf1"));
 
@@ -30,7 +26,7 @@ impl ChatAreaComponent {
                 props: Props::default(),
                 state: State::One(StateValue::String("".to_string())),
                 llm_textarea: LLMTextAreaComponent::new(),
-                chat_history: ChatHistoryComponent::new(),
+                chat_history: ScrollableComponent::new(Box::new(ChatHistoryComponent::new())),
             },
         }
     }
@@ -40,7 +36,7 @@ struct ChatArea {
     props: Props,
     state: State,
     llm_textarea: LLMTextAreaComponent,
-    chat_history: ChatHistoryComponent,
+    chat_history: ScrollableComponent,
 }
 
 impl MockComponent for ChatArea {
@@ -92,7 +88,14 @@ impl MockComponent for ChatArea {
 impl Component<TuiMessage, ActorMessage> for ChatAreaComponent {
     fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
         // Chat history doesn't return anything
-        self.component.chat_history.on(ev.clone());
-        self.component.llm_textarea.on(ev)
+        match (
+            self.component.chat_history.on(ev.clone()),
+            self.component.llm_textarea.on(ev),
+        ) {
+            (None, None) => None,
+            (None, Some(msg)) => Some(msg),
+            (Some(msg), None) => Some(msg),
+            (Some(msg1), Some(msg2)) => Some(TuiMessage::Batch(vec![msg1, msg2])),
+        }
     }
 }

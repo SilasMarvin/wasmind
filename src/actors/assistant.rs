@@ -843,23 +843,21 @@ impl Actor for Assistant {
                         match inter_agent_message {
                             InterAgentMessage::StatusUpdate { status } => {
                                 self.system_state
-                                    .update_agent_status(&agent_message.agent_id, status.clone());
+                                    .update_agent_status(&message.scope, status.clone());
 
                                 match status {
                                     AgentStatus::Done(agent_task_result) => {
-                                        self.live_spawned_agents_scope
-                                            .remove(&agent_message.agent_id);
+                                        self.live_spawned_agents_scope.remove(&message.scope);
 
                                         let formatted_message = match &agent_task_result {
                                             Ok(response) => format_agent_response_success(
-                                                &agent_message.agent_id,
+                                                &message.scope,
                                                 response.success,
                                                 &response.summary,
                                             ),
-                                            Err(err) => format_agent_response_failure(
-                                                &agent_message.agent_id,
-                                                err,
-                                            ),
+                                            Err(err) => {
+                                                format_agent_response_failure(&message.scope, err)
+                                            }
                                         };
                                         self.add_system_message(formatted_message);
 
@@ -883,7 +881,7 @@ impl Actor for Assistant {
                             } if agent_message.agent_id == self.scope => {
                                 self.add_system_message(format_sub_agent_message(
                                     &sub_agent_message,
-                                    &agent_message.agent_id,
+                                    &message.scope,
                                 ));
                                 match self.state.clone() {
                                     AgentStatus::Wait { reason } => match reason {
