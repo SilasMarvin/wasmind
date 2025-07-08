@@ -1,4 +1,7 @@
-use crate::{actors::tools::wait::WAIT_TOOL_NAME, llm_client::ChatMessage};
+use crate::{
+    actors::tools::wait::WAIT_TOOL_NAME,
+    llm_client::{AssistantChatMessage, ChatMessage},
+};
 use std::collections::HashSet;
 
 /// Filters out wait tool calls from chat messages.
@@ -20,7 +23,7 @@ pub fn filter_wait_tool_calls(messages: &[ChatMessage]) -> Vec<ChatMessage> {
 
     // Find assistant messages with single wait tool calls
     for message in messages {
-        if let ChatMessage::Assistant { tool_calls, .. } = message {
+        if let ChatMessage::Assistant(AssistantChatMessage { tool_calls, .. }) = message {
             if let Some(calls) = tool_calls {
                 if calls.len() == 1 && calls[0].function.name == WAIT_TOOL_NAME {
                     wait_call_ids_to_filter.insert(calls[0].id.clone());
@@ -51,7 +54,7 @@ pub fn filter_wait_tool_calls(messages: &[ChatMessage]) -> Vec<ChatMessage> {
     messages
         .iter()
         .filter(|message| match message {
-            ChatMessage::Assistant { tool_calls, .. } => {
+            ChatMessage::Assistant(AssistantChatMessage { tool_calls, .. }) => {
                 if let Some(calls) = tool_calls {
                     // Only filter if it's a single wait call that has a confirmed pair
                     !(calls.len() == 1
@@ -91,13 +94,13 @@ mod tests {
     }
 
     fn create_assistant_message(tool_calls: Option<Vec<ToolCall>>) -> ChatMessage {
-        ChatMessage::Assistant {
+        ChatMessage::Assistant(AssistantChatMessage {
             content: None,
             tool_calls,
             reasoning_content: None,
             thinking_blocks: None,
             provider_specific_fields: None,
-        }
+        })
     }
 
     fn create_tool_message(id: &str, name: &str) -> ChatMessage {
@@ -124,7 +127,7 @@ mod tests {
 
         assert_eq!(filtered.len(), 3); // System + other tool pair
         assert!(matches!(&filtered[0], ChatMessage::System { .. }));
-        if let ChatMessage::Assistant { tool_calls, .. } = &filtered[1] {
+        if let ChatMessage::Assistant(AssistantChatMessage { tool_calls, .. }) = &filtered[1] {
             assert_eq!(tool_calls.as_ref().unwrap()[0].function.name, "other_tool");
         } else {
             panic!("Expected assistant message");
@@ -242,11 +245,10 @@ mod tests {
 
         // Should only keep the non-wait assistant message
         assert_eq!(filtered.len(), 1);
-        if let ChatMessage::Assistant { tool_calls, .. } = &filtered[0] {
+        if let ChatMessage::Assistant(AssistantChatMessage { tool_calls, .. }) = &filtered[0] {
             assert_eq!(tool_calls.as_ref().unwrap()[0].function.name, "other_tool");
         } else {
             panic!("Expected assistant message");
         }
     }
 }
-

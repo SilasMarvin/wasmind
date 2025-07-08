@@ -1,4 +1,5 @@
-use crate::llm_client::{ChatMessage, LLMClient, LLMError, Tool};
+use crate::llm_client::{AssistantChatMessage, ChatMessage, LLMClient, LLMError, Tool};
+use snafu::whatever;
 use std::{
     collections::BTreeSet,
     sync::{Arc, Mutex},
@@ -420,6 +421,7 @@ impl Assistant {
     }
 }
 
+// TODO: Need to work on some retrying / timeout logic here
 async fn do_assist(
     tx: broadcast::Sender<ActorMessage>,
     client: LLMClient,
@@ -460,27 +462,28 @@ async fn do_assist(
     );
 
     if let Some(choice) = resp.choices.first() {
-        let assistant_message = &choice.message;
+        let assistant_message = match &choice.message {
+            ChatMessage::Assistant(assistant_message) => assistant_message,
+            _ => {
+                whatever!("LLM returned non-assistant response")
+            }
+        };
 
         // Send response
         let _ = tx.send(ActorMessage {
             scope,
             message: Message::AssistantResponse {
                 id: processing_id,
-                content: assistant_message.clone(),
+                message: assistant_message.clone(),
             },
         });
 
         // Handle tool calls if any
-        if let ChatMessage::Assistant {
-            tool_calls: Some(tool_calls),
-            ..
-        } = assistant_message
-        {
+        if let Some(tool_calls) = assistant_message.tool_calls.clone() {
             for tool_call in tool_calls {
                 let _ = tx.send(ActorMessage {
                     scope,
-                    message: Message::AssistantToolCall(tool_call.clone()),
+                    message: Message::AssistantToolCall(tool_call),
                 });
             }
         }
@@ -629,6 +632,12 @@ impl Actor for Assistant {
                             AgentStatus::Wait {
                                 reason: WaitReason::WaitingForUserInput,
                             },
+                        )
+                        | (
+                            UserContext::UserTUIInput(text),
+                            AgentStatus::Wait {
+                                reason: WaitReason::WaitForSystem { .. },
+                            },
                         ) => {
                             self.add_user_content(text);
                             self.submit_pending_message(false);
@@ -646,73 +655,55 @@ impl Actor for Assistant {
                 }
 
                 // Responses from our call to do_assist
-                Message::AssistantResponse { id, content } => {
+                Message::AssistantResponse { id, message } => {
                     // State transition: Processing -> AwaitingTools or Idle/Wait based on content
                     if let AgentStatus::Processing { id: processing_id } = &self.state {
                         // This is probably an old cancelled call or something
                         if processing_id != &id {
                             return;
                         }
+                        self.chat_history
+                            .push(ChatMessage::Assistant(message.clone()));
 
-                        match content {
-                            ChatMessage::Assistant {
-                                tool_calls: Some(ref tool_calls),
-                                ..
-                            } => {
-                                // Handle tool calls
-                                self.chat_history.push(content.clone());
-                                let tool_calls_map = tool_calls
-                                    .iter()
-                                    .map(|tc| {
-                                        (
-                                            tc.id.clone(),
-                                            PendingToolCall {
-                                                tool_name: tc.function.name.clone(),
-                                                result: None,
-                                            },
-                                        )
-                                    })
-                                    .collect();
-                                self.set_state(
-                                    AgentStatus::Wait {
-                                        reason: WaitReason::WaitingForTools {
-                                            tool_calls: tool_calls_map,
+                        if let Some(tool_calls) = message.tool_calls {
+                            let tool_calls_map = tool_calls
+                                .iter()
+                                .map(|tc| {
+                                    (
+                                        tc.id.clone(),
+                                        PendingToolCall {
+                                            tool_name: tc.function.name.clone(),
+                                            result: None,
                                         },
+                                    )
+                                })
+                                .collect();
+                            self.set_state(
+                                AgentStatus::Wait {
+                                    reason: WaitReason::WaitingForTools {
+                                        tool_calls: tool_calls_map,
                                     },
-                                    true,
-                                );
-                            }
-                            ChatMessage::Assistant {
-                                content: Some(_), ..
-                            } => {
-                                // Handle text response
-                                self.chat_history.push(content.clone());
-
-                                if *crate::IS_HEADLESS.get().unwrap_or(&false) {
-                                    // This is an error by the LLM it should only ever respond with
-                                    // tool calls in headless mode
-                                    self.add_system_message("ERROR! You responded without calling a tool. Try again and this time ensure you call a tool! If in doubt, use the `wait` tool.".to_string());
+                                },
+                                true,
+                            );
+                        } else if let Some(content) = message.content {
+                            if *crate::IS_HEADLESS.get().unwrap_or(&false) {
+                                // This is an error by the LLM it should only ever respond with
+                                // tool calls in headless mode
+                                self.add_system_message("ERROR! You responded without calling a tool. Try again and this time ensure you call a tool! If in doubt, use the `wait` tool.".to_string());
+                                self.submit_pending_message(false);
+                            } else {
+                                // If we have pending message content, submit it immediately when Idle
+                                if self.pending_message.has_content() {
                                     self.submit_pending_message(false);
                                 } else {
-                                    // If we have pending message content, submit it immediately when Idle
-                                    if self.pending_message.has_content() {
-                                        self.submit_pending_message(false);
-                                    } else {
-                                        self.set_state(
-                                            AgentStatus::Wait {
-                                                reason: WaitReason::WaitingForUserInput,
-                                            },
-                                            true,
-                                        );
-                                    }
+                                    self.set_state(
+                                        AgentStatus::Wait {
+                                            reason: WaitReason::WaitingForUserInput,
+                                        },
+                                        true,
+                                    );
                                 }
-                            }
-                            _ => {
-                                // Handle unexpected message types
-                                tracing::warn!(
-                                    "Received unexpected message type in assistant response: {:?}",
-                                    content
-                                );
                             }
                         }
                     }
@@ -804,10 +795,10 @@ impl Actor for Assistant {
                                 // Alternatively we could add a dummy tool response but this seems more reasonable
                                 if matches!(
                                     self.chat_history.last(),
-                                    Some(ChatMessage::Assistant {
+                                    Some(ChatMessage::Assistant(AssistantChatMessage {
                                         tool_calls: Some(_),
                                         ..
-                                    })
+                                    }))
                                 ) {
                                     self.chat_history.pop();
                                 }
@@ -1293,7 +1284,7 @@ mod tests {
             &mut assistant,
             Message::AssistantResponse {
                 id: processing_id,
-                content: ChatMessage::assistant("Response text"),
+                message: AssistantChatMessage::new_with_content("Response text"),
             },
         )
         .await;
@@ -1335,7 +1326,7 @@ mod tests {
             &mut assistant,
             Message::AssistantResponse {
                 id: processing_id,
-                content: ChatMessage::assistant_with_tools(vec![tool_call]),
+                message: AssistantChatMessage::new_with_tools(vec![tool_call]),
             },
         )
         .await;
@@ -1366,7 +1357,7 @@ mod tests {
             &mut assistant,
             Message::AssistantResponse {
                 id: old_id,
-                content: ChatMessage::assistant("Old response"),
+                message: AssistantChatMessage::new_with_content("Old response"),
             },
         )
         .await;
@@ -2035,7 +2026,7 @@ mod tests {
             &mut assistant,
             Message::AssistantResponse {
                 id: processing_id,
-                content: ChatMessage::assistant("Response"),
+                message: AssistantChatMessage::new_with_content("Response"),
             },
         )
         .await;

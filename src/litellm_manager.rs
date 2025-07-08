@@ -592,7 +592,7 @@ mod tests {
     use super::*;
     use crate::{
         config::{ParsedConfig, ParsedHiveConfig, ParsedModelConfig, ParsedTemporalConfig},
-        llm_client::Tool,
+        llm_client::{AssistantChatMessage, Tool},
     };
     use serde_json::json;
     use std::collections::HashMap;
@@ -847,11 +847,11 @@ mod tests {
 
         let message = &response.choices[0].message;
         match message {
-            ChatMessage::Assistant {
+            ChatMessage::Assistant(AssistantChatMessage {
                 content: Some(content),
                 tool_calls: Some(tool_calls),
                 ..
-            } => {
+            }) => {
                 assert!(!content.is_empty(), "Response content should not be empty");
                 assert!(
                     !tool_calls.is_empty(),

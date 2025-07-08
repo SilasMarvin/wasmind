@@ -28,6 +28,13 @@ pub enum LLMError {
         source: serde_json::Error,
         text: String,
     },
+
+    #[snafu(whatever, display("{message}"))]
+    Whatever {
+        message: String,
+        #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +69,42 @@ pub struct ThinkingBlock {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssistantChatMessage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_blocks: Option<Vec<ThinkingBlock>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_specific_fields: Option<Value>,
+}
+
+impl AssistantChatMessage {
+    pub fn new_with_content(content: impl ToString) -> Self {
+        AssistantChatMessage {
+            content: Some(content.to_string()),
+            tool_calls: None,
+            reasoning_content: None,
+            thinking_blocks: None,
+            provider_specific_fields: None,
+        }
+    }
+
+    pub fn new_with_tools(tool_calls: Vec<ToolCall>) -> Self {
+        AssistantChatMessage {
+            content: None,
+            tool_calls: Some(tool_calls),
+            reasoning_content: None,
+            thinking_blocks: None,
+            provider_specific_fields: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "lowercase")]
 pub enum ChatMessage {
     System {
@@ -70,18 +113,7 @@ pub enum ChatMessage {
     User {
         content: String,
     },
-    Assistant {
-        #[serde(skip_serializing_if = "Option::is_none")]
-        content: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        tool_calls: Option<Vec<ToolCall>>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        reasoning_content: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        thinking_blocks: Option<Vec<ThinkingBlock>>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        provider_specific_fields: Option<Value>,
-    },
+    Assistant(AssistantChatMessage),
     Tool {
         tool_call_id: String,
         name: String,
@@ -212,23 +244,23 @@ impl ChatMessage {
     }
 
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self::Assistant {
+        Self::Assistant(AssistantChatMessage {
             content: Some(content.into()),
             tool_calls: None,
             reasoning_content: None,
             thinking_blocks: None,
             provider_specific_fields: None,
-        }
+        })
     }
 
     pub fn assistant_with_tools(tool_calls: Vec<ToolCall>) -> Self {
-        Self::Assistant {
+        Self::Assistant(AssistantChatMessage {
             content: None,
             tool_calls: Some(tool_calls),
             reasoning_content: None,
             thinking_blocks: None,
             provider_specific_fields: None,
-        }
+        })
     }
 
     pub fn tool(
@@ -294,11 +326,11 @@ mod tests {
 
         let assistant_msg = ChatMessage::assistant("Hi there!");
         match assistant_msg {
-            ChatMessage::Assistant {
+            ChatMessage::Assistant(AssistantChatMessage {
                 content,
                 tool_calls,
                 ..
-            } => {
+            }) => {
                 assert_eq!(content, Some("Hi there!".to_string()));
                 assert!(tool_calls.is_none());
             }
@@ -410,7 +442,7 @@ mod tests {
         assert_eq!(response.model, "gpt-4");
         assert_eq!(response.choices.len(), 1);
         match &response.choices[0].message {
-            ChatMessage::Assistant { content, .. } => {
+            ChatMessage::Assistant(AssistantChatMessage { content, .. }) => {
                 assert_eq!(content, &Some("Hello! How can I help you?".to_string()));
             }
             _ => panic!("Expected Assistant message"),
@@ -440,13 +472,13 @@ mod tests {
 
         let message: ChatMessage = serde_json::from_value(message_json).unwrap();
         match message {
-            ChatMessage::Assistant {
+            ChatMessage::Assistant(AssistantChatMessage {
                 content,
                 tool_calls,
                 reasoning_content,
                 thinking_blocks,
                 ..
-            } => {
+            }) => {
                 assert_eq!(content, Some("I'll check the weather for you".to_string()));
                 assert!(tool_calls.is_some());
                 assert_eq!(tool_calls.as_ref().unwrap().len(), 1);

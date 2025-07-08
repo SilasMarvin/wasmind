@@ -1,22 +1,24 @@
 use std::collections::HashMap;
 
+use crate::actors::tui::utils::offset_y;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::actors::{AgentMessage, AgentMessageType, AgentType};
 use crate::hive::{MAIN_MANAGER_ROLE, MAIN_MANAGER_SCOPE};
+use crate::llm_client::ChatMessage;
 use crate::{
     actors::{AssistantRequest, tui::components::llm_textarea::LLMTextAreaComponent},
     scope::Scope,
 };
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Offset};
 use ratatui::style::Style;
-use ratatui::widgets::{Block, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Block, Borders, Paragraph, Widget, Wrap};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State, StateValue,
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
 
-const MESSAGE_GAP: i32 = 1;
+const MESSAGE_GAP: u16 = 1;
 
 // TODO: We need to create display widgets for plans, generic tool calls, file read and edited,
 // etc...
@@ -31,58 +33,55 @@ struct AssistantInfo {
 }
 
 impl Widget for AssistantInfo {
+    // This render function assumes the area height is infinite
     fn render(self, mut area: Rect, buf: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
     {
         // Render top role title
         let title_paragraph = Paragraph::new(self.role)
-            .block(Block::bordered())
             .style(Style::new())
             .alignment(Alignment::Center);
-        let offset_y = title_paragraph.line_count(area.width);
+        let min_height = title_paragraph.line_count(area.width) as u16;
+        area.height = min_height;
+        tracing::error!("RENDERING TOP AREA: {:?}", area);
         title_paragraph.render(area, buf);
-        area = area.offset(Offset {
-            x: 0,
-            y: offset_y as i32 + MESSAGE_GAP,
-        });
+        area = offset_y(area, min_height + MESSAGE_GAP);
 
-        // Render chat history
-        if let Some(last_assistant_request) = self.last_assistant_request {
-            for message in last_assistant_request.messages {
-                let content = serde_json::to_string_pretty(&message).unwrap();
-                let title_paragraph = Paragraph::new(content)
+        if self.last_assistant_request.is_none() && self.pending_user_message.is_none() {
+            let content = "Type to send a message".to_string();
+            let paragraph = Paragraph::new(content)
+                .block(Block::bordered())
+                .style(Style::new())
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: true });
+            area.height = 1;
+            paragraph.render(area, buf);
+        } else {
+            // Render chat history
+            if let Some(last_assistant_request) = self.last_assistant_request {
+                for message in last_assistant_request.messages {
+                    let content = serde_json::to_string_pretty(&message).unwrap();
+                    let message_paragraph = Paragraph::new(content)
+                        .block(Block::bordered())
+                        .style(Style::new())
+                        .alignment(Alignment::Left)
+                        .wrap(Wrap { trim: true });
+                    let min_height = message_paragraph.line_count(area.width) as u16;
+                    area.height = min_height;
+                    message_paragraph.render(area, buf);
+                    area = offset_y(area, min_height + MESSAGE_GAP);
+                }
+            }
+
+            // Render pending message
+            if let Some(pending_message) = self.pending_user_message {
+                let pending_message_paragraph = Paragraph::new(pending_message)
                     .block(Block::bordered())
                     .style(Style::new())
-                    .alignment(Alignment::Left);
-                let offset_y = title_paragraph.line_count(area.width);
-                title_paragraph.render(area, buf);
-                area = area.offset(Offset {
-                    x: 0,
-                    y: offset_y as i32 + MESSAGE_GAP,
-                });
+                    .alignment(Alignment::Center);
+                pending_message_paragraph.render(area, buf);
             }
-        } else {
-            let content = "No messages from the assistant yet".to_string();
-            let title_paragraph = Paragraph::new(content)
-                .block(Block::bordered())
-                .style(Style::new())
-                .alignment(Alignment::Center);
-            let offset_y = title_paragraph.line_count(area.width);
-            title_paragraph.render(area, buf);
-            area = area.offset(Offset {
-                x: 0,
-                y: offset_y as i32 + MESSAGE_GAP,
-            });
-        }
-
-        // Render pending message
-        if let Some(pending_message) = self.pending_user_message {
-            let pending_message_paragraph = Paragraph::new(pending_message)
-                .block(Block::bordered())
-                .style(Style::new())
-                .alignment(Alignment::Center);
-            pending_message_paragraph.render(area, buf);
         }
     }
 }
@@ -175,12 +174,25 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
                         .chat_history_map
                         .get_mut(&actor_message.scope)
                     {
+                        // TODO: Can we always assume the pending_user_message was submitted?
+                        actor_info.pending_user_message = None;
                         actor_info.last_assistant_request = Some(assistant_request);
                     }
                 }
                 // These are intermediary artifacts that may be rolled back or changed by the real source of truth
                 crate::actors::Message::AssistantToolCall(tool_call) => (),
-                crate::actors::Message::AssistantResponse { id, content } => (),
+                crate::actors::Message::AssistantResponse { message, .. } => {
+                    if let Some(actor_info) = self
+                        .component
+                        .chat_history_map
+                        .get_mut(&actor_message.scope)
+                        && let Some(last_assistant_request) = &mut actor_info.last_assistant_request
+                    {
+                        last_assistant_request
+                            .messages
+                            .push(ChatMessage::Assistant(message));
+                    }
+                }
                 crate::actors::Message::ToolCallUpdate(tool_call_update) => (),
                 crate::actors::Message::FileRead {
                     path,

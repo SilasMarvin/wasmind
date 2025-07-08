@@ -207,7 +207,7 @@ pub enum Message {
     AssistantToolCall(ToolCall),
     AssistantResponse {
         id: Uuid,
-        content: crate::llm_client::ChatMessage,
+        message: crate::llm_client::AssistantChatMessage,
     },
 
     // Tool messages

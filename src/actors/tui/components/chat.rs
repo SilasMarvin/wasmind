@@ -59,6 +59,7 @@ impl MockComponent for ChatArea {
                 .constraints(
                     [
                         Constraint::Percentage(100),
+                        Constraint::Min(1),
                         Constraint::Min(textarea_height as u16),
                     ]
                     .as_ref(),
@@ -66,7 +67,7 @@ impl MockComponent for ChatArea {
                 .split(area);
 
             self.chat_history.view(frame, chunks[0]);
-            self.llm_textarea.view(frame, chunks[1]);
+            self.llm_textarea.view(frame, chunks[2]);
         }
     }
 
