@@ -174,10 +174,10 @@ impl MCP {
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id.clone(),
-                    status: ToolCallStatus::Finished(Err(format!(
-                        "Server not found: {}",
-                        server_name
-                    ))),
+                    status: ToolCallStatus::Finished {
+                        result: Err(format!("Server not found: {}", server_name)),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -213,7 +213,10 @@ impl MCP {
                     );
 
                     if tool_response.is_error.is_some_and(|x| x) {
-                        ToolCallStatus::Finished(Err("MCP tool reported an error".to_string()))
+                        ToolCallStatus::Finished { 
+                            result: Err("MCP tool reported an error".to_string()), 
+                            tui_display: None 
+                        }
                     } else {
                         let content = tool_response
                             .content
@@ -231,7 +234,7 @@ impl MCP {
                             .collect::<Vec<String>>()
                             .join("\n\n");
 
-                        ToolCallStatus::Finished(Ok(content))
+                        ToolCallStatus::Finished { result: Ok(content), tui_display: None }
                     }
                 }
                 Err(e) => {
@@ -241,7 +244,10 @@ impl MCP {
                         error = %e,
                         "MCP tool execution failed"
                     );
-                    ToolCallStatus::Finished(Err(format!("Failed to execute MCP tool: {}", e)))
+                    ToolCallStatus::Finished { 
+                        result: Err(format!("Failed to execute MCP tool: {}", e)), 
+                        tui_display: None 
+                    }
                 }
             };
 

@@ -144,7 +144,7 @@
 //                 seen_tool_call = true;
 //             }
 //             Message::ToolCallUpdate(update) => {
-//                 if let ToolCallStatus::Finished(Ok(result)) = &update.status {
+//                 if let ToolCallStatus::Finished { result: Ok(result, tui_display: _ }) = &update.status {
 //                     assert!(
 //                         seen_awaiting_tools,
 //                         "Tool finish must come after AwaitingTools"

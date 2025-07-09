@@ -176,7 +176,7 @@
 //                         );
 //                         seen_spawn_received = true;
 //                     }
-//                     ToolCallStatus::Finished(Ok(content)) => {
+//                     ToolCallStatus::Finished { result: Ok(content, tui_display: _ }) => {
 //                         assert!(
 //                             seen_agent_spawned,
 //                             "Spawn finished must come after AgentSpawned"
@@ -376,7 +376,7 @@
 //                         );
 //                         seen_spawn_received = true;
 //                     }
-//                     ToolCallStatus::Finished(Ok(content)) => {
+//                     ToolCallStatus::Finished { result: Ok(content, tui_display: _ }) => {
 //                         assert!(
 //                             seen_agent_spawned,
 //                             "Spawn finished must come after AgentSpawned"
@@ -502,7 +502,7 @@
 //         match &msg.message {
 //             Message::ToolCallUpdate(update) if update.call_id == "spawn_call" => {
 //                 match &update.status {
-//                     ToolCallStatus::Finished(Ok(_)) => {
+//                     ToolCallStatus::Finished { result: Ok(_, tui_display: _ }) => {
 //                         seen_spawn_finished = true;
 //                         let elapsed = start_time.elapsed();
 //                         // Parent should finish spawn quickly (under 1 second)
@@ -657,7 +657,7 @@
 //             }
 //             Message::ToolCallUpdate(update) if update.call_id == "spawn_call" => {
 //                 match &update.status {
-//                     ToolCallStatus::Finished(Ok(_)) => {
+//                     ToolCallStatus::Finished { result: Ok(_, tui_display: _ }) => {
 //                         seen_spawn_finished = true;
 //                         break;
 //                     }

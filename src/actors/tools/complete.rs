@@ -65,7 +65,10 @@ impl Complete {
                 Err(e) => {
                     self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                         call_id: tool_call.id,
-                        status: ToolCallStatus::Finished(Err(format!("Invalid input: {}", e))),
+                        status: ToolCallStatus::Finished {
+                            result: Err(format!("Invalid input: {}", e)),
+                            tui_display: None,
+                        },
                     }));
                     return;
                 }
@@ -83,14 +86,17 @@ impl Complete {
         // Send tool call completion after Done status
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id,
-            status: ToolCallStatus::Finished(Ok(format!(
-                "Task completed{}",
-                if agent_task_result.success {
-                    " successfully"
+            status: ToolCallStatus::Finished {
+                result: Ok(format!(
+                    "Task completed{}",
+                    if agent_task_result.success {
+                        " successfully"
                 } else {
                     " with failures"
                 }
-            ))),
+            )),
+                tui_display: None,
+            },
         }));
     }
 }

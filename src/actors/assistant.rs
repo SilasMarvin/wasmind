@@ -250,7 +250,7 @@ impl Assistant {
     }
 
     fn handle_tool_call_update(&mut self, update: ToolCallUpdate) {
-        if let ToolCallStatus::Finished(result) = update.status {
+        if let ToolCallStatus::Finished { result, .. } = update.status {
             match &mut self.state {
                 AgentStatus::Wait {
                     reason: WaitReason::WaitingForTools { tool_calls },
@@ -1394,7 +1394,10 @@ mod tests {
             &mut assistant,
             Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: "call_123".to_string(),
-                status: ToolCallStatus::Finished(Ok("Tool result".to_string())),
+                status: ToolCallStatus::Finished {
+                    result: Ok("Tool result".to_string()),
+                    tui_display: None,
+                },
             }),
         )
         .await;
@@ -1435,7 +1438,10 @@ mod tests {
             &mut assistant,
             Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: "call_1".to_string(),
-                status: ToolCallStatus::Finished(Ok("Result 1".to_string())),
+                status: ToolCallStatus::Finished {
+                    result: Ok("Result 1".to_string()),
+                    tui_display: None,
+                },
             }),
         )
         .await;
@@ -1453,7 +1459,10 @@ mod tests {
             &mut assistant,
             Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: "call_2".to_string(),
-                status: ToolCallStatus::Finished(Ok("Result 2".to_string())),
+                status: ToolCallStatus::Finished {
+                    result: Ok("Result 2".to_string()),
+                    tui_display: None,
+                },
             }),
         )
         .await;
@@ -1486,7 +1495,10 @@ mod tests {
             &mut assistant,
             Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: "call_123".to_string(),
-                status: ToolCallStatus::Finished(Err("Tool error".to_string())),
+                status: ToolCallStatus::Finished {
+                    result: Err("Tool error".to_string()),
+                    tui_display: None,
+                },
             }),
         )
         .await;
@@ -1889,7 +1901,10 @@ mod tests {
             &mut assistant,
             Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: "plan_call_123".to_string(),
-                status: ToolCallStatus::Finished(Ok("Plan submitted for approval".to_string())),
+                status: ToolCallStatus::Finished {
+                    result: Ok("Plan submitted for approval".to_string()),
+                    tui_display: None,
+                },
             }),
         )
         .await;
@@ -1941,7 +1956,10 @@ mod tests {
             &mut assistant,
             Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: "wait_call_456".to_string(),
-                status: ToolCallStatus::Finished(Ok("Waiting...".to_string())),
+                status: ToolCallStatus::Finished {
+                    result: Ok("Waiting...".to_string()),
+                    tui_display: None,
+                },
             }),
         )
         .await;
@@ -2137,7 +2155,10 @@ mod tests {
             &mut assistant,
             Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: "unknown_call".to_string(),
-                status: ToolCallStatus::Finished(Ok("Result".to_string())),
+                status: ToolCallStatus::Finished {
+                    result: Ok("Result".to_string()),
+                    tui_display: None,
+                },
             }),
         )
         .await;
@@ -2747,7 +2768,10 @@ mod tests {
             &mut assistant,
             Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call_id_1.clone(),
-                status: ToolCallStatus::Finished(Ok("Tool 1 completed".to_string())),
+                status: ToolCallStatus::Finished {
+                    result: Ok("Tool 1 completed".to_string()),
+                    tui_display: None,
+                },
             }),
         )
         .await;
@@ -2757,7 +2781,10 @@ mod tests {
             &mut assistant,
             Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call_id_2.clone(),
-                status: ToolCallStatus::Finished(Ok("Tool 2 completed".to_string())),
+                status: ToolCallStatus::Finished {
+                    result: Ok("Tool 2 completed".to_string()),
+                    tui_display: None,
+                },
             }),
         )
         .await;

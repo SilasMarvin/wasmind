@@ -67,11 +67,11 @@
 //                         index += 1;
 //                     } else if index == 2 && matches!(msg, Message::Agent(_)) {
 //                         index += 1;
-//                     } else if index == 3 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished(Ok(_)))) {
+//                     } else if index == 3 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished { result: Ok(_, tui_display: _ }))) {
 //                         index += 1;
 //                     } else if index == 4 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "read_file") {
 //                         index += 1;
-//                     } else if index == 5 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished(Ok(_)))) {
+//                     } else if index == 5 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished { result: Ok(_, tui_display: _ }))) {
 //                         index += 1;
 //                     } else if index == 6 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "complete") {
 //                         index += 1;
@@ -165,7 +165,7 @@
 //                         index += 1;
 //                     } else if index == 2 && matches!(msg, Message::Agent(agent_msg) if matches!(&agent_msg.message, AgentMessageType::InterAgentMessage(InterAgentMessage::TaskStatusUpdate { status: AgentStatus::Wait { .. } }))) {
 //                         index += 1;
-//                     } else if index == 3 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished(Ok(_)))) {
+//                     } else if index == 3 && matches!(msg, Message::ToolCallUpdate(update) if matches!(update.status, ToolCallStatus::Finished { result: Ok(_, tui_display: _ }))) {
 //                         index += 1;
 //                     } else if index == 4 && matches!(msg, Message::AssistantToolCall(tool_call) if tool_call.fn_name == "planner") {
 //                         index += 1;

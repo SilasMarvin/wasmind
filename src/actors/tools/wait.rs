@@ -62,7 +62,10 @@ impl Wait {
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id,
-            status: ToolCallStatus::Finished(Ok(WAIT_TOOL_RESPONSE.to_string())),
+            status: ToolCallStatus::Finished { 
+                result: Ok(WAIT_TOOL_RESPONSE.to_string()), 
+                tui_display: None 
+            },
         }));
     }
 

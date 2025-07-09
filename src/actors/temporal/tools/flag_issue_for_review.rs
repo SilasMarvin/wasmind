@@ -76,9 +76,10 @@ impl FlagIssueForReview {
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished(Err(
-                        "Missing issue_summary parameter".to_string()
-                    )),
+                    status: ToolCallStatus::Finished {
+                        result: Err("Missing issue_summary parameter".to_string()),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -119,10 +120,10 @@ impl FlagIssueForReview {
         // Send tool call completion
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id,
-            status: ToolCallStatus::Finished(Ok(format!(
-                "Issue flagged for review: {}",
-                issue_summary
-            ))),
+            status: ToolCallStatus::Finished {
+                result: Ok(format!("Issue flagged for review: {}", issue_summary)),
+                tui_display: None,
+            },
         }));
     }
 }

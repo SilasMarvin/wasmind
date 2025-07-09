@@ -77,7 +77,10 @@ impl SendMessage {
                     scope: self.scope,
                     message: Message::ToolCallUpdate(ToolCallUpdate {
                         call_id: tool_call.id,
-                        status: ToolCallStatus::Finished(Err(error_msg)),
+                        status: ToolCallStatus::Finished { 
+                            result: Err(error_msg), 
+                            tui_display: None 
+                        },
                     }),
                 });
                 return;
@@ -93,7 +96,10 @@ impl SendMessage {
                     scope: self.scope,
                     message: Message::ToolCallUpdate(ToolCallUpdate {
                         call_id: tool_call.id,
-                        status: ToolCallStatus::Finished(Err(error_msg)),
+                        status: ToolCallStatus::Finished { 
+                            result: Err(error_msg), 
+                            tui_display: None 
+                        },
                     }),
                 });
                 return;
@@ -129,7 +135,10 @@ impl SendMessage {
         // Send tool success response
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id,
-            status: ToolCallStatus::Finished(Ok(format_send_message_success(&input.agent_id))),
+            status: ToolCallStatus::Finished { 
+                result: Ok(format_send_message_success(&input.agent_id)), 
+                tui_display: None 
+            },
         }));
     }
 

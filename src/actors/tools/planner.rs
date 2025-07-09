@@ -159,10 +159,10 @@ impl Planner {
             Err(e) => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished(Err(format!(
-                        "Failed to parse planner arguments: {}",
-                        e
-                    ))),
+                    status: ToolCallStatus::Finished {
+                        result: Err(format!("Failed to parse planner arguments: {}", e)),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -173,7 +173,10 @@ impl Planner {
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished(Err("Missing 'action' field".to_string())),
+                    status: ToolCallStatus::Finished { 
+                        result: Err("Missing 'action' field".to_string()), 
+                        tui_display: None 
+                    },
                 }));
                 return;
             }
@@ -187,7 +190,10 @@ impl Planner {
             _ => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished(Err(format!("Unknown action: {}", action))),
+                    status: ToolCallStatus::Finished { 
+                        result: Err(format!("Unknown action: {}", action)), 
+                        tui_display: None 
+                    },
                 }));
                 return;
             }
@@ -200,9 +206,10 @@ impl Planner {
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished(Err(
-                        "Missing 'title' field for create action".to_string(),
-                    )),
+                    status: ToolCallStatus::Finished {
+                        result: Err("Missing 'title' field for create action".to_string()),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -213,9 +220,10 @@ impl Planner {
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished(Err(
-                        "Missing 'tasks' field for create action".to_string(),
-                    )),
+                    status: ToolCallStatus::Finished {
+                        result: Err("Missing 'tasks' field for create action".to_string()),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -234,7 +242,10 @@ impl Planner {
         if task_list.is_empty() {
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call_id.to_string(),
-                status: ToolCallStatus::Finished(Err("Task list cannot be empty".to_string())),
+                status: ToolCallStatus::Finished { 
+                    result: Err("Task list cannot be empty".to_string()), 
+                    tui_display: None 
+                },
             }));
             return;
         }
@@ -285,7 +296,7 @@ impl Planner {
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Finished(Ok(response)),
+            status: ToolCallStatus::Finished { result: Ok(response), tui_display: None },
         }));
     }
 
@@ -300,9 +311,10 @@ impl Planner {
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished(Err(
-                        "No active task plan. Create a plan first.".to_string(),
-                    )),
+                    status: ToolCallStatus::Finished {
+                        result: Err("No active task plan. Create a plan first.".to_string()),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -313,9 +325,10 @@ impl Planner {
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished(
-                        Err("Missing 'task_number' field".to_string()),
-                    ),
+                    status: ToolCallStatus::Finished {
+                        result: Err("Missing 'task_number' field".to_string()),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -324,10 +337,10 @@ impl Planner {
         if task_number == 0 || task_number > task_plan.tasks.len() {
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call_id.to_string(),
-                status: ToolCallStatus::Finished(Err(format!(
-                    "Invalid task number. Must be between 1 and {}",
-                    task_plan.tasks.len()
-                ))),
+                status: ToolCallStatus::Finished {
+                    result: Err(format!("Invalid task number. Must be between 1 and {}", task_plan.tasks.len())),
+                    tui_display: None,
+                },
             }));
             return;
         }
@@ -372,7 +385,7 @@ impl Planner {
         };
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Finished(Ok(response)),
+            status: ToolCallStatus::Finished { result: Ok(response), tui_display: None },
         }));
     }
 }

@@ -166,7 +166,7 @@
 //             }
 //             Message::ToolCallUpdate(update) if update.call_id == "complete_call" => {
 //                 match &update.status {
-//                     ToolCallStatus::Finished(Ok(content)) => {
+//                     ToolCallStatus::Finished { result: Ok(content, tui_display: _ }) => {
 //                         assert!(
 //                             seen_agent_done,
 //                             "Complete finished must come after agent Done"

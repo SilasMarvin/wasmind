@@ -97,7 +97,10 @@ impl SpawnAgent {
             Err(e) => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished(Err(format!("Invalid input schema: {}. Ensure 'agents_to_spawn' is a non-empty array of valid agent definitions.", e))),
+                    status: ToolCallStatus::Finished { 
+                        result: Err(format!("Invalid input schema: {}. Ensure 'agents_to_spawn' is a non-empty array of valid agent definitions.", e)), 
+                        tui_display: None 
+                    },
                 }));
                 return;
             }
@@ -107,7 +110,10 @@ impl SpawnAgent {
         if input.agents_to_spawn.is_empty() {
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call.id,
-                status: ToolCallStatus::Finished(Err("No agents specified in 'agents_to_spawn' array. At least one agent must be provided.".to_string())),
+                status: ToolCallStatus::Finished { 
+                    result: Err("No agents specified in 'agents_to_spawn' array. At least one agent must be provided.".to_string()), 
+                    tui_display: None 
+                },
             }));
             return;
         }
@@ -158,7 +164,10 @@ impl SpawnAgent {
                     );
                     self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                         call_id: tool_call.id.clone(),
-                        status: ToolCallStatus::Finished(Err(error_msg)),
+                        status: ToolCallStatus::Finished { 
+                            result: Err(error_msg), 
+                            tui_display: None 
+                        },
                     }));
                     return;
                 }
@@ -217,7 +226,7 @@ impl SpawnAgent {
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id,
-            status: ToolCallStatus::Finished(Ok(response)),
+            status: ToolCallStatus::Finished { result: Ok(response), tui_display: None },
         }));
     }
 }

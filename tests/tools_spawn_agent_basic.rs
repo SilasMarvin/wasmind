@@ -178,7 +178,7 @@
 //                         );
 //                         seen_spawn_received = true;
 //                     }
-//                     ToolCallStatus::Finished(Ok(content)) => {
+//                     ToolCallStatus::Finished { result: Ok(content, tui_display: _ }) => {
 //                         assert!(
 //                             seen_agent_spawned,
 //                             "Spawn finished must come after AgentSpawned"

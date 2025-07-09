@@ -82,7 +82,10 @@ impl SendManagerMessage {
                         scope: self.scope,
                         message: Message::ToolCallUpdate(ToolCallUpdate {
                             call_id: tool_call.id,
-                            status: ToolCallStatus::Finished(Err(error_msg)),
+                            status: ToolCallStatus::Finished { 
+                                result: Err(error_msg), 
+                                tui_display: None 
+                            },
                         }),
                     });
                     return;
@@ -118,9 +121,10 @@ impl SendManagerMessage {
         // Send tool success response
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id,
-            status: ToolCallStatus::Finished(Ok(
-                SEND_MANAGER_MESSAGE_SUCCESS_TOOL_RESPONSE.to_string()
-            )),
+            status: ToolCallStatus::Finished {
+                result: Ok(SEND_MANAGER_MESSAGE_SUCCESS_TOOL_RESPONSE.to_string()),
+                tui_display: None,
+            },
         }));
     }
 

@@ -245,7 +245,10 @@ impl Command {
                         scope,
                         message: Message::ToolCallUpdate(ToolCallUpdate {
                             call_id: tool_call_id,
-                            status: ToolCallStatus::Finished(Err(error_msg)),
+                            status: ToolCallStatus::Finished {
+                                result: Err(error_msg),
+                                tui_display: None,
+                            },
                         }),
                     });
                     return;
@@ -266,7 +269,10 @@ impl Command {
                         scope,
                         message: Message::ToolCallUpdate(ToolCallUpdate {
                             call_id: tool_call_id,
-                            status: ToolCallStatus::Finished(Err(error_msg)),
+                            status: ToolCallStatus::Finished {
+                                result: Err(error_msg),
+                                tui_display: None,
+                            },
                         }),
                     });
                     return;
@@ -283,7 +289,10 @@ impl Command {
                         scope,
                         message: Message::ToolCallUpdate(ToolCallUpdate {
                             call_id: tool_call_id,
-                            status: ToolCallStatus::Finished(Err(error_msg)),
+                            status: ToolCallStatus::Finished {
+                                result: Err(error_msg),
+                                tui_display: None,
+                            },
                         }),
                     });
                     return;
@@ -351,7 +360,10 @@ impl Command {
                 scope,
                 message: Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id,
-                    status: ToolCallStatus::Finished(result),
+                    status: ToolCallStatus::Finished {
+                        result,
+                        tui_display: None,
+                    },
                 }),
             });
         });

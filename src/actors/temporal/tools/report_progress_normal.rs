@@ -51,7 +51,10 @@ impl ReportProgressNormal {
         // Send tool call completion
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id,
-            status: ToolCallStatus::Finished(Ok("Agent progress reported as normal".to_string())),
+            status: ToolCallStatus::Finished { 
+                result: Ok("Agent progress reported as normal".to_string()), 
+                tui_display: None 
+            },
         }));
     }
 }

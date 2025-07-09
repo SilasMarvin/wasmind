@@ -65,13 +65,23 @@ pub struct ToolCallUpdate {
 
 pub type ToolCallResult = Result<String, String>;
 
+/// Display information for tool calls in the TUI
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ToolDisplayInfo {
+    pub collapsed: String,
+    pub expanded: Option<String>,
+}
+
 /// ToolCall Status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ToolCallStatus {
     Received,
     AwaitingUserYNConfirmation,
     ReceivedUserYNConfirmation(bool),
-    Finished(ToolCallResult),
+    Finished {
+        result: ToolCallResult,
+        tui_display: Option<ToolDisplayInfo>,
+    },
 }
 
 /// The result of an agent task

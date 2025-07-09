@@ -253,7 +253,7 @@
 //                     );
 //                     seen_read_received = true;
 //                 }
-//                 (ToolCallStatus::Finished(Ok(_)), "read_call") => {
+//                 (ToolCallStatus::Finished { result: Ok(_, tui_display: _ }), "read_call") => {
 //                     assert!(seen_file_read, "Read finished must come after FileRead");
 //                     seen_read_finished = true;
 //                 }
@@ -270,7 +270,7 @@
 //                     );
 //                     seen_edit_received = true;
 //                 }
-//                 (ToolCallStatus::Finished(Ok(content)), "edit_call") => {
+//                 (ToolCallStatus::Finished { result: Ok(content, tui_display: _ }), "edit_call") => {
 //                     assert!(seen_file_edited, "Edit finished must come after FileEdited");
 //                     assert!(content.contains("Successfully edited file"));
 //                     seen_edit_finished = true;

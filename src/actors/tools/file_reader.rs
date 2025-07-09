@@ -522,10 +522,10 @@ impl FileReaderActor {
             Err(e) => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished(Err(format!(
-                        "Failed to parse arguments: {}",
-                        e
-                    ))),
+                    status: ToolCallStatus::Finished {
+                        result: Err(format!("Failed to parse arguments: {}", e)),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -537,9 +537,10 @@ impl FileReaderActor {
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished(Err(
-                        "Missing required field: path".to_string()
-                    )),
+                    status: ToolCallStatus::Finished {
+                        result: Err("Missing required field: path".to_string()),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -560,9 +561,10 @@ impl FileReaderActor {
         {
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call.id,
-                status: ToolCallStatus::Finished(Err(format!(
-                    "Invalid start_line: {start_line} - lines are 1-indexed."
-                ))),
+                status: ToolCallStatus::Finished {
+                    result: Err(format!("Invalid start_line: {start_line} - lines are 1-indexed.")),
+                    tui_display: None,
+                },
             }));
             return;
         }
@@ -572,9 +574,10 @@ impl FileReaderActor {
         {
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call.id,
-                status: ToolCallStatus::Finished(Err(format!(
-                    "Invalid end_line: {end_line} - lines are 1-indexed."
-                ))),
+                status: ToolCallStatus::Finished {
+                    result: Err(format!("Invalid end_line: {end_line} - lines are 1-indexed.")),
+                    tui_display: None,
+                },
             }));
             return;
         }
@@ -623,9 +626,12 @@ impl FileReaderActor {
                     }
                     _ => format!("Read file: {}", path),
                 };
-                ToolCallStatus::Finished(Ok(message))
+                ToolCallStatus::Finished { result: Ok(message), tui_display: None }
             }
-            Err(e) => ToolCallStatus::Finished(Err(e.to_string())),
+            Err(e) => ToolCallStatus::Finished { 
+                result: Err(e.to_string()), 
+                tui_display: None 
+            },
         };
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {

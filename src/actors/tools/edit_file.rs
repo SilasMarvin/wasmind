@@ -359,10 +359,10 @@ impl EditFile {
             Err(e) => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished(Err(format!(
-                        "Failed to parse arguments: {}",
-                        e
-                    ))),
+                    status: ToolCallStatus::Finished {
+                        result: Err(format!("Failed to parse arguments: {}", e)),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -374,9 +374,10 @@ impl EditFile {
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished(Err(
-                        "Missing required field: path".to_string()
-                    )),
+                    status: ToolCallStatus::Finished {
+                        result: Err("Missing required field: path".to_string()),
+                        tui_display: None,
+                    },
                 }));
                 return;
             }
@@ -388,7 +389,10 @@ impl EditFile {
             Err(e) => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished(Err(e.to_string())),
+                    status: ToolCallStatus::Finished { 
+                        result: Err(e.to_string()), 
+                        tui_display: None 
+                    },
                 }));
                 return;
             }
@@ -425,9 +429,15 @@ impl EditFile {
                         }
                     }
                 }
-                ToolCallStatus::Finished(Ok(message.clone()))
+                ToolCallStatus::Finished { 
+                    result: Ok(message.clone()), 
+                    tui_display: None 
+                }
             }
-            Err(e) => ToolCallStatus::Finished(Err(e.to_string())),
+            Err(e) => ToolCallStatus::Finished { 
+                result: Err(e.to_string()), 
+                tui_display: None 
+            },
         };
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
