@@ -1,11 +1,10 @@
 use serde::de::DeserializeOwned;
-use tokio::sync::broadcast;
 
 use super::{
     Action, Actor, ActorContext, ActorMessage, Message, ToolCallResult, ToolCallStatus,
     ToolCallUpdate, ToolDisplayInfo,
 };
-use crate::{llm_client, scope::Scope};
+use crate::llm_client;
 
 pub mod command;
 pub mod complete;
@@ -32,17 +31,20 @@ pub trait Tool: ActorContext {
             status: ToolCallStatus::Received,
         }));
 
-        let params: Self::Params = match serde_json::from_str(&tool_call.function.arguments) {
+        let params = match self.deserialize_params(&tool_call.function.arguments) {
             Ok(params) => params,
-            Err(e) => {
-                let error_message = format!("Invalid parameters for tool {}: {e}", Self::TOOL_NAME);
+            Err(error_message) => {
+                let full_error = format!(
+                    "Invalid parameters for tool {}: {error_message}",
+                    Self::TOOL_NAME
+                );
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id.clone(),
                     status: ToolCallStatus::Finished {
-                        result: ToolCallResult::Err(error_message.clone()),
+                        result: ToolCallResult::Err(full_error.clone()),
                         tui_display: Some(super::ToolDisplayInfo {
                             collapsed: "Invalid parameters".to_string(),
-                            expanded: Some(error_message),
+                            expanded: Some(full_error),
                         }),
                     },
                 }));
@@ -58,6 +60,11 @@ pub trait Tool: ActorContext {
     }
 
     async fn execute_tool_call(&mut self, tool_call: llm_client::ToolCall, params: Self::Params);
+
+    /// Deserialize parameters from JSON string
+    fn deserialize_params(&self, json: &str) -> Result<Self::Params, serde_json::Error> {
+        serde_json::from_str(json)
+    }
 
     async fn handle_user_confirmed(&mut self) {}
 

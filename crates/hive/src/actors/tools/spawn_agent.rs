@@ -214,3 +214,46 @@ impl Tool for SpawnAgent {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_spawn_agent_deserialize_params_success() {
+        let json_input = r#"{
+            "agents_to_spawn": [
+                {
+                    "agent_role": "Software Engineer",
+                    "task_description": "Implement user authentication",
+                    "agent_type": "Worker"
+                },
+                {
+                    "agent_role": "Project Manager",
+                    "task_description": "Coordinate team activities",
+                    "agent_type": "Manager"
+                }
+            ],
+            "wait": true
+        }"#;
+        
+        let result: Result<SpawnAgentsInput, _> = serde_json::from_str(json_input);
+        assert!(result.is_ok());
+        
+        let params = result.unwrap();
+        assert_eq!(params.agents_to_spawn.len(), 2);
+        assert_eq!(params.agents_to_spawn[0].agent_role, "Software Engineer");
+        assert_eq!(params.agents_to_spawn[0].agent_type, "Worker");
+        assert_eq!(params.wait, Some(true));
+    }
+
+    #[test]
+    fn test_spawn_agent_deserialize_params_failure() {
+        let json_input = r#"{
+            "wait": true
+        }"#;
+        
+        let result: Result<SpawnAgentsInput, _> = serde_json::from_str(json_input);
+        assert!(result.is_err());
+    }
+}

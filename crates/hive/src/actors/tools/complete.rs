@@ -1,6 +1,6 @@
 use crate::actors::{
-    ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus,
-    AgentTaskResultOk, InterAgentMessage, Message, ToolCallResult, ToolDisplayInfo,
+    ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentTaskResultOk,
+    InterAgentMessage, Message, ToolCallResult, ToolDisplayInfo,
 };
 use crate::config::ParsedConfig;
 use crate::llm_client::ToolCall;
@@ -68,7 +68,11 @@ impl Tool for Complete {
         let tui_display = ToolDisplayInfo {
             collapsed: format!(
                 "{}: {}",
-                if params.success { "✓ Completed" } else { "✗ Failed" },
+                if params.success {
+                    "✓ Completed"
+                } else {
+                    "✗ Failed"
+                },
                 params.summary
             ),
             expanded: Some(params.summary.clone()),
@@ -79,5 +83,44 @@ impl Tool for Complete {
             ToolCallResult::Ok(result_message),
             Some(tui_display),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ParsedConfig;
+    use tokio::sync::broadcast;
+
+    fn create_test_complete() -> Complete {
+        let (tx, _) = broadcast::channel(100);
+        let config = crate::config::Config::new(true).unwrap().try_into().unwrap();
+        let scope = Scope::new();
+        Complete::new(config, tx, scope)
+    }
+
+    #[test]
+    fn test_complete_deserialize_params_success() {
+        let complete = create_test_complete();
+        let json_input = r#"{
+            "summary": "Task completed successfully",
+            "success": true
+        }"#;
+
+        let result = complete.deserialize_params(json_input);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert_eq!(params.summary, "Task completed successfully");
+        assert_eq!(params.success, true);
+    }
+
+    #[test]
+    fn test_complete_deserialize_params_failure() {
+        let complete = create_test_complete();
+        let json_input = r#"{"summary": "Task completed successfully"}"#;
+
+        let result = complete.deserialize_params(json_input);
+        assert!(result.is_err());
     }
 }

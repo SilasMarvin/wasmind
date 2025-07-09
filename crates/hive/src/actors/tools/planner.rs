@@ -1,14 +1,14 @@
-// TODO: Improve the deserialization here action should be an enum we should user serde_json, etc...
-
-use crate::llm_client::{Tool, ToolCall};
+use crate::llm_client::ToolCall;
 use tokio::sync::broadcast;
 
 use crate::actors::{
-    Actor, ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
-    InterAgentMessage, Message, ToolCallStatus, ToolCallUpdate, ToolDisplayInfo, WaitReason,
+    ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
+    InterAgentMessage, Message, ToolCallResult, ToolDisplayInfo, WaitReason,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
+
+use super::Tool;
 
 // User-facing icons (for TUI)
 const USER_STATUS_PENDING: &str = "[ ]";
@@ -140,9 +140,9 @@ fn create_tui_display_info(action: &str, context: &str, plan: &TaskPlan) -> Tool
     }
 }
 
-pub const TOOL_NAME: &str = "planner";
-pub const TOOL_DESCRIPTION: &str = "Creates and manages a task plan with numbered steps. Actions: create (with title and tasks array), update (task_number and new_description), complete/start/skip (task_number)";
-pub const TOOL_INPUT_SCHEMA: &str = r#"{
+const TOOL_NAME: &str = "planner";
+const TOOL_DESCRIPTION: &str = "Creates and manages a task plan with numbered steps. Actions: create (with title and tasks array), update (task_number and new_description), complete/start/skip (task_number)";
+const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
         "action": {
@@ -170,6 +170,29 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
     },
     "required": ["action"]
 }"#;
+
+#[derive(Debug, serde::Deserialize)]
+pub enum PlannerAction {
+    #[serde(rename = "create")]
+    Create,
+    #[serde(rename = "update")]
+    Update,
+    #[serde(rename = "complete")]
+    Complete,
+    #[serde(rename = "start")]
+    Start,
+    #[serde(rename = "skip")]
+    Skip,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct PlannerParams {
+    action: PlannerAction,
+    title: Option<String>,
+    tasks: Option<Vec<String>>,
+    task_number: Option<u64>,
+    new_description: Option<String>,
+}
 
 /// Planner actor
 #[derive(hive_macros::ActorContext)]
@@ -205,123 +228,54 @@ impl Planner {
         self.current_task_plan.as_ref()
     }
 
-    async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.function.name != TOOL_NAME {
-            return;
-        }
-
-        // Parse the arguments
-        let args = match serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments) {
-            Ok(args) => args,
-            Err(e) => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.id,
-                    status: ToolCallStatus::Finished {
-                        result: Err(format!("Failed to parse planner arguments: {}", e)),
-                        tui_display: Some(ToolDisplayInfo {
-                            collapsed: "Error parsing planner arguments".to_string(),
-                            expanded: None,
-                        }),
-                    },
-                }));
-                return;
-            }
-        };
-
-        let action = match args.get("action").and_then(|v| v.as_str()) {
-            Some(action) => action,
-            None => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.id,
-                    status: ToolCallStatus::Finished {
-                        result: Err("Missing 'action' field".to_string()),
-                        tui_display: Some(ToolDisplayInfo {
-                            collapsed: "Error: Missing action field".to_string(),
-                            expanded: None,
-                        }),
-                    },
-                }));
-                return;
-            }
-        };
-
-        let _response_content = match action {
-            "create" => self.handle_create_plan(&args, &tool_call.id).await,
-            "update" | "complete" | "start" | "skip" => {
-                self.handle_update_plan(action, &args, &tool_call.id).await
-            }
-            _ => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.id,
-                    status: ToolCallStatus::Finished {
-                        result: Err(format!("Unknown action: {}", action)),
-                        tui_display: Some(ToolDisplayInfo {
-                            collapsed: format!("Error: Unknown action '{}'", action),
-                            expanded: None,
-                        }),
-                    },
-                }));
-                return;
-            }
-        };
-    }
-
-    async fn handle_create_plan(&mut self, args: &serde_json::Value, tool_call_id: &str) {
-        let title = match args.get("title").and_then(|v| v.as_str()) {
+    async fn handle_create_plan(&mut self, params: &PlannerParams, tool_call_id: &str) {
+        let title = match &params.title {
             Some(title) => title,
             None => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished {
-                        result: Err("Missing 'title' field for create action".to_string()),
-                        tui_display: Some(ToolDisplayInfo {
-                            collapsed: "Error: Missing title field".to_string(),
-                            expanded: None,
-                        }),
-                    },
-                }));
+                self.broadcast_finished(
+                    tool_call_id,
+                    ToolCallResult::Err("Missing 'title' field for create action".to_string()),
+                    Some(ToolDisplayInfo {
+                        collapsed: "Error: Missing title field".to_string(),
+                        expanded: None,
+                    }),
+                );
                 return;
             }
         };
 
-        let tasks = match args.get("tasks").and_then(|v| v.as_array()) {
+        let tasks = match &params.tasks {
             Some(tasks) => tasks,
             None => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished {
-                        result: Err("Missing 'tasks' field for create action".to_string()),
-                        tui_display: Some(ToolDisplayInfo {
-                            collapsed: "Error: Missing tasks field".to_string(),
-                            expanded: None,
-                        }),
-                    },
-                }));
+                self.broadcast_finished(
+                    tool_call_id,
+                    ToolCallResult::Err("Missing 'tasks' field for create action".to_string()),
+                    Some(ToolDisplayInfo {
+                        collapsed: "Error: Missing tasks field".to_string(),
+                        expanded: None,
+                    }),
+                );
                 return;
             }
         };
 
         let mut task_list = Vec::new();
         for task in tasks {
-            if let Some(desc) = task.as_str() {
-                task_list.push(Task {
-                    description: desc.to_string(),
-                    status: TaskStatus::Pending,
-                });
-            }
+            task_list.push(Task {
+                description: task.clone(),
+                status: TaskStatus::Pending,
+            });
         }
 
         if task_list.is_empty() {
-            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call_id.to_string(),
-                status: ToolCallStatus::Finished {
-                    result: Err("Task list cannot be empty".to_string()),
-                    tui_display: Some(ToolDisplayInfo {
-                        collapsed: "Error: Task list cannot be empty".to_string(),
-                        expanded: None,
-                    }),
-                },
-            }));
+            self.broadcast_finished(
+                tool_call_id,
+                ToolCallResult::Err("Task list cannot be empty".to_string()),
+                Some(ToolDisplayInfo {
+                    collapsed: "Error: Task list cannot be empty".to_string(),
+                    expanded: None,
+                }),
+            );
             return;
         }
 
@@ -329,11 +283,6 @@ impl Planner {
             title: title.to_string(),
             tasks: task_list,
         };
-
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Received,
-        }));
 
         // Store the plan
         self.current_task_plan = Some(plan.clone());
@@ -372,84 +321,67 @@ impl Planner {
         // Create TUI display info
         let tui_display = Some(create_tui_display_info("create", &plan.title, &plan));
 
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Finished {
-                result: Ok(response),
-                tui_display,
-            },
-        }));
+        self.broadcast_finished(tool_call_id, ToolCallResult::Ok(response), tui_display);
     }
 
     async fn handle_update_plan(
         &mut self,
         action: &str,
-        args: &serde_json::Value,
+        params: &PlannerParams,
         tool_call_id: &str,
     ) {
         let mut task_plan = match self.current_task_plan.clone() {
             Some(plan) => plan,
             None => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished {
-                        result: Err("No active task plan. Create a plan first.".to_string()),
-                        tui_display: Some(ToolDisplayInfo {
-                            collapsed: "Error: No active task plan".to_string(),
-                            expanded: None,
-                        }),
-                    },
-                }));
+                self.broadcast_finished(
+                    tool_call_id,
+                    ToolCallResult::Err("No active task plan. Create a plan first.".to_string()),
+                    Some(ToolDisplayInfo {
+                        collapsed: "Error: No active task plan".to_string(),
+                        expanded: None,
+                    }),
+                );
                 return;
             }
         };
 
-        let task_number = match args.get("task_number").and_then(|v| v.as_u64()) {
+        let task_number = match params.task_number {
             Some(num) => num as usize,
             None => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call_id.to_string(),
-                    status: ToolCallStatus::Finished {
-                        result: Err("Missing 'task_number' field".to_string()),
-                        tui_display: Some(ToolDisplayInfo {
-                            collapsed: "Error: Missing task number".to_string(),
-                            expanded: None,
-                        }),
-                    },
-                }));
+                self.broadcast_finished(
+                    tool_call_id,
+                    ToolCallResult::Err("Missing 'task_number' field".to_string()),
+                    Some(ToolDisplayInfo {
+                        collapsed: "Error: Missing task number".to_string(),
+                        expanded: None,
+                    }),
+                );
                 return;
             }
         };
 
         if task_number == 0 || task_number > task_plan.tasks.len() {
-            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call_id.to_string(),
-                status: ToolCallStatus::Finished {
-                    result: Err(format!(
-                        "Invalid task number. Must be between 1 and {}",
-                        task_plan.tasks.len()
-                    )),
-                    tui_display: Some(ToolDisplayInfo {
-                        collapsed: "Error: Invalid task number".to_string(),
-                        expanded: None,
-                    }),
-                },
-            }));
+            self.broadcast_finished(
+                tool_call_id,
+                ToolCallResult::Err(format!(
+                    "Invalid task number. Must be between 1 and {}",
+                    task_plan.tasks.len()
+                )),
+                Some(ToolDisplayInfo {
+                    collapsed: "Error: Invalid task number".to_string(),
+                    expanded: None,
+                }),
+            );
             return;
         }
 
         let task_index = task_number - 1;
 
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Received,
-        }));
-
         // Update the task plan
         match action {
             "update" => {
-                if let Some(new_desc) = args.get("new_description").and_then(|v| v.as_str()) {
-                    task_plan.tasks[task_index].description = new_desc.to_string();
+                if let Some(new_desc) = &params.new_description {
+                    task_plan.tasks[task_index].description = new_desc.clone();
                 }
             }
             "complete" => {
@@ -481,37 +413,37 @@ impl Planner {
         let context = format!("task {}", task_number);
         let tui_display = Some(create_tui_display_info(action, &context, &task_plan));
 
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Finished {
-                result: Ok(response),
-                tui_display,
-            },
-        }));
+        self.broadcast_finished(tool_call_id, ToolCallResult::Ok(response), tui_display);
     }
 }
 
 #[async_trait::async_trait]
-impl Actor for Planner {
-    const ACTOR_ID: &'static str = "planner";
+impl Tool for Planner {
+    const TOOL_NAME: &str = TOOL_NAME;
+    const TOOL_DESCRIPTION: &str = TOOL_DESCRIPTION;
+    const TOOL_INPUT_SCHEMA: &str = TOOL_INPUT_SCHEMA;
 
-    async fn on_start(&mut self) {
-        let tool = Tool {
-            tool_type: "function".to_string(),
-            function: crate::llm_client::ToolFunction {
-                name: TOOL_NAME.to_string(),
-                description: TOOL_DESCRIPTION.to_string(),
-                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap(),
-            },
-        };
+    type Params = PlannerParams;
 
-        self.broadcast(Message::ToolsAvailable(vec![tool]));
-    }
-
-    async fn handle_message(&mut self, message: ActorMessage) {
-        match message.message {
-            Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
-            _ => (),
+    async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
+        match params.action {
+            PlannerAction::Create => self.handle_create_plan(&params, &tool_call.id).await,
+            PlannerAction::Update => {
+                self.handle_update_plan("update", &params, &tool_call.id)
+                    .await
+            }
+            PlannerAction::Complete => {
+                self.handle_update_plan("complete", &params, &tool_call.id)
+                    .await
+            }
+            PlannerAction::Start => {
+                self.handle_update_plan("start", &params, &tool_call.id)
+                    .await
+            }
+            PlannerAction::Skip => {
+                self.handle_update_plan("skip", &params, &tool_call.id)
+                    .await
+            }
         }
     }
 }
@@ -519,6 +451,47 @@ impl Actor for Planner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::broadcast;
+
+    fn create_test_planner() -> Planner {
+        let (tx, _) = broadcast::channel(100);
+        let config = crate::config::Config::new(true)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let scope = Scope::new();
+        Planner::new(config, tx, scope, crate::actors::AgentType::Worker, None)
+    }
+
+    #[test]
+    fn test_planner_deserialize_params_success() {
+        let planner = create_test_planner();
+        let json_input = r#"{
+            "action": "create",
+            "title": "Test Plan",
+            "tasks": ["Task 1", "Task 2"]
+        }"#;
+
+        let result = planner.deserialize_params(json_input);
+        assert!(result.is_ok());
+
+        let params = result.unwrap();
+        assert!(matches!(params.action, PlannerAction::Create));
+        assert_eq!(params.title, Some("Test Plan".to_string()));
+        assert_eq!(
+            params.tasks,
+            Some(vec!["Task 1".to_string(), "Task 2".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_planner_deserialize_params_failure() {
+        let planner = create_test_planner();
+        let json_input = r#"{"action": "invalid_action"}"#;
+
+        let result = planner.deserialize_params(json_input);
+        assert!(result.is_err());
+    }
 
     #[test]
     fn test_format_for_tui() {

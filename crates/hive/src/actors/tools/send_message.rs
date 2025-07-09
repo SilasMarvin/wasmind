@@ -116,3 +116,36 @@ impl Tool for SendMessage {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_send_message_deserialize_params_success() {
+        let json_input = r#"{
+            "agent_id": "12345678-1234-1234-1234-123456789012",
+            "message": "Hello, agent!",
+            "wait": false
+        }"#;
+        
+        let result: Result<SendMessageInput, _> = serde_json::from_str(json_input);
+        assert!(result.is_ok());
+        
+        let params = result.unwrap();
+        assert_eq!(params.agent_id, "12345678-1234-1234-1234-123456789012");
+        assert_eq!(params.message, "Hello, agent!");
+        assert_eq!(params.wait, Some(false));
+    }
+
+    #[test]
+    fn test_send_message_deserialize_params_failure() {
+        let json_input = r#"{
+            "message": "Hello, agent!",
+            "wait": false
+        }"#;
+        
+        let result: Result<SendMessageInput, _> = serde_json::from_str(json_input);
+        assert!(result.is_err());
+    }
+}

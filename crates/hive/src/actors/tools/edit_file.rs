@@ -681,4 +681,35 @@ mod tests {
             _ => panic!("Expected FileModified error"),
         }
     }
+
+    #[test]
+    fn test_edit_file_deserialize_params_success() {
+        let json_input = r#"{
+            "path": "/path/to/file.txt",
+            "edits": [
+                {
+                    "start_line": 1,
+                    "end_line": 1,
+                    "new_content": "Hello, world!"
+                }
+            ]
+        }"#;
+        
+        let result: Result<EditFileParams, _> = serde_json::from_str(json_input);
+        assert!(result.is_ok());
+        
+        let params = result.unwrap();
+        assert_eq!(params.path, "/path/to/file.txt");
+        assert_eq!(params.edits.len(), 1);
+    }
+
+    #[test]
+    fn test_edit_file_deserialize_params_failure() {
+        let json_input = r#"{
+            "path": "/path/to/file.txt"
+        }"#;
+        
+        let result: Result<EditFileParams, _> = serde_json::from_str(json_input);
+        assert!(result.is_err());
+    }
 }

@@ -104,3 +104,29 @@ impl Tool for FlagIssueForReview {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_flag_issue_deserialize_params_success() {
+        let json_input = r#"{
+            "issue_summary": "Agent appears to be stuck in a loop trying to access a non-existent file"
+        }"#;
+        
+        let result: Result<FlagIssueParams, _> = serde_json::from_str(json_input);
+        assert!(result.is_ok());
+        
+        let params = result.unwrap();
+        assert_eq!(params.issue_summary, "Agent appears to be stuck in a loop trying to access a non-existent file");
+    }
+
+    #[test]
+    fn test_flag_issue_deserialize_params_failure() {
+        let json_input = r#"{}"#;
+        
+        let result: Result<FlagIssueParams, _> = serde_json::from_str(json_input);
+        assert!(result.is_err());
+    }
+}

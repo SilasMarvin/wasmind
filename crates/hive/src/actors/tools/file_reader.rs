@@ -901,4 +901,32 @@ mod tests {
         assert!(json["size_bytes"].as_u64().unwrap() > SMALL_FILE_SIZE_BYTES);
         assert!(json["total_lines"].as_u64().unwrap() > 1000);
     }
+
+    #[test]
+    fn test_file_reader_deserialize_params_success() {
+        let json_input = r#"{
+            "path": "/path/to/file.txt",
+            "start_line": 1,
+            "end_line": 10
+        }"#;
+        
+        let result: Result<FileReaderParams, _> = serde_json::from_str(json_input);
+        assert!(result.is_ok());
+        
+        let params = result.unwrap();
+        assert_eq!(params.path, "/path/to/file.txt");
+        assert_eq!(params.start_line, Some(1));
+        assert_eq!(params.end_line, Some(10));
+    }
+
+    #[test]
+    fn test_file_reader_deserialize_params_failure() {
+        let json_input = r#"{
+            "start_line": 1,
+            "end_line": 10
+        }"#;
+        
+        let result: Result<FileReaderParams, _> = serde_json::from_str(json_input);
+        assert!(result.is_err());
+    }
 }
