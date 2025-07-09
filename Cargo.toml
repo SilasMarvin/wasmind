@@ -1,62 +1,16 @@
-[package]
-name = "hive"
-version = "0.1.0"
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
 edition = "2024"
+license = "MIT"
+description = ""
+repository = "https://github.com/SilasMarvin/hive"
+readme = "README.md"
+authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 
-[[bin]]
-name = "hive"
-path = "src/main.rs"
-
-[lib]
-name = "hive"
-path = "src/lib.rs"
-
-
-[features]
-default = ["gui", "audio"]
-gui = ["dep:arboard", "dep:rdev", "dep:xcap"]
-audio = ["dep:whisper-rs", "dep:cpal", "dep:hound", "dep:rubato"]
-headless = []
-test-utils = []
-
-[dependencies]
-base64 = "0.22.1"
-crossbeam = "0.8.4"
-etcetera = "0.10.0"
-image = "0.25.6"
-serde = { version = "1.0.219", features = ["derive"] }
-tokio = { version = "1.45.0", features = ["rt-multi-thread", "time", "process", "sync"] }
-snafu = "0.8.5"
-toml = "0.8.22"
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-futures = "0.3.31"
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = ["server", "transport-child-process", "client"] }
-serde_json = "1.0.140"
-libc = "0.2"
-ratatui = { version = "0.29", features = ["unstable-rendered-line-info"] }
-crossterm = "0.28"
-chrono = { version = "0.4", features = ["serde"] }
-minijinja = { version = "2.6", features = ["builtins"] }
-clap = { version = "4.0", features = ["derive"] }
-async-trait = "0.1"
-uuid = { version = "1.17.0", features = ["v4", "serde"] }
-tuirealm = { version = "3", default-features = false, features = [ "derive", "crossterm", "async-ports"]}
-reqwest = { version = "0.12", features = ["json"] }
-serde_yaml = "0.9"
-tempfile = "3"
-
-# Optional GUI dependencies
-arboard = { version = "3.5.0", optional = true }
-rdev = { version = "0.5.3", features = ["unstable_grab"], optional = true }
-xcap = { version = "0.5.2", optional = true }
-
-# Optional audio dependencies  
-whisper-rs = { version = "0.14.2", features = ["metal"], optional = true }
-cpal = { version = "0.15.3", optional = true }
-hound = { version = "3.5.1", optional = true }
-rubato = { version = "0.16.2", optional = true }
-
-[dev-dependencies]
-pathdiff = "0.2"
-wiremock = "0.6"
+[profile.release]
+incremental = true
+# Set this to 1 or 2 to get more useful backtraces in debugger.
+debug = 0
