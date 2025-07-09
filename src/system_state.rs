@@ -329,7 +329,7 @@ impl SystemState {
     pub fn render_plan_section(&self) -> String {
         match &self.current_plan {
             Some(plan) => {
-                format!("{}", plan)
+                plan.format_for_assistant()
             }
             None => "No current task plan.".to_string(),
         }
@@ -436,7 +436,7 @@ impl SystemState {
                             TaskStatus::Completed => "completed",
                             TaskStatus::Skipped => "skipped",
                         },
-                        "icon": task.status_icon()
+                        "icon": task.user_status_icon()
                     })).collect::<Vec<_>>()
                 })),
                 "section": self.render_plan_section()

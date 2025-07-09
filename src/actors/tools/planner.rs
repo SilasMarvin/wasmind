@@ -1,15 +1,27 @@
 use crate::llm_client::{Tool, ToolCall};
-use std::fmt;
 use tokio::sync::broadcast;
 
 use crate::actors::{
     Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType, InterAgentMessage,
-    Message, ToolCallStatus, ToolCallUpdate, WaitReason,
+    Message, ToolCallStatus, ToolCallUpdate, ToolDisplayInfo, WaitReason,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
-pub fn format_planner_success_response(title: &str, agent_type: AgentType) -> String {
+// Status indicator constants - easily customizable
+// User-facing icons (for TUI)
+const USER_STATUS_PENDING: &str = "[ ]";
+const USER_STATUS_IN_PROGRESS: &str = "[~]";
+const USER_STATUS_COMPLETED: &str = "[x]";
+const USER_STATUS_SKIPPED: &str = "[>>]";
+
+// Assistant-facing icons (for system prompts)
+const ASSISTANT_STATUS_PENDING: &str = "[ ]";
+const ASSISTANT_STATUS_IN_PROGRESS: &str = "[~]";
+const ASSISTANT_STATUS_COMPLETED: &str = "[x]";
+const ASSISTANT_STATUS_SKIPPED: &str = "[>>]";
+
+pub fn format_planner_success_response_for_assistant(title: &str, agent_type: AgentType) -> String {
     format!(
         "Created task plan: {}{}",
         title,
@@ -21,9 +33,10 @@ pub fn format_planner_success_response(title: &str, agent_type: AgentType) -> St
     )
 }
 
-pub fn format_request_plan_approval_message(plan: &TaskPlan) -> String {
+pub fn format_request_plan_approval_message_for_assistant(plan: &TaskPlan) -> String {
     format!(
-        "Before starting, please approve or reject my plan to acomplish my task: <plan>\n{plan}\n</plan>\n\nI am waiting for you to respond before proceeding."
+        "Before starting, please approve or reject my plan to acomplish my task: <plan>\n{}\n</plan>\n\nI am waiting for you to respond before proceeding.",
+        plan.format_for_assistant()
     )
 }
 
@@ -36,17 +49,6 @@ pub enum TaskStatus {
     Skipped,
 }
 
-impl fmt::Display for TaskStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let icon = match self {
-            TaskStatus::Pending => "[ ]",
-            TaskStatus::InProgress => "[~]",
-            TaskStatus::Completed => "[x]",
-            TaskStatus::Skipped => "[>>]",
-        };
-        write!(f, "{}", icon)
-    }
-}
 
 /// Individual task in the plan
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -56,13 +58,23 @@ pub struct Task {
 }
 
 impl Task {
-    /// Get status icon
-    pub fn status_icon(&self) -> &'static str {
+    /// Get status icon for user display (TUI)
+    pub fn user_status_icon(&self) -> &'static str {
         match self.status {
-            TaskStatus::Pending => "[ ]",
-            TaskStatus::InProgress => "[~]",
-            TaskStatus::Completed => "[x]",
-            TaskStatus::Skipped => "[>>]",
+            TaskStatus::Pending => USER_STATUS_PENDING,
+            TaskStatus::InProgress => USER_STATUS_IN_PROGRESS,
+            TaskStatus::Completed => USER_STATUS_COMPLETED,
+            TaskStatus::Skipped => USER_STATUS_SKIPPED,
+        }
+    }
+
+    /// Get status icon for assistant display (system prompt)
+    pub fn assistant_status_icon(&self) -> &'static str {
+        match self.status {
+            TaskStatus::Pending => ASSISTANT_STATUS_PENDING,
+            TaskStatus::InProgress => ASSISTANT_STATUS_IN_PROGRESS,
+            TaskStatus::Completed => ASSISTANT_STATUS_COMPLETED,
+            TaskStatus::Skipped => ASSISTANT_STATUS_SKIPPED,
         }
     }
 }
@@ -74,13 +86,57 @@ pub struct TaskPlan {
     pub tasks: Vec<Task>,
 }
 
-impl fmt::Display for TaskPlan {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Plan: {}", self.title)?;
+
+impl TaskPlan {
+    /// Format the plan for TUI display without the "Plan:" prefix
+    pub fn format_for_tui(&self) -> String {
+        let mut result = String::new();
         for (i, task) in self.tasks.iter().enumerate() {
-            writeln!(f, "{}. {} {}", i + 1, task.status, task.description)?;
+            result.push_str(&format!(
+                "{}. {} {}\n",
+                i + 1,
+                task.user_status_icon(),
+                task.description
+            ));
         }
-        Ok(())
+        result.trim_end().to_string()
+    }
+
+    /// Format the plan for assistant system prompt
+    pub fn format_for_assistant(&self) -> String {
+        let mut result = format!("Plan: {}\n", self.title);
+        for (i, task) in self.tasks.iter().enumerate() {
+            result.push_str(&format!("{}. {} {}\n", i + 1, task.assistant_status_icon(), task.description));
+        }
+        result.trim_end().to_string()
+    }
+}
+
+/// Helper functions for creating TUI display information
+fn create_collapsed_display(action: &str, context: &str) -> String {
+    match action {
+        "create" => format!("Plan created: {}", context),
+        "update" => format!("Plan updated: {}", context),
+        "complete" => format!("Task completed: {}", context),
+        "start" => format!("Task started: {}", context),
+        "skip" => format!("Task skipped: {}", context),
+        _ => format!("Plan action: {}", action),
+    }
+}
+
+fn create_expanded_display(action: &str, context: &str, plan: &TaskPlan) -> String {
+    let action_message = create_collapsed_display(action, context);
+    format!("{}\n{}", action_message, plan.format_for_tui())
+}
+
+fn create_tui_display_info(
+    action: &str,
+    context: &str,
+    plan: &TaskPlan,
+) -> ToolDisplayInfo {
+    ToolDisplayInfo {
+        collapsed: create_collapsed_display(action, context),
+        expanded: Some(create_expanded_display(action, context, plan)),
     }
 }
 
@@ -161,7 +217,10 @@ impl Planner {
                     call_id: tool_call.id,
                     status: ToolCallStatus::Finished {
                         result: Err(format!("Failed to parse planner arguments: {}", e)),
-                        tui_display: None,
+                        tui_display: Some(ToolDisplayInfo {
+                            collapsed: "Error parsing planner arguments".to_string(),
+                            expanded: None,
+                        }),
                     },
                 }));
                 return;
@@ -173,9 +232,12 @@ impl Planner {
             None => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished { 
-                        result: Err("Missing 'action' field".to_string()), 
-                        tui_display: None 
+                    status: ToolCallStatus::Finished {
+                        result: Err("Missing 'action' field".to_string()),
+                        tui_display: Some(ToolDisplayInfo {
+                            collapsed: "Error: Missing action field".to_string(),
+                            expanded: None,
+                        }),
                     },
                 }));
                 return;
@@ -190,9 +252,12 @@ impl Planner {
             _ => {
                 self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call.id,
-                    status: ToolCallStatus::Finished { 
-                        result: Err(format!("Unknown action: {}", action)), 
-                        tui_display: None 
+                    status: ToolCallStatus::Finished {
+                        result: Err(format!("Unknown action: {}", action)),
+                        tui_display: Some(ToolDisplayInfo {
+                            collapsed: format!("Error: Unknown action '{}'", action),
+                            expanded: None,
+                        }),
                     },
                 }));
                 return;
@@ -208,7 +273,10 @@ impl Planner {
                     call_id: tool_call_id.to_string(),
                     status: ToolCallStatus::Finished {
                         result: Err("Missing 'title' field for create action".to_string()),
-                        tui_display: None,
+                        tui_display: Some(ToolDisplayInfo {
+                            collapsed: "Error: Missing title field".to_string(),
+                            expanded: None,
+                        }),
                     },
                 }));
                 return;
@@ -222,7 +290,10 @@ impl Planner {
                     call_id: tool_call_id.to_string(),
                     status: ToolCallStatus::Finished {
                         result: Err("Missing 'tasks' field for create action".to_string()),
-                        tui_display: None,
+                        tui_display: Some(ToolDisplayInfo {
+                            collapsed: "Error: Missing tasks field".to_string(),
+                            expanded: None,
+                        }),
                     },
                 }));
                 return;
@@ -242,9 +313,12 @@ impl Planner {
         if task_list.is_empty() {
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call_id.to_string(),
-                status: ToolCallStatus::Finished { 
-                    result: Err("Task list cannot be empty".to_string()), 
-                    tui_display: None 
+                status: ToolCallStatus::Finished {
+                    result: Err("Task list cannot be empty".to_string()),
+                    tui_display: Some(ToolDisplayInfo {
+                        collapsed: "Error: Task list cannot be empty".to_string(),
+                        expanded: None,
+                    }),
                 },
             }));
             return;
@@ -286,17 +360,23 @@ impl Planner {
             self.broadcast(Message::Agent(AgentMessage {
                 agent_id: self.parent_scope.clone().unwrap(),
                 message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
-                    message: format_request_plan_approval_message(&plan),
+                    message: format_request_plan_approval_message_for_assistant(&plan),
                 }),
             }));
         }
 
         // Return concise response
-        let response = format_planner_success_response(&title, self.agent_type);
+        let response = format_planner_success_response_for_assistant(&title, self.agent_type);
+
+        // Create TUI display info
+        let tui_display = Some(create_tui_display_info("create", &plan.title, &plan));
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Finished { result: Ok(response), tui_display: None },
+            status: ToolCallStatus::Finished {
+                result: Ok(response),
+                tui_display,
+            },
         }));
     }
 
@@ -313,7 +393,10 @@ impl Planner {
                     call_id: tool_call_id.to_string(),
                     status: ToolCallStatus::Finished {
                         result: Err("No active task plan. Create a plan first.".to_string()),
-                        tui_display: None,
+                        tui_display: Some(ToolDisplayInfo {
+                            collapsed: "Error: No active task plan".to_string(),
+                            expanded: None,
+                        }),
                     },
                 }));
                 return;
@@ -327,7 +410,10 @@ impl Planner {
                     call_id: tool_call_id.to_string(),
                     status: ToolCallStatus::Finished {
                         result: Err("Missing 'task_number' field".to_string()),
-                        tui_display: None,
+                        tui_display: Some(ToolDisplayInfo {
+                            collapsed: "Error: Missing task number".to_string(),
+                            expanded: None,
+                        }),
                     },
                 }));
                 return;
@@ -338,8 +424,14 @@ impl Planner {
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call_id.to_string(),
                 status: ToolCallStatus::Finished {
-                    result: Err(format!("Invalid task number. Must be between 1 and {}", task_plan.tasks.len())),
-                    tui_display: None,
+                    result: Err(format!(
+                        "Invalid task number. Must be between 1 and {}",
+                        task_plan.tasks.len()
+                    )),
+                    tui_display: Some(ToolDisplayInfo {
+                        collapsed: "Error: Invalid task number".to_string(),
+                        expanded: None,
+                    }),
                 },
             }));
             return;
@@ -383,9 +475,17 @@ impl Planner {
             "skip" => format!("Skipped task {}", task_number),
             _ => unreachable!(),
         };
+
+        // Create TUI display info
+        let context = format!("task {}", task_number);
+        let tui_display = Some(create_tui_display_info(action, &context, &task_plan));
+
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call_id.to_string(),
-            status: ToolCallStatus::Finished { result: Ok(response), tui_display: None },
+            status: ToolCallStatus::Finished {
+                result: Ok(response),
+                tui_display,
+            },
         }));
     }
 }
@@ -424,5 +524,66 @@ impl Actor for Planner {
             Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
             _ => (),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_for_tui() {
+        let plan = TaskPlan {
+            title: "Test Plan".to_string(),
+            tasks: vec![
+                Task {
+                    description: "Pending task".to_string(),
+                    status: TaskStatus::Pending,
+                },
+                Task {
+                    description: "In progress task".to_string(),
+                    status: TaskStatus::InProgress,
+                },
+                Task {
+                    description: "Completed task".to_string(),
+                    status: TaskStatus::Completed,
+                },
+                Task {
+                    description: "Skipped task".to_string(),
+                    status: TaskStatus::Skipped,
+                },
+            ],
+        };
+
+        let expected = "1. [ ] Pending task\n2. [~] In progress task\n3. [x] Completed task\n4. [>>] Skipped task";
+        assert_eq!(plan.format_for_tui(), expected);
+    }
+
+    #[test]
+    fn test_format_for_assistant() {
+        let plan = TaskPlan {
+            title: "Test Plan".to_string(),
+            tasks: vec![
+                Task {
+                    description: "Pending task".to_string(),
+                    status: TaskStatus::Pending,
+                },
+                Task {
+                    description: "In progress task".to_string(),
+                    status: TaskStatus::InProgress,
+                },
+                Task {
+                    description: "Completed task".to_string(),
+                    status: TaskStatus::Completed,
+                },
+                Task {
+                    description: "Skipped task".to_string(),
+                    status: TaskStatus::Skipped,
+                },
+            ],
+        };
+
+        let expected = "Plan: Test Plan\n1. [ ] Pending task\n2. [~] In progress task\n3. [x] Completed task\n4. [>>] Skipped task";
+        assert_eq!(plan.format_for_assistant(), expected);
     }
 }
