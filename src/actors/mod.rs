@@ -259,7 +259,13 @@ impl PartialOrd for ActorMessage {
     }
 }
 
-/// Base trait for all actors in the system
+pub trait ActorContext {
+    fn get_scope(&self) -> Scope;
+    fn get_tx(&self) -> broadcast::Sender<Message>;
+    fn get_rx(&self) -> broadcast::Receiver<Message>;
+}
+
+/// Trait for all actors in the system
 #[async_trait::async_trait]
 pub trait Actor: Send + 'static {
     /// Unique identifier for this actor type

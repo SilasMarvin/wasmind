@@ -3,83 +3,74 @@ use crate::actors::{
     ToolCallStatus, ToolCallUpdate, WaitReason,
 };
 use crate::config::ParsedConfig;
-use crate::llm_client::{Tool, ToolCall};
+use crate::llm_client;
 use crate::scope::Scope;
 use tokio::sync::broadcast;
 
-pub const WAIT_TOOL_RESPONSE: &str = "Waiting...";
+use super::Tool;
 
-pub const WAIT_TOOL_NAME: &str = "wait";
-pub const WAIT_TOOL_DESCRIPTION: &str = "Pause and wait for a new system / sub agent message.";
-pub const WAIT_TOOL_INPUT_SCHEMA: &str = r#"{
-    "type": "object",
-    "required": []
-}"#;
+pub const WAIT_TOOL_RESPONSE: &str = "Waiting...";
 
 /// Wait tool actor for managers to wait X seconds
 pub struct Wait {
     tx: broadcast::Sender<ActorMessage>,
-    #[allow(dead_code)] // TODO
+    #[allow(dead_code)]
     config: ParsedConfig,
     scope: Scope,
 }
 
 impl Wait {
-    pub const ACTOR_ID: &'static str = "wait";
-
     pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { config, tx, scope }
     }
 
-    pub fn get_tool_schema() -> Tool {
-        Tool {
-            tool_type: "function".to_string(),
-            function: crate::llm_client::ToolFunction {
-                name: WAIT_TOOL_NAME.to_string(),
-                description: WAIT_TOOL_DESCRIPTION.to_string(),
-                parameters: serde_json::from_str(WAIT_TOOL_INPUT_SCHEMA)
-                    .expect("Invalid WAIT_TOOL_INPUT_SCHEMA"),
-            },
-        }
-    }
-
-    async fn handle_wait(&mut self, tool_call: ToolCall) {
-        // TODO: Broadcast received
-
-        // Send agent status update first to stop LLM processing
-        self.broadcast(Message::Agent(AgentMessage {
-            agent_id: self.get_scope().clone(),
-            message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
-                tool_call_id: tool_call.id.clone(),
-                status: AgentStatus::Wait {
-                    reason: WaitReason::WaitForSystem {
-                        tool_name: Some(WAIT_TOOL_NAME.to_string()),
-                        tool_call_id: tool_call.id.clone(),
-                    },
-                },
-            }),
-        }));
-
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id,
-            status: ToolCallStatus::Finished { 
-                result: Ok(WAIT_TOOL_RESPONSE.to_string()), 
-                tui_display: None 
-            },
-        }));
-    }
-
-    async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        match tool_call.function.name.as_str() {
-            WAIT_TOOL_NAME => self.handle_wait(tool_call).await,
-            _ => {}
-        }
-    }
+    // async fn handle_wait(&mut self, tool_call: ToolCall) {
+    //     // TODO: Broadcast received
+    //
+    //     // Send agent status update first to stop LLM processing
+    //     self.broadcast(Message::Agent(AgentMessage {
+    //         agent_id: self.get_scope().clone(),
+    //         message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
+    //             tool_call_id: tool_call.id.clone(),
+    //             status: AgentStatus::Wait {
+    //                 reason: WaitReason::WaitForSystem {
+    //                     tool_name: Some(WAIT_TOOL_NAME.to_string()),
+    //                     tool_call_id: tool_call.id.clone(),
+    //                 },
+    //             },
+    //         }),
+    //     }));
+    //
+    //     self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+    //         call_id: tool_call.id,
+    //         status: ToolCallStatus::Finished {
+    //             result: Ok(WAIT_TOOL_RESPONSE.to_string()),
+    //             tui_display: None
+    //         },
+    //     }));
+    // }
+    //
+    // async fn handle_tool_call(&mut self, tool_call: ToolCall) {
+    //     match tool_call.function.name.as_str() {
+    //         WAIT_TOOL_NAME => self.handle_wait(tool_call).await,
+    //         _ => {}
+    //     }
+    // }
 }
 
+impl 
+
 #[async_trait::async_trait]
-impl Actor for Wait {
-    const ACTOR_ID: &'static str = "wait";
+impl Tool for Wait {
+    const TOOL_NAME: &str = "wait";
+    const TOOL_DESCRIPTION: &str = "Pause and wait for a new system / sub agent message.";
+    const TOOL_INPUT_SCHEMA: &str = r#"{
+        "type": "object",
+        "required": []
+    }"#;
+
+    // This is unused for the Wait tool so just set it to something that won't fail deserialization
+    type Params = serde_json::Value;
 
     fn get_scope(&self) -> &Scope {
         &self.scope
@@ -89,23 +80,26 @@ impl Actor for Wait {
         self.tx.clone()
     }
 
-    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
-        self.tx.subscribe()
-    }
+    async fn execute_tool_call(&mut self, tool_call: llm_client::ToolCall, params: Self::Params) {
+        self.broadcast(Message::Agent(AgentMessage {
+            agent_id: self.get_scope().clone(),
+            message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
+                tool_call_id: tool_call.id.clone(),
+                status: AgentStatus::Wait {
+                    reason: WaitReason::WaitForSystem {
+                        tool_name: Some(Self::TOOL_NAME.to_string()),
+                        tool_call_id: tool_call.id.clone(),
+                    },
+                },
+            }),
+        }));
 
-    async fn handle_message(&mut self, message: ActorMessage) {
-        match message.message {
-            Message::AssistantToolCall(tool_call) if message.scope == self.scope => {
-                self.handle_tool_call(tool_call).await;
-            }
-            _ => {}
-        }
-    }
-
-    async fn on_start(&mut self) {
-        let _ = self.tx.send(ActorMessage {
-            scope: self.scope,
-            message: Message::ToolsAvailable(vec![Self::get_tool_schema()]),
-        });
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+            call_id: tool_call.id,
+            status: ToolCallStatus::Finished {
+                result: Ok(WAIT_TOOL_RESPONSE.to_string()),
+                tui_display: None,
+            },
+        }));
     }
 }

@@ -1,7 +1,10 @@
 use serde::de::DeserializeOwned;
 use tokio::sync::broadcast;
 
-use super::{Action, Actor, ActorMessage, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate};
+use super::{
+    Action, Actor, ActorMessage, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate,
+    ToolDisplayInfo,
+};
 use crate::{llm_client, scope::Scope};
 
 pub mod command;
@@ -16,7 +19,7 @@ pub mod spawn_agent;
 pub mod wait;
 
 #[async_trait::async_trait]
-pub trait Tool {
+pub trait Tool: Actor {
     const TOOL_NAME: &str;
     const TOOL_DESCRIPTION: &str;
     const TOOL_INPUT_SCHEMA: &str;
@@ -30,9 +33,11 @@ pub trait Tool {
     fn get_tx(&self) -> broadcast::Sender<ActorMessage>;
 
     /// Gets the message receiver
-    fn get_rx(&self) -> broadcast::Receiver<ActorMessage>;
+    fn get_rx(&self) -> broadcast::Receiver<ActorMessage> {
+        self.get_tx().subscribe()
+    }
 
-    fn handle_tool_call(&mut self, tool_call: llm_client::ToolCall) {
+    async fn handle_tool_call(&mut self, tool_call: llm_client::ToolCall) {
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
             status: ToolCallStatus::Received,
@@ -56,36 +61,52 @@ pub trait Tool {
             }
         };
 
-        self.execute_tool_call(params);
+        self.execute_tool_call(tool_call, params).await;
     }
-
-    fn execute_tool_call(&mut self, params: Self::Params);
 
     fn awaiting_user_confirmation(&self) -> Option<&str> {
         None
     }
 
-    fn handle_user_confirmed(&mut self) {}
+    async fn execute_tool_call(&mut self, tool_call: llm_client::ToolCall, params: Self::Params);
 
-    fn handle_user_denied(&mut self) {}
+    async fn handle_user_confirmed(&mut self) {}
 
-    fn handle_cancel(&mut self) {}
+    async fn handle_user_denied(&mut self) {}
 
-    /// Sends a message
-    fn broadcast(&self, message: Message) {
-        let _ = self.get_tx().send(ActorMessage {
-            scope: *self.get_scope(),
-            message,
-        });
+    async fn handle_cancel(&mut self) {}
+
+    /// Broadcasts ToolCallStatus::Finished
+    fn broadcast_finished(
+        &self,
+        tool_call_id: &str,
+        result: ToolCallResult,
+        tui_display: Option<ToolDisplayInfo>,
+    ) {
+        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+            call_id: tool_call_id.to_string(),
+            status: ToolCallStatus::Finished {
+                result: result,
+                tui_display,
+            },
+        }));
     }
 
-    /// Sends a message with a specific scope
-    fn broadcast_with_scope(&self, scope: &Scope, message: Message) {
-        let _ = self.get_tx().send(ActorMessage {
-            scope: *scope,
-            message,
-        });
-    }
+    // /// Sends a message
+    // fn broadcast(&self, message: Message) {
+    //     let _ = self.get_tx().send(ActorMessage {
+    //         scope: *self.get_scope(),
+    //         message,
+    //     });
+    // }
+    //
+    // /// Sends a message with a specific scope
+    // fn broadcast_with_scope(&self, scope: &Scope, message: Message) {
+    //     let _ = self.get_tx().send(ActorMessage {
+    //         scope: *scope,
+    //         message,
+    //     });
+    // }
 }
 
 #[async_trait::async_trait]
@@ -106,9 +127,9 @@ impl<T: Tool + Send + 'static> Actor for T {
 
     async fn handle_message(&mut self, message: ActorMessage) {
         match message.message {
-            Message::Action(Action::Cancel) => self.handle_cancel(),
+            Message::Action(Action::Cancel) => self.handle_cancel().await,
             Message::AssistantToolCall(tool_call) if tool_call.function.name == Self::TOOL_NAME => {
-                self.handle_tool_call(tool_call);
+                self.handle_tool_call(tool_call).await;
             }
             Message::ToolCallUpdate(update) => match update.status {
                 crate::actors::ToolCallStatus::ReceivedUserYNConfirmation(confirmation) => {
@@ -117,9 +138,9 @@ impl<T: Tool + Send + 'static> Actor for T {
                         .is_some_and(|call_id| call_id == update.call_id)
                     {
                         if confirmation {
-                            self.handle_user_confirmed();
+                            self.handle_user_confirmed().await;
                         } else {
-                            self.handle_user_denied();
+                            self.handle_user_denied().await;
                         }
                     }
                 }
