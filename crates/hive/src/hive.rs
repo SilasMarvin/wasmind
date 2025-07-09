@@ -7,7 +7,7 @@ use crate::{
         InterAgentMessage, Message,
         agent::Agent,
         tools::{
-            complete::Complete, planner::Planner, send_message::SendMessage,
+            complete::CompleteTool, planner::Planner, send_message::SendMessage,
             spawn_agent::SpawnAgent, wait::WaitTool,
         },
         tui::TuiActor,
@@ -160,7 +160,7 @@ pub fn start_headless_hive(
             Scope::new(), // parent_scope means nothing for the MainManager 
             AgentType::MainManager,
         ).with_scope(MAIN_MANAGER_SCOPE)
-        .with_actors([Planner::ACTOR_ID, SpawnAgent::ACTOR_ID, SendMessage::ACTOR_ID, WaitTool::ACTOR_ID, Complete::ACTOR_ID]);
+        .with_actors([Planner::ACTOR_ID, SpawnAgent::ACTOR_ID, SendMessage::ACTOR_ID, WaitTool::ACTOR_ID, CompleteTool::ACTOR_ID]);
 
         // Start the Main Manager
         main_manager.run();

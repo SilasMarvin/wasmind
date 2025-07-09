@@ -1,19 +1,20 @@
-use crate::llm_client::ToolCall;
+use crate::{
+    actors::{AgentStatus, InterAgentMessage},
+    llm_client::ToolCall,
+};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::info;
 
-// Assuming AgentSpawnedResponse is already Serialize.
-// It is imported from crate::actors::agent and used with serde_json::to_string in the original code.
 use crate::actors::{
-    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentType, Message, ToolCallResult, ToolCallStatus,
-    ToolCallUpdate, ActorContext,
+    Actor, ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentType, Message,
+    ToolCallResult,
     agent::{Agent, AgentSpawnedResponse},
     temporal::check_health::CheckHealthActor,
     tools::{
-        command::Command, complete::Complete, edit_file::EditFile, file_reader::FileReaderActor,
-        mcp::MCP, planner::Planner, send_manager_message::SendManagerMessage,
-        send_message::SendMessage, wait::WaitTool,
+        command::Command, complete::CompleteTool, edit_file::EditFile,
+        file_reader::FileReaderActor, mcp::MCP, planner::Planner,
+        send_manager_message::SendManagerMessage, send_message::SendMessage, wait::WaitTool,
     },
 };
 use crate::config::ParsedConfig;
@@ -83,7 +84,6 @@ impl SpawnAgent {
     pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { tx, config, scope }
     }
-
 }
 
 #[async_trait::async_trait]
@@ -126,7 +126,7 @@ impl Tool for SpawnAgent {
                     FileReaderActor::ACTOR_ID,
                     EditFile::ACTOR_ID,
                     MCP::ACTOR_ID,
-                    Complete::ACTOR_ID,
+                    CompleteTool::ACTOR_ID,
                     CheckHealthActor::ACTOR_ID,
                 ]),
                 "Manager" => Agent::new(
@@ -141,7 +141,7 @@ impl Tool for SpawnAgent {
                     SendManagerMessage::ACTOR_ID,
                     SendMessage::ACTOR_ID,
                     Planner::ACTOR_ID,
-                    Complete::ACTOR_ID,
+                    CompleteTool::ACTOR_ID,
                     WaitTool::ACTOR_ID,
                 ]),
                 _ => {
@@ -149,11 +149,7 @@ impl Tool for SpawnAgent {
                         "Invalid agent_type: '{}' for agent role '{}'. Must be 'Worker' or 'Manager'.",
                         agent_def.agent_type, agent_def.agent_role
                     );
-                    self.broadcast_finished(
-                        &tool_call.id,
-                        ToolCallResult::Err(error_msg),
-                        None,
-                    );
+                    self.broadcast_finished(&tool_call.id, ToolCallResult::Err(error_msg), None);
                     return;
                 }
             };
@@ -207,11 +203,24 @@ impl Tool for SpawnAgent {
                 .join(", ")
         );
 
-        self.broadcast_finished(
-            &tool_call.id,
-            ToolCallResult::Ok(response),
-            None,
-        );
+        if params.wait.is_some_and(|x| x) {
+            self.broadcast(Message::Agent(AgentMessage {
+                agent_id: self.get_scope().clone(),
+                message: AgentMessageType::InterAgentMessage(
+                    InterAgentMessage::StatusUpdateRequest {
+                        tool_call_id: tool_call.id.clone(),
+                        status: AgentStatus::Wait {
+                            reason: crate::actors::WaitReason::WaitForSystem {
+                                tool_name: Some(SpawnAgent::TOOL_NAME.to_string()),
+                                tool_call_id: tool_call.id.clone(),
+                            },
+                        },
+                    },
+                ),
+            }));
+        }
+
+        self.broadcast_finished(&tool_call.id, ToolCallResult::Ok(response), None);
     }
 }
 
@@ -236,10 +245,10 @@ mod tests {
             ],
             "wait": true
         }"#;
-        
+
         let result: Result<SpawnAgentsInput, _> = serde_json::from_str(json_input);
         assert!(result.is_ok());
-        
+
         let params = result.unwrap();
         assert_eq!(params.agents_to_spawn.len(), 2);
         assert_eq!(params.agents_to_spawn[0].agent_role, "Software Engineer");
@@ -252,7 +261,7 @@ mod tests {
         let json_input = r#"{
             "wait": true
         }"#;
-        
+
         let result: Result<SpawnAgentsInput, _> = serde_json::from_str(json_input);
         assert!(result.is_err());
     }

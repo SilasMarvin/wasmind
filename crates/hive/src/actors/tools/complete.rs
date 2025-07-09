@@ -11,21 +11,21 @@ use super::Tool;
 
 /// Tool for agents to explicitly signal task completion
 #[derive(hive_macros::ActorContext)]
-pub struct Complete {
+pub struct CompleteTool {
     #[allow(dead_code)]
     config: ParsedConfig,
     tx: broadcast::Sender<ActorMessage>,
     scope: Scope,
 }
 
-impl Complete {
+impl CompleteTool {
     pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { config, tx, scope }
     }
 }
 
 #[async_trait::async_trait]
-impl Tool for Complete {
+impl Tool for CompleteTool {
     const TOOL_NAME: &str = "complete";
     const TOOL_DESCRIPTION: &str = "Call this tool when you have completed your assigned task. Use this to provide a summary of what was accomplished and signal that the task is finished.";
     const TOOL_INPUT_SCHEMA: &str = r#"{
@@ -69,9 +69,9 @@ impl Tool for Complete {
             collapsed: format!(
                 "{}: {}",
                 if params.success {
-                    "✓ Completed"
+                    format!("{} Completed", crate::actors::tui::icons::CHECK_MARK)
                 } else {
-                    "✗ Failed"
+                    format!("{} Failed", crate::actors::tui::icons::X)
                 },
                 params.summary
             ),
@@ -89,14 +89,16 @@ impl Tool for Complete {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ParsedConfig;
     use tokio::sync::broadcast;
 
-    fn create_test_complete() -> Complete {
+    fn create_test_complete() -> CompleteTool {
         let (tx, _) = broadcast::channel(100);
-        let config = crate::config::Config::new(true).unwrap().try_into().unwrap();
+        let config = crate::config::Config::new(true)
+            .unwrap()
+            .try_into()
+            .unwrap();
         let scope = Scope::new();
-        Complete::new(config, tx, scope)
+        CompleteTool::new(config, tx, scope)
     }
 
     #[test]

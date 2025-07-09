@@ -504,9 +504,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_chat_request_building() {
-        let _client = LLMClient::new("http://localhost:4000".to_string());
-        let messages = vec![ChatMessage::user("Hello, how are you?")];
-
         // This test just verifies the request can be built properly
         // In a real test environment, you'd mock the HTTP response
         let request = ChatRequest {

@@ -1,7 +1,7 @@
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State, StateValue,
     command::{Cmd, CmdResult},
-    props::{Alignment, Borders, Color, Style, TextModifiers},
+    props::{Alignment, Style},
     ratatui::{
         layout::Rect,
         widgets::{Block, Paragraph, Wrap},
@@ -31,7 +31,7 @@ impl LLMTextAreaComponent {
     }
 }
 
-struct LLMTextArea {
+pub struct LLMTextArea {
     props: Props,
     state: State,
 }
@@ -40,7 +40,7 @@ impl LLMTextArea {
     fn build_paragraph(&self) -> Paragraph {
         let text = self.state().unwrap_one().unwrap_string();
 
-        let focus = self
+        let _focus = self
             .props
             .get_or(Attribute::Focus, AttrValue::Flag(false))
             .unwrap_flag();
@@ -73,7 +73,7 @@ impl MockComponent for LLMTextArea {
         self.state.clone()
     }
 
-    fn perform(&mut self, cmd: Cmd) -> CmdResult {
+    fn perform(&mut self, _cmd: Cmd) -> CmdResult {
         unreachable!()
     }
 }
@@ -119,7 +119,7 @@ impl Component<TuiMessage, ActorMessage> for LLMTextAreaComponent {
                 tuirealm::event::Key::Pause => todo!(),
                 tuirealm::event::Key::Menu => todo!(),
                 tuirealm::event::Key::KeypadBegin => todo!(),
-                tuirealm::event::Key::Media(media_key_code) => todo!(),
+                tuirealm::event::Key::Media(_) => todo!(),
                 tuirealm::event::Key::Esc => todo!(),
                 tuirealm::event::Key::ShiftLeft => todo!(),
                 tuirealm::event::Key::AltLeft => todo!(),

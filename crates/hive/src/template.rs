@@ -104,8 +104,6 @@ pub fn is_template(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::actors::AgentType;
-
     use super::*;
 
     #[tokio::test]
@@ -368,7 +366,6 @@ Task: {% if task %}{{ task }}{% else %}No specific task{% endif %}"#;
 
         let agent1 = AgentTaskInfo::new(
             Scope::new(),
-            AgentType::Worker,
             "Backend Developer".to_string(),
             "Create REST API".to_string(),
         );

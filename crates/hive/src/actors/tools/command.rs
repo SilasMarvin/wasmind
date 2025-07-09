@@ -1,4 +1,4 @@
-use crate::llm_client::{Tool, ToolCall};
+use crate::llm_client::ToolCall;
 use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::sync::broadcast;
@@ -6,11 +6,13 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
 use crate::actors::{
-    Action, Actor, ActorContext, ActorMessage, Message, ToolCallStatus, ToolCallUpdate,
+    ActorContext, ActorMessage, Message, ToolCallStatus, ToolCallUpdate,
     ToolDisplayInfo,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
+
+use super::Tool;
 
 const MAX_COMMAND_OUTPUT_CHARS: usize = 16_384;
 const TRUNCATION_HEAD_CHARS: usize = 4_000; // Keep first 4k chars
@@ -89,34 +91,14 @@ fn format_command_output(header: &str, stdout: &str, stderr: &str) -> String {
     output
 }
 
-pub const TOOL_NAME: &str = "execute_command";
-pub const TOOL_DESCRIPTION: &str = "Execute a bash command in a stateless environment. Commands are executed using 'bash -c', supporting all bash features including pipes (|), redirections (>, >>), command chaining (&&, ||), and other shell operators. Each command runs in a fresh, isolated bash environment without any session state from previous commands. Examples: echo 'test' > file.txt, ls | grep pattern, command1 && command2";
-pub const TOOL_INPUT_SCHEMA: &str = r#"{
-    "type": "object",
-    "properties": {
-        "command": {
-            "type": "string",
-            "description": "The bash command to execute. Can include shell features like pipes, redirections, etc."
-        },
-        "args": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Additional arguments to append to the command. These will be joined with spaces."
-        },
-        "directory": {
-            "type": "string",
-            "description": "Optional directory to execute the command in. Defaults to the current working directory of not specified."
-        },
-        "timeout": {
-            "type": "integer",
-            "description": "Optional timeout in seconds. Defaults to 30 seconds if not specified. Maximum allowed is 600 seconds (10 minutes)",
-            "default": 30,
-            "minimum": 1,
-            "maximum": 600
-        }
-    },
-    "required": ["command"]
-}"#;
+
+#[derive(Debug, serde::Deserialize)]
+pub struct CommandParams {
+    command: String,
+    args: Option<Vec<String>>,
+    directory: Option<String>,
+    timeout: Option<u64>,
+}
 
 /// Pending command execution
 #[derive(Clone, Debug)]
@@ -170,102 +152,6 @@ impl Command {
         )
     }
 
-    #[tracing::instrument(name = "command_tool_call", skip(self, tool_call), fields(call_id = %tool_call.id, function = %tool_call.function.name))]
-    async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.function.name != TOOL_NAME {
-            return;
-        }
-
-        // Parse the arguments
-        let args =
-            serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments).unwrap();
-
-        // Extract command and arguments
-        let command = args.get("command").and_then(|v| v.as_str()).unwrap();
-
-        let args_array = match args.get("args") {
-            Some(serde_json::Value::Array(arr)) => arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<String>>(),
-            _ => Vec::new(),
-        };
-
-        let directory = args
-            .get("directory")
-            .and_then(|v| v.as_str())
-            .map(String::from);
-
-        // Parse timeout parameter with default of 30 seconds, max 600 seconds (10 minutes)
-        let timeout = args
-            .get("timeout")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(30)
-            .min(600)
-            .max(1);
-
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received,
-        }));
-
-        // Check if command is whitelisted
-        debug!("Checking if command '{}' is whitelisted", command);
-        debug!(
-            "Whitelisted commands: {:?}",
-            self.config.whitelisted_commands
-        );
-
-        let is_whitelisted = self.config.whitelisted_commands.iter().any(|wc| {
-            // Exact match
-            if wc == command {
-                return true;
-            }
-            // Check if the command is a path that ends with the whitelisted command
-            // e.g., "/usr/bin/pwd" matches "pwd"
-            if command.split('/').last() == Some(wc) {
-                return true;
-            }
-            false
-        });
-
-        if is_whitelisted {
-            self.execute_command(
-                &command,
-                &args_array,
-                directory.as_deref(),
-                timeout,
-                &tool_call.id,
-                self.scope.clone(),
-            )
-            .await;
-        } else if self.config.auto_approve_commands {
-            // Auto-approve non-whitelisted commands
-            info!("Auto-approving non-whitelisted command: {}", command);
-            self.execute_command(
-                &command,
-                &args_array,
-                directory.as_deref(),
-                timeout,
-                &tool_call.id,
-                self.scope.clone(),
-            )
-            .await;
-        } else {
-            self.pending_command = Some(PendingCommand {
-                command: command.to_string(),
-                args: args_array.clone(),
-                directory,
-                timeout,
-                tool_call_id: tool_call.id.clone(),
-            });
-
-            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call.id,
-                status: ToolCallStatus::AwaitingUserYNConfirmation,
-            }));
-        }
-    }
 
     #[tracing::instrument(name = "execute_command", skip(self, args, tool_call_id, scope), fields(command = %command, args_count = args.len(), timeout = %timeout, call_id = %tool_call_id))]
     async fn execute_command(
@@ -503,55 +389,135 @@ impl Command {
 }
 
 #[async_trait::async_trait]
-impl Actor for Command {
-    const ACTOR_ID: &'static str = "command";
+impl Tool for Command {
+    const TOOL_NAME: &str = "execute_command";
+    const TOOL_DESCRIPTION: &str = "Execute a bash command in a stateless environment. Commands are executed using 'bash -c', supporting all bash features including pipes (|), redirections (>, >>), command chaining (&&, ||), and other shell operators. Each command runs in a fresh, isolated bash environment without any session state from previous commands. Examples: echo 'test' > file.txt, ls | grep pattern, command1 && command2";
+    const TOOL_INPUT_SCHEMA: &str = r#"{
+    "type": "object",
+    "properties": {
+        "command": {
+            "type": "string",
+            "description": "The bash command to execute. Can include shell features like pipes, redirections, etc."
+        },
+        "args": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Additional arguments to append to the command. These will be joined with spaces."
+        },
+        "directory": {
+            "type": "string",
+            "description": "Optional directory to execute the command in. Defaults to the current working directory of not specified."
+        },
+        "timeout": {
+            "type": "integer",
+            "description": "Optional timeout in seconds. Defaults to 30 seconds if not specified. Maximum allowed is 600 seconds (10 minutes)",
+            "default": 30,
+            "minimum": 1,
+            "maximum": 600
+        }
+    },
+    "required": ["command"]
+}"#;
 
-    async fn on_start(&mut self) {
-        let tool = Tool {
-            tool_type: "function".to_string(),
-            function: crate::llm_client::ToolFunction {
-                name: TOOL_NAME.to_string(),
-                description: TOOL_DESCRIPTION.to_string(),
-                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap(),
-            },
-        };
+    type Params = CommandParams;
 
-        self.broadcast(Message::ToolsAvailable(vec![tool]));
+    fn awaiting_user_confirmation(&self) -> Option<&str> {
+        self.pending_command.as_ref().map(|cmd| cmd.tool_call_id.as_str())
     }
 
-    async fn handle_message(&mut self, message: ActorMessage) {
+    async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
         // Cleanup completed commands periodically
         self.cleanup_completed_commands();
 
-        match message.message {
-            Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
-            Message::ToolCallUpdate(update) => match update.status {
-                crate::actors::ToolCallStatus::ReceivedUserYNConfirmation(confirmation) => {
-                    if !confirmation {
-                        self.pending_command = None;
-                        return;
-                    }
+        // Extract command and arguments from structured params
+        let command = &params.command;
+        let args_array = params.args.unwrap_or_default();
+        let directory = params.directory;
 
-                    if let Some(pending_command) = self.pending_command.take() {
-                        self.execute_command(
-                            &pending_command.command,
-                            &pending_command.args,
-                            pending_command.directory.as_deref(),
-                            pending_command.timeout,
-                            &pending_command.tool_call_id,
-                            self.scope.clone(),
-                        )
-                        .await
-                    }
-                }
-                _ => (),
-            },
-            Message::Action(Action::Cancel) => {
-                // Cancel all running commands
-                self.cancel_all_commands();
+        // Parse timeout parameter with default of 30 seconds, max 600 seconds (10 minutes)
+        let timeout = params.timeout.unwrap_or(30).min(600).max(1);
+
+        // Check if command is whitelisted
+        debug!("Checking if command '{}' is whitelisted", command);
+        debug!(
+            "Whitelisted commands: {:?}",
+            self.config.whitelisted_commands
+        );
+
+        let is_whitelisted = self.config.whitelisted_commands.iter().any(|wc| {
+            // Exact match
+            if wc == command {
+                return true;
             }
-            _ => (),
+            // Check if the command is a path that ends with the whitelisted command
+            // e.g., "/usr/bin/pwd" matches "pwd"
+            if command.split('/').last() == Some(wc) {
+                return true;
+            }
+            false
+        });
+
+        if is_whitelisted {
+            self.execute_command(
+                command,
+                &args_array,
+                directory.as_deref(),
+                timeout,
+                &tool_call.id,
+                self.scope.clone(),
+            )
+            .await;
+        } else if self.config.auto_approve_commands {
+            // Auto-approve non-whitelisted commands
+            info!("Auto-approving non-whitelisted command: {}", command);
+            self.execute_command(
+                command,
+                &args_array,
+                directory.as_deref(),
+                timeout,
+                &tool_call.id,
+                self.scope.clone(),
+            )
+            .await;
+        } else {
+            self.pending_command = Some(PendingCommand {
+                command: command.to_string(),
+                args: args_array.clone(),
+                directory,
+                timeout,
+                tool_call_id: tool_call.id.clone(),
+            });
+
+            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
+                call_id: tool_call.id,
+                status: ToolCallStatus::AwaitingUserYNConfirmation,
+            }));
         }
+    }
+
+    async fn handle_user_confirmed(&mut self) {
+        if let Some(pending_command) = self.pending_command.take() {
+            self.execute_command(
+                &pending_command.command,
+                &pending_command.args,
+                pending_command.directory.as_deref(),
+                pending_command.timeout,
+                &pending_command.tool_call_id,
+                self.scope.clone(),
+            )
+            .await
+        }
+    }
+
+    async fn handle_user_denied(&mut self) {
+        self.pending_command = None;
+    }
+
+    async fn handle_cancel(&mut self) {
+        // Cancel all running commands
+        self.cancel_all_commands();
+        // Also cleanup completed commands
+        self.cleanup_completed_commands();
     }
 }
 
@@ -561,6 +527,58 @@ mod tests {
     use std::env;
     use tempfile::TempDir;
     use tokio::process::Command as TokioCommand;
+    use tokio::sync::broadcast;
+
+    fn create_test_command() -> Command {
+        let (tx, _) = broadcast::channel(100);
+        let config = crate::config::Config::new(true).unwrap().try_into().unwrap();
+        let scope = Scope::new();
+        Command::new(config, tx, scope)
+    }
+
+    #[test]
+    fn test_command_deserialize_params_success() {
+        let command = create_test_command();
+        let json_input = r#"{
+            "command": "ls -la",
+            "args": ["-h", "--color"],
+            "directory": "/tmp",
+            "timeout": 60
+        }"#;
+        
+        let result = command.deserialize_params(json_input);
+        assert!(result.is_ok());
+        
+        let params = result.unwrap();
+        assert_eq!(params.command, "ls -la");
+        assert_eq!(params.args, Some(vec!["-h".to_string(), "--color".to_string()]));
+        assert_eq!(params.directory, Some("/tmp".to_string()));
+        assert_eq!(params.timeout, Some(60));
+    }
+
+    #[test]
+    fn test_command_deserialize_params_minimal() {
+        let command = create_test_command();
+        let json_input = r#"{"command": "pwd"}"#;
+        
+        let result = command.deserialize_params(json_input);
+        assert!(result.is_ok());
+        
+        let params = result.unwrap();
+        assert_eq!(params.command, "pwd");
+        assert_eq!(params.args, None);
+        assert_eq!(params.directory, None);
+        assert_eq!(params.timeout, None);
+    }
+
+    #[test]
+    fn test_command_deserialize_params_failure() {
+        let command = create_test_command();
+        let json_input = r#"{"args": ["test"]}"#;  // Missing required "command" field
+        
+        let result = command.deserialize_params(json_input);
+        assert!(result.is_err());
+    }
 
     #[test]
     fn test_smart_truncate_small_output() {

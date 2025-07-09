@@ -8,7 +8,7 @@ use crate::{
         Actor,
         assistant::Assistant,
         tools::{
-            command::Command, complete::Complete, edit_file::EditFile,
+            command::Command, complete::CompleteTool, edit_file::EditFile,
             file_reader::FileReaderActor, mcp::MCP, planner::Planner,
             send_manager_message::SendManagerMessage, send_message::SendMessage,
             spawn_agent::SpawnAgent,
@@ -23,7 +23,7 @@ use super::{
     temporal::{
         check_health::CheckHealthActor,
         tools::{
-            flag_issue_for_review::FlagIssueForReview, report_progress_normal::ReportProgressNormal,
+            flag_issue_for_review::FlagIssueForReviewTool, report_progress_normal::ReportProgressNormal,
         },
     },
     tools::{file_reader::FileReader, wait::WaitTool},
@@ -93,8 +93,8 @@ impl TemporalAgent {
         )
         .run();
 
-        if self.actors.contains(FlagIssueForReview::ACTOR_ID) {
-            FlagIssueForReview::new(
+        if self.actors.contains(FlagIssueForReviewTool::ACTOR_ID) {
+            FlagIssueForReviewTool::new(
                 self.tx.clone(),
                 self.scope.clone(),
                 self.og_scope,
@@ -241,8 +241,8 @@ impl Agent {
             WaitTool::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
         }
 
-        if self.actors.contains(Complete::ACTOR_ID) {
-            Complete::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        if self.actors.contains(CompleteTool::ACTOR_ID) {
+            CompleteTool::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
         }
 
         if self.actors.contains(MCP::ACTOR_ID) {

@@ -5,13 +5,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::broadcast;
-use tracing::info;
 
-use crate::actors::{ActorContext, ActorMessage, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate, ToolDisplayInfo};
+use crate::actors::{ActorContext, ActorMessage, Message, ToolCallResult};
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
-use super::{file_reader::FileCacheError, Tool};
+use super::{Tool, file_reader::FileCacheError};
 
 const TOOL_NAME: &str = "edit_file";
 const TOOL_DESCRIPTION: &str = "Applies a list of edits to a file atomically. This is the primary tool for modifying files. Each edit targets a specific line range. The tool processes edits from the bottom of the file to the top to ensure line number integrity during the operation.";
@@ -346,13 +345,12 @@ impl EditFile {
         }
     }
 
-
     async fn execute_edits(&mut self, path: &str, edits: Vec<Edit>, tool_call_id: &str) {
         let mut file_reader = self.file_reader.lock().unwrap();
 
         let result = self.file_editor.apply_edits(path, edits, &mut file_reader);
 
-        let status = match &result {
+        match &result {
             Ok(message) => {
                 // Send system state update for successful file edit
                 if let Ok(canonical_path) = std::fs::canonicalize(path) {
@@ -379,13 +377,9 @@ impl EditFile {
                 }
             }
             Err(e) => {
-                self.broadcast_finished(
-                    tool_call_id,
-                    ToolCallResult::Err(e.to_string()),
-                    None,
-                );
+                self.broadcast_finished(tool_call_id, ToolCallResult::Err(e.to_string()), None);
             }
-        };
+        }
     }
 }
 
@@ -409,15 +403,11 @@ impl Tool for EditFile {
             "path": params.path,
             "edits": params.edits
         });
-        
+
         let edits = match FileEditor::parse_edits_from_args(&args) {
             Ok(edits) => edits,
             Err(e) => {
-                self.broadcast_finished(
-                    &tool_call.id,
-                    ToolCallResult::Err(e.to_string()),
-                    None,
-                );
+                self.broadcast_finished(&tool_call.id, ToolCallResult::Err(e.to_string()), None);
                 return;
             }
         };
@@ -467,7 +457,6 @@ mod tests {
         println!("{:?}", result);
 
         assert!(result.is_ok());
-        // No need to remove file manually - tempfile will clean up
     }
 
     #[test]
@@ -694,10 +683,10 @@ mod tests {
                 }
             ]
         }"#;
-        
+
         let result: Result<EditFileParams, _> = serde_json::from_str(json_input);
         assert!(result.is_ok());
-        
+
         let params = result.unwrap();
         assert_eq!(params.path, "/path/to/file.txt");
         assert_eq!(params.edits.len(), 1);
@@ -708,7 +697,7 @@ mod tests {
         let json_input = r#"{
             "path": "/path/to/file.txt"
         }"#;
-        
+
         let result: Result<EditFileParams, _> = serde_json::from_str(json_input);
         assert!(result.is_err());
     }

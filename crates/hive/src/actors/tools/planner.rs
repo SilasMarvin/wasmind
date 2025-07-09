@@ -140,37 +140,6 @@ fn create_tui_display_info(action: &str, context: &str, plan: &TaskPlan) -> Tool
     }
 }
 
-const TOOL_NAME: &str = "planner";
-const TOOL_DESCRIPTION: &str = "Creates and manages a task plan with numbered steps. Actions: create (with title and tasks array), update (task_number and new_description), complete/start/skip (task_number)";
-const TOOL_INPUT_SCHEMA: &str = r#"{
-    "type": "object",
-    "properties": {
-        "action": {
-            "type": "string",
-            "enum": ["create", "update", "complete", "start", "skip"],
-            "description": "The action to perform on the task plan. If you already have an existing plan `create` will replace it."
-        },
-        "title": {
-            "type": "string",
-            "description": "Title of the task plan (required for 'create' action)"
-        },
-        "tasks": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Array of task descriptions (required for 'create' action)"
-        },
-        "task_number": {
-            "type": "integer",
-            "description": "The task number to update (1-based, required for update/complete/start/skip actions)"
-        },
-        "new_description": {
-            "type": "string",
-            "description": "New description for the task (required for 'update' action)"
-        }
-    },
-    "required": ["action"]
-}"#;
-
 #[derive(Debug, serde::Deserialize)]
 pub enum PlannerAction {
     #[serde(rename = "create")]
@@ -299,7 +268,7 @@ impl Planner {
                         tool_call_id: tool_call_id.to_string(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitingForManager {
-                                tool_name: Some(TOOL_NAME.to_string()),
+                                tool_name: Some(Planner::TOOL_NAME.to_string()),
                                 tool_call_id: tool_call_id.to_owned(),
                             },
                         },
@@ -419,9 +388,36 @@ impl Planner {
 
 #[async_trait::async_trait]
 impl Tool for Planner {
-    const TOOL_NAME: &str = TOOL_NAME;
-    const TOOL_DESCRIPTION: &str = TOOL_DESCRIPTION;
-    const TOOL_INPUT_SCHEMA: &str = TOOL_INPUT_SCHEMA;
+    const TOOL_NAME: &str = "planner";
+    const TOOL_DESCRIPTION: &str = "Creates and manages a task plan with numbered steps. Actions: create (with title and tasks array), update (task_number and new_description), complete/start/skip (task_number)";
+    const TOOL_INPUT_SCHEMA: &str = r#"{
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": ["create", "update", "complete", "start", "skip"],
+            "description": "The action to perform on the task plan. If you already have an existing plan `create` will replace it."
+        },
+        "title": {
+            "type": "string",
+            "description": "Title of the task plan (required for 'create' action)"
+        },
+        "tasks": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Array of task descriptions (required for 'create' action)"
+        },
+        "task_number": {
+            "type": "integer",
+            "description": "The task number to update (1-based, required for update/complete/start/skip actions)"
+        },
+        "new_description": {
+            "type": "string",
+            "description": "New description for the task (required for 'update' action)"
+        }
+    },
+    "required": ["action"]
+}"#;
 
     type Params = PlannerParams;
 

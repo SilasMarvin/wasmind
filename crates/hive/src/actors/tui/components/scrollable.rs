@@ -35,19 +35,6 @@ impl ScrollableComponent {
             },
         }
     }
-
-    pub fn reset_scroll(&mut self) {
-        self.component.scroll_offset = 0;
-        self.component.cached_buffer = None;
-    }
-
-    pub fn get_scroll_offset(&self) -> u16 {
-        self.component.scroll_offset
-    }
-
-    pub fn get_content_height(&self) -> u16 {
-        self.component.content_height
-    }
 }
 
 struct Scrollable {

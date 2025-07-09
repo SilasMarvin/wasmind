@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::actors::tools::file_reader::FileReader;
 use crate::actors::tools::planner::{TaskPlan, TaskStatus};
-use crate::actors::{AgentStatus, AgentTaskResult, AgentType};
+use crate::actors::{AgentStatus, AgentTaskResult};
 use crate::scope::Scope;
 use crate::template::{self, TemplateContext, ToolInfo};
 
@@ -119,12 +119,7 @@ pub struct AgentTaskInfo {
 }
 
 impl AgentTaskInfo {
-    pub fn new(
-        agent_id: Scope,
-        agent_type: AgentType,
-        agent_role: String,
-        task_description: String,
-    ) -> Self {
+    pub fn new(agent_id: Scope, agent_role: String, task_description: String) -> Self {
         Self {
             agent_id,
             agent_role,
@@ -328,9 +323,7 @@ impl SystemState {
     /// Generate the plan section for the system prompt
     pub fn render_plan_section(&self) -> String {
         match &self.current_plan {
-            Some(plan) => {
-                plan.format_for_assistant()
-            }
+            Some(plan) => plan.format_for_assistant(),
             None => "No current task plan.".to_string(),
         }
     }
@@ -732,7 +725,6 @@ mod tests {
 
         let agent1 = AgentTaskInfo::new(
             Scope::new(),
-            AgentType::Worker,
             "Software Engineer".to_string(),
             "Implement feature X".to_string(),
         );
@@ -740,11 +732,9 @@ mod tests {
 
         let agent2 = AgentTaskInfo::new(
             Scope::new(),
-            AgentType::Worker,
             "QA Engineer".to_string(),
             "Test feature X".to_string(),
         );
-        let agent2_id = agent2.agent_id;
 
         state.add_agent(agent1);
         state.add_agent(agent2);

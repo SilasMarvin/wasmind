@@ -1,9 +1,6 @@
-use crate::actors::{
-    Action, ActorContext, ActorMessage, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate,
-};
+use crate::actors::{Action, ActorContext, ActorMessage, Message, ToolCallResult};
 use crate::llm_client::ToolCall;
 use crate::scope::Scope;
-use serde_json::json;
 use tokio::sync::broadcast;
 
 use crate::actors::tools::Tool;
@@ -19,13 +16,13 @@ impl ReportProgressNormal {
     pub fn new(tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { tx, scope }
     }
-
 }
 
 #[async_trait::async_trait]
 impl Tool for ReportProgressNormal {
     const TOOL_NAME: &str = "report_progress_normal";
-    const TOOL_DESCRIPTION: &str = "Report that the analyzed agent is healthy and making normal progress.";
+    const TOOL_DESCRIPTION: &str =
+        "Report that the analyzed agent is healthy and making normal progress.";
     const TOOL_INPUT_SCHEMA: &str = r#"{
         "type": "object",
         "properties": {},
@@ -34,11 +31,10 @@ impl Tool for ReportProgressNormal {
 
     type Params = serde_json::Value;
 
+    // This tool only shuts down the temporal agent that was spawned
     async fn execute_tool_call(&mut self, tool_call: ToolCall, _params: Self::Params) {
-        // Shut everything down as it was fine
         self.broadcast(Message::Action(Action::Exit));
 
-        // Send tool call completion
         self.broadcast_finished(
             &tool_call.id,
             ToolCallResult::Ok("Agent progress reported as normal".to_string()),

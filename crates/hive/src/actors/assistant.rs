@@ -680,7 +680,7 @@ impl Actor for Assistant {
                                 },
                                 true,
                             );
-                        } else if let Some(content) = message.content {
+                        } else if let Some(_) = message.content {
                             if *crate::IS_HEADLESS.get().unwrap_or(&false) {
                                 // This is an error by the LLM it should only ever respond with
                                 // tool calls in headless mode
@@ -707,10 +707,10 @@ impl Actor for Assistant {
                 Message::Agent(message) => match message.message {
                     // We created a sub agent
                     AgentMessageType::AgentSpawned {
-                        agent_type,
                         role,
                         task_description,
                         tool_call_id,
+                        ..
                     } => {
                         // Ensure we actually called the tool to spawn agents
                         if let AgentStatus::Wait {
@@ -724,7 +724,6 @@ impl Actor for Assistant {
                                 .insert(message.agent_id.clone());
                             let agent_info = crate::system_state::AgentTaskInfo::new(
                                 message.agent_id.clone(),
-                                agent_type,
                                 role,
                                 task_description,
                             );
