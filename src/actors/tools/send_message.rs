@@ -8,9 +8,9 @@ use crate::scope::Scope;
 use serde::Deserialize;
 use tokio::sync::broadcast;
 
-pub const SEND_MESSAGE_TOOL_NAME: &str = "send_message";
-pub const SEND_MESSAGE_TOOL_DESCRIPTION: &str = "Send a message to a subordinate agent";
-pub const SEND_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
+pub const TOOL_NAME: &str = "send_message";
+pub const TOOL_DESCRIPTION: &str = "Send a message to a subordinate agent";
+pub const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
         "agent_id": {
@@ -60,9 +60,9 @@ impl SendMessage {
         Tool {
             tool_type: "function".to_string(),
             function: crate::llm_client::ToolFunction {
-                name: SEND_MESSAGE_TOOL_NAME.to_string(),
-                description: SEND_MESSAGE_TOOL_DESCRIPTION.to_string(),
-                parameters: serde_json::from_str(SEND_MESSAGE_TOOL_INPUT_SCHEMA)
+                name: TOOL_NAME.to_string(),
+                description: TOOL_DESCRIPTION.to_string(),
+                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA)
                     .expect("Invalid SEND_MESSAGE_TOOL_INPUT_SCHEMA"),
             },
         }
@@ -77,9 +77,9 @@ impl SendMessage {
                     scope: self.scope,
                     message: Message::ToolCallUpdate(ToolCallUpdate {
                         call_id: tool_call.id,
-                        status: ToolCallStatus::Finished { 
-                            result: Err(error_msg), 
-                            tui_display: None 
+                        status: ToolCallStatus::Finished {
+                            result: Err(error_msg),
+                            tui_display: None,
                         },
                     }),
                 });
@@ -96,9 +96,9 @@ impl SendMessage {
                     scope: self.scope,
                     message: Message::ToolCallUpdate(ToolCallUpdate {
                         call_id: tool_call.id,
-                        status: ToolCallStatus::Finished { 
-                            result: Err(error_msg), 
-                            tui_display: None 
+                        status: ToolCallStatus::Finished {
+                            result: Err(error_msg),
+                            tui_display: None,
                         },
                     }),
                 });
@@ -123,7 +123,7 @@ impl SendMessage {
                         tool_call_id: tool_call.id.clone(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitForSystem {
-                                tool_name: Some(SEND_MESSAGE_TOOL_NAME.to_string()),
+                                tool_name: Some(TOOL_NAME.to_string()),
                                 tool_call_id: tool_call.id.clone(),
                             },
                         },
@@ -135,16 +135,16 @@ impl SendMessage {
         // Send tool success response
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id,
-            status: ToolCallStatus::Finished { 
-                result: Ok(format_send_message_success(&input.agent_id)), 
-                tui_display: None 
+            status: ToolCallStatus::Finished {
+                result: Ok(format_send_message_success(&input.agent_id)),
+                tui_display: None,
             },
         }));
     }
 
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
         match tool_call.function.name.as_str() {
-            SEND_MESSAGE_TOOL_NAME => self.handle_send_message(tool_call).await,
+            TOOL_NAME => self.handle_send_message(tool_call).await,
             _ => {}
         }
     }

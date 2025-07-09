@@ -1,3 +1,5 @@
+use std::any::Any;
+
 pub mod agent;
 pub mod assistant;
 #[cfg(feature = "gui")]
@@ -9,13 +11,14 @@ pub mod temporal;
 pub mod tools;
 pub mod tui;
 
-use crate::llm_client::{Tool, ToolCall};
+use crate::llm_client::{self, ToolCall};
 use crate::scope::Scope;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use tokio::sync::broadcast;
+use tools::Tool;
 use uuid::Uuid;
 
 /// Pending tool call information including name and result
@@ -181,8 +184,8 @@ pub enum UserContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssistantRequest {
     system: String,
-    tools: Vec<Tool>,
-    messages: Vec<crate::llm_client::ChatMessage>,
+    tools: Vec<llm_client::Tool>,
+    messages: Vec<llm_client::ChatMessage>,
 }
 
 /// The various messages actors can send
@@ -199,12 +202,12 @@ pub enum Message {
     AssistantToolCall(ToolCall),
     AssistantResponse {
         id: Uuid,
-        message: crate::llm_client::AssistantChatMessage,
+        message: llm_client::AssistantChatMessage,
     },
 
     // Tool messages
     ToolCallUpdate(ToolCallUpdate),
-    ToolsAvailable(Vec<crate::llm_client::Tool>),
+    ToolsAvailable(Vec<llm_client::Tool>),
 
     // System state update messages
     FileRead {
@@ -258,7 +261,7 @@ impl PartialOrd for ActorMessage {
 
 /// Base trait for all actors in the system
 #[async_trait::async_trait]
-pub trait Actor: Send + Sized + 'static {
+pub trait Actor: Send + 'static {
     /// Unique identifier for this actor type
     const ACTOR_ID: &'static str;
 
@@ -295,7 +298,10 @@ pub trait Actor: Send + Sized + 'static {
     }
 
     /// run
-    fn run(mut self) {
+    fn run(mut self)
+    where
+        Self: Sized,
+    {
         // It is essential that we subscribe to the tx before entering the tokio task or we may
         // miss messages we rely upon. E.G. Message::ActorReady
         let mut rx = self.get_rx();

@@ -11,9 +11,9 @@ use tokio::sync::broadcast;
 pub const SEND_MANAGER_MESSAGE_SUCCESS_TOOL_RESPONSE: &'static str =
     "Message sent to manager. Expect a response in 300 seconds.";
 
-pub const SEND_MANAGER_MESSAGE_TOOL_NAME: &str = "send_manager_message";
-pub const SEND_MANAGER_MESSAGE_TOOL_DESCRIPTION: &str = "Send a message to your manager";
-pub const SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA: &str = r#"{
+pub const TOOL_NAME: &str = "send_manager_message";
+pub const TOOL_DESCRIPTION: &str = "Send a message to your manager";
+pub const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
         "message": {
@@ -64,9 +64,9 @@ impl SendManagerMessage {
         Tool {
             tool_type: "function".to_string(),
             function: crate::llm_client::ToolFunction {
-                name: SEND_MANAGER_MESSAGE_TOOL_NAME.to_string(),
-                description: SEND_MANAGER_MESSAGE_TOOL_DESCRIPTION.to_string(),
-                parameters: serde_json::from_str(SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA)
+                name: TOOL_NAME.to_string(),
+                description: TOOL_DESCRIPTION.to_string(),
+                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA)
                     .expect("Invalid SEND_MANAGER_MESSAGE_TOOL_INPUT_SCHEMA"),
             },
         }
@@ -82,9 +82,9 @@ impl SendManagerMessage {
                         scope: self.scope,
                         message: Message::ToolCallUpdate(ToolCallUpdate {
                             call_id: tool_call.id,
-                            status: ToolCallStatus::Finished { 
-                                result: Err(error_msg), 
-                                tui_display: None 
+                            status: ToolCallStatus::Finished {
+                                result: Err(error_msg),
+                                tui_display: None,
                             },
                         }),
                     });
@@ -109,7 +109,7 @@ impl SendManagerMessage {
                         tool_call_id: tool_call.id.clone(),
                         status: AgentStatus::Wait {
                             reason: WaitReason::WaitingForManager {
-                                tool_name: Some(SEND_MANAGER_MESSAGE_TOOL_NAME.to_string()),
+                                tool_name: Some(TOOL_NAME.to_string()),
                                 tool_call_id: tool_call.id.clone(),
                             },
                         },
@@ -130,7 +130,7 @@ impl SendManagerMessage {
 
     async fn handle_tool_call(&mut self, tool_call: ToolCall) {
         match tool_call.function.name.as_str() {
-            SEND_MANAGER_MESSAGE_TOOL_NAME => self.handle_send_manager_message(tool_call).await,
+            TOOL_NAME => self.handle_send_manager_message(tool_call).await,
             _ => {}
         }
     }

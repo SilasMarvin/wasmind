@@ -19,8 +19,7 @@ use super::scrollable::ScrollableComponentTrait;
 
 const MESSAGE_GAP: u16 = 1;
 
-// TODO: We need to create display widgets for plans, generic tool calls, file read and edited,
-// etc...
+// TODO: We need to create display widgets for plans, generic tool calls, file read and edited, etc...
 
 #[derive(Clone)]
 struct AssistantInfo {
@@ -227,18 +226,17 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
                         self.component.is_modified = true;
                     }
                 }
-                crate::actors::Message::ToolCallUpdate(tool_call_update) => (),
-                crate::actors::Message::FileRead {
-                    path,
-                    content,
-                    last_modified,
-                } => (),
-                crate::actors::Message::FileEdited {
-                    path,
-                    content,
-                    last_modified,
-                } => (),
-                crate::actors::Message::PlanUpdated(task_plan) => (),
+                crate::actors::Message::ToolCallUpdate(tool_call_update) => {
+                    if let Some(actor_info) = self
+                        .component
+                        .chat_history_map
+                        .get_mut(&actor_message.scope)
+                    {
+                        actor_info
+                            .tool_call_updates
+                            .insert(tool_call_update.call_id, tool_call_update.status);
+                    }
+                }
                 // This let's us track new agent creation
                 crate::actors::Message::Agent(AgentMessage { agent_id, message }) => (),
                 _ => (),
