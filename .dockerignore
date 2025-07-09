@@ -1,0 +1,55 @@
+# Reduce Docker build context for faster uploads
+
+# Build artifacts
+target/
+# Note: Include Cargo.lock for reproducible builds
+
+# Test artifacts  
+tests/target/
+**/*.tmp
+**/tmp/
+
+# Large model files (not needed for tests)
+models/
+
+# Documentation (not needed for builds)
+*.md
+docs/
+
+# Examples and non-essential scripts
+examples/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git (reduce context)
+.git/
+.gitignore
+
+# Log files
+*.log
+log.txt
+
+# Temporary files
+*.temp
+*.bak
+*.tmp
+
+# Other artifacts
+*.o
+*.so
+*.dylib
+*.a

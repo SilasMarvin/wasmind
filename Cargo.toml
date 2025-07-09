@@ -1,42 +1,16 @@
-[package]
-name = "copilot"
-version = "0.1.0"
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
 edition = "2024"
+license = "MIT"
+description = ""
+repository = "https://github.com/SilasMarvin/hive"
+readme = "README.md"
+authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 
-[target.aarch64-apple-darwin]
-rustflags = "-lc++ -l framework=Accelerate"
-
-[dependencies]
-arboard = "3.5.0"
-base64 = "0.22.1"
-crossbeam = "0.8.4"
-etcetera = "0.10.0"
-# genai = "0.3.1"
-genai = { path = "/Users/silasmarvin/github/rust-genai" }
-image = "0.25.6"
-rdev = { version = "0.5.3", features = ["unstable_grab"] }
-serde = { version = "1.0.219", features = ["derive"] }
-tokio = { version = "1.45.0", features = ["rt-multi-thread", "time", "process", "sync"] }
-snafu = "0.8.5"
-toml = "0.8.22"
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-xcap = "0.5.2"
-futures = "0.3.31"
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = ["server", "transport-child-process", "client"] }
-serde_json = "1.0.140"
-whisper-rs = { version = "0.14.2", features = ["metal"] }
-cpal = "0.15.3"
-hound = "3.5.1"
-rubato = "0.16.2"
-libc = "0.2"
-ratatui = "0.28"
-crossterm = "0.28"
-chrono = { version = "0.4", features = ["serde"] }
-minijinja = { version = "2.6", features = ["builtins"] }
-clap = { version = "4.0", features = ["derive"] }
-async-trait = "0.1"
-
-[dev-dependencies]
-tempfile = "3"
-pathdiff = "0.2"
+[profile.release]
+incremental = true
+# Set this to 1 or 2 to get more useful backtraces in debugger.
+debug = 0
