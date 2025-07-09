@@ -1,6 +1,6 @@
 use crate::actors::{
     ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage,
-    Message, ToolCallStatus, ToolCallUpdate, ToolDisplayInfo, WaitReason,
+    Message, ToolDisplayInfo, WaitReason,
 };
 use crate::config::ParsedConfig;
 use crate::llm_client;

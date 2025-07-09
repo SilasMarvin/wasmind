@@ -3,7 +3,7 @@ use ratatui::{
     style::{Color, Style},
     widgets::Block,
 };
-use tuirealm::{Component, props::Borders};
+use tuirealm::props::Borders;
 
 pub fn get_block<'a>(props: Borders, focus: bool) -> Block<'a> {
     Block::default()

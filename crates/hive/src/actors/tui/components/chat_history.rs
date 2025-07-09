@@ -24,8 +24,8 @@ const MESSAGE_GAP: u16 = 1;
 #[derive(Clone)]
 struct AssistantInfo {
     role: String,
-    assistant_type: AgentType,
-    task_description: Option<String>,
+    _assistant_type: AgentType,
+    _task_description: Option<String>,
     last_assistant_request: Option<AssistantRequest>,
     pending_user_message: Option<String>,
     tool_call_updates: HashMap<String, ToolCallStatus>,
@@ -123,8 +123,8 @@ impl ChatHistoryComponent {
                     MAIN_MANAGER_SCOPE.clone(),
                     AssistantInfo {
                         role: MAIN_MANAGER_ROLE.to_string(),
-                        assistant_type: AgentType::MainManager,
-                        task_description: None,
+                        _assistant_type: AgentType::MainManager,
+                        _task_description: None,
                         last_assistant_request: None,
                         pending_user_message: None,
                         tool_call_updates: HashMap::new(),
@@ -212,7 +212,7 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
                     }
                 }
                 // These are intermediary artifacts that may be rolled back or changed by the real source of truth
-                crate::actors::Message::AssistantToolCall(tool_call) => (),
+                crate::actors::Message::AssistantToolCall(_) => (),
                 crate::actors::Message::AssistantResponse { message, .. } => {
                     if let Some(actor_info) = self
                         .component
@@ -238,7 +238,7 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
                     }
                 }
                 // This let's us track new agent creation
-                crate::actors::Message::Agent(AgentMessage { agent_id, message }) => (),
+                crate::actors::Message::Agent(AgentMessage { .. }) => (),
                 _ => (),
             },
             _ => (),

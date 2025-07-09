@@ -1,6 +1,6 @@
 use crate::actors::{
-    ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus,
-    InterAgentMessage, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate, WaitReason,
+    ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage,
+    Message, ToolCallResult, WaitReason,
 };
 use crate::config::ParsedConfig;
 use crate::llm_client::ToolCall;
@@ -56,7 +56,6 @@ impl SendMessage {
     pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { config, tx, scope }
     }
-
 }
 
 #[async_trait::async_trait]
@@ -73,11 +72,7 @@ impl Tool for SendMessage {
             Ok(uuid) => Scope::from_uuid(uuid),
             Err(e) => {
                 let error_msg = format!("Invalid agent ID format: {}", e);
-                self.broadcast_finished(
-                    &tool_call.id,
-                    ToolCallResult::Err(error_msg),
-                    None,
-                );
+                self.broadcast_finished(&tool_call.id, ToolCallResult::Err(error_msg), None);
                 return;
             }
         };
@@ -128,10 +123,10 @@ mod tests {
             "message": "Hello, agent!",
             "wait": false
         }"#;
-        
+
         let result: Result<SendMessageInput, _> = serde_json::from_str(json_input);
         assert!(result.is_ok());
-        
+
         let params = result.unwrap();
         assert_eq!(params.agent_id, "12345678-1234-1234-1234-123456789012");
         assert_eq!(params.message, "Hello, agent!");
@@ -144,7 +139,7 @@ mod tests {
             "message": "Hello, agent!",
             "wait": false
         }"#;
-        
+
         let result: Result<SendMessageInput, _> = serde_json::from_str(json_input);
         assert!(result.is_err());
     }

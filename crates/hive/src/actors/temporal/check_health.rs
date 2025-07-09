@@ -3,13 +3,13 @@ use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 
 use crate::{
-    actors::{Actor, ActorContext, ActorMessage, AssistantRequest, Message, agent::TemporalAgent},
+    actors::{Actor, ActorContext, ActorMessage, AssistantRequest, agent::TemporalAgent},
     config::ParsedConfig,
     scope::Scope,
 };
 
 use super::tools::{
-    flag_issue_for_review::FlagIssueForReview, report_progress_normal::ReportProgressNormal,
+    flag_issue_for_review::FlagIssueForReviewTool, report_progress_normal::ReportProgressNormal,
 };
 
 #[derive(hive_macros::ActorContext)]
@@ -73,7 +73,10 @@ impl CheckHealthActor {
                 self.scope.clone(),
                 "Expert LLM Assistant Health Checker".to_string(),
             )
-            .with_actors([FlagIssueForReview::ACTOR_ID, ReportProgressNormal::ACTOR_ID])
+            .with_actors([
+                FlagIssueForReviewTool::ACTOR_ID,
+                ReportProgressNormal::ACTOR_ID,
+            ])
             .with_og_parent_scope(self.parent_scope)
             .run();
 

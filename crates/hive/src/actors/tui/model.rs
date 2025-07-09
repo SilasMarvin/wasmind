@@ -1,5 +1,4 @@
-use std::time::{Duration, Instant};
-
+use std::time::Duration;
 use tokio::sync::broadcast::{Receiver, Sender};
 use tuirealm::listener::{ListenerResult, Poll};
 use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
@@ -7,9 +6,7 @@ use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBrid
 use tuirealm::{Application, EventListenerCfg, ListenerError, Update};
 
 use crate::actors::tui::components::chat::{CHAT_SCOPE, ChatAreaComponent};
-use crate::actors::tui::components::graph::GRAPH_SCOPE;
-use crate::actors::tui::components::llm_textarea::LLMTextAreaComponent;
-use crate::actors::{ActorMessage, AgentMessageType, Message, UserContext};
+use crate::actors::{ActorMessage, Message, UserContext};
 use crate::hive::MAIN_MANAGER_SCOPE;
 use crate::scope::Scope;
 
@@ -72,7 +69,6 @@ where
         assert!(
             self.terminal
                 .draw(|f| {
-                    let start = Instant::now();
                     let chunks = Layout::default()
                         .direction(Direction::Horizontal)
                         .margin(1)
@@ -82,8 +78,6 @@ where
                         .split(f.area());
                     // self.app.view(&GRAPH_SCOPE, f, chunks[0]);
                     self.app.view(&CHAT_SCOPE, f, chunks[1]);
-                    let elapsed = start.elapsed().as_millis();
-                    tracing::error!("ELAPSED: {}", elapsed);
                 })
                 .is_ok()
         );
@@ -131,7 +125,7 @@ where
                         self.update(Some(msg));
                     }
                 }
-                TuiMessage::ActorMessage(actor_message) => (),
+                TuiMessage::ActorMessage(_) => (),
                 TuiMessage::UpdatedUserTypedLLMMessage(_) => (),
                 TuiMessage::SubmittedUserTypedLLMMessage(message) => {
                     let _ = self.tx.send(ActorMessage {

@@ -4,6 +4,7 @@ use tokio::sync::broadcast::Sender;
 use tuirealm::{PollStrategy, Update};
 
 mod components;
+pub mod icons;
 mod model;
 mod utils;
 

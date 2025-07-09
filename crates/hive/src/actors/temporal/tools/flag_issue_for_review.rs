@@ -1,10 +1,6 @@
-use crate::actors::{
-    Action, ActorContext, ActorMessage, AgentMessage, Message, ToolCallResult, ToolCallStatus,
-    ToolCallUpdate,
-};
+use crate::actors::{Action, ActorContext, ActorMessage, AgentMessage, Message, ToolCallResult};
 use crate::llm_client::ToolCall;
 use crate::scope::Scope;
-use serde_json::json;
 use tokio::sync::broadcast;
 
 use crate::actors::tools::Tool;
@@ -17,14 +13,14 @@ pub fn format_flag_issue_for_review_manager_message(flagged_agent: &Scope, issue
 
 /// Tool for temporal agents to flag issues for review
 #[derive(hive_macros::ActorContext)]
-pub struct FlagIssueForReview {
+pub struct FlagIssueForReviewTool {
     tx: broadcast::Sender<ActorMessage>,
     scope: Scope,
     og_scope: Scope,
     og_parent_scope: Scope,
 }
 
-impl FlagIssueForReview {
+impl FlagIssueForReviewTool {
     pub fn new(
         tx: broadcast::Sender<ActorMessage>,
         scope: Scope,
@@ -38,7 +34,6 @@ impl FlagIssueForReview {
             og_parent_scope,
         }
     }
-
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -47,9 +42,10 @@ pub struct FlagIssueParams {
 }
 
 #[async_trait::async_trait]
-impl Tool for FlagIssueForReview {
+impl Tool for FlagIssueForReviewTool {
     const TOOL_NAME: &str = "flag_issue_for_review";
-    const TOOL_DESCRIPTION: &str = "Flags that the analyzed agent appears to be stuck or in a loop.";
+    const TOOL_DESCRIPTION: &str =
+        "Flags that the analyzed agent appears to be stuck or in a loop.";
     const TOOL_INPUT_SCHEMA: &str = r#"{
         "type": "object",
         "properties": {
@@ -93,13 +89,14 @@ impl Tool for FlagIssueForReview {
             }),
         );
 
-        // Shut everything down as it was fine
         self.broadcast(Message::Action(Action::Exit));
 
-        // Send tool call completion
         self.broadcast_finished(
             &tool_call.id,
-            ToolCallResult::Ok(format!("Issue flagged for review: {}", params.issue_summary)),
+            ToolCallResult::Ok(format!(
+                "Issue flagged for review: {}",
+                params.issue_summary
+            )),
             None,
         );
     }
@@ -114,18 +111,21 @@ mod tests {
         let json_input = r#"{
             "issue_summary": "Agent appears to be stuck in a loop trying to access a non-existent file"
         }"#;
-        
+
         let result: Result<FlagIssueParams, _> = serde_json::from_str(json_input);
         assert!(result.is_ok());
-        
+
         let params = result.unwrap();
-        assert_eq!(params.issue_summary, "Agent appears to be stuck in a loop trying to access a non-existent file");
+        assert_eq!(
+            params.issue_summary,
+            "Agent appears to be stuck in a loop trying to access a non-existent file"
+        );
     }
 
     #[test]
     fn test_flag_issue_deserialize_params_failure() {
         let json_input = r#"{}"#;
-        
+
         let result: Result<FlagIssueParams, _> = serde_json::from_str(json_input);
         assert!(result.is_err());
     }

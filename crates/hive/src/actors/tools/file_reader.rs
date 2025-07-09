@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use tokio::sync::broadcast;
 
 use crate::actors::ActorMessage;
-use crate::actors::{ActorContext, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate, ToolDisplayInfo};
+use crate::actors::{ActorContext, Message, ToolCallResult};
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
@@ -513,7 +513,6 @@ impl FileReaderActor {
         }
     }
 
-
     async fn execute_read(
         &mut self,
         path: &str,
@@ -525,7 +524,7 @@ impl FileReaderActor {
 
         let result = file_reader.get_or_read_file_content(path, start_line, end_line);
 
-        let status = match &result {
+        match &result {
             Ok(content) => {
                 // Send system state update for successful file read
                 if let Ok(canonical_path) = std::fs::canonicalize(path) {
@@ -545,20 +544,12 @@ impl FileReaderActor {
                     }
                     _ => format!("Read file: {}", path),
                 };
-                self.broadcast_finished(
-                    tool_call_id,
-                    ToolCallResult::Ok(message),
-                    None,
-                );
+                self.broadcast_finished(tool_call_id, ToolCallResult::Ok(message), None);
             }
             Err(e) => {
-                self.broadcast_finished(
-                    tool_call_id,
-                    ToolCallResult::Err(e.to_string()),
-                    None,
-                );
+                self.broadcast_finished(tool_call_id, ToolCallResult::Err(e.to_string()), None);
             }
-        };
+        }
     }
 }
 
@@ -583,18 +574,22 @@ impl Tool for FileReaderActor {
             if start_line < 0 {
                 self.broadcast_finished(
                     &tool_call.id,
-                    ToolCallResult::Err(format!("Invalid start_line: {start_line} - lines are 1-indexed.")),
+                    ToolCallResult::Err(format!(
+                        "Invalid start_line: {start_line} - lines are 1-indexed."
+                    )),
                     None,
                 );
                 return;
             }
         }
-        
+
         if let Some(end_line) = params.end_line {
             if end_line < 0 {
                 self.broadcast_finished(
                     &tool_call.id,
-                    ToolCallResult::Err(format!("Invalid end_line: {end_line} - lines are 1-indexed.")),
+                    ToolCallResult::Err(format!(
+                        "Invalid end_line: {end_line} - lines are 1-indexed."
+                    )),
                     None,
                 );
                 return;
@@ -604,7 +599,8 @@ impl Tool for FileReaderActor {
         let start_line = params.start_line.map(|x| x as usize);
         let end_line = params.end_line.map(|x| x as usize);
 
-        self.execute_read(&params.path, start_line, end_line, &tool_call.id).await;
+        self.execute_read(&params.path, start_line, end_line, &tool_call.id)
+            .await;
     }
 }
 
@@ -909,10 +905,10 @@ mod tests {
             "start_line": 1,
             "end_line": 10
         }"#;
-        
+
         let result: Result<FileReaderParams, _> = serde_json::from_str(json_input);
         assert!(result.is_ok());
-        
+
         let params = result.unwrap();
         assert_eq!(params.path, "/path/to/file.txt");
         assert_eq!(params.start_line, Some(1));
@@ -925,7 +921,7 @@ mod tests {
             "start_line": 1,
             "end_line": 10
         }"#;
-        
+
         let result: Result<FileReaderParams, _> = serde_json::from_str(json_input);
         assert!(result.is_err());
     }

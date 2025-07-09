@@ -4,12 +4,9 @@ use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
 use crate::{
-    actors::{
-        AgentType,
-        tools::{
-            file_reader::FileReader,
-            planner::{Task, TaskPlan, TaskStatus},
-        },
+    actors::tools::{
+        file_reader::FileReader,
+        planner::{Task, TaskPlan, TaskStatus},
     },
     config::{Config, ParsedConfig},
     system_state::{SystemState, SystemStateError},
@@ -268,7 +265,6 @@ line 10: final line of data
 
         let agent1 = AgentTaskInfo::new(
             Scope::new(),
-            AgentType::Worker,
             "Software Engineer".to_string(),
             "Implement user authentication system".to_string(),
         );
@@ -277,7 +273,6 @@ line 10: final line of data
 
         let agent2 = AgentTaskInfo::new(
             Scope::new(),
-            AgentType::Worker,
             "Database Architect".to_string(),
             "Design and optimize database schema".to_string(),
         );
@@ -293,7 +288,6 @@ line 10: final line of data
 
         let agent3 = AgentTaskInfo::new(
             Scope::new(),
-            AgentType::Worker,
             "Frontend Developer".to_string(),
             "Create responsive user interface".to_string(),
         );
@@ -375,7 +369,6 @@ line 10: final line of data
 
         let backend_agent = AgentTaskInfo::new(
             Scope::new(),
-            AgentType::Worker,
             "Backend Developer".to_string(),
             "Implement REST API endpoints with authentication".to_string(),
         );
@@ -383,7 +376,6 @@ line 10: final line of data
 
         let frontend_agent = AgentTaskInfo::new(
             Scope::new(),
-            AgentType::Worker,
             "Frontend Developer".to_string(),
             "Build React components for user dashboard".to_string(),
         );
@@ -391,7 +383,6 @@ line 10: final line of data
 
         let db_agent = AgentTaskInfo::new(
             Scope::new(),
-            AgentType::Worker,
             "Database Administrator".to_string(),
             "Optimize database queries and setup indexing".to_string(),
         );

@@ -1,6 +1,6 @@
 use crate::actors::{
-    ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus,
-    InterAgentMessage, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate, WaitReason,
+    ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage,
+    Message, ToolCallResult, WaitReason,
 };
 use crate::config::ParsedConfig;
 use crate::llm_client::ToolCall;
@@ -60,7 +60,6 @@ impl SendManagerMessage {
             parent_scope,
         }
     }
-
 }
 
 #[async_trait::async_trait]
@@ -117,10 +116,10 @@ mod tests {
             "message": "Hello, manager!",
             "wait": true
         }"#;
-        
+
         let result: Result<SendManagerMessageInput, _> = serde_json::from_str(json_input);
         assert!(result.is_ok());
-        
+
         let params = result.unwrap();
         assert_eq!(params.message, "Hello, manager!");
         assert_eq!(params.wait, Some(true));
@@ -131,7 +130,7 @@ mod tests {
         let json_input = r#"{
             "wait": true
         }"#;
-        
+
         let result: Result<SendManagerMessageInput, _> = serde_json::from_str(json_input);
         assert!(result.is_err());
     }
