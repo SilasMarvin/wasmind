@@ -5,13 +5,76 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
-use crate::actors::{Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallUpdate};
+use crate::actors::{Action, Actor, ActorMessage, Message, ToolCallStatus, ToolCallUpdate, ToolDisplayInfo};
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
 const MAX_COMMAND_OUTPUT_CHARS: usize = 16_384;
 const TRUNCATION_HEAD_CHARS: usize = 4_000; // Keep first 4k chars
 const TRUNCATION_TAIL_CHARS: usize = 4_000; // Keep last 4k chars
+
+/// Command execution outcome for TUI display
+#[derive(Debug)]
+enum CommandOutcome {
+    Success { stdout: String, stderr: String },
+    Failed { exit_code: i32, stdout: String, stderr: String },
+    Timeout,
+    Signal,
+    Error(String),
+}
+
+/// Create TUI display info for command execution
+fn create_command_tui_display(command: &str, outcome: CommandOutcome) -> ToolDisplayInfo {
+    let collapsed = match &outcome {
+        CommandOutcome::Success { .. } => format!("✓ Command succeeded: {}", command),
+        CommandOutcome::Failed { exit_code, .. } => format!("✗ Command failed (exit {}): {}", exit_code, command),
+        CommandOutcome::Timeout => format!("Command timed out: {}", command),
+        CommandOutcome::Signal => format!("Command terminated by signal: {}", command),
+        CommandOutcome::Error(_) => format!("Command error: {}", command),
+    };
+
+    let expanded = match &outcome {
+        CommandOutcome::Success { stdout, stderr } | CommandOutcome::Failed { stdout, stderr, .. } => {
+            format_command_output(&collapsed, stdout, stderr)
+        }
+        CommandOutcome::Timeout | CommandOutcome::Signal => {
+            format!("{}\n(no output)", collapsed)
+        }
+        CommandOutcome::Error(error) => {
+            format!("{}\n\n{}", collapsed, error)
+        }
+    };
+
+    ToolDisplayInfo {
+        collapsed,
+        expanded: Some(expanded),
+    }
+}
+
+/// Format command output with proper stdout/stderr sections
+fn format_command_output(header: &str, stdout: &str, stderr: &str) -> String {
+    let mut output = header.to_string();
+    
+    if stdout.is_empty() && stderr.is_empty() {
+        output.push_str("\n(no output)");
+        return output;
+    }
+    
+    if !stdout.is_empty() {
+        output.push_str("\n\n=== stdout ===\n");
+        output.push_str(stdout);
+    }
+    
+    if !stderr.is_empty() {
+        if !stdout.is_empty() {
+            output.push('\n');
+        }
+        output.push_str("\n=== stderr ===\n");
+        output.push_str(stderr);
+    }
+    
+    output
+}
 
 pub const TOOL_NAME: &str = "execute_command";
 pub const TOOL_DESCRIPTION: &str = "Execute a bash command in a stateless environment. Commands are executed using 'bash -c', supporting all bash features including pipes (|), redirections (>, >>), command chaining (&&, ||), and other shell operators. Each command runs in a fresh, isolated bash environment without any session state from previous commands. Examples: echo 'test' > file.txt, ls | grep pattern, command1 && command2";
@@ -241,13 +304,14 @@ impl Command {
                     let error_msg =
                         format!("Failed to spawn bash command '{}': {}", full_command, e);
                     error!("{}", error_msg);
+                    let tui_display = Some(create_command_tui_display(&full_command, CommandOutcome::Error(error_msg.clone())));
                     let _ = tx.send(ActorMessage {
                         scope,
                         message: Message::ToolCallUpdate(ToolCallUpdate {
                             call_id: tool_call_id,
                             status: ToolCallStatus::Finished {
                                 result: Err(error_msg),
-                                tui_display: None,
+                                tui_display,
                             },
                         }),
                     });
@@ -265,13 +329,14 @@ impl Command {
                     let error_msg =
                         format!("Failed to execute bash command '{}': {}", full_command, e);
                     error!("{}", error_msg);
+                    let tui_display = Some(create_command_tui_display(&full_command, CommandOutcome::Error(error_msg.clone())));
                     let _ = tx.send(ActorMessage {
                         scope,
                         message: Message::ToolCallUpdate(ToolCallUpdate {
                             call_id: tool_call_id,
                             status: ToolCallStatus::Finished {
                                 result: Err(error_msg),
-                                tui_display: None,
+                                tui_display,
                             },
                         }),
                     });
@@ -285,13 +350,14 @@ impl Command {
                         full_command, timeout
                     );
                     error!("{}", error_msg);
+                    let tui_display = Some(create_command_tui_display(&full_command, CommandOutcome::Timeout));
                     let _ = tx.send(ActorMessage {
                         scope,
                         message: Message::ToolCallUpdate(ToolCallUpdate {
                             call_id: tool_call_id,
                             status: ToolCallStatus::Finished {
                                 result: Err(error_msg),
-                                tui_display: None,
+                                tui_display,
                             },
                         }),
                     });
@@ -300,8 +366,17 @@ impl Command {
             };
 
             // Convert output to strings
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            
+            // Create command outcome for TUI display
+            let outcome = if output.status.success() {
+                CommandOutcome::Success { stdout: stdout.clone(), stderr: stderr.clone() }
+            } else if let Some(exit_code) = output.status.code() {
+                CommandOutcome::Failed { exit_code, stdout: stdout.clone(), stderr: stderr.clone() }
+            } else {
+                CommandOutcome::Signal
+            };
 
             // Check if the command was successful
             let result = if output.status.success() {
@@ -356,13 +431,15 @@ impl Command {
                 Err(Command::smart_truncate(&error_msg))
             };
 
+            let tui_display = Some(create_command_tui_display(&full_command, outcome));
+            
             let _ = tx.send(ActorMessage {
                 scope,
                 message: Message::ToolCallUpdate(ToolCallUpdate {
                     call_id: tool_call_id,
                     status: ToolCallStatus::Finished {
                         result,
-                        tui_display: None,
+                        tui_display,
                     },
                 }),
             });
@@ -697,5 +774,59 @@ mod tests {
         assert_eq!(stdout.trim(), "both created");
         assert!(temp_path.join("file1.txt").exists());
         assert!(temp_path.join("file2.txt").exists());
+    }
+
+    #[test]
+    fn test_tui_display_success() {
+        let outcome = CommandOutcome::Success {
+            stdout: "total 16\ndrwxr-xr-x  4 user  staff  128 Jan  1 12:00 .\ndrwxr-xr-x 10 user  staff  320 Jan  1 11:00 ..".to_string(),
+            stderr: String::new(),
+        };
+
+        let display = create_command_tui_display("ls -la", outcome);
+        assert_eq!(display.collapsed, "✓ Command succeeded: ls -la");
+        let expanded = display.expanded.unwrap();
+        assert!(expanded.contains("=== stdout ==="));
+        assert!(expanded.contains("total 16"));
+    }
+
+    #[test]
+    fn test_tui_display_failure() {
+        let outcome = CommandOutcome::Failed {
+            exit_code: 1,
+            stdout: String::new(),
+            stderr: "cat: /nonexistent: No such file or directory".to_string(),
+        };
+
+        let display = create_command_tui_display("cat /nonexistent", outcome);
+        assert_eq!(display.collapsed, "✗ Command failed (exit 1): cat /nonexistent");
+        let expanded = display.expanded.unwrap();
+        assert!(expanded.contains("=== stderr ==="));
+        assert!(expanded.contains("No such file or directory"));
+    }
+
+    #[test]
+    fn test_tui_display_timeout() {
+        let outcome = CommandOutcome::Timeout;
+        let display = create_command_tui_display("sleep 100", outcome);
+        assert_eq!(display.collapsed, "Command timed out: sleep 100");
+        let expanded = display.expanded.unwrap();
+        assert!(expanded.contains("Command timed out"));
+        assert!(expanded.contains("(no output)"));
+    }
+
+    #[test]
+    fn test_tui_display_signal() {
+        let outcome = CommandOutcome::Signal;
+        let display = create_command_tui_display("kill -9 $$", outcome);
+        assert_eq!(display.collapsed, "Command terminated by signal: kill -9 $$");
+    }
+
+    #[test]
+    fn test_tui_display_error() {
+        let outcome = CommandOutcome::Error("Failed to spawn bash command".to_string());
+        let display = create_command_tui_display("bad command", outcome);
+        assert_eq!(display.collapsed, "Command error: bad command");
+        assert!(display.expanded.unwrap().contains("Failed to spawn bash command"));
     }
 }

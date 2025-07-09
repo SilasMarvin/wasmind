@@ -1,3 +1,5 @@
+// TODO: Improve the deserialization here action should be an enum we should user serde_json, etc...
+
 use crate::llm_client::{Tool, ToolCall};
 use tokio::sync::broadcast;
 
@@ -8,7 +10,6 @@ use crate::actors::{
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
-// Status indicator constants - easily customizable
 // User-facing icons (for TUI)
 const USER_STATUS_PENDING: &str = "[ ]";
 const USER_STATUS_IN_PROGRESS: &str = "[~]";
@@ -49,7 +50,6 @@ pub enum TaskStatus {
     Skipped,
 }
 
-
 /// Individual task in the plan
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Task {
@@ -86,7 +86,6 @@ pub struct TaskPlan {
     pub tasks: Vec<Task>,
 }
 
-
 impl TaskPlan {
     /// Format the plan for TUI display without the "Plan:" prefix
     pub fn format_for_tui(&self) -> String {
@@ -106,7 +105,12 @@ impl TaskPlan {
     pub fn format_for_assistant(&self) -> String {
         let mut result = format!("Plan: {}\n", self.title);
         for (i, task) in self.tasks.iter().enumerate() {
-            result.push_str(&format!("{}. {} {}\n", i + 1, task.assistant_status_icon(), task.description));
+            result.push_str(&format!(
+                "{}. {} {}\n",
+                i + 1,
+                task.assistant_status_icon(),
+                task.description
+            ));
         }
         result.trim_end().to_string()
     }
@@ -129,11 +133,7 @@ fn create_expanded_display(action: &str, context: &str, plan: &TaskPlan) -> Stri
     format!("{}\n{}", action_message, plan.format_for_tui())
 }
 
-fn create_tui_display_info(
-    action: &str,
-    context: &str,
-    plan: &TaskPlan,
-) -> ToolDisplayInfo {
+fn create_tui_display_info(action: &str, context: &str, plan: &TaskPlan) -> ToolDisplayInfo {
     ToolDisplayInfo {
         collapsed: create_collapsed_display(action, context),
         expanded: Some(create_expanded_display(action, context, plan)),
