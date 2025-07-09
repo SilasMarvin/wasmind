@@ -52,15 +52,13 @@ impl Tool for WaitTool {
             }),
         }));
 
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id,
-            status: ToolCallStatus::Finished {
-                result: Ok(WAIT_TOOL_RESPONSE.to_string()),
-                tui_display: Some(ToolDisplayInfo {
-                    collapsed: "Waiting...".to_string(),
-                    expanded: None,
-                }),
-            },
-        }));
+        self.broadcast_finished(
+            &tool_call.id,
+            Ok(WAIT_TOOL_RESPONSE.to_string()),
+            Some(ToolDisplayInfo {
+                collapsed: "Waiting...".to_string(),
+                expanded: None,
+            }),
+        );
     }
 }

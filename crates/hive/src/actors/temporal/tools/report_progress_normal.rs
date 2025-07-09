@@ -1,10 +1,12 @@
 use crate::actors::{
-    Action, Actor, ActorContext, ActorMessage, Message, ToolCallStatus, ToolCallUpdate,
+    Action, ActorContext, ActorMessage, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate,
 };
-use crate::llm_client::{Tool, ToolCall};
+use crate::llm_client::ToolCall;
 use crate::scope::Scope;
 use serde_json::json;
 use tokio::sync::broadcast;
+
+use crate::actors::tools::Tool;
 
 /// Tool for temporal agents to report normal progress
 #[derive(hive_macros::ActorContext)]
@@ -14,68 +16,33 @@ pub struct ReportProgressNormal {
 }
 
 impl ReportProgressNormal {
-    const TOOL_NAME: &'static str = "report_progress_normal";
-
     pub fn new(tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { tx, scope }
     }
 
-    pub fn get_tool_schema() -> Tool {
-        Tool {
-            tool_type: "function".to_string(),
-            function: crate::llm_client::ToolFunction {
-                name: Self::TOOL_NAME.to_string(),
-                description:
-                    "Report that the analyzed agent is healthy and making normal progress."
-                        .to_string(),
-                parameters: json!({
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }),
-            },
-        }
-    }
+}
 
-    pub async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.function.name != Self::TOOL_NAME {
-            return;
-        }
+#[async_trait::async_trait]
+impl Tool for ReportProgressNormal {
+    const TOOL_NAME: &str = "report_progress_normal";
+    const TOOL_DESCRIPTION: &str = "Report that the analyzed agent is healthy and making normal progress.";
+    const TOOL_INPUT_SCHEMA: &str = r#"{
+        "type": "object",
+        "properties": {},
+        "required": []
+    }"#;
 
-        // Broadcast received
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received,
-        }));
+    type Params = serde_json::Value;
 
+    async fn execute_tool_call(&mut self, tool_call: ToolCall, _params: Self::Params) {
         // Shut everything down as it was fine
         self.broadcast(Message::Action(Action::Exit));
 
         // Send tool call completion
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id,
-            status: ToolCallStatus::Finished {
-                result: Ok("Agent progress reported as normal".to_string()),
-                tui_display: None,
-            },
-        }));
-    }
-}
-
-#[async_trait::async_trait]
-impl Actor for ReportProgressNormal {
-    const ACTOR_ID: &'static str = "report_progress_normal";
-
-    async fn handle_message(&mut self, message: ActorMessage) {
-        match message.message {
-            Message::AssistantToolCall(tool_call) => {
-                self.handle_tool_call(tool_call).await;
-            }
-            _ => {}
-        }
-    }
-
-    async fn on_start(&mut self) {
-        self.broadcast(Message::ToolsAvailable(vec![Self::get_tool_schema()]));
+        self.broadcast_finished(
+            &tool_call.id,
+            ToolCallResult::Ok("Agent progress reported as normal".to_string()),
+            None,
+        );
     }
 }

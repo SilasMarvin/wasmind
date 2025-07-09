@@ -1,16 +1,18 @@
 use crate::actors::{
-    Actor, ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus,
-    InterAgentMessage, Message, ToolCallStatus, ToolCallUpdate, WaitReason,
+    ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus,
+    InterAgentMessage, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate, WaitReason,
 };
 use crate::config::ParsedConfig;
-use crate::llm_client::{Tool, ToolCall};
+use crate::llm_client::ToolCall;
 use crate::scope::Scope;
 use serde::Deserialize;
 use tokio::sync::broadcast;
 
-pub const TOOL_NAME: &str = "send_message";
-pub const TOOL_DESCRIPTION: &str = "Send a message to a subordinate agent";
-pub const TOOL_INPUT_SCHEMA: &str = r#"{
+use super::Tool;
+
+const TOOL_NAME: &str = "send_message";
+const TOOL_DESCRIPTION: &str = "Send a message to a subordinate agent";
+const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
         "agent_id": {
@@ -30,7 +32,7 @@ pub const TOOL_INPUT_SCHEMA: &str = r#"{
 }"#;
 
 #[derive(Debug, Deserialize)]
-struct SendMessageInput {
+pub struct SendMessageInput {
     agent_id: String,
     message: String,
     wait: Option<bool>,
@@ -51,58 +53,31 @@ pub struct SendMessage {
 }
 
 impl SendMessage {
-    pub const ACTOR_ID: &'static str = "send_message";
-
     pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { config, tx, scope }
     }
 
-    pub fn get_tool_schema() -> Tool {
-        Tool {
-            tool_type: "function".to_string(),
-            function: crate::llm_client::ToolFunction {
-                name: TOOL_NAME.to_string(),
-                description: TOOL_DESCRIPTION.to_string(),
-                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA)
-                    .expect("Invalid SEND_MESSAGE_TOOL_INPUT_SCHEMA"),
-            },
-        }
-    }
+}
 
-    async fn handle_send_message(&mut self, tool_call: ToolCall) {
-        let input: SendMessageInput = match serde_json::from_str(&tool_call.function.arguments) {
-            Ok(input) => input,
-            Err(e) => {
-                let error_msg = format!("Invalid send_message arguments: {}", e);
-                let _ = self.tx.send(ActorMessage {
-                    scope: self.scope,
-                    message: Message::ToolCallUpdate(ToolCallUpdate {
-                        call_id: tool_call.id,
-                        status: ToolCallStatus::Finished {
-                            result: Err(error_msg),
-                            tui_display: None,
-                        },
-                    }),
-                });
-                return;
-            }
-        };
+#[async_trait::async_trait]
+impl Tool for SendMessage {
+    const TOOL_NAME: &str = TOOL_NAME;
+    const TOOL_DESCRIPTION: &str = TOOL_DESCRIPTION;
+    const TOOL_INPUT_SCHEMA: &str = TOOL_INPUT_SCHEMA;
 
+    type Params = SendMessageInput;
+
+    async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
         // Parse the agent ID
-        let agent_scope = match input.agent_id.parse::<uuid::Uuid>() {
+        let agent_scope = match params.agent_id.parse::<uuid::Uuid>() {
             Ok(uuid) => Scope::from_uuid(uuid),
             Err(e) => {
                 let error_msg = format!("Invalid agent ID format: {}", e);
-                let _ = self.tx.send(ActorMessage {
-                    scope: self.scope,
-                    message: Message::ToolCallUpdate(ToolCallUpdate {
-                        call_id: tool_call.id,
-                        status: ToolCallStatus::Finished {
-                            result: Err(error_msg),
-                            tui_display: None,
-                        },
-                    }),
-                });
+                self.broadcast_finished(
+                    &tool_call.id,
+                    ToolCallResult::Err(error_msg),
+                    None,
+                );
                 return;
             }
         };
@@ -111,12 +86,12 @@ impl SendMessage {
         self.broadcast(Message::Agent(AgentMessage {
             agent_id: agent_scope,
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::Message {
-                message: input.message,
+                message: params.message,
             }),
         }));
 
         // Maybe broadcast a request to wait
-        if input.wait.unwrap_or_default() {
+        if params.wait.unwrap_or_default() {
             self.broadcast(Message::Agent(AgentMessage {
                 agent_id: self.scope.clone(),
                 message: AgentMessageType::InterAgentMessage(
@@ -134,40 +109,10 @@ impl SendMessage {
         }
 
         // Send tool success response
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id,
-            status: ToolCallStatus::Finished {
-                result: Ok(format_send_message_success(&input.agent_id)),
-                tui_display: None,
-            },
-        }));
-    }
-
-    async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        match tool_call.function.name.as_str() {
-            TOOL_NAME => self.handle_send_message(tool_call).await,
-            _ => {}
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl Actor for SendMessage {
-    const ACTOR_ID: &'static str = "send_message";
-
-    async fn handle_message(&mut self, message: ActorMessage) {
-        match message.message {
-            Message::AssistantToolCall(tool_call) if message.scope == self.scope => {
-                self.handle_tool_call(tool_call).await;
-            }
-            _ => {}
-        }
-    }
-
-    async fn on_start(&mut self) {
-        let _ = self.tx.send(ActorMessage {
-            scope: self.scope,
-            message: Message::ToolsAvailable(vec![Self::get_tool_schema()]),
-        });
+        self.broadcast_finished(
+            &tool_call.id,
+            ToolCallResult::Ok(format_send_message_success(&params.agent_id)),
+            None,
+        );
     }
 }

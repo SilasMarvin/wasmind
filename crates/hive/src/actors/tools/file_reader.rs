@@ -1,4 +1,4 @@
-use crate::llm_client::{Tool, ToolCall};
+use crate::llm_client::ToolCall;
 use snafu::{ResultExt, Snafu};
 use std::collections::HashMap;
 use std::fs;
@@ -10,15 +10,17 @@ use std::time::SystemTime;
 use tokio::sync::broadcast;
 
 use crate::actors::ActorMessage;
-use crate::actors::{Actor, ActorContext, Message, ToolCallStatus, ToolCallUpdate};
+use crate::actors::{ActorContext, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate, ToolDisplayInfo};
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
-pub const TOOL_NAME: &str = "read_file";
-pub const TOOL_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER|CONTENT. You can read a specific chunk by providing start_line and end_line.";
-pub const MAX_FILE_SIZE_BYTES: u64 = 10 * 1024 * 1024; // 10MB limit
-pub const SMALL_FILE_SIZE_BYTES: u64 = 64 * 1024; // 64KB limit for automatic full read
-pub const TOOL_INPUT_SCHEMA: &str = r#"{
+use super::Tool;
+
+const TOOL_NAME: &str = "read_file";
+const TOOL_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER|CONTENT. You can read a specific chunk by providing start_line and end_line.";
+const MAX_FILE_SIZE_BYTES: u64 = 10 * 1024 * 1024; // 10MB limit
+const SMALL_FILE_SIZE_BYTES: u64 = 64 * 1024; // 64KB limit for automatic full read
+const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
         "path": {
@@ -511,94 +513,6 @@ impl FileReaderActor {
         }
     }
 
-    #[tracing::instrument(name = "file_reader_tool_call", skip(self, tool_call), fields(call_id = %tool_call.id, function = %tool_call.function.name))]
-    async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.function.name != TOOL_NAME {
-            return;
-        }
-
-        // Parse the arguments
-        let args = match serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments) {
-            Ok(args) => args,
-            Err(e) => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.id,
-                    status: ToolCallStatus::Finished {
-                        result: Err(format!("Failed to parse arguments: {}", e)),
-                        tui_display: None,
-                    },
-                }));
-                return;
-            }
-        };
-
-        // Extract path
-        let path = match args.get("path").and_then(|v| v.as_str()) {
-            Some(p) => p,
-            None => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.id,
-                    status: ToolCallStatus::Finished {
-                        result: Err("Missing required field: path".to_string()),
-                        tui_display: None,
-                    },
-                }));
-                return;
-            }
-        };
-
-        // Extract optional line range
-        let start_line = args
-            .get("start_line")
-            .and_then(|v| v.as_i64())
-            .map(|v| v as i32);
-        let end_line = args
-            .get("end_line")
-            .and_then(|v| v.as_i64())
-            .map(|v| v as i32);
-
-        if let Some(start_line) = start_line
-            && start_line < 0
-        {
-            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call.id,
-                status: ToolCallStatus::Finished {
-                    result: Err(format!(
-                        "Invalid start_line: {start_line} - lines are 1-indexed."
-                    )),
-                    tui_display: None,
-                },
-            }));
-            return;
-        }
-
-        if let Some(end_line) = end_line
-            && end_line < 0
-        {
-            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call.id,
-                status: ToolCallStatus::Finished {
-                    result: Err(format!(
-                        "Invalid end_line: {end_line} - lines are 1-indexed."
-                    )),
-                    tui_display: None,
-                },
-            }));
-            return;
-        }
-
-        let start_line = start_line.map(|x| x as usize);
-        let end_line = end_line.map(|x| x as usize);
-
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received,
-        }));
-
-        // Execute the read
-        self.execute_read(path, start_line, end_line, &tool_call.id)
-            .await;
-    }
 
     async fn execute_read(
         &mut self,
@@ -631,46 +545,66 @@ impl FileReaderActor {
                     }
                     _ => format!("Read file: {}", path),
                 };
-                ToolCallStatus::Finished {
-                    result: Ok(message),
-                    tui_display: None,
-                }
+                self.broadcast_finished(
+                    tool_call_id,
+                    ToolCallResult::Ok(message),
+                    None,
+                );
             }
-            Err(e) => ToolCallStatus::Finished {
-                result: Err(e.to_string()),
-                tui_display: None,
-            },
+            Err(e) => {
+                self.broadcast_finished(
+                    tool_call_id,
+                    ToolCallResult::Err(e.to_string()),
+                    None,
+                );
+            }
         };
-
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call_id.to_string(),
-            status,
-        }));
     }
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct FileReaderParams {
+    path: String,
+    start_line: Option<i32>,
+    end_line: Option<i32>,
+}
+
 #[async_trait::async_trait]
-impl Actor for FileReaderActor {
-    const ACTOR_ID: &'static str = "file_reader";
+impl Tool for FileReaderActor {
+    const TOOL_NAME: &str = TOOL_NAME;
+    const TOOL_DESCRIPTION: &str = TOOL_DESCRIPTION;
+    const TOOL_INPUT_SCHEMA: &str = TOOL_INPUT_SCHEMA;
 
-    async fn on_start(&mut self) {
-        let tool = Tool {
-            tool_type: "function".to_string(),
-            function: crate::llm_client::ToolFunction {
-                name: TOOL_NAME.to_string(),
-                description: TOOL_DESCRIPTION.to_string(),
-                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap(),
-            },
-        };
+    type Params = FileReaderParams;
 
-        self.broadcast(Message::ToolsAvailable(vec![tool]));
-    }
-
-    async fn handle_message(&mut self, message: ActorMessage) {
-        match message.message {
-            Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
-            _ => (),
+    async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
+        // Check for negative line numbers
+        if let Some(start_line) = params.start_line {
+            if start_line < 0 {
+                self.broadcast_finished(
+                    &tool_call.id,
+                    ToolCallResult::Err(format!("Invalid start_line: {start_line} - lines are 1-indexed.")),
+                    None,
+                );
+                return;
+            }
         }
+        
+        if let Some(end_line) = params.end_line {
+            if end_line < 0 {
+                self.broadcast_finished(
+                    &tool_call.id,
+                    ToolCallResult::Err(format!("Invalid end_line: {end_line} - lines are 1-indexed.")),
+                    None,
+                );
+                return;
+            }
+        }
+
+        let start_line = params.start_line.map(|x| x as usize);
+        let end_line = params.end_line.map(|x| x as usize);
+
+        self.execute_read(&params.path, start_line, end_line, &tool_call.id).await;
     }
 }
 

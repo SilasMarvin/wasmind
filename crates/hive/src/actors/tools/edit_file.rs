@@ -1,4 +1,4 @@
-use crate::llm_client::{Tool, ToolCall};
+use crate::llm_client::ToolCall;
 use snafu::{ResultExt, Snafu};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,15 +7,15 @@ use std::sync::Mutex;
 use tokio::sync::broadcast;
 use tracing::info;
 
-use crate::actors::{Actor, ActorContext, ActorMessage, Message, ToolCallStatus, ToolCallUpdate};
+use crate::actors::{ActorContext, ActorMessage, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate, ToolDisplayInfo};
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
-use super::file_reader::FileCacheError;
+use super::{file_reader::FileCacheError, Tool};
 
-pub const TOOL_NAME: &str = "edit_file";
-pub const TOOL_DESCRIPTION: &str = "Applies a list of edits to a file atomically. This is the primary tool for modifying files. Each edit targets a specific line range. The tool processes edits from the bottom of the file to the top to ensure line number integrity during the operation.";
-pub const TOOL_INPUT_SCHEMA: &str = r#"{
+const TOOL_NAME: &str = "edit_file";
+const TOOL_DESCRIPTION: &str = "Applies a list of edits to a file atomically. This is the primary tool for modifying files. Each edit targets a specific line range. The tool processes edits from the bottom of the file to the top to ensure line number integrity during the operation.";
+const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
         "path": {
@@ -346,64 +346,6 @@ impl EditFile {
         }
     }
 
-    async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.function.name != TOOL_NAME {
-            return;
-        }
-
-        // Parse the arguments
-        let args = match serde_json::from_str::<serde_json::Value>(&tool_call.function.arguments) {
-            Ok(args) => args,
-            Err(e) => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.id,
-                    status: ToolCallStatus::Finished {
-                        result: Err(format!("Failed to parse arguments: {}", e)),
-                        tui_display: None,
-                    },
-                }));
-                return;
-            }
-        };
-
-        // Extract path
-        let path = match args.get("path").and_then(|v| v.as_str()) {
-            Some(p) => p,
-            None => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.id,
-                    status: ToolCallStatus::Finished {
-                        result: Err("Missing required field: path".to_string()),
-                        tui_display: None,
-                    },
-                }));
-                return;
-            }
-        };
-
-        // Parse edits
-        let edits = match FileEditor::parse_edits_from_args(&args) {
-            Ok(edits) => edits,
-            Err(e) => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.id,
-                    status: ToolCallStatus::Finished {
-                        result: Err(e.to_string()),
-                        tui_display: None,
-                    },
-                }));
-                return;
-            }
-        };
-
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received,
-        }));
-
-        // Execute the edits
-        self.execute_edits(path, edits, &tool_call.id).await;
-    }
 
     async fn execute_edits(&mut self, path: &str, edits: Vec<Edit>, tool_call_id: &str) {
         let mut file_reader = self.file_reader.lock().unwrap();
@@ -427,48 +369,61 @@ impl EditFile {
                         }
                     }
                 }
-                ToolCallStatus::Finished {
-                    result: Ok(message.clone()),
-                    tui_display: None,
+                {
+                    self.broadcast_finished(
+                        tool_call_id,
+                        ToolCallResult::Ok(message.clone()),
+                        None,
+                    );
+                    return;
                 }
             }
-            Err(e) => ToolCallStatus::Finished {
-                result: Err(e.to_string()),
-                tui_display: None,
-            },
+            Err(e) => {
+                self.broadcast_finished(
+                    tool_call_id,
+                    ToolCallResult::Err(e.to_string()),
+                    None,
+                );
+            }
         };
-
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call_id.to_string(),
-            status,
-        }));
     }
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct EditFileParams {
+    path: String,
+    edits: Vec<serde_json::Value>,
+}
+
 #[async_trait::async_trait]
-impl Actor for EditFile {
-    const ACTOR_ID: &'static str = "edit_file";
+impl Tool for EditFile {
+    const TOOL_NAME: &str = TOOL_NAME;
+    const TOOL_DESCRIPTION: &str = TOOL_DESCRIPTION;
+    const TOOL_INPUT_SCHEMA: &str = TOOL_INPUT_SCHEMA;
 
-    async fn on_start(&mut self) {
-        info!("EditFile tool starting - broadcasting availability");
+    type Params = EditFileParams;
 
-        let tool = Tool {
-            tool_type: "function".to_string(),
-            function: crate::llm_client::ToolFunction {
-                name: TOOL_NAME.to_string(),
-                description: TOOL_DESCRIPTION.to_string(),
-                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA).unwrap(),
-            },
+    async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
+        // Parse edits
+        let args = serde_json::json!({
+            "path": params.path,
+            "edits": params.edits
+        });
+        
+        let edits = match FileEditor::parse_edits_from_args(&args) {
+            Ok(edits) => edits,
+            Err(e) => {
+                self.broadcast_finished(
+                    &tool_call.id,
+                    ToolCallResult::Err(e.to_string()),
+                    None,
+                );
+                return;
+            }
         };
 
-        self.broadcast(Message::ToolsAvailable(vec![tool]));
-    }
-
-    async fn handle_message(&mut self, message: ActorMessage) {
-        match message.message {
-            Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
-            _ => (),
-        }
+        // Execute the edits
+        self.execute_edits(&params.path, edits, &tool_call.id).await;
     }
 }
 

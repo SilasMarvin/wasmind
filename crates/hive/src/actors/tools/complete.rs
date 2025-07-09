@@ -1,12 +1,13 @@
 use crate::actors::{
-    Actor, ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus,
-    AgentTaskResultOk, InterAgentMessage, Message, ToolCallStatus, ToolCallUpdate,
+    ActorContext, ActorMessage, AgentMessage, AgentMessageType, AgentStatus,
+    AgentTaskResultOk, InterAgentMessage, Message, ToolCallResult, ToolDisplayInfo,
 };
 use crate::config::ParsedConfig;
-use crate::llm_client::{Tool, ToolCall};
+use crate::llm_client::ToolCall;
 use crate::scope::Scope;
-use serde_json::json;
 use tokio::sync::broadcast;
+
+use super::Tool;
 
 /// Tool for agents to explicitly signal task completion
 #[derive(hive_macros::ActorContext)]
@@ -18,104 +19,65 @@ pub struct Complete {
 }
 
 impl Complete {
-    const TOOL_NAME: &'static str = "complete";
-
     pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self { config, tx, scope }
     }
+}
 
-    pub fn get_tool_schema() -> Tool {
-        Tool {
-            tool_type: "function".to_string(),
-            function: crate::llm_client::ToolFunction {
-                name: Self::TOOL_NAME.to_string(),
-                description: "Call this tool when you have completed your assigned task. Use this to provide a summary of what was accomplished and signal that the task is finished.".to_string(),
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "summary": {
-                            "type": "string",
-                            "description": "A brief summary of what was accomplished"
-                        },
-                        "success": {
-                            "type": "boolean",
-                            "description": "Whether the task was completed successfully (true) or failed (false)"
-                        }
-                    },
-                    "required": ["summary", "success"]
-                }),
+#[async_trait::async_trait]
+impl Tool for Complete {
+    const TOOL_NAME: &str = "complete";
+    const TOOL_DESCRIPTION: &str = "Call this tool when you have completed your assigned task. Use this to provide a summary of what was accomplished and signal that the task is finished.";
+    const TOOL_INPUT_SCHEMA: &str = r#"{
+        "type": "object",
+        "properties": {
+            "summary": {
+                "type": "string",
+                "description": "A brief summary of what was accomplished"
             },
-        }
-    }
+            "success": {
+                "type": "boolean",
+                "description": "Whether the task was completed successfully (true) or failed (false)"
+            }
+        },
+        "required": ["summary", "success"]
+    }"#;
 
-    pub async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.function.name != Self::TOOL_NAME {
-            return;
-        }
+    type Params = AgentTaskResultOk;
 
-        // Broadcast received
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received,
-        }));
-
-        // Parse input
-        let agent_task_result: AgentTaskResultOk =
-            match serde_json::from_str(&tool_call.function.arguments) {
-                Ok(input) => input,
-                Err(e) => {
-                    self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                        call_id: tool_call.id,
-                        status: ToolCallStatus::Finished {
-                            result: Err(format!("Invalid input: {}", e)),
-                            tui_display: None,
-                        },
-                    }));
-                    return;
-                }
-            };
-
+    async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
         // Send agent status update first to stop LLM processing
         self.broadcast(Message::Agent(AgentMessage {
             agent_id: self.get_scope().clone(),
             message: AgentMessageType::InterAgentMessage(InterAgentMessage::StatusUpdateRequest {
                 tool_call_id: tool_call.id.clone(),
-                status: AgentStatus::Done(Ok(agent_task_result.clone())),
+                status: AgentStatus::Done(Ok(params.clone())),
             }),
         }));
 
         // Send tool call completion after Done status
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id,
-            status: ToolCallStatus::Finished {
-                result: Ok(format!(
-                    "Task completed{}",
-                    if agent_task_result.success {
-                        " successfully"
-                    } else {
-                        " with failures"
-                    }
-                )),
-                tui_display: None,
-            },
-        }));
-    }
-}
-
-#[async_trait::async_trait]
-impl Actor for Complete {
-    const ACTOR_ID: &'static str = "complete";
-
-    async fn handle_message(&mut self, message: ActorMessage) {
-        match message.message {
-            Message::AssistantToolCall(tool_call) => {
-                self.handle_tool_call(tool_call).await;
+        let result_message = format!(
+            "Task completed{}",
+            if params.success {
+                " successfully"
+            } else {
+                " with failures"
             }
-            _ => {}
-        }
-    }
+        );
 
-    async fn on_start(&mut self) {
-        self.broadcast(Message::ToolsAvailable(vec![Self::get_tool_schema()]));
+        let tui_display = ToolDisplayInfo {
+            collapsed: format!(
+                "{}: {}",
+                if params.success { "✓ Completed" } else { "✗ Failed" },
+                params.summary
+            ),
+            expanded: Some(params.summary.clone()),
+        };
+
+        self.broadcast_finished(
+            &tool_call.id,
+            ToolCallResult::Ok(result_message),
+            Some(tui_display),
+        );
     }
 }

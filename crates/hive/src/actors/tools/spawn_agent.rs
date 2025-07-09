@@ -1,4 +1,4 @@
-use crate::llm_client::{Tool, ToolCall};
+use crate::llm_client::ToolCall;
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::info;
@@ -6,7 +6,7 @@ use tracing::info;
 // Assuming AgentSpawnedResponse is already Serialize.
 // It is imported from crate::actors::agent and used with serde_json::to_string in the original code.
 use crate::actors::{
-    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentType, Message, ToolCallStatus,
+    Actor, ActorMessage, AgentMessage, AgentMessageType, AgentType, Message, ToolCallResult, ToolCallStatus,
     ToolCallUpdate, ActorContext,
     agent::{Agent, AgentSpawnedResponse},
     temporal::check_health::CheckHealthActor,
@@ -19,9 +19,11 @@ use crate::actors::{
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
-pub const TOOL_NAME: &str = "spawn_agents";
-pub const TOOL_DESCRIPTION: &str = "Spawns one or more new agents (Worker or Manager), each with a specific task. Spawned agents run independently and report back status updates. Use this tool to delegate work to specialized agents.";
-pub const TOOL_INPUT_SCHEMA: &str = r#"{
+use super::Tool;
+
+const TOOL_NAME: &str = "spawn_agents";
+const TOOL_DESCRIPTION: &str = "Spawns one or more new agents (Worker or Manager), each with a specific task. Spawned agents run independently and report back status updates. Use this tool to delegate work to specialized agents.";
+const TOOL_INPUT_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
         "agents_to_spawn": {
@@ -64,8 +66,9 @@ struct AgentDefinition {
 }
 
 #[derive(Debug, Deserialize)]
-struct SpawnAgentsInput {
+pub struct SpawnAgentsInput {
     agents_to_spawn: Vec<AgentDefinition>,
+    wait: Option<bool>,
 }
 
 /// SpawnAgent tool actor for managers to spawn new agents
@@ -81,48 +84,31 @@ impl SpawnAgent {
         Self { tx, config, scope }
     }
 
-    async fn handle_tool_call(&mut self, tool_call: ToolCall) {
-        if tool_call.function.name != TOOL_NAME {
-            return;
-        }
+}
 
-        // Send received status
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received,
-        }));
+#[async_trait::async_trait]
+impl Tool for SpawnAgent {
+    const TOOL_NAME: &str = TOOL_NAME;
+    const TOOL_DESCRIPTION: &str = TOOL_DESCRIPTION;
+    const TOOL_INPUT_SCHEMA: &str = TOOL_INPUT_SCHEMA;
 
-        // Parse input
-        let input: SpawnAgentsInput = match serde_json::from_str(&tool_call.function.arguments) {
-            Ok(input) => input,
-            Err(e) => {
-                self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                    call_id: tool_call.id,
-                    status: ToolCallStatus::Finished { 
-                        result: Err(format!("Invalid input schema: {}. Ensure 'agents_to_spawn' is a non-empty array of valid agent definitions.", e)), 
-                        tui_display: None 
-                    },
-                }));
-                return;
-            }
-        };
+    type Params = SpawnAgentsInput;
 
+    async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
         // Schema validation (minItems: 1) should ideally catch this, but an explicit check is good.
-        if input.agents_to_spawn.is_empty() {
-            self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                call_id: tool_call.id,
-                status: ToolCallStatus::Finished { 
-                    result: Err("No agents specified in 'agents_to_spawn' array. At least one agent must be provided.".to_string()), 
-                    tui_display: None 
-                },
-            }));
+        if params.agents_to_spawn.is_empty() {
+            self.broadcast_finished(
+                &tool_call.id,
+                ToolCallResult::Err("No agents specified in 'agents_to_spawn' array. At least one agent must be provided.".to_string()),
+                None,
+            );
             return;
         }
 
         let mut spawned_agents_responses: Vec<AgentSpawnedResponse> = Vec::new();
         let mut successfully_spawned_agents_details: Vec<String> = Vec::new();
 
-        for agent_def in input.agents_to_spawn {
+        for agent_def in params.agents_to_spawn {
             // Create the new agent
             let agent = match agent_def.agent_type.as_str() {
                 "Worker" => Agent::new(
@@ -163,13 +149,11 @@ impl SpawnAgent {
                         "Invalid agent_type: '{}' for agent role '{}'. Must be 'Worker' or 'Manager'.",
                         agent_def.agent_type, agent_def.agent_role
                     );
-                    self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-                        call_id: tool_call.id.clone(),
-                        status: ToolCallStatus::Finished { 
-                            result: Err(error_msg), 
-                            tui_display: None 
-                        },
-                    }));
+                    self.broadcast_finished(
+                        &tool_call.id,
+                        ToolCallResult::Err(error_msg),
+                        None,
+                    );
                     return;
                 }
             };
@@ -201,8 +185,6 @@ impl SpawnAgent {
             agent.run();
         }
 
-        // All agents defined in the input have been processed and spawn tasks initiated
-
         info!(
             "Successfully initiated spawning for {} agent(s): [{}]",
             spawned_agents_responses.len(),
@@ -225,40 +207,10 @@ impl SpawnAgent {
                 .join(", ")
         );
 
-        self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
-            call_id: tool_call.id,
-            status: ToolCallStatus::Finished { result: Ok(response), tui_display: None },
-        }));
-    }
-}
-
-#[async_trait::async_trait]
-impl Actor for SpawnAgent {
-    const ACTOR_ID: &'static str = "spawn_agent"; // Internal actor ID, can remain singular
-
-    async fn handle_message(&mut self, message: ActorMessage) {
-        match message.message {
-            Message::AssistantToolCall(tool_call) => {
-                self.handle_tool_call(tool_call).await;
-            }
-            _ => {}
-        }
-    }
-
-    async fn on_start(&mut self) {
-        info!("SpawnAgent (spawn_agents tool) actor started"); // Clarified log
-
-        // Send tool availability
-        let tool = Tool {
-            tool_type: "function".to_string(),
-            function: crate::llm_client::ToolFunction {
-                name: TOOL_NAME.to_string(),                     // Uses updated TOOL_NAME
-                description: TOOL_DESCRIPTION.to_string(), // Uses updated TOOL_DESCRIPTION
-                parameters: serde_json::from_str(TOOL_INPUT_SCHEMA)
-                    .expect("TOOL_INPUT_SCHEMA must be valid JSON"),
-            },
-        };
-
-        self.broadcast(Message::ToolsAvailable(vec![tool]));
+        self.broadcast_finished(
+            &tool_call.id,
+            ToolCallResult::Ok(response),
+            None,
+        );
     }
 }
