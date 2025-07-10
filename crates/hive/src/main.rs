@@ -1,9 +1,9 @@
-use hive::{SResult, init_logger, run_headless_program, run_main_program};
+use hive::{SResult, init_test_logger, run_headless_program, run_main_program};
 
 fn main() -> SResult<()> {
     use clap::Parser;
 
-    init_logger();
+    init_test_logger();
 
     // Parse command line arguments
     let cli = hive::cli::Cli::parse();

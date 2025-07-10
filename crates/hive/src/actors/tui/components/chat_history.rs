@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 
-use crate::actors::tui::utils::offset_y;
+use crate::actors::tui::icons;
+use crate::actors::tui::utils::{create_block_with_title, offset_y};
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::actors::{AgentMessage, AgentType, ToolCallStatus};
 use crate::hive::{MAIN_MANAGER_ROLE, MAIN_MANAGER_SCOPE};
-use crate::llm_client::ChatMessage;
-use crate::{actors::AssistantRequest, scope::Scope};
+use crate::llm_client::{AssistantChatMessage, ChatMessage, ToolCall};
+use crate::scope::Scope;
 use ratatui::layout::Alignment;
-use ratatui::style::Style;
-use ratatui::widgets::{Block, Paragraph, StatefulWidget, Widget, Wrap};
+use ratatui::style::{Color, Style};
+use ratatui::widgets::{Block, Padding, Paragraph, StatefulWidget, Widget, WidgetRef, Wrap};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State, StateValue,
     command::{Cmd, CmdResult},
@@ -19,14 +20,128 @@ use super::scrollable::ScrollableComponentTrait;
 
 const MESSAGE_GAP: u16 = 1;
 
-// TODO: We need to create display widgets for plans, generic tool calls, file read and edited, etc...
+fn create_user_widget(content: String, area: Rect) -> (Box<dyn WidgetRef>, u16) {
+    let borders = tuirealm::props::Borders::default();
+    let block = create_block_with_title(
+        format!("[ {} You ]", icons::USER_ICON),
+        borders,
+        false,
+        Some(Padding::uniform(1)),
+    );
+    let message_paragraph = Paragraph::new(content)
+        .block(block)
+        .style(Style::new())
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+    let min_height = message_paragraph.line_count(area.width) as u16;
+
+    (Box::new(message_paragraph), min_height)
+}
+
+fn create_tool_widget(
+    tool_call: ToolCall,
+    status: &ToolCallStatus,
+    area: Rect,
+    is_expanded: bool,
+) -> (Box<dyn WidgetRef>, u16) {
+    let default_expanded_content = serde_json::to_string_pretty(&tool_call.function.arguments)
+        .unwrap_or(tool_call.function.arguments);
+
+    let (title, content, expanded_content) = match status {
+        ToolCallStatus::Received => (
+            format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
+            "Processing".to_string(),
+            None,
+        ),
+        ToolCallStatus::AwaitingUserYNConfirmation => (
+            format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
+            "Awaiting user confirmation".to_string(),
+            None,
+        ),
+        ToolCallStatus::ReceivedUserYNConfirmation(_) => (
+            format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
+            "ReceivedUserYNConfirmation".to_string(),
+            None,
+        ),
+        ToolCallStatus::Finished {
+            result,
+            tui_display,
+        } => {
+            let (content, expanded_content) = match tui_display {
+                Some(tui_display) => (tui_display.collapsed.clone(), tui_display.expanded.clone()),
+                None => match result {
+                    Ok(res) => ("Success".to_string(), Some(res.to_string())),
+                    Err(e) => ("Error".to_string(), Some(e.to_string())),
+                },
+            };
+
+            (
+                format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
+                content,
+                expanded_content,
+            )
+        }
+    };
+
+    let content = if is_expanded {
+        expanded_content.unwrap_or(default_expanded_content)
+    } else {
+        content
+    };
+
+    let borders = tuirealm::props::Borders::default().color(Color::Yellow);
+    let block = create_block_with_title(title, borders, false, Some(Padding::uniform(1)));
+    let p = Paragraph::new(content)
+        .block(block)
+        .style(Style::new())
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+    let min_height = p.line_count(area.width) as u16;
+
+    (Box::new(p), min_height)
+}
+
+fn create_assistant_widgets(
+    message: AssistantChatMessage,
+    area: Rect,
+    tool_call_updates: &HashMap<String, ToolCallStatus>,
+) -> Vec<(Box<dyn WidgetRef>, u16)> {
+    let mut widgets: Vec<(Box<dyn WidgetRef>, u16)> = vec![];
+
+    if let Some(text_content) = message.content {
+        let borders = tuirealm::props::Borders::default();
+        let block = create_block_with_title(
+            format!("[ {} Assistant ]", icons::LLM_ICON),
+            borders,
+            false,
+            Some(Padding::uniform(1)),
+        );
+        let p = Paragraph::new(text_content)
+            .block(block)
+            .style(Style::new())
+            .alignment(Alignment::Left)
+            .wrap(Wrap { trim: true });
+        let min_height = p.line_count(area.width) as u16;
+        widgets.push((Box::new(p), min_height));
+    }
+
+    if let Some(tool_calls) = message.tool_calls {
+        for tool_call in tool_calls {
+            if let Some(status) = tool_call_updates.get(&tool_call.id) {
+                widgets.push(create_tool_widget(tool_call, status, area, false));
+            }
+        }
+    }
+
+    widgets
+}
 
 #[derive(Clone)]
 struct AssistantInfo {
     role: String,
     _assistant_type: AgentType,
     _task_description: Option<String>,
-    last_assistant_request: Option<AssistantRequest>,
+    chat_history: Option<Vec<ChatMessage>>,
     pending_user_message: Option<String>,
     tool_call_updates: HashMap<String, ToolCallStatus>,
 }
@@ -51,7 +166,7 @@ impl AssistantInfo {
             total_height += min_height + MESSAGE_GAP;
         }
 
-        if self.last_assistant_request.is_none() && self.pending_user_message.is_none() {
+        if self.chat_history.is_none() && self.pending_user_message.is_none() {
             let content = "Type to send a message".to_string();
             let paragraph = Paragraph::new(content)
                 .block(Block::bordered())
@@ -63,19 +178,28 @@ impl AssistantInfo {
             total_height += 3;
         } else {
             // Render chat history
-            if let Some(last_assistant_request) = self.last_assistant_request {
-                for message in last_assistant_request.messages {
-                    let content = serde_json::to_string_pretty(&message).unwrap();
-                    let message_paragraph = Paragraph::new(content)
-                        .block(Block::bordered())
-                        .style(Style::new())
-                        .alignment(Alignment::Left)
-                        .wrap(Wrap { trim: true });
-                    let min_height = message_paragraph.line_count(area.width) as u16;
-                    area.height = min_height;
-                    message_paragraph.render(area, buf);
-                    area = offset_y(area, min_height + MESSAGE_GAP);
-                    total_height += min_height + MESSAGE_GAP;
+            if let Some(chat_messages) = self.chat_history {
+                for message in chat_messages {
+                    let widgets = match message {
+                        ChatMessage::System { content } => {
+                            vec![create_user_widget(content, area)]
+                        }
+                        ChatMessage::User { content } => {
+                            vec![create_user_widget(content, area)]
+                        }
+                        ChatMessage::Assistant(assistant_chat_message) => create_assistant_widgets(
+                            assistant_chat_message,
+                            area,
+                            &self.tool_call_updates,
+                        ),
+                        ChatMessage::Tool { .. } => vec![],
+                    };
+                    for (widget, height) in widgets {
+                        area.height = height;
+                        widget.render_ref(area, buf);
+                        area = offset_y(area, height + MESSAGE_GAP);
+                        total_height += height + MESSAGE_GAP;
+                    }
                 }
             }
 
@@ -125,7 +249,7 @@ impl ChatHistoryComponent {
                         role: MAIN_MANAGER_ROLE.to_string(),
                         _assistant_type: AgentType::MainManager,
                         _task_description: None,
-                        last_assistant_request: None,
+                        chat_history: None,
                         pending_user_message: None,
                         tool_call_updates: HashMap::new(),
                     },
@@ -196,34 +320,20 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
                     {
                         actor_info.pending_user_message = Some(input);
                         self.component.is_modified = true;
+
+                        return Some(TuiMessage::Redraw);
                     }
                 }
-                // This is the real source of truth for what just got submitted by the LLM
-                crate::actors::Message::AssistantRequest(assistant_request) => {
+                crate::actors::Message::AssistantChatUpdated(messages) => {
                     if let Some(actor_info) = self
                         .component
                         .chat_history_map
                         .get_mut(&actor_message.scope)
                     {
-                        // TODO: Can we always assume the pending_user_message was submitted?
-                        actor_info.pending_user_message = None;
-                        actor_info.last_assistant_request = Some(assistant_request);
+                        actor_info.chat_history = Some(messages);
                         self.component.is_modified = true;
-                    }
-                }
-                // These are intermediary artifacts that may be rolled back or changed by the real source of truth
-                crate::actors::Message::AssistantToolCall(_) => (),
-                crate::actors::Message::AssistantResponse { message, .. } => {
-                    if let Some(actor_info) = self
-                        .component
-                        .chat_history_map
-                        .get_mut(&actor_message.scope)
-                        && let Some(last_assistant_request) = &mut actor_info.last_assistant_request
-                    {
-                        last_assistant_request
-                            .messages
-                            .push(ChatMessage::Assistant(message));
-                        self.component.is_modified = true;
+
+                        return Some(TuiMessage::Redraw);
                     }
                 }
                 crate::actors::Message::ToolCallUpdate(tool_call_update) => {
@@ -235,6 +345,9 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
                         actor_info
                             .tool_call_updates
                             .insert(tool_call_update.call_id, tool_call_update.status);
+                        self.component.is_modified = true;
+
+                        return Some(TuiMessage::Redraw);
                     }
                 }
                 // This let's us track new agent creation

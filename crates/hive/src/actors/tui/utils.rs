@@ -1,19 +1,24 @@
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
-    widgets::Block,
+    widgets::{Block, Padding, block::Title},
 };
 use tuirealm::props::Borders;
 
-pub fn get_block<'a>(props: Borders, focus: bool) -> Block<'a> {
+pub fn create_block<'a>(borders: Borders, _focus: bool, padding: Option<Padding>) -> Block<'a> {
     Block::default()
-        .borders(props.sides)
-        .border_style(if focus {
-            props.style()
-        } else {
-            Style::default().fg(Color::Reset).bg(Color::Reset)
-        })
-        .border_type(props.modifiers)
+        .borders(borders.sides)
+        .border_style(borders.style())
+        .border_type(borders.modifiers)
+        .padding(padding.unwrap_or(Padding::ZERO))
+}
+
+pub fn create_block_with_title<'a, T: Into<Title<'a>>>(
+    title: T,
+    borders: Borders,
+    focus: bool,
+    padding: Option<Padding>,
+) -> Block<'a> {
+    create_block(borders, focus, padding).title(title)
 }
 
 pub fn offset_y(rect: Rect, offset: u16) -> Rect {

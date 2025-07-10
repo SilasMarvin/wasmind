@@ -2,6 +2,7 @@ use crate::actors::tui::utils;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::{actors::tui::components::llm_textarea::LLMTextAreaComponent, scope::Scope};
 use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::widgets::Padding;
 use tuirealm::props::Borders;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State, StateValue,
@@ -46,7 +47,7 @@ impl MockComponent for ChatArea {
             let textarea_height = self.llm_textarea.get_height(area);
 
             let borders = Borders::default();
-            let div = utils::get_block(borders, false);
+            let div = utils::create_block(borders, false, Some(Padding::uniform(1)));
             frame.render_widget(div, area);
 
             let chunks = Layout::default()

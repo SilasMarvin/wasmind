@@ -129,7 +129,7 @@ impl PendingMessage {
     }
 }
 
-/// Assistant actor that handles AI interactions
+/// Assistant actor that handles AI interactio
 #[derive(hive_macros::ActorContext)]
 pub struct Assistant {
     tx: broadcast::Sender<ActorMessage>,
@@ -243,6 +243,12 @@ impl Assistant {
         }
     }
 
+    /// Update chat history with a new message and broadcast the change
+    fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessage>) {
+        self.chat_history.extend(messages);
+        self.broadcast(Message::AssistantChatUpdated(self.chat_history.clone()));
+    }
+
     fn handle_tools_available(&mut self, new_tools: Vec<llm_client::Tool>) {
         // Add new tools to existing tools
         for new_tool in new_tools {
@@ -256,7 +262,7 @@ impl Assistant {
 
     fn handle_tool_call_update(&mut self, update: ToolCallUpdate) {
         if let ToolCallStatus::Finished { result, .. } = update.status {
-            match &mut self.state {
+            match &mut self.state.clone() {
                 AgentStatus::Wait {
                     reason: WaitReason::WaitingForTools { tool_calls },
                 } => {
@@ -266,6 +272,12 @@ impl Assistant {
                             true
                         }
                         None => false,
+                    };
+
+                    self.state = AgentStatus::Wait {
+                        reason: WaitReason::WaitingForTools {
+                            tool_calls: tool_calls.clone(),
+                        },
                     };
 
                     if found
@@ -278,11 +290,11 @@ impl Assistant {
                                 .result
                                 .unwrap()
                                 .unwrap_or_else(|e| format!("Error: {}", e));
-                            self.chat_history.push(ChatMessage::tool(
+                            self.add_chat_messages([ChatMessage::tool(
                                 call_id,
                                 pending_call.tool_name,
                                 content,
-                            ));
+                            )]);
                         }
                         self.submit_pending_message(true);
                     }
@@ -308,11 +320,11 @@ impl Assistant {
                     }
 
                     let content = result.unwrap_or_else(|e| format!("Error: {}", e));
-                    self.chat_history.push(ChatMessage::tool(
+                    self.add_chat_messages([ChatMessage::tool(
                         update.call_id,
                         tool_name.clone().unwrap_or("system_tool".to_string()),
                         content,
-                    ));
+                    )]);
                 }
                 _ => (),
             }
@@ -338,7 +350,7 @@ impl Assistant {
 
         let messages = self.pending_message.to_chat_messages();
         self.pending_message.clear();
-        self.chat_history.extend(messages);
+        self.add_chat_messages(messages);
 
         self.submit_llm_request();
     }
@@ -483,16 +495,6 @@ async fn do_assist(
                 message: assistant_message.clone(),
             },
         });
-
-        // Handle tool calls if any
-        if let Some(tool_calls) = assistant_message.tool_calls.clone() {
-            for tool_call in tool_calls {
-                let _ = tx.send(ActorMessage {
-                    scope,
-                    message: Message::AssistantToolCall(tool_call),
-                });
-            }
-        }
     } else {
         // Something strange is happening...
         if let Some(usage) = &resp.usage {
@@ -656,10 +658,14 @@ impl Actor for Assistant {
                         if processing_id != &id {
                             return;
                         }
-                        self.chat_history
-                            .push(ChatMessage::Assistant(message.clone()));
+
+                        self.add_chat_messages([ChatMessage::Assistant(message.clone())]);
 
                         if let Some(tool_calls) = message.tool_calls {
+                            for tool_call in &tool_calls {
+                                self.broadcast(Message::AssistantToolCall(tool_call.clone()));
+                            }
+
                             let tool_calls_map = tool_calls
                                 .iter()
                                 .map(|tc| {
@@ -672,6 +678,7 @@ impl Actor for Assistant {
                                     )
                                 })
                                 .collect();
+
                             self.set_state(
                                 AgentStatus::Wait {
                                     reason: WaitReason::WaitingForTools {
@@ -763,11 +770,11 @@ impl Actor for Assistant {
                                                 }
                                             )
                                         {
-                                            self.chat_history.push(ChatMessage::tool(
+                                            self.add_chat_messages([ChatMessage::tool(
                                                 tool_call_id,
                                                 &tool_call.tool_name,
                                                 ATTEMPTED_WAIT_ERROR_MESSAGE,
-                                            ));
+                                            )]);
                                             self.submit_pending_message(true);
                                         } else {
                                             self.set_state(status.clone(), true);

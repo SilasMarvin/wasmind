@@ -6,8 +6,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
 use crate::actors::{
-    ActorContext, ActorMessage, Message, ToolCallStatus, ToolCallUpdate,
-    ToolDisplayInfo,
+    ActorContext, ActorMessage, Message, ToolCallStatus, ToolCallUpdate, ToolDisplayInfo,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -91,13 +90,12 @@ fn format_command_output(header: &str, stdout: &str, stderr: &str) -> String {
     output
 }
 
-
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct CommandParams {
-    command: String,
-    args: Option<Vec<String>>,
-    directory: Option<String>,
-    timeout: Option<u64>,
+    pub command: String,
+    pub args: Option<Vec<String>>,
+    pub directory: Option<String>,
+    pub timeout: Option<u64>,
 }
 
 /// Pending command execution
@@ -112,7 +110,7 @@ pub struct PendingCommand {
 
 /// Command actor
 #[derive(hive_macros::ActorContext)]
-pub struct Command {
+pub struct CommandTool {
     tx: broadcast::Sender<ActorMessage>,
     pending_command: Option<PendingCommand>,
     config: ParsedConfig,
@@ -120,7 +118,7 @@ pub struct Command {
     scope: Scope,
 }
 
-impl Command {
+impl CommandTool {
     pub fn new(config: ParsedConfig, tx: broadcast::Sender<ActorMessage>, scope: Scope) -> Self {
         Self {
             config,
@@ -151,7 +149,6 @@ impl Command {
             head, truncated_chars, tail
         )
     }
-
 
     #[tracing::instrument(name = "execute_command", skip(self, args, tool_call_id, scope), fields(command = %command, args_count = args.len(), timeout = %timeout, call_id = %tool_call_id))]
     async fn execute_command(
@@ -310,7 +307,7 @@ impl Command {
                     // Note: This doesn't preserve exact interleaving, but provides both
                     format!("=== stdout ===\n{}\n\n=== stderr ===\n{}", stdout, stderr)
                 };
-                Ok(Command::smart_truncate(&output_text))
+                Ok(CommandTool::smart_truncate(&output_text))
             } else {
                 // Command failed
                 let error_msg = if let Some(code) = output.status.code() {
@@ -344,7 +341,7 @@ impl Command {
                         )
                     }
                 };
-                Err(Command::smart_truncate(&error_msg))
+                Err(CommandTool::smart_truncate(&error_msg))
             };
 
             let tui_display = Some(create_command_tui_display(&full_command, outcome));
@@ -389,7 +386,7 @@ impl Command {
 }
 
 #[async_trait::async_trait]
-impl Tool for Command {
+impl Tool for CommandTool {
     const TOOL_NAME: &str = "execute_command";
     const TOOL_DESCRIPTION: &str = "Execute a bash command in a stateless environment. Commands are executed using 'bash -c', supporting all bash features including pipes (|), redirections (>, >>), command chaining (&&, ||), and other shell operators. Each command runs in a fresh, isolated bash environment without any session state from previous commands. Examples: echo 'test' > file.txt, ls | grep pattern, command1 && command2";
     const TOOL_INPUT_SCHEMA: &str = r#"{
@@ -422,7 +419,9 @@ impl Tool for Command {
     type Params = CommandParams;
 
     fn awaiting_user_confirmation(&self) -> Option<&str> {
-        self.pending_command.as_ref().map(|cmd| cmd.tool_call_id.as_str())
+        self.pending_command
+            .as_ref()
+            .map(|cmd| cmd.tool_call_id.as_str())
     }
 
     async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
@@ -529,11 +528,14 @@ mod tests {
     use tokio::process::Command as TokioCommand;
     use tokio::sync::broadcast;
 
-    fn create_test_command() -> Command {
+    fn create_test_command() -> CommandTool {
         let (tx, _) = broadcast::channel(100);
-        let config = crate::config::Config::new(true).unwrap().try_into().unwrap();
+        let config = crate::config::Config::new(true)
+            .unwrap()
+            .try_into()
+            .unwrap();
         let scope = Scope::new();
-        Command::new(config, tx, scope)
+        CommandTool::new(config, tx, scope)
     }
 
     #[test]
@@ -545,13 +547,16 @@ mod tests {
             "directory": "/tmp",
             "timeout": 60
         }"#;
-        
+
         let result = command.deserialize_params(json_input);
         assert!(result.is_ok());
-        
+
         let params = result.unwrap();
         assert_eq!(params.command, "ls -la");
-        assert_eq!(params.args, Some(vec!["-h".to_string(), "--color".to_string()]));
+        assert_eq!(
+            params.args,
+            Some(vec!["-h".to_string(), "--color".to_string()])
+        );
         assert_eq!(params.directory, Some("/tmp".to_string()));
         assert_eq!(params.timeout, Some(60));
     }
@@ -560,10 +565,10 @@ mod tests {
     fn test_command_deserialize_params_minimal() {
         let command = create_test_command();
         let json_input = r#"{"command": "pwd"}"#;
-        
+
         let result = command.deserialize_params(json_input);
         assert!(result.is_ok());
-        
+
         let params = result.unwrap();
         assert_eq!(params.command, "pwd");
         assert_eq!(params.args, None);
@@ -574,8 +579,8 @@ mod tests {
     #[test]
     fn test_command_deserialize_params_failure() {
         let command = create_test_command();
-        let json_input = r#"{"args": ["test"]}"#;  // Missing required "command" field
-        
+        let json_input = r#"{"args": ["test"]}"#; // Missing required "command" field
+
         let result = command.deserialize_params(json_input);
         assert!(result.is_err());
     }
@@ -583,7 +588,7 @@ mod tests {
     #[test]
     fn test_smart_truncate_small_output() {
         let small_text = "This is a small output";
-        let result = Command::smart_truncate(small_text);
+        let result = CommandTool::smart_truncate(small_text);
         assert_eq!(result, small_text);
     }
 
@@ -591,7 +596,7 @@ mod tests {
     fn test_smart_truncate_large_output() {
         // Create a large string that exceeds MAX_COMMAND_OUTPUT_CHARS
         let large_text = "a".repeat(20_000);
-        let result = Command::smart_truncate(&large_text);
+        let result = CommandTool::smart_truncate(&large_text);
 
         // Check that the result contains the truncation message
         assert!(result.contains("... "));
@@ -614,7 +619,7 @@ mod tests {
     fn test_smart_truncate_unicode() {
         // Test with unicode characters
         let unicode_text = "🦀".repeat(10_000); // Rust crab emoji
-        let result = Command::smart_truncate(&unicode_text);
+        let result = CommandTool::smart_truncate(&unicode_text);
 
         if unicode_text.chars().count() > MAX_COMMAND_OUTPUT_CHARS {
             assert!(result.contains("... "));
@@ -629,7 +634,7 @@ mod tests {
         // Test with multiline output
         let lines: Vec<String> = (0..5000).map(|i| format!("Line {}", i)).collect();
         let multiline_text = lines.join("\n");
-        let result = Command::smart_truncate(&multiline_text);
+        let result = CommandTool::smart_truncate(&multiline_text);
 
         if multiline_text.chars().count() > MAX_COMMAND_OUTPUT_CHARS {
             // Should preserve beginning lines

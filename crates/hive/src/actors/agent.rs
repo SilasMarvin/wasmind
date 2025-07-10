@@ -8,7 +8,7 @@ use crate::{
         Actor,
         assistant::Assistant,
         tools::{
-            command::Command, complete::CompleteTool, edit_file::EditFile,
+            command::CommandTool, complete::CompleteTool, edit_file::EditFile,
             file_reader::FileReaderActor, mcp::MCP, planner::Planner,
             send_manager_message::SendManagerMessage, send_message::SendMessage,
             spawn_agent::SpawnAgent,
@@ -215,8 +215,8 @@ impl Agent {
             .run();
         }
 
-        if self.actors.contains(Command::ACTOR_ID) {
-            Command::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        if self.actors.contains(CommandTool::ACTOR_ID) {
+            CommandTool::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
         }
 
         if self.actors.contains(SendMessage::ACTOR_ID) {

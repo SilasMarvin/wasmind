@@ -196,6 +196,7 @@ pub enum Message {
     UserContext(UserContext),
 
     AssistantRequest(AssistantRequest),
+    AssistantChatUpdated(Vec<llm_client::ChatMessage>),
     AssistantToolCall(ToolCall),
     AssistantResponse {
         id: Uuid,

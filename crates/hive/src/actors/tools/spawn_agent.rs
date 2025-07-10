@@ -12,7 +12,7 @@ use crate::actors::{
     agent::{Agent, AgentSpawnedResponse},
     temporal::check_health::CheckHealthActor,
     tools::{
-        command::Command, complete::CompleteTool, edit_file::EditFile,
+        command::CommandTool, complete::CompleteTool, edit_file::EditFile,
         file_reader::FileReaderActor, mcp::MCP, planner::Planner,
         send_manager_message::SendManagerMessage, send_message::SendMessage, wait::WaitTool,
     },
@@ -122,7 +122,7 @@ impl Tool for SpawnAgent {
                 .with_actors([
                     SendManagerMessage::ACTOR_ID,
                     Planner::ACTOR_ID,
-                    Command::ACTOR_ID,
+                    CommandTool::ACTOR_ID,
                     FileReaderActor::ACTOR_ID,
                     EditFile::ACTOR_ID,
                     MCP::ACTOR_ID,

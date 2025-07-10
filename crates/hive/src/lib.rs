@@ -14,6 +14,7 @@ pub mod utils;
 use snafu::{Location, Snafu};
 use std::sync::{LazyLock, OnceLock};
 use tokio::runtime;
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub static TOKIO_RUNTIME: LazyLock<runtime::Runtime> = LazyLock::new(|| {
     runtime::Builder::new_multi_thread()
@@ -69,13 +70,11 @@ pub enum Error {
 pub type SResult<T> = Result<T, Error>;
 
 // Library functions that main.rs can use
-pub fn init_logger() {
+pub fn init_test_logger() {
     init_logger_with_path("log.txt");
 }
 
 pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
-    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-
     // Create parent directory if it doesn't exist
     if let Some(parent) = log_path.as_ref().parent() {
         let _ = std::fs::create_dir_all(parent);
