@@ -166,6 +166,20 @@ pub enum AgentType {
     Worker,
 }
 
+impl std::fmt::Display for AgentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                AgentType::MainManager => "Main Manager",
+                AgentType::SubManager => "Sub Manager",
+                AgentType::Worker => "Worker",
+            }
+        )
+    }
+}
+
 /// Context provided by the user
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum UserContext {

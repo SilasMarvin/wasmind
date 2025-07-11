@@ -13,6 +13,7 @@ use tuirealm::{
 mod agent;
 
 struct AgentNode {
+    is_selected: bool,
     component: AgentComponent,
     spawned_agents: Vec<Box<AgentNode>>,
 }
@@ -22,6 +23,7 @@ impl AgentNode {
         Self {
             component,
             spawned_agents: vec![],
+            is_selected: false,
         }
     }
 
@@ -66,7 +68,9 @@ impl GraphAreaComponent {
                 root_node: AgentNode::new(AgentComponent::new(
                     MAIN_MANAGER_SCOPE,
                     AgentType::MainManager,
-                    MAIN_MANAGER_ROLE,
+                    MAIN_MANAGER_ROLE.to_string(),
+                    None,
+                    true,
                 )),
             },
         }
@@ -81,7 +85,10 @@ struct GraphArea {
 
 impl MockComponent for GraphArea {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {}
+        if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
+            let area = Rect::new(area.x, area.y, agent::WIDGET_WIDTH, agent::WIDGET_HEIGHT);
+            self.root_node.component.view(frame, area);
+        }
     }
 
     fn query(&self, attr: Attribute) -> Option<AttrValue> {
@@ -111,10 +118,18 @@ impl Component<TuiMessage, ActorMessage> for GraphAreaComponent {
                 crate::actors::Message::ToolCallUpdate(tool_call_update) => None,
                 crate::actors::Message::Agent(agent_message) => match agent_message.message {
                     crate::actors::AgentMessageType::AgentSpawned {
-                        agent_type, role, ..
+                        agent_type,
+                        role,
+                        task_description,
+                        ..
                     } => {
-                        let agent_component =
-                            AgentComponent::new(agent_message.agent_id, agent_type, role);
+                        let agent_component = AgentComponent::new(
+                            agent_message.agent_id,
+                            agent_type,
+                            role,
+                            Some(task_description),
+                            false,
+                        );
                         let node = AgentNode::new(agent_component);
                         let _ = self.component.root_node.insert(&actor_message.scope, node);
 

@@ -70,6 +70,7 @@ impl MockComponent for Dashboard {
 
 impl Component<TuiMessage, ActorMessage> for DashboardComponent {
     fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
+        // TODO: Control which one is active
         match (
             self.component.graph_area_component.on(ev.clone()),
             self.component.chat_area_component.on(ev),
