@@ -88,7 +88,6 @@ impl MockComponent for ChatArea {
 
 impl Component<TuiMessage, ActorMessage> for ChatAreaComponent {
     fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
-        // Chat history doesn't return anything
         match (
             self.component.chat_history.on(ev.clone()),
             self.component.llm_textarea.on(ev),

@@ -1,11 +1,10 @@
 use std::time::Duration;
 use tokio::sync::broadcast::{Receiver, Sender};
 use tuirealm::listener::{ListenerResult, Poll};
-use tuirealm::ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, EventListenerCfg, ListenerError, Update};
 
-use crate::actors::tui::components::chat::{CHAT_SCOPE, ChatAreaComponent};
+use crate::actors::tui::components::dashboard::{DASHBOARD_SCOPE, DashboardComponent};
 use crate::actors::{ActorMessage, Message, UserContext};
 use crate::hive::MAIN_MANAGER_SCOPE;
 use crate::scope::Scope;
@@ -69,15 +68,7 @@ where
         assert!(
             self.terminal
                 .draw(|f| {
-                    let chunks = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .margin(1)
-                        .constraints(
-                            [Constraint::Percentage(50), Constraint::Percentage(50)].as_ref(),
-                        )
-                        .split(f.area());
-                    // self.app.view(&GRAPH_SCOPE, f, chunks[0]);
-                    self.app.view(&CHAT_SCOPE, f, chunks[1]);
+                    self.app.view(&DASHBOARD_SCOPE, f, f.area());
                 })
                 .is_ok()
         );
@@ -98,14 +89,13 @@ where
 
         assert!(
             app.mount(
-                CHAT_SCOPE.clone(),
-                Box::new(ChatAreaComponent::new()),
+                DASHBOARD_SCOPE.clone(),
+                Box::new(DashboardComponent::new()),
                 Vec::default()
             )
             .is_ok()
         );
-        assert!(app.active(&CHAT_SCOPE).is_ok());
-
+        assert!(app.active(&DASHBOARD_SCOPE).is_ok());
         app
     }
 }

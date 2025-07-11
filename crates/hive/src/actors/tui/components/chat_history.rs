@@ -155,16 +155,14 @@ impl AssistantInfo {
         let mut total_height = 0;
 
         // Render top role title
-        for i in 0..100 {
-            let title_paragraph = Paragraph::new(format!("{} | {} ", self.role.clone(), i))
-                .style(Style::new())
-                .alignment(Alignment::Center);
-            let min_height = title_paragraph.line_count(area.width) as u16;
-            area.height = min_height;
-            title_paragraph.render(area, buf);
-            area = offset_y(area, min_height + MESSAGE_GAP);
-            total_height += min_height + MESSAGE_GAP;
-        }
+        let title_paragraph = Paragraph::new(self.role.clone())
+            .style(Style::new())
+            .alignment(Alignment::Center);
+        let min_height = title_paragraph.line_count(area.width) as u16;
+        area.height = min_height;
+        title_paragraph.render(area, buf);
+        area = offset_y(area, min_height + MESSAGE_GAP);
+        total_height += min_height + MESSAGE_GAP;
 
         if self.chat_history.is_none() && self.pending_user_message.is_none() {
             let content = "Type to send a message".to_string();
