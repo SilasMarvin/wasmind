@@ -56,6 +56,14 @@ impl fmt::Display for Scope {
     }
 }
 
+impl TryFrom<&str> for Scope {
+    type Error = uuid::Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(Self(Uuid::try_from(value)?))
+    }
+}
+
 impl From<Uuid> for Scope {
     fn from(uuid: Uuid) -> Self {
         Self(uuid)
@@ -67,4 +75,3 @@ impl From<Scope> for Uuid {
         scope.0
     }
 }
-

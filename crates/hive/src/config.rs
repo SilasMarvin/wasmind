@@ -354,7 +354,7 @@ impl TryFrom<Config> for ParsedConfig {
                             return Err(ConfigError::InvalidBinding { binding });
                         };
 
-                        let Ok(action) = serde_json::from_str(&action) else {
+                        let Ok(action) = GraphUserAction::try_from(action.as_str()) else {
                             return Err(ConfigError::InvalidActionForBinding { action, binding });
                         };
 
@@ -536,6 +536,8 @@ fn parse_key_combination(input: &str) -> Option<KeyEvent> {
         "esc" => Key::Esc,
         "enter" => Key::Enter,
         "tab" => Key::Tab,
+        "down" => Key::Down,
+        "up" => Key::Up,
         _ => return None,
     };
 

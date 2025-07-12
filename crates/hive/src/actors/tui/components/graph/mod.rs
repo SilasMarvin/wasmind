@@ -6,7 +6,6 @@ use crate::{
 };
 use agent::{AgentComponent, AgentMetrics};
 use ratatui::{text::Span, widgets::Paragraph};
-use serde::Deserialize;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
@@ -19,15 +18,31 @@ mod agent;
 
 const LINE_INDENT: u16 = 5;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GraphTuiMessage {
+    SelectedAgent(Scope),
+}
+
 /// Actions the user can bind keys to
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GraphUserAction {
     SelectDown,
     SelectUp,
 }
 
+impl TryFrom<&str> for GraphUserAction {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "SelectDown" => Ok(GraphUserAction::SelectDown),
+            "SelectUp" => Ok(GraphUserAction::SelectUp),
+            _ => Err(()),
+        }
+    }
+}
+
 struct AgentNode {
-    is_selected: bool,
     component: AgentComponent,
     spawned_agents: Vec<Box<AgentNode>>,
 }
@@ -37,7 +52,105 @@ impl AgentNode {
         Self {
             component,
             spawned_agents: vec![],
-            is_selected: false,
+        }
+    }
+
+    /// Returns the Scope of the newly selected node, or None if no next node available
+    fn select_next(&mut self) -> Option<Scope> {
+        if self.component.component.is_selected {
+            if let Some(child) = self.spawned_agents.first_mut() {
+                child.component.component.is_selected = true;
+                self.component.component.is_selected = false;
+                Some(child.scope().clone())
+            } else {
+                None
+            }
+        } else {
+            let spawned_agent_len = self.spawned_agents.len();
+            for (index, agent) in self.spawned_agents.iter_mut().enumerate() {
+                // First check if this child contains the selected node
+                if agent.contains_selected() {
+                    // Try to select next within this child
+                    if let Some(selected_scope) = agent.select_next() {
+                        return Some(selected_scope);
+                    } else {
+                        // Child contains selected but couldn't go next, try next sibling
+                        if spawned_agent_len > index + 1 {
+                            agent.clear_selected();
+                            self.spawned_agents[index + 1]
+                                .component
+                                .component
+                                .is_selected = true;
+                            return Some(self.spawned_agents[index + 1].scope().clone());
+                        } else {
+                            return None;
+                        }
+                    }
+                }
+            }
+            None
+        }
+    }
+
+    /// Returns the Scope of the newly selected node, or None if no previous node available
+    fn select_previous(&mut self) -> Option<Scope> {
+        // First, check if any child contains the selected node
+        for (index, agent) in self.spawned_agents.iter_mut().enumerate() {
+            if agent.contains_selected() {
+                // Try to select previous within this child
+                if let Some(selected_scope) = agent.select_previous() {
+                    return Some(selected_scope);
+                } else {
+                    // Child contains selected but couldn't go previous
+                    if index > 0 {
+                        // Move to the previous sibling's last descendant
+                        agent.clear_selected();
+                        let prev_sibling = &mut self.spawned_agents[index - 1];
+                        return Some(prev_sibling.select_last());
+                    } else {
+                        // This is the first child, so select the parent (self)
+                        agent.clear_selected();
+                        self.component.component.is_selected = true;
+                        return Some(self.scope().clone());
+                    }
+                }
+            }
+        }
+
+        // If no child contains the selected node, check if self is selected
+        if self.component.component.is_selected {
+            // Can't go previous from here
+            None
+        } else {
+            // Selected node is not in this subtree
+            None
+        }
+    }
+
+    /// Helper function to check if this subtree contains the selected node
+    fn contains_selected(&self) -> bool {
+        if self.component.component.is_selected {
+            return true;
+        }
+        self.spawned_agents
+            .iter()
+            .any(|child| child.contains_selected())
+    }
+
+    /// Helper function to select the last descendant in the subtree and return its Scope
+    fn select_last(&mut self) -> Scope {
+        if let Some(last_child) = self.spawned_agents.last_mut() {
+            last_child.select_last()
+        } else {
+            self.component.component.is_selected = true;
+            self.scope().clone()
+        }
+    }
+
+    fn clear_selected(&mut self) {
+        self.component.component.is_selected = false;
+        for agent in &mut self.spawned_agents {
+            agent.clear_selected();
         }
     }
 
@@ -241,8 +354,20 @@ impl ScrollableComponentTrait<TuiMessage, ActorMessage> for GraphAreaComponent {
 impl Component<TuiMessage, ActorMessage> for GraphAreaComponent {
     fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
         let msg = match ev {
-            Event::Keyboard(key_event) => None,
-            Event::Mouse(mouse_event) => None,
+            Event::Keyboard(key_event) => {
+                if let Some(action) = self.config.graph.key_bindings.get(&key_event) {
+                    let scope = match action {
+                        GraphUserAction::SelectDown => self.component.root_node.select_next(),
+                        GraphUserAction::SelectUp => self.component.root_node.select_previous(),
+                    };
+
+                    scope.and_then(|scope| {
+                        Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(scope)))
+                    })
+                } else {
+                    None
+                }
+            }
             Event::User(actor_message) => match actor_message.message {
                 crate::actors::Message::AssistantRequest(_) => {
                     let metrics = AgentMetrics::with_completion_request();

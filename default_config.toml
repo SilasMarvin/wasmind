@@ -13,6 +13,10 @@ whitelisted_commands = []
 [tui.chat.key_bindings]
 "ctrl-a" = "Assist"
 
+[tui.graph.key_bindings]
+"shift-down" = "SelectDown"
+"shift-up" = "SelectUp"
+
 # HIVE Multi-Agent System Configuration
 [hive]
 

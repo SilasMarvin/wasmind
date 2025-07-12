@@ -15,6 +15,8 @@ use super::scrollable::ScrollableComponent;
 pub const DASHBOARD_SCOPE: Scope =
     Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-d68b0e6c4cf1"));
 
+pub const SCOPE_ATTR: &'static str = "SCOPE_ATTR";
+
 /// Actions the user can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DashboardUserAction {
@@ -85,7 +87,11 @@ impl MockComponent for Dashboard {
     }
 
     fn attr(&mut self, attr: Attribute, value: AttrValue) {
-        self.props.set(attr, value);
+        if Attribute::Custom(SCOPE_ATTR) == attr {
+            self.chat_area_component.attr(attr, value);
+        } else {
+            self.props.set(attr, value);
+        }
     }
 
     fn state(&self) -> State {

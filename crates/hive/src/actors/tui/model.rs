@@ -2,13 +2,15 @@ use std::time::Duration;
 use tokio::sync::broadcast::{Receiver, Sender};
 use tuirealm::listener::{ListenerResult, Poll};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
-use tuirealm::{Application, EventListenerCfg, ListenerError, Update};
+use tuirealm::{Application, AttrValue, Attribute, EventListenerCfg, ListenerError, Update};
 
-use crate::actors::tui::components::dashboard::{DASHBOARD_SCOPE, DashboardComponent};
+use crate::actors::tui::components::dashboard::{DASHBOARD_SCOPE, DashboardComponent, SCOPE_ATTR};
 use crate::actors::{ActorMessage, Message, UserContext};
 use crate::config::ParsedTuiConfig;
 use crate::hive::MAIN_MANAGER_SCOPE;
 use crate::scope::Scope;
+
+use super::components::graph::GraphTuiMessage;
 
 struct PollBroadcastWrapper {
     rx: Receiver<ActorMessage>,
@@ -36,6 +38,7 @@ pub enum TuiMessage {
     ActorMessage(ActorMessage),
     UpdatedUserTypedLLMMessage(String),
     SubmittedUserTypedLLMMessage(String),
+    Graph(GraphTuiMessage),
 }
 
 pub struct Model<T>
@@ -128,6 +131,19 @@ where
                     });
                 }
                 TuiMessage::Redraw => (),
+                TuiMessage::Graph(graph_message) => match graph_message {
+                    GraphTuiMessage::SelectedAgent(scope) => {
+                        assert!(
+                            self.app
+                                .attr(
+                                    &DASHBOARD_SCOPE,
+                                    Attribute::Custom(SCOPE_ATTR),
+                                    AttrValue::String(scope.to_string())
+                                )
+                                .is_ok()
+                        );
+                    }
+                },
             }
         }
 

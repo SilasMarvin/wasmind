@@ -89,7 +89,8 @@ impl MockComponent for ChatArea {
     }
 
     fn attr(&mut self, attr: Attribute, value: AttrValue) {
-        self.props.set(attr, value);
+        self.llm_textarea.component.attr(attr, value.clone());
+        self.chat_history.attr(attr, value);
     }
 
     fn state(&self) -> State {
@@ -97,7 +98,6 @@ impl MockComponent for ChatArea {
     }
 
     fn perform(&mut self, cmd: Cmd) -> CmdResult {
-        // This pass through may be unnecessary as I believe we are the only ones that call perform and that is passed through in the `on` function
         CmdResult::Batch(vec![self.llm_textarea.perform(cmd)])
     }
 }

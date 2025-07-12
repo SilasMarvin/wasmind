@@ -130,15 +130,15 @@ impl MockComponent for Scrollable {
     }
 
     fn query(&self, attr: Attribute) -> Option<AttrValue> {
-        self.props.get(attr)
+        self.child.query(attr)
     }
 
     fn attr(&mut self, attr: Attribute, value: AttrValue) {
-        self.props.set(attr, value);
+        self.child.attr(attr, value);
     }
 
     fn state(&self) -> State {
-        self.state.clone()
+        self.child.state().clone()
     }
 
     fn perform(&mut self, cmd: Cmd) -> CmdResult {
@@ -180,13 +180,13 @@ impl Component<TuiMessage, ActorMessage> for ScrollableComponent {
             },
             Event::Keyboard(key_event) => {
                 match key_event.code {
-                    tuirealm::event::Key::Up => {
+                    tuirealm::event::Key::Up if key_event.modifiers.is_empty() => {
                         // Scroll up by one line
                         self.component.scroll_offset =
                             self.component.scroll_offset.saturating_sub(1);
                         Some(TuiMessage::Redraw)
                     }
-                    tuirealm::event::Key::Down => {
+                    tuirealm::event::Key::Down if key_event.modifiers.is_empty() => {
                         // Scroll down by one line
                         let max_offset = self.component.content_height.saturating_sub(
                             self.component

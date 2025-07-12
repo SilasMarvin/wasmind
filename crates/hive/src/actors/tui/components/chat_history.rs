@@ -16,6 +16,7 @@ use tuirealm::{
     ratatui::layout::Rect,
 };
 
+use super::dashboard::SCOPE_ATTR;
 use super::scrollable::ScrollableComponentTrait;
 
 const MESSAGE_GAP: u16 = 1;
@@ -270,7 +271,6 @@ impl ChatHistoryComponent {
                         tool_call_updates: HashMap::new(),
                     },
                 )]),
-                active_scope: MAIN_MANAGER_SCOPE.clone(),
                 last_content_height: None,
                 is_modified: true,
             },
@@ -281,7 +281,6 @@ impl ChatHistoryComponent {
 struct ChatHistory {
     props: Props,
     state: State,
-    active_scope: Scope,
     chat_history_map: HashMap<Scope, AssistantInfo>,
     last_content_height: Option<u16>,
     is_modified: bool,
@@ -289,9 +288,13 @@ struct ChatHistory {
 
 impl MockComponent for ChatHistory {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        // Check if visible
-        if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
-            if let Some(info) = self.chat_history_map.get(&self.active_scope) {
+        if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true)
+            && let Some(active_scope) = self.props.get(Attribute::Custom(SCOPE_ATTR))
+        {
+            let active_scope = active_scope.unwrap_string();
+            let active_scope = Scope::try_from(active_scope.as_str()).unwrap();
+
+            if let Some(info) = self.chat_history_map.get(&active_scope) {
                 let mut next_content_height = 0;
                 frame.render_stateful_widget(info.clone(), area, &mut next_content_height);
                 self.last_content_height = Some(next_content_height);
@@ -299,7 +302,7 @@ impl MockComponent for ChatHistory {
             } else {
                 tracing::error!(
                     "Trying to retrieve a scope that does not exist: {}",
-                    self.active_scope
+                    active_scope
                 );
             }
         }
@@ -311,6 +314,7 @@ impl MockComponent for ChatHistory {
 
     fn attr(&mut self, attr: Attribute, value: AttrValue) {
         self.props.set(attr, value);
+        self.is_modified = true;
     }
 
     fn state(&self) -> State {
@@ -318,7 +322,7 @@ impl MockComponent for ChatHistory {
     }
 
     fn perform(&mut self, _cmd: Cmd) -> CmdResult {
-        CmdResult::None
+        unreachable!()
     }
 }
 

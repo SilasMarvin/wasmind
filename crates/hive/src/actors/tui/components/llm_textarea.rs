@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State, StateValue,
     command::{Cmd, CmdResult},
@@ -11,6 +12,7 @@ use tuirealm::{
 use crate::{
     actors::{ActorMessage, tui::model::TuiMessage},
     config::ParsedTuiConfig,
+    scope::Scope,
 };
 
 #[derive(MockComponent)]
@@ -78,7 +80,7 @@ impl MockComponent for LLMTextArea {
         self.state.clone()
     }
 
-    fn perform(&mut self, _cmd: Cmd) -> CmdResult {
+    fn perform(&mut self, cmd: Cmd) -> CmdResult {
         unreachable!()
     }
 }
