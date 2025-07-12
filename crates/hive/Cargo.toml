@@ -23,9 +23,11 @@ default = ["gui", "audio"]
 gui = ["dep:arboard", "dep:xcap"]
 audio = ["dep:whisper-rs", "dep:cpal", "dep:hound", "dep:rubato"]
 headless = []
+clipboard = [] # TODO: Update this
 test-utils = []
 
 [dependencies]
+lazy-regex = "3.4.1"
 hive_macros = { path = "../hive_macros" }
 base64 = "0.22.1"
 crossbeam = "0.8.4"
@@ -51,6 +53,7 @@ tuirealm = { version = "3", default-features = false, features = [ "derive", "cr
 reqwest = { version = "0.12", features = ["json"] }
 serde_yaml = "0.9"
 tempfile = "3"
+tui-textarea = "^0.7"
 
 # Optional GUI dependencies
 arboard = { version = "3.5.0", optional = true }

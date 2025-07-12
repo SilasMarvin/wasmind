@@ -35,7 +35,7 @@ impl Poll<ActorMessage> for PollBroadcastWrapper {
 pub enum TuiMessage {
     Batch(Vec<TuiMessage>),
     Redraw,
-    ActorMessage(ActorMessage),
+    Exit,
     UpdatedUserTypedLLMMessage(String),
     SubmittedUserTypedLLMMessage(String),
     Graph(GraphTuiMessage),
@@ -122,7 +122,13 @@ where
                         self.update(Some(msg));
                     }
                 }
-                TuiMessage::ActorMessage(_) => (),
+                TuiMessage::Exit => {
+                    tracing::error!("SENDING EXIT");
+                    let _ = self.tx.send(ActorMessage {
+                        scope: MAIN_MANAGER_SCOPE.clone(),
+                        message: Message::Exit,
+                    });
+                }
                 TuiMessage::UpdatedUserTypedLLMMessage(_) => (),
                 TuiMessage::SubmittedUserTypedLLMMessage(message) => {
                     let _ = self.tx.send(ActorMessage {

@@ -256,10 +256,15 @@ pub struct ChatHistoryComponent {
 
 impl ChatHistoryComponent {
     pub fn new() -> Self {
+        let mut props = Props::default();
+        props.set(
+            Attribute::Custom(SCOPE_ATTR),
+            AttrValue::String(MAIN_MANAGER_SCOPE.to_string()),
+        );
         Self {
             component: ChatHistory {
-                props: Props::default(),
-                state: State::One(StateValue::String("".to_string())),
+                props,
+                state: State::None,
                 chat_history_map: HashMap::from([(
                     MAIN_MANAGER_SCOPE.clone(),
                     AssistantInfo {
@@ -272,7 +277,7 @@ impl ChatHistoryComponent {
                     },
                 )]),
                 last_content_height: None,
-                is_modified: true,
+                is_modified: false,
             },
         }
     }

@@ -1,5 +1,7 @@
+use crate::actors::Message;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::config::ParsedTuiConfig;
+use crate::hive::MAIN_MANAGER_SCOPE;
 use crate::scope::Scope;
 use ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::{
@@ -23,6 +25,7 @@ pub enum DashboardUserAction {
     ToggleFocus,
     FocusGraph,
     FocusChat,
+    Exit,
 }
 
 impl TryFrom<&str> for DashboardUserAction {
@@ -33,6 +36,7 @@ impl TryFrom<&str> for DashboardUserAction {
             "ToggleFocus" => Ok(DashboardUserAction::ToggleFocus),
             "FocusGraph" => Ok(DashboardUserAction::FocusGraph),
             "FocusChat" => Ok(DashboardUserAction::FocusChat),
+            "Exit" => Ok(DashboardUserAction::Exit),
             _ => Err(()),
         }
     }
@@ -112,6 +116,9 @@ impl Component<TuiMessage, ActorMessage> for DashboardComponent {
                         DashboardUserAction::ToggleFocus => self.focus_chat = !self.focus_chat,
                         DashboardUserAction::FocusGraph => self.focus_chat = false,
                         DashboardUserAction::FocusChat => self.focus_chat = true,
+                        DashboardUserAction::Exit => {
+                            return Some(TuiMessage::Exit);
+                        }
                     }
                     None
                 } else {

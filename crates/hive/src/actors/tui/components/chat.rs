@@ -1,4 +1,4 @@
-use crate::actors::tui::components::llm_textarea::LLMTextAreaComponent;
+// use crate::actors::tui::components::llm_textarea::LLMTextAreaComponent;
 use crate::actors::tui::utils;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::config::ParsedTuiConfig;
@@ -13,6 +13,7 @@ use tuirealm::{
 
 use super::chat_history::ChatHistoryComponent;
 use super::scrollable::ScrollableComponent;
+use super::textarea::LLMTextAreaComponent;
 
 /// Actions the user can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

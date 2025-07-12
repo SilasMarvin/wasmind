@@ -1,6 +1,9 @@
 pub const CHECK_MARK: &'static str = "✓";
 pub const X: &'static str = "X";
 
+// Text area icons
+pub const CURSOR_ICON: &'static str = "█";
+
 // Chat History Icons
 pub const USER_ICON: &'static str = "►";
 pub const LLM_ICON: &'static str = "※";
