@@ -80,11 +80,11 @@ where
                 .crossterm_input_listener(Duration::from_millis(5), 1)
                 .add_port(
                     Box::new(PollBroadcastWrapper { rx }),
-                    Duration::from_millis(5),
+                    Duration::from_millis(20),
                     1024,
                 )
-                .tick_interval(Duration::from_secs(1))
-                .poll_timeout(Duration::from_millis(5)),
+                .tick_interval(Duration::from_secs(100))
+                .poll_timeout(Duration::from_millis(20)),
         );
 
         assert!(

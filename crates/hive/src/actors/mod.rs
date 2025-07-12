@@ -159,7 +159,7 @@ pub struct AgentMessage {
     pub message: AgentMessageType,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum AgentType {
     MainManager,
     SubManager,

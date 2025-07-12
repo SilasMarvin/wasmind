@@ -22,7 +22,10 @@ pub struct ScrollableComponent {
 }
 
 impl ScrollableComponent {
-    pub fn new(child: Box<dyn ScrollableComponentTrait<TuiMessage, ActorMessage>>) -> Self {
+    pub fn new(
+        child: Box<dyn ScrollableComponentTrait<TuiMessage, ActorMessage>>,
+        auto_scroll: bool,
+    ) -> Self {
         Self {
             component: Scrollable {
                 props: Props::default(),
@@ -32,6 +35,7 @@ impl ScrollableComponent {
                 content_height: 0,
                 cached_buffer: None,
                 last_render_area: None,
+                auto_scroll,
             },
         }
     }
@@ -45,6 +49,7 @@ struct Scrollable {
     content_height: u16,
     cached_buffer: Option<Buffer>,
     last_render_area: Option<Rect>,
+    auto_scroll: bool,
 }
 
 impl MockComponent for Scrollable {
@@ -86,7 +91,7 @@ impl MockComponent for Scrollable {
                 self.content_height = new_content_height;
 
                 // Auto-scroll to bottom if user was previously at bottom and content grew
-                if was_at_bottom && new_content_height > 0 {
+                if self.auto_scroll && was_at_bottom && new_content_height > 0 {
                     let new_max_offset = self.content_height.saturating_sub(area.height);
                     self.scroll_offset = new_max_offset;
                 }

@@ -1,6 +1,6 @@
 use hive::{
     actors::{
-        ActorMessage, Message,
+        ActorMessage, AgentMessage, AgentType, Message,
         tools::{
             Tool,
             command::{CommandParams, CommandTool},
@@ -9,6 +9,31 @@ use hive::{
     llm_client::{AssistantChatMessage, ChatMessage, ToolCall},
     scope::Scope,
 };
+
+pub fn create_spawn_agent_message(
+    scope: &Scope,
+    agent_type: AgentType,
+    role: &str,
+    task: &str,
+) -> (ActorMessage, Scope) {
+    let new_scope = Scope::new();
+
+    (
+        ActorMessage {
+            scope: scope.clone(),
+            message: Message::Agent(AgentMessage {
+                agent_id: new_scope.clone(),
+                message: hive::actors::AgentMessageType::AgentSpawned {
+                    agent_type,
+                    role: role.to_string(),
+                    task_description: task.to_string(),
+                    tool_call_id: "FILLER".to_string(),
+                },
+            }),
+        },
+        new_scope,
+    )
+}
 
 pub fn create_command_tool_call(
     scope: &Scope,

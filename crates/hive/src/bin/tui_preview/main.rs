@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 
 mod command;
 mod edit_file;
+mod graph;
 mod utils;
 
 #[derive(Parser)]
@@ -18,6 +19,8 @@ enum Scenario {
     Command,
     /// Preview file editing workflow
     EditFile,
+    /// Preview the agent graph
+    Graph,
 }
 
 #[tokio::main]
@@ -32,6 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             match args.scenario {
                 Scenario::Command => command::run().await,
+                Scenario::Graph => graph::run().await,
                 Scenario::EditFile => edit_file::run().await,
             }
         })

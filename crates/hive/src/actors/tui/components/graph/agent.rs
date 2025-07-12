@@ -19,7 +19,7 @@ use tuirealm::{
 };
 
 pub const WIDGET_WIDTH: u16 = 50;
-pub const WIDGET_HEIGHT: u16 = 10;
+pub const WIDGET_HEIGHT: u16 = 11;
 
 fn get_icon_for_agent_type(agent_type: AgentType) -> &'static str {
     match agent_type {
@@ -71,7 +71,7 @@ pub struct Agent {
     stats: AgentStats,
     props: Props,
     state: State,
-    agent_type: AgentType,
+    pub agent_type: AgentType,
     role: String,
     task: Option<String>,
 }
@@ -113,22 +113,22 @@ impl MockComponent for Agent {
             render_paragraph.render(render_paragraph_chunk, frame.buffer_mut());
 
             // Context
-            let paragraph_chunk = Rect::new(area.x + 2, area.y + 7, area.width, 2);
+            let paragraph_chunk = Rect::new(area.x + 2, area.y + 8, area.width, 2);
             let paragraph = Paragraph::new(format!("Context\n{}", self.stats.context_size));
             paragraph.render(paragraph_chunk, frame.buffer_mut());
 
             // Context
-            let paragraph_chunk = Rect::new(area.x + 12, area.y + 7, area.width, 2);
+            let paragraph_chunk = Rect::new(area.x + 12, area.y + 8, area.width, 2);
             let paragraph = Paragraph::new(format!("Requests\n{}", self.stats.requests_sent));
             paragraph.render(paragraph_chunk, frame.buffer_mut());
 
             // Tool Calls
-            let paragraph_chunk = Rect::new(area.x + 23, area.y + 7, area.width, 2);
+            let paragraph_chunk = Rect::new(area.x + 23, area.y + 8, area.width, 2);
             let paragraph = Paragraph::new(format!("Tool Calls\n{}", self.stats.tools_called));
             paragraph.render(paragraph_chunk, frame.buffer_mut());
 
             // Tool Calls
-            let paragraph_chunk = Rect::new(area.x + 36, area.y + 7, area.width, 2);
+            let paragraph_chunk = Rect::new(area.x + 36, area.y + 8, area.width, 2);
             let paragraph =
                 Paragraph::new(format!("Tokens Used\n{}", self.stats.total_tokens_used));
             paragraph.render(paragraph_chunk, frame.buffer_mut());

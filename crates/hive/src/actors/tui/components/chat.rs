@@ -3,7 +3,7 @@ use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::{actors::tui::components::llm_textarea::LLMTextAreaComponent, scope::Scope};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::widgets::Padding;
-use tuirealm::props::Borders;
+use tuirealm::props::{BorderSides, Borders};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State, StateValue,
     command::{Cmd, CmdResult},
@@ -12,8 +12,6 @@ use tuirealm::{
 
 use super::chat_history::ChatHistoryComponent;
 use super::scrollable::ScrollableComponent;
-
-pub const CHAT_SCOPE: Scope = Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-d68b0e6c4cf1"));
 
 #[derive(MockComponent)]
 pub struct ChatAreaComponent {
@@ -27,7 +25,7 @@ impl ChatAreaComponent {
                 props: Props::default(),
                 state: State::One(StateValue::String("".to_string())),
                 llm_textarea: LLMTextAreaComponent::new(),
-                chat_history: ScrollableComponent::new(Box::new(ChatHistoryComponent::new())),
+                chat_history: ScrollableComponent::new(Box::new(ChatHistoryComponent::new()), true),
             },
         }
     }
@@ -46,7 +44,7 @@ impl MockComponent for ChatArea {
         if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
             let textarea_height = self.llm_textarea.get_height(area);
 
-            let borders = Borders::default();
+            let borders = Borders::default().sides(BorderSides::LEFT);
             let div = utils::create_block(borders, false, Some(Padding::uniform(1)));
             frame.render_widget(div, area);
 

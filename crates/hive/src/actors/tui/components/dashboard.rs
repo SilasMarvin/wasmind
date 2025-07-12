@@ -9,6 +9,7 @@ use tuirealm::{
 
 use super::chat::ChatAreaComponent;
 use super::graph::GraphAreaComponent;
+use super::scrollable::ScrollableComponent;
 
 pub const DASHBOARD_SCOPE: Scope =
     Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-d68b0e6c4cf1"));
@@ -24,7 +25,10 @@ impl DashboardComponent {
             component: Dashboard {
                 state: State::None,
                 props: Props::default(),
-                graph_area_component: GraphAreaComponent::new(),
+                graph_area_component: ScrollableComponent::new(
+                    Box::new(GraphAreaComponent::new()),
+                    false,
+                ),
                 chat_area_component: ChatAreaComponent::new(),
             },
         }
@@ -34,7 +38,7 @@ impl DashboardComponent {
 struct Dashboard {
     props: Props,
     state: State,
-    graph_area_component: GraphAreaComponent,
+    graph_area_component: ScrollableComponent,
     chat_area_component: ChatAreaComponent,
 }
 
@@ -43,7 +47,6 @@ impl MockComponent for Dashboard {
         if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
             let chunks = Layout::default()
                 .direction(Direction::Horizontal)
-                .margin(1)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                 .split(area);
             self.graph_area_component.view(frame, chunks[0]);
