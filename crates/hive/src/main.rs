@@ -1,6 +1,7 @@
 use hive::{SResult, init_test_logger, run_headless_program, run_main_program};
 
-fn main() -> SResult<()> {
+#[tokio::main]
+async fn main() -> SResult<()> {
     use clap::Parser;
 
     init_test_logger();
@@ -10,13 +11,13 @@ fn main() -> SResult<()> {
 
     match cli.command.unwrap_or_default() {
         hive::cli::Commands::Run => {
-            run_main_program()?;
+            run_main_program().await?;
         }
         hive::cli::Commands::Headless {
             prompt,
             auto_approve_commands,
         } => {
-            run_headless_program(prompt, auto_approve_commands)?;
+            run_headless_program(prompt, auto_approve_commands).await?;
         }
         hive::cli::Commands::PromptPreview {
             all,

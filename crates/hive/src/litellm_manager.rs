@@ -417,7 +417,7 @@ impl LiteLLMManager {
         info!("Waiting for LiteLLM to become healthy at {}...", health_url);
 
         for attempt in 1..=max_attempts {
-            match timeout(Duration::from_secs(5), client.get(&health_url).send()).await {
+            match timeout(Duration::from_secs(15), client.get(&health_url).send()).await {
                 Ok(Ok(response)) if response.status().is_success() => {
                     // Try to parse the health response
                     match response.text().await {

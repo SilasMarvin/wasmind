@@ -10,18 +10,13 @@ pub mod system_state;
 pub mod template;
 pub mod utils;
 
+use config::{Config, ParsedConfig};
+use snafu::ResultExt;
 use snafu::{Location, Snafu};
-use std::sync::{LazyLock, OnceLock};
+use std::sync::OnceLock;
 use tokio::runtime;
+use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-
-pub static TOKIO_RUNTIME: LazyLock<runtime::Runtime> = LazyLock::new(|| {
-    runtime::Builder::new_multi_thread()
-        .worker_threads(4)
-        .enable_all()
-        .build()
-        .expect("Error building tokio runtime")
-});
 
 pub static IS_HEADLESS: OnceLock<bool> = OnceLock::new();
 
@@ -31,6 +26,12 @@ pub enum Error {
     Config {
         #[snafu(source)]
         source: config::ConfigError,
+    },
+
+    #[snafu(display("LiteLLM Error"))]
+    LiteLLM {
+        #[snafu(source)]
+        source: litellm_manager::LiteLLMError,
     },
 
     #[cfg(feature = "gui")]
@@ -101,75 +102,20 @@ pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
         .init();
 }
 
-pub fn run_main_program() -> SResult<()> {
-    use config::{Config, ParsedConfig};
-    // use key_bindings::KeyBindingManager;
-    use snafu::ResultExt;
-    use tokio::runtime;
-    use tracing::info;
-
-    // #[cfg(feature = "gui")]
-    // use key_bindings::RdevToCrosstermConverter;
-    // #[cfg(feature = "gui")]
-    // use rdev::{Event, EventType, listen};
-
+pub async fn run_main_program() -> SResult<()> {
     IS_HEADLESS.set(false).unwrap();
 
     let config = Config::new(false).context(ConfigSnafu)?;
     let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
 
-    // Create the tokio runtime in main thread
-    let runtime = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to create tokio runtime");
-
     // Start the HIVE multi-agent system
-    let hive_handle = hive::start_hive(&runtime, parsed_config.clone());
-
-    // let mut key_binding_manager = KeyBindingManager::from(&parsed_config.keys);
-    // let mut rdev_converter = RdevToCrosstermConverter::new();
-
-    // let callback = move |event: Event| match event.event_type {
-    //     EventType::KeyPress(key) => {
-    //         if let Some(key_event) = rdev_converter.handle_key_press(key) {
-    //             let actions = key_binding_manager.handle_event(key_event);
-    //             for action in actions {
-    //                 if let Err(e) = message_tx.send(actors::ActorMessage {
-    //                     scope: ROOT_AGENT_SCOPE,
-    //                     message: Message::Action(action),
-    //                 }) {
-    //                     error!("Error sending action to actors: {:?}", e);
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     EventType::KeyRelease(key) => {
-    //         rdev_converter.handle_key_release(key);
-    //     }
-    //     _ => (),
-    // };
-    //
-    // info!("Starting global key listener");
-    //
-    // // This will block and has to be in the main thread
-    // if let Err(error) = listen(callback) {
-    //     error!("Error listening for global key events: {:?}", error)
-    // }
-
-    // Wait for exit signal from HIVE system
-    let _ = hive_handle.exit_rx.recv();
-    info!("Received exit signal from HIVE system, exiting...");
-
-    Ok(())
+    hive::start_hive(parsed_config).await
 }
 
-pub fn run_headless_program(prompt: String, auto_approve_commands_override: bool) -> SResult<()> {
-    use config::{Config, ParsedConfig};
-    use snafu::ResultExt;
-    use tokio::runtime;
-    use tracing::info;
-
+pub async fn run_headless_program(
+    prompt: String,
+    auto_approve_commands_override: bool,
+) -> SResult<()> {
     IS_HEADLESS.set(true).unwrap();
 
     let config = Config::new(true).context(ConfigSnafu)?;
@@ -180,18 +126,6 @@ pub fn run_headless_program(prompt: String, auto_approve_commands_override: bool
         parsed_config.auto_approve_commands = true;
     }
 
-    // Create the tokio runtime in main thread
-    let runtime = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("Failed to create tokio runtime");
-
     // Start the HIVE system without TUI
-    let hive_handle = hive::start_headless_hive(&runtime, parsed_config, prompt, None);
-
-    // Wait for exit signal from HIVE system
-    let _ = hive_handle.exit_rx.recv();
-    info!("Received exit signal from HIVE system, exiting...");
-
-    Ok(())
+    hive::start_headless_hive(parsed_config, prompt, None).await
 }

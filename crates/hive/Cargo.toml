@@ -30,7 +30,6 @@ test-utils = []
 lazy-regex = "3.4.1"
 hive_macros = { path = "../hive_macros" }
 base64 = "0.22.1"
-crossbeam = "0.8.4"
 etcetera = "0.10.0"
 image = "0.25.6"
 serde = { version = "1.0.219", features = ["derive"] }

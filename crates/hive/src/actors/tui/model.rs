@@ -123,7 +123,7 @@ where
                     }
                 }
                 TuiMessage::Exit => {
-                    tracing::error!("SENDING EXIT");
+                    self.quit = true;
                     let _ = self.tx.send(ActorMessage {
                         scope: MAIN_MANAGER_SCOPE.clone(),
                         message: Message::Exit,
