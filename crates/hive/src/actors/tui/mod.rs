@@ -3,12 +3,15 @@ use std::thread;
 use tokio::sync::broadcast::Sender;
 use tuirealm::{PollStrategy, Update};
 
-mod components;
+pub mod components;
 pub mod icons;
 mod model;
 mod utils;
 
-use crate::{config::ParsedConfig, scope::Scope};
+use crate::{
+    config::{ParsedConfig, ParsedTuiConfig},
+    scope::Scope,
+};
 
 use super::{Actor, ActorContext, ActorMessage};
 
@@ -23,7 +26,8 @@ pub struct TuiActor {
 impl TuiActor {
     pub fn new(config: ParsedConfig, tx: Sender<ActorMessage>, scope: Scope) -> Self {
         let local_tx = tx.clone();
-        thread::spawn(|| start_model(local_tx));
+        let tui_config = config.tui.clone();
+        thread::spawn(|| start_model(tui_config, local_tx));
 
         Self { config, tx, scope }
     }
@@ -36,9 +40,9 @@ impl Actor for TuiActor {
     async fn handle_message(&mut self, _message: ActorMessage) {}
 }
 
-fn start_model(tx: Sender<ActorMessage>) {
+fn start_model(config: ParsedTuiConfig, tx: Sender<ActorMessage>) {
     // Setup model
-    let mut model = Model::new(tx);
+    let mut model = Model::new(config, tx);
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
     let _ = model.terminal.enable_raw_mode();

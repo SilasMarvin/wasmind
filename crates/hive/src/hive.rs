@@ -3,7 +3,7 @@ use tokio::sync::broadcast;
 
 use crate::{
     actors::{
-        Action, Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
+        Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
         InterAgentMessage, Message,
         agent::Agent,
         tools::{
@@ -94,7 +94,7 @@ pub fn start_hive(runtime: &tokio::runtime::Runtime, config: ParsedConfig) -> Hi
             tracing::debug!(name = "hive_received_message", message = %message_json, message_type = std::any::type_name::<Message>());
 
             match msg.message {
-                Message::Action(Action::Exit) if msg.scope == MAIN_MANAGER_SCOPE => {
+                Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
                     // This is a horrible hack to let the tui restore the terminal first
                     tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                     // Notify main thread that we're exiting
@@ -173,7 +173,7 @@ pub fn start_headless_hive(
             tracing::debug!(name = "hive_message", message_type = std::any::type_name::<Message>(), message = %message_json);
 
             match msg.message {
-                Message::Action(Action::Exit) if msg.scope == MAIN_MANAGER_SCOPE => {
+                Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
                     let _ = exit_tx.send(());
                     break;
                 }

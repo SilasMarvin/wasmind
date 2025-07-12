@@ -20,8 +20,8 @@ use crate::{
 };
 
 use super::{
-    Action, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage,
-    UserContext, WaitReason,
+    ActorMessage, AgentMessage, AgentMessageType, AgentStatus, InterAgentMessage, UserContext,
+    WaitReason,
     tools::{Tool, wait},
 };
 
@@ -205,6 +205,9 @@ impl Assistant {
             whitelisted_commands,
             role,
         };
+
+        // Broadcast our initial state
+        s.broadcast_state_change();
 
         // If we have a task and we aren't waiting on actors just submit it here
         // We handle the case where we have a task and are waiting on actors in the handle_message
@@ -537,7 +540,7 @@ impl Actor for Assistant {
         for scope in self.live_spawned_agents_scope.clone() {
             let _ = self.tx.send(ActorMessage {
                 scope,
-                message: Message::Action(Action::Exit),
+                message: Message::Exit,
             });
         }
         self.live_spawned_agents_scope.clear();
@@ -780,7 +783,7 @@ impl Actor for Assistant {
                                             self.set_state(status.clone(), true);
                                             if matches!(status, AgentStatus::Done(..)) {
                                                 // When we are done we shutdown
-                                                self.broadcast(Message::Action(Action::Exit));
+                                                self.broadcast(Message::Exit);
                                             }
                                         }
                                     }
@@ -2314,7 +2317,7 @@ mod tests {
         // Should have sent exit messages to both sub-agents
         let mut exit_count = 0;
         while let Ok(msg) = rx.try_recv() {
-            if matches!(msg.message, Message::Action(Action::Exit)) {
+            if matches!(msg.message, Message::Exit) {
                 exit_count += 1;
             }
         }

@@ -6,7 +6,7 @@ use tracing::error;
 use xcap::{Window, image::RgbaImage};
 
 use crate::{
-    actors::{Action, Actor, ActorContext, Message, UserContext},
+    actors::{Actor, ActorContext, Message, UserContext},
     config::ParsedConfig,
     scope::Scope,
 };
@@ -117,15 +117,7 @@ impl Context {
 impl Actor for Context {
     const ACTOR_ID: &'static str = "context";
 
-    async fn handle_message(&mut self, message: ActorMessage) {
-        match &message.message {
-            Message::Action(Action::CaptureWindow) => {
-                self.handle_capture_window().await;
-            }
-            Message::Action(Action::CaptureClipboard) => {
-                self.handle_capture_clipboard().await;
-            }
-            _ => {}
-        }
+    async fn handle_message(&mut self, _message: ActorMessage) {
+        todo!()
     }
 }

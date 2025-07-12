@@ -1,8 +1,8 @@
 use serde::de::DeserializeOwned;
 
 use super::{
-    Action, Actor, ActorContext, ActorMessage, Message, ToolCallResult, ToolCallStatus,
-    ToolCallUpdate, ToolDisplayInfo,
+    Actor, ActorContext, ActorMessage, Message, ToolCallResult, ToolCallStatus, ToolCallUpdate,
+    ToolDisplayInfo,
 };
 use crate::llm_client;
 
@@ -95,7 +95,7 @@ impl<T: Tool + Send + 'static> Actor for T {
 
     async fn handle_message(&mut self, message: ActorMessage) {
         match message.message {
-            Message::Action(Action::Cancel) => self.handle_cancel().await,
+            Message::Cancel => self.handle_cancel().await,
             Message::AssistantToolCall(tool_call) if tool_call.function.name == Self::TOOL_NAME => {
                 self.handle_tool_call(tool_call).await;
             }

@@ -6,6 +6,7 @@ use tuirealm::{Application, EventListenerCfg, ListenerError, Update};
 
 use crate::actors::tui::components::dashboard::{DASHBOARD_SCOPE, DashboardComponent};
 use crate::actors::{ActorMessage, Message, UserContext};
+use crate::config::ParsedTuiConfig;
 use crate::hive::MAIN_MANAGER_SCOPE;
 use crate::scope::Scope;
 
@@ -49,9 +50,9 @@ where
 }
 
 impl Model<CrosstermTerminalAdapter> {
-    pub fn new(tx: Sender<ActorMessage>) -> Self {
+    pub fn new(config: ParsedTuiConfig, tx: Sender<ActorMessage>) -> Self {
         Self {
-            app: Self::init_app(tx.subscribe()),
+            app: Self::init_app(config, tx.subscribe()),
             tx,
             quit: false,
             redraw: true,
@@ -74,7 +75,10 @@ where
         );
     }
 
-    pub fn init_app(rx: Receiver<ActorMessage>) -> Application<Scope, TuiMessage, ActorMessage> {
+    pub fn init_app(
+        config: ParsedTuiConfig,
+        rx: Receiver<ActorMessage>,
+    ) -> Application<Scope, TuiMessage, ActorMessage> {
         let mut app: Application<Scope, TuiMessage, ActorMessage> = Application::init(
             EventListenerCfg::default()
                 .crossterm_input_listener(Duration::from_millis(5), 1)
@@ -90,7 +94,7 @@ where
         assert!(
             app.mount(
                 DASHBOARD_SCOPE.clone(),
-                Box::new(DashboardComponent::new()),
+                Box::new(DashboardComponent::new(config)),
                 Vec::default()
             )
             .is_ok()

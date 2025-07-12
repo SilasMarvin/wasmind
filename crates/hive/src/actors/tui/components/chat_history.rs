@@ -38,6 +38,24 @@ fn create_user_widget(content: String, area: Rect) -> (Box<dyn WidgetRef>, u16) 
     (Box::new(message_paragraph), min_height)
 }
 
+fn create_system_widget(content: String, area: Rect) -> (Box<dyn WidgetRef>, u16) {
+    let borders = tuirealm::props::Borders::default();
+    let block = create_block_with_title(
+        format!("[ {} System ]", icons::USER_ICON),
+        borders,
+        false,
+        Some(Padding::uniform(1)),
+    );
+    let message_paragraph = Paragraph::new(content)
+        .block(block)
+        .style(Style::new())
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+    let min_height = message_paragraph.line_count(area.width) as u16;
+
+    (Box::new(message_paragraph), min_height)
+}
+
 fn create_tool_widget(
     tool_call: ToolCall,
     status: &ToolCallStatus,
@@ -180,7 +198,7 @@ impl AssistantInfo {
                 for message in chat_messages {
                     let widgets = match message {
                         ChatMessage::System { content } => {
-                            vec![create_user_widget(content, area)]
+                            vec![create_system_widget(content, area)]
                         }
                         ChatMessage::User { content } => {
                             vec![create_user_widget(content, area)]

@@ -1,6 +1,6 @@
 use crate::{
     actors::{
-        ActorMessage, AgentType,
+        ActorMessage, AgentStatus, AgentType,
         tui::{
             icons::{MAIN_MANAGER_ICON, SUB_MANGER_ICON, WORKER_ICON},
             model::TuiMessage,
@@ -19,7 +19,7 @@ use tuirealm::{
 };
 
 pub const WIDGET_WIDTH: u16 = 50;
-pub const WIDGET_HEIGHT: u16 = 11;
+pub const WIDGET_HEIGHT: u16 = 9;
 
 fn get_icon_for_agent_type(agent_type: AgentType) -> &'static str {
     match agent_type {
@@ -29,12 +29,39 @@ fn get_icon_for_agent_type(agent_type: AgentType) -> &'static str {
     }
 }
 
-#[derive(Default)]
-struct AgentStats {
-    context_size: u64,
-    requests_sent: u64,
+#[derive(Default, Copy, Clone)]
+pub struct AgentMetrics {
+    completion_requests_sent: u64,
     tools_called: u64,
     total_tokens_used: u64,
+}
+
+impl AgentMetrics {
+    pub fn with_tool_call() -> Self {
+        Self {
+            tools_called: 1,
+            ..Default::default()
+        }
+    }
+
+    pub fn with_completion_request() -> Self {
+        Self {
+            completion_requests_sent: 1,
+            ..Default::default()
+        }
+    }
+}
+
+impl std::ops::Add<AgentMetrics> for AgentMetrics {
+    type Output = AgentMetrics;
+
+    fn add(self, rhs: AgentMetrics) -> Self::Output {
+        AgentMetrics {
+            completion_requests_sent: self.completion_requests_sent + rhs.completion_requests_sent,
+            tools_called: self.tools_called + rhs.tools_called,
+            total_tokens_used: self.total_tokens_used + rhs.total_tokens_used,
+        }
+    }
 }
 
 #[derive(MockComponent)]
@@ -56,24 +83,36 @@ impl AgentComponent {
                 is_selected,
                 agent_type,
                 role,
-                stats: AgentStats::default(),
+                metrics: AgentMetrics::default(),
                 state: State::None,
                 props: Props::default(),
                 task,
+                status: None,
+                context_size: 0,
             },
         }
+    }
+
+    pub fn set_status(&mut self, status: AgentStatus) {
+        self.component.status = Some(status);
+    }
+
+    pub fn increment_metrics(&mut self, metrics: AgentMetrics) {
+        self.component.metrics = self.component.metrics.clone() + metrics;
     }
 }
 
 pub struct Agent {
     pub id: Scope,
     pub is_selected: bool,
-    stats: AgentStats,
+    metrics: AgentMetrics,
     props: Props,
     state: State,
     pub agent_type: AgentType,
     role: String,
     task: Option<String>,
+    context_size: u64,
+    status: Option<AgentStatus>,
 }
 
 impl MockComponent for Agent {
@@ -113,24 +152,27 @@ impl MockComponent for Agent {
             render_paragraph.render(render_paragraph_chunk, frame.buffer_mut());
 
             // Context
-            let paragraph_chunk = Rect::new(area.x + 2, area.y + 8, area.width, 2);
-            let paragraph = Paragraph::new(format!("Context\n{}", self.stats.context_size));
+            let paragraph_chunk = Rect::new(area.x + 2, area.y + 6, area.width, 2);
+            let paragraph = Paragraph::new(format!("Context\n{}", self.context_size));
             paragraph.render(paragraph_chunk, frame.buffer_mut());
 
-            // Context
-            let paragraph_chunk = Rect::new(area.x + 12, area.y + 8, area.width, 2);
-            let paragraph = Paragraph::new(format!("Requests\n{}", self.stats.requests_sent));
+            // Requests Made
+            let paragraph_chunk = Rect::new(area.x + 12, area.y + 6, area.width, 2);
+            let paragraph = Paragraph::new(format!(
+                "Requests\n{}",
+                self.metrics.completion_requests_sent
+            ));
             paragraph.render(paragraph_chunk, frame.buffer_mut());
 
             // Tool Calls
-            let paragraph_chunk = Rect::new(area.x + 23, area.y + 8, area.width, 2);
-            let paragraph = Paragraph::new(format!("Tool Calls\n{}", self.stats.tools_called));
+            let paragraph_chunk = Rect::new(area.x + 23, area.y + 6, area.width, 2);
+            let paragraph = Paragraph::new(format!("Tool Calls\n{}", self.metrics.tools_called));
             paragraph.render(paragraph_chunk, frame.buffer_mut());
 
-            // Tool Calls
-            let paragraph_chunk = Rect::new(area.x + 36, area.y + 8, area.width, 2);
+            // Tokens Used
+            let paragraph_chunk = Rect::new(area.x + 36, area.y + 6, area.width, 2);
             let paragraph =
-                Paragraph::new(format!("Tokens Used\n{}", self.stats.total_tokens_used));
+                Paragraph::new(format!("Tokens Used\n{}", self.metrics.total_tokens_used));
             paragraph.render(paragraph_chunk, frame.buffer_mut());
         }
     }

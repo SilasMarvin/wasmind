@@ -1,4 +1,4 @@
-use crate::actors::{Action, ActorContext, ActorMessage, AgentMessage, Message, ToolCallResult};
+use crate::actors::{ActorContext, ActorMessage, AgentMessage, Message, ToolCallResult};
 use crate::llm_client::ToolCall;
 use crate::scope::Scope;
 use tokio::sync::broadcast;
@@ -89,7 +89,7 @@ impl Tool for FlagIssueForReviewTool {
             }),
         );
 
-        self.broadcast(Message::Action(Action::Exit));
+        self.broadcast(Message::Exit);
 
         self.broadcast_finished(
             &tool_call.id,

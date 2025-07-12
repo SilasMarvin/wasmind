@@ -46,14 +46,7 @@ impl CheckHealthActor {
     pub fn handle_assistant_request(&mut self, assistant_request: AssistantRequest) {
         self.last_assistant_request = Some(assistant_request.clone());
         if self.last_check.elapsed() >= self.check_interval {
-            let parsed_model_config = self
-                .config
-                .hive
-                .temporal
-                .check_health
-                .as_ref()
-                .unwrap_or(&self.config.hive.worker_model)
-                .clone();
+            let parsed_model_config = self.config.hive.temporal.check_health.clone();
 
             // TODO: Improve how are generating the transcript - maybe we can shorten it / make it cleaner
             let request = ChatRequest {

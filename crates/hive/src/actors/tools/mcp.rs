@@ -14,9 +14,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info};
 
-use crate::actors::{
-    Action, Actor, ActorContext, ActorMessage, Message, ToolCallStatus, ToolCallUpdate,
-};
+use crate::actors::{Actor, ActorContext, ActorMessage, Message, ToolCallStatus, ToolCallUpdate};
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
@@ -340,7 +338,7 @@ impl Actor for MCP {
 
         match message.message {
             Message::AssistantToolCall(tool_call) => self.handle_tool_call(tool_call).await,
-            Message::Action(Action::Cancel) => {
+            Message::Cancel => {
                 // Cancel all running MCP calls
                 self.cancel_all_calls();
             }

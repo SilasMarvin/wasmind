@@ -1,6 +1,7 @@
+use crate::actors::tui::components::llm_textarea::LLMTextAreaComponent;
 use crate::actors::tui::utils;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
-use crate::{actors::tui::components::llm_textarea::LLMTextAreaComponent, scope::Scope};
+use crate::config::ParsedTuiConfig;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::widgets::Padding;
 use tuirealm::props::{BorderSides, Borders};
@@ -13,18 +14,35 @@ use tuirealm::{
 use super::chat_history::ChatHistoryComponent;
 use super::scrollable::ScrollableComponent;
 
+/// Actions the user can bind keys to
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ChatUserAction {
+    Assist,
+}
+
+impl TryFrom<&str> for ChatUserAction {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "Assist" => Ok(ChatUserAction::Assist),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(MockComponent)]
 pub struct ChatAreaComponent {
     component: ChatArea,
 }
 
 impl ChatAreaComponent {
-    pub fn new() -> Self {
+    pub fn new(config: ParsedTuiConfig) -> Self {
         Self {
             component: ChatArea {
                 props: Props::default(),
                 state: State::One(StateValue::String("".to_string())),
-                llm_textarea: LLMTextAreaComponent::new(),
+                llm_textarea: LLMTextAreaComponent::new(config.clone()),
                 chat_history: ScrollableComponent::new(Box::new(ChatHistoryComponent::new()), true),
             },
         }

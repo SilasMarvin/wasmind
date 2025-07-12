@@ -20,7 +20,7 @@ use whisper_rs::{
     FullParams, GGMLLogLevel, SamplingStrategy, WhisperContext, WhisperContextParameters,
 };
 
-use crate::actors::{Action, Actor, ActorContext, Message};
+use crate::actors::{Actor, ActorContext, Message};
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
 
@@ -112,11 +112,8 @@ impl Microphone {
 impl Actor for Microphone {
     const ACTOR_ID: &'static str = "microphone";
 
-    async fn handle_message(&mut self, message: ActorMessage) {
-        match message.message {
-            Message::Action(Action::ToggleRecordMicrophone) => self.handle_toggle_record().await,
-            _ => (),
-        }
+    async fn handle_message(&mut self, _message: ActorMessage) {
+        todo!()
     }
 }
 

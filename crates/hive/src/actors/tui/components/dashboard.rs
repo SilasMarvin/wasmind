@@ -1,4 +1,5 @@
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
+use crate::config::ParsedTuiConfig;
 use crate::scope::Scope;
 use ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::{
@@ -14,23 +15,48 @@ use super::scrollable::ScrollableComponent;
 pub const DASHBOARD_SCOPE: Scope =
     Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-d68b0e6c4cf1"));
 
+/// Actions the user can bind keys to
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DashboardUserAction {
+    ToggleFocus,
+    FocusGraph,
+    FocusChat,
+}
+
+impl TryFrom<&str> for DashboardUserAction {
+    type Error = ();
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "ToggleFocus" => Ok(DashboardUserAction::ToggleFocus),
+            "FocusGraph" => Ok(DashboardUserAction::FocusGraph),
+            "FocusChat" => Ok(DashboardUserAction::FocusChat),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(MockComponent)]
 pub struct DashboardComponent {
     component: Dashboard,
+    config: ParsedTuiConfig,
+    focus_chat: bool,
 }
 
 impl DashboardComponent {
-    pub fn new() -> Self {
+    pub fn new(config: ParsedTuiConfig) -> Self {
         Self {
             component: Dashboard {
                 state: State::None,
                 props: Props::default(),
                 graph_area_component: ScrollableComponent::new(
-                    Box::new(GraphAreaComponent::new()),
+                    Box::new(GraphAreaComponent::new(config.clone())),
                     false,
                 ),
-                chat_area_component: ChatAreaComponent::new(),
+                chat_area_component: ChatAreaComponent::new(config.clone()),
             },
+            config,
+            focus_chat: true,
         }
     }
 }
@@ -73,15 +99,41 @@ impl MockComponent for Dashboard {
 
 impl Component<TuiMessage, ActorMessage> for DashboardComponent {
     fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
-        // TODO: Control which one is active
-        match (
-            self.component.graph_area_component.on(ev.clone()),
-            self.component.chat_area_component.on(ev),
-        ) {
-            (None, None) => None,
-            (None, Some(msg)) => Some(msg),
-            (Some(msg), None) => Some(msg),
-            (Some(msg1), Some(msg2)) => Some(TuiMessage::Batch(vec![msg1, msg2])),
+        match &ev {
+            Event::Keyboard(key_event) => {
+                if let Some(action) = self.config.dashboard.key_bindings.get(&key_event) {
+                    match action {
+                        DashboardUserAction::ToggleFocus => self.focus_chat = !self.focus_chat,
+                        DashboardUserAction::FocusGraph => self.focus_chat = false,
+                        DashboardUserAction::FocusChat => self.focus_chat = true,
+                    }
+                    None
+                } else {
+                    if self.focus_chat {
+                        self.component.chat_area_component.on(ev)
+                    } else {
+                        self.component.graph_area_component.on(ev.clone())
+                    }
+                }
+            }
+            Event::Mouse(_) => {
+                if self.focus_chat {
+                    self.component.chat_area_component.on(ev)
+                } else {
+                    self.component.graph_area_component.on(ev.clone())
+                }
+            }
+            _ => {
+                match (
+                    self.component.graph_area_component.on(ev.clone()),
+                    self.component.chat_area_component.on(ev),
+                ) {
+                    (None, None) => None,
+                    (None, Some(msg)) => Some(msg),
+                    (Some(msg), None) => Some(msg),
+                    (Some(msg1), Some(msg2)) => Some(TuiMessage::Batch(vec![msg1, msg2])),
+                }
+            }
         }
     }
 }

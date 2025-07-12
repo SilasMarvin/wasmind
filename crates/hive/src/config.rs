@@ -1,14 +1,18 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use snafu::{ResultExt, Snafu};
-use std::{collections::HashMap, fs, io, path::PathBuf};
+use std::{
+    collections::HashMap,
+    fs, io,
+    path::{Path, PathBuf},
+};
 use toml::Table;
+use tuirealm::event::{Key, KeyEvent, KeyModifiers};
 
-use crate::actors::Action;
-
-pub type KeyBinding = Vec<KeyEvent>;
+use crate::actors::tui::components::{
+    chat::ChatUserAction, dashboard::DashboardUserAction, graph::GraphUserAction,
+};
 
 /// Errors while getting the config
 #[derive(Debug, Snafu)]
@@ -24,7 +28,7 @@ pub enum ConfigError {
     #[snafu(transparent)]
     IO { source: io::Error },
 
-    #[snafu(display("No model specified for: {model_for} and no default model"))]
+    #[snafu(display("No model config / invalid model config specified for: {model_for}"))]
     MissingModel { model_for: String },
 
     #[snafu(display("Error deserializing config. Double check all fields are valid"))]
@@ -50,15 +54,54 @@ fn get_config_file_path() -> PathBuf {
     strategy.config_dir().join("config.toml")
 }
 
+#[derive(Deserialize, Default, Debug)]
+pub struct DashboardConfig {
+    #[serde(default)]
+    clear_defaults: bool,
+    #[serde(default)]
+    key_bindings: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParsedDashboardConfig {
+    pub key_bindings: HashMap<KeyEvent, DashboardUserAction>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+pub struct GraphConfig {
+    #[serde(default)]
+    clear_defaults: bool,
+    #[serde(default)]
+    key_bindings: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParsedGraphConfig {
+    pub key_bindings: HashMap<KeyEvent, GraphUserAction>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+pub struct ChatConfig {
+    #[serde(default)]
+    clear_defaults: bool,
+    #[serde(default)]
+    key_bindings: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParsedChatConfig {
+    pub key_bindings: HashMap<KeyEvent, ChatUserAction>,
+}
+
 /// The config we deserialize directly from toml
 #[derive(Deserialize)]
 pub struct Config {
     #[serde(default)]
-    key_bindings: KeyConfig,
+    tui: TuiConfig,
     #[serde(default)]
     mcp_servers: HashMap<String, McpServerConfig>,
     #[serde(default)]
-    whitelisted_commands: Vec<String>,
+    whitelisted_commands: Option<Vec<String>>,
     #[serde(default)]
     pub auto_approve_commands: bool,
     #[serde(default)]
@@ -78,70 +121,56 @@ impl Config {
             get_config_file_path()
         };
 
-        tracing::debug!("Looking for config file at: {:?}", config_file_path);
-        let user_config: Option<Config> = if fs::exists(&config_file_path)? {
-            tracing::debug!("Found user config file");
-            let contents = fs::read_to_string(&config_file_path)?;
+        Config::from_file(config_file_path, is_headless)
+    }
+
+    pub fn from_file<P: AsRef<Path>>(path: P, is_headless: bool) -> Result<Self, ConfigError> {
+        // tracing::debug!("Looking for config file at: {:?}", path);
+        let user_config: Option<Config> = if fs::exists(&path)? {
+            tracing::debug!("Found config file");
+            let contents = fs::read_to_string(&path)?;
             Some(toml::from_str(&contents).context(TomlDeserializeSnafu)?)
         } else {
-            tracing::debug!("No user config file found, using defaults");
+            tracing::debug!("No config file found, using defaults");
             None
         };
 
+        let mut default = Config::load_default(is_headless)?;
+
         if let Some(mut user_config) = user_config {
-            // Always load default config to get whitelisted commands
-            let default = Config::load_default(is_headless)?;
+            // Combine hive pieces
 
-            if user_config.key_bindings.clear_defaults {
-                // Even with clear_defaults, use default whitelisted commands if user hasn't specified any
-                if user_config.whitelisted_commands.is_empty() {
-                    user_config.whitelisted_commands = default.whitelisted_commands;
-                }
-                Ok(user_config)
-            } else {
-                // Merge key bindings: add default bindings that don't conflict with user bindings
-                for (binding, action) in default.key_bindings.bindings {
-                    // Only add default bindings if the user hasn't defined this binding
-                    if !user_config.key_bindings.bindings.contains_key(&binding) {
-                        user_config.key_bindings.bindings.insert(binding, action);
-                    }
-                }
-
-                // Merge whitelisted commands if user config doesn't have any
-                // or extend the default list with user's additional commands
-                if user_config.whitelisted_commands.is_empty() {
-                    user_config.whitelisted_commands = default.whitelisted_commands;
-                } else {
-                    // Prepend default whitelisted commands to user's list
-                    let mut merged_whitelist = default.whitelisted_commands;
-                    merged_whitelist.extend(user_config.whitelisted_commands);
-                    // Remove duplicates while preserving order
-                    let mut seen = std::collections::HashSet::new();
-                    user_config.whitelisted_commands = merged_whitelist
-                        .into_iter()
-                        .filter(|cmd| seen.insert(cmd.clone()))
-                        .collect();
-                }
-
-                Ok(user_config)
+            if !user_config.tui.dashboard.clear_defaults {
+                default
+                    .tui
+                    .dashboard
+                    .key_bindings
+                    .extend(user_config.tui.dashboard.key_bindings.into_iter());
+                user_config.tui.dashboard.key_bindings = default.tui.dashboard.key_bindings;
             }
+
+            if !user_config.tui.graph.clear_defaults {
+                default
+                    .tui
+                    .graph
+                    .key_bindings
+                    .extend(user_config.tui.graph.key_bindings.into_iter());
+                user_config.tui.graph.key_bindings = default.tui.graph.key_bindings;
+            }
+
+            if !user_config.tui.chat.clear_defaults {
+                default
+                    .tui
+                    .chat
+                    .key_bindings
+                    .extend(user_config.tui.chat.key_bindings.into_iter());
+                user_config.tui.chat.key_bindings = default.tui.chat.key_bindings;
+            }
+
+            Ok(user_config)
         } else {
-            let config = Config::load_default(is_headless)?;
-            Ok(config)
+            Ok(default)
         }
-    }
-
-    pub fn from_file(path: &str, is_headless: bool) -> Result<Self, ConfigError> {
-        let contents = fs::read_to_string(path)?;
-        let mut config: Config = toml::from_str(&contents).context(TomlDeserializeSnafu)?;
-
-        // Merge with default whitelisted commands if none specified
-        if config.whitelisted_commands.is_empty() {
-            let default = Config::load_default(is_headless)?;
-            config.whitelisted_commands = default.whitelisted_commands;
-        }
-
-        Ok(config)
     }
 
     pub fn load_default(is_headless: bool) -> Result<Self, ConfigError> {
@@ -158,18 +187,20 @@ impl Config {
 
 /// The key bindings we deserialize directly from toml
 #[derive(Deserialize, Default, Debug)]
-struct KeyConfig {
+struct TuiConfig {
     #[serde(default)]
-    clear_defaults: bool,
+    dashboard: DashboardConfig,
     #[serde(default)]
-    bindings: HashMap<String, String>,
+    chat: ChatConfig,
+    #[serde(default)]
+    graph: GraphConfig,
 }
 
 /// The model configuration we deserialize directly from toml
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct ModelConfig {
     pub model_name: Option<String>,
-    pub system_prompt: String,
+    pub system_prompt: Option<String>,
     pub litellm_params: Option<Table>,
 }
 
@@ -236,7 +267,7 @@ impl Default for LiteLLMConfig {
 pub struct TemporalConfig {
     /// Model configuration for check_health temporal worker
     #[serde(default)]
-    pub check_health: Option<ModelConfig>,
+    pub check_health: ModelConfig,
 }
 
 /// HIVE multi-agent configuration
@@ -273,30 +304,69 @@ impl TryFrom<Config> for ParsedConfig {
     type Error = ConfigError;
 
     fn try_from(value: Config) -> Result<Self, Self::Error> {
-        let keys = {
-            let bindings = value
-                .key_bindings
-                .bindings
-                .into_iter()
-                .map(|(binding, action)| {
-                    let Some(parsed_binding) = parse_key_combination(&binding) else {
-                        return Err(ConfigError::InvalidBinding { binding });
-                    };
+        let tui = ParsedTuiConfig {
+            dashboard: ParsedDashboardConfig {
+                key_bindings: value
+                    .tui
+                    .dashboard
+                    .key_bindings
+                    .into_iter()
+                    .map(|(binding, action)| {
+                        let Some(parsed_binding) = parse_key_combination(&binding) else {
+                            return Err(ConfigError::InvalidBinding { binding });
+                        };
 
-                    let Some(action) = Action::from_str(&action) else {
-                        return Err(ConfigError::InvalidActionForBinding { action, binding });
-                    };
+                        let Ok(action) = DashboardUserAction::try_from(action.as_str()) else {
+                            return Err(ConfigError::InvalidActionForBinding { action, binding });
+                        };
 
-                    Ok((parsed_binding, action))
-                })
-                .collect::<Result<_, _>>()?;
+                        Ok((parsed_binding, action))
+                    })
+                    .collect::<Result<_, _>>()?,
+            },
+            chat: ParsedChatConfig {
+                key_bindings: value
+                    .tui
+                    .chat
+                    .key_bindings
+                    .into_iter()
+                    .map(|(binding, action)| {
+                        let Some(parsed_binding) = parse_key_combination(&binding) else {
+                            return Err(ConfigError::InvalidBinding { binding });
+                        };
 
-            ParsedKeyConfig { bindings }
+                        let Ok(action) = ChatUserAction::try_from(action.as_str()) else {
+                            return Err(ConfigError::InvalidActionForBinding { action, binding });
+                        };
+
+                        Ok((parsed_binding, action))
+                    })
+                    .collect::<Result<_, _>>()?,
+            },
+            graph: ParsedGraphConfig {
+                key_bindings: value
+                    .tui
+                    .graph
+                    .key_bindings
+                    .into_iter()
+                    .map(|(binding, action)| {
+                        let Some(parsed_binding) = parse_key_combination(&binding) else {
+                            return Err(ConfigError::InvalidBinding { binding });
+                        };
+
+                        let Ok(action) = serde_json::from_str(&action) else {
+                            return Err(ConfigError::InvalidActionForBinding { action, binding });
+                        };
+
+                        Ok((parsed_binding, action))
+                    })
+                    .collect::<Result<_, _>>()?,
+            },
         };
 
         let mcp_servers = value.mcp_servers;
 
-        let whitelisted_commands = value.whitelisted_commands;
+        let whitelisted_commands = value.whitelisted_commands.unwrap_or(vec![]);
         let auto_approve_commands = value.auto_approve_commands;
 
         let base_url = format!("http://localhost:{}", value.hive.litellm.port);
@@ -326,31 +396,20 @@ impl TryFrom<Config> for ParsedConfig {
                 model_for: "worker_model".to_string(),
             })?,
             temporal: ParsedTemporalConfig {
-                check_health: value
-                    .hive
-                    .temporal
-                    .check_health
-                    .map(|config| {
-                        parse_model_config(config, &value.hive.default_model, &base_url).ok_or(
-                            ConfigError::MissingModel {
-                                model_for: "temporal.check_health".to_string(),
-                            },
-                        )
-                    })
-                    .transpose()?,
+                check_health: parse_model_config(
+                    value.hive.temporal.check_health,
+                    &value.hive.default_model,
+                    &base_url,
+                )
+                .ok_or(ConfigError::MissingModel {
+                    model_for: "temporal.check_health".to_string(),
+                })?,
             },
             litellm: value.hive.litellm,
         };
 
-        tracing::error!("THE PARSED HIVE CONFIG:\n{:?}", hive);
-
-        tracing::error!(
-            "THE PARSED HIVE CONFIG FOR THE WORKER_MODEL\n{:?}",
-            hive.worker_model
-        );
-
         Ok(Self {
-            keys,
+            tui,
             mcp_servers,
             whitelisted_commands,
             auto_approve_commands,
@@ -362,19 +421,19 @@ impl TryFrom<Config> for ParsedConfig {
 /// The parsed and verified config
 #[derive(Debug, Clone)]
 pub struct ParsedConfig {
-    pub keys: ParsedKeyConfig,
+    pub tui: ParsedTuiConfig,
     pub mcp_servers: HashMap<String, McpServerConfig>,
     pub whitelisted_commands: Vec<String>,
     pub auto_approve_commands: bool,
     pub hive: ParsedHiveConfig,
 }
 
-/// The parsed and verified key bindings
-/// For now we only allow mapping one event to an action but in the future we may allow creating vec![] of
-/// key events
+/// The parsed and verified tui config
 #[derive(Debug, Clone)]
-pub struct ParsedKeyConfig {
-    pub bindings: HashMap<KeyBinding, Action>,
+pub struct ParsedTuiConfig {
+    pub dashboard: ParsedDashboardConfig,
+    pub chat: ParsedChatConfig,
+    pub graph: ParsedGraphConfig,
 }
 
 /// The parsed and verified model config
@@ -389,7 +448,7 @@ pub struct ParsedModelConfig {
 /// The parsed and verified temporal config
 #[derive(Debug, Clone)]
 pub struct ParsedTemporalConfig {
-    pub check_health: Option<ParsedModelConfig>,
+    pub check_health: ParsedModelConfig,
 }
 
 /// The parsed and verified HIVE config
@@ -433,6 +492,7 @@ fn parse_model_config(
         .as_ref()
         .map(|dm| dm.model_name.clone())
         .flatten())
+        && let Some(system_prompt) = model_config.system_prompt
         && let Some(litellm_params) = model_config.litellm_params.or(default_model
             .as_ref()
             .map(|dm| dm.litellm_params.clone())
@@ -440,7 +500,7 @@ fn parse_model_config(
     {
         Some(ParsedModelConfig {
             model_name,
-            system_prompt: model_config.system_prompt,
+            system_prompt: system_prompt,
             litellm_params: litellm_params
                 .into_iter()
                 .map(|(key, value)| (key, convert_toml_to_json(value)))
@@ -452,97 +512,34 @@ fn parse_model_config(
     }
 }
 
-pub fn parse_key_combination(input: &str) -> Option<KeyBinding> {
+fn parse_key_combination(input: &str) -> Option<KeyEvent> {
     let parts: Vec<&str> = input.split('-').collect();
     let mut modifiers = KeyModifiers::empty();
-    let mut key_code = None;
 
-    for part in parts {
-        match part {
-            // Modifiers
-            "ctrl" => modifiers |= KeyModifiers::CONTROL,
-            "alt" => modifiers |= KeyModifiers::ALT,
-            "meta" | "cmd" | "super" | "win" => modifiers |= KeyModifiers::SUPER,
-            "shift" => modifiers |= KeyModifiers::SHIFT,
+    // Handle the last part as the key, everything before it as modifiers
+    let (modifier_parts, key_part) = parts.split_at(parts.len() - 1);
 
-            // Letters
-            "a" => key_code = Some(KeyCode::Char('a')),
-            "b" => key_code = Some(KeyCode::Char('b')),
-            "c" => key_code = Some(KeyCode::Char('c')),
-            "d" => key_code = Some(KeyCode::Char('d')),
-            "e" => key_code = Some(KeyCode::Char('e')),
-            "f" => key_code = Some(KeyCode::Char('f')),
-            "g" => key_code = Some(KeyCode::Char('g')),
-            "h" => key_code = Some(KeyCode::Char('h')),
-            "i" => key_code = Some(KeyCode::Char('i')),
-            "j" => key_code = Some(KeyCode::Char('j')),
-            "k" => key_code = Some(KeyCode::Char('k')),
-            "l" => key_code = Some(KeyCode::Char('l')),
-            "m" => key_code = Some(KeyCode::Char('m')),
-            "n" => key_code = Some(KeyCode::Char('n')),
-            "o" => key_code = Some(KeyCode::Char('o')),
-            "p" => key_code = Some(KeyCode::Char('p')),
-            "q" => key_code = Some(KeyCode::Char('q')),
-            "r" => key_code = Some(KeyCode::Char('r')),
-            "s" => key_code = Some(KeyCode::Char('s')),
-            "t" => key_code = Some(KeyCode::Char('t')),
-            "u" => key_code = Some(KeyCode::Char('u')),
-            "v" => key_code = Some(KeyCode::Char('v')),
-            "w" => key_code = Some(KeyCode::Char('w')),
-            "x" => key_code = Some(KeyCode::Char('x')),
-            "y" => key_code = Some(KeyCode::Char('y')),
-            "z" => key_code = Some(KeyCode::Char('z')),
-
-            // Numbers
-            "0" => key_code = Some(KeyCode::Char('0')),
-            "1" => key_code = Some(KeyCode::Char('1')),
-            "2" => key_code = Some(KeyCode::Char('2')),
-            "3" => key_code = Some(KeyCode::Char('3')),
-            "4" => key_code = Some(KeyCode::Char('4')),
-            "5" => key_code = Some(KeyCode::Char('5')),
-            "6" => key_code = Some(KeyCode::Char('6')),
-            "7" => key_code = Some(KeyCode::Char('7')),
-            "8" => key_code = Some(KeyCode::Char('8')),
-            "9" => key_code = Some(KeyCode::Char('9')),
-
-            // Special keys
-            "enter" => key_code = Some(KeyCode::Enter),
-            "escape" | "esc" => key_code = Some(KeyCode::Esc),
-            "space" => key_code = Some(KeyCode::Char(' ')),
-            "tab" => key_code = Some(KeyCode::Tab),
-            "backspace" => key_code = Some(KeyCode::Backspace),
-            "delete" | "del" => key_code = Some(KeyCode::Delete),
-            "insert" => key_code = Some(KeyCode::Insert),
-            "home" => key_code = Some(KeyCode::Home),
-            "end" => key_code = Some(KeyCode::End),
-            "pageup" => key_code = Some(KeyCode::PageUp),
-            "pagedown" => key_code = Some(KeyCode::PageDown),
-            "up" => key_code = Some(KeyCode::Up),
-            "down" => key_code = Some(KeyCode::Down),
-            "left" => key_code = Some(KeyCode::Left),
-            "right" => key_code = Some(KeyCode::Right),
-
-            // Function keys
-            "f1" => key_code = Some(KeyCode::F(1)),
-            "f2" => key_code = Some(KeyCode::F(2)),
-            "f3" => key_code = Some(KeyCode::F(3)),
-            "f4" => key_code = Some(KeyCode::F(4)),
-            "f5" => key_code = Some(KeyCode::F(5)),
-            "f6" => key_code = Some(KeyCode::F(6)),
-            "f7" => key_code = Some(KeyCode::F(7)),
-            "f8" => key_code = Some(KeyCode::F(8)),
-            "f9" => key_code = Some(KeyCode::F(9)),
-            "f10" => key_code = Some(KeyCode::F(10)),
-            "f11" => key_code = Some(KeyCode::F(11)),
-            "f12" => key_code = Some(KeyCode::F(12)),
-
+    // Parse modifiers
+    for modifier in modifier_parts {
+        match *modifier {
+            "ctrl" => modifiers.insert(KeyModifiers::CONTROL),
+            "alt" | "cmd" => modifiers.insert(KeyModifiers::ALT),
+            "shift" => modifiers.insert(KeyModifiers::SHIFT),
             _ => return None,
         }
     }
 
-    let key_code = key_code?;
-    let key_event = KeyEvent::new(key_code, modifiers);
-    Some(vec![key_event])
+    // Parse the actual key
+    let code = match key_part[0] {
+        s if s.len() == 1 => Key::Char(s.chars().next().unwrap()),
+        // TODO: Add other special keys here
+        "esc" => Key::Esc,
+        "enter" => Key::Enter,
+        "tab" => Key::Tab,
+        _ => return None,
+    };
+
+    Some(KeyEvent::new(code, modifiers))
 }
 
 #[cfg(test)]

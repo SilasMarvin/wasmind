@@ -1,9 +1,9 @@
 pub mod agent;
 pub mod assistant;
-#[cfg(feature = "gui")]
-pub mod context;
-#[cfg(feature = "audio")]
-pub mod microphone;
+// #[cfg(feature = "gui")]
+// pub mod context;
+// #[cfg(feature = "audio")]
+// pub mod microphone;
 pub mod state_system;
 pub mod temporal;
 pub mod tools;
@@ -23,37 +23,6 @@ use uuid::Uuid;
 pub struct PendingToolCall {
     pub tool_name: String,
     pub result: Option<ToolCallResult>,
-}
-
-/// Actions users can bind keys to
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Action {
-    #[cfg(feature = "gui")]
-    CaptureWindow,
-    #[cfg(feature = "gui")]
-    CaptureClipboard,
-    #[cfg(feature = "audio")]
-    ToggleRecordMicrophone,
-    Assist,
-    Cancel,
-    Exit,
-}
-
-impl Action {
-    pub fn from_str(value: &str) -> Option<Self> {
-        match value {
-            #[cfg(feature = "gui")]
-            "CaptureWindow" => Some(Action::CaptureWindow),
-            #[cfg(feature = "gui")]
-            "CaptureClipboard" => Some(Action::CaptureClipboard),
-            #[cfg(feature = "audio")]
-            "ToggleRecordMicrophone" => Some(Action::ToggleRecordMicrophone),
-            "Assist" => Some(Action::Assist),
-            "CancelAssist" => Some(Action::Cancel),
-            "Exit" => Some(Action::Exit),
-            _ => None,
-        }
-    }
 }
 
 /// ToolCall Update
@@ -202,12 +171,13 @@ pub struct AssistantRequest {
 /// The various messages actors can send
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Message {
-    // User actions from keyboard/TUI
-    // TODO: Redo this
-    Action(Action),
-
     // UserContext
     UserContext(UserContext),
+
+    // Cancel the current action in this scope
+    Cancel,
+    // Shutdown this scope
+    Exit,
 
     AssistantRequest(AssistantRequest),
     AssistantChatUpdated(Vec<llm_client::ChatMessage>),
@@ -329,7 +299,7 @@ pub trait Actor: ActorContext + Send + 'static {
                     match rx.recv().await {
                         Ok(ActorMessage {
                             scope,
-                            message: Message::Action(Action::Exit),
+                            message: Message::Exit,
                         }) => {
                             if &scope == self.get_scope() {
                                 tracing::info!("Actor received exit signal");

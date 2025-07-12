@@ -216,17 +216,25 @@ impl LiteLLMManager {
         }
 
         // Add temporal check_health model (if exists and different)
-        if let Some(check_health_model) = &parsed_config.hive.temporal.check_health {
-            if !check_health_model.model_name.is_empty()
-                && !model_list
-                    .iter()
-                    .any(|m| m.model_name == check_health_model.model_name)
-            {
-                model_list.push(LiteLLMModelEntry {
-                    model_name: check_health_model.model_name.clone(),
-                    litellm_params: check_health_model.litellm_params.clone(),
-                });
-            }
+        if !parsed_config
+            .hive
+            .temporal
+            .check_health
+            .model_name
+            .is_empty()
+            && !model_list
+                .iter()
+                .any(|m| m.model_name == parsed_config.hive.temporal.check_health.model_name)
+        {
+            model_list.push(LiteLLMModelEntry {
+                model_name: parsed_config.hive.temporal.check_health.model_name.clone(),
+                litellm_params: parsed_config
+                    .hive
+                    .temporal
+                    .check_health
+                    .litellm_params
+                    .clone(),
+            });
         }
 
         if model_list.is_empty() {
@@ -591,7 +599,10 @@ impl Drop for LiteLLMManager {
 mod tests {
     use super::*;
     use crate::{
-        config::{ParsedConfig, ParsedHiveConfig, ParsedModelConfig, ParsedTemporalConfig},
+        config::{
+            ParsedChatConfig, ParsedConfig, ParsedDashboardConfig, ParsedGraphConfig,
+            ParsedHiveConfig, ParsedModelConfig, ParsedTemporalConfig, ParsedTuiConfig,
+        },
         llm_client::{AssistantChatMessage, Tool},
     };
     use serde_json::json;
@@ -624,8 +635,16 @@ mod tests {
         temporal_params.insert("api_key".to_string(), json!("os.environ/ANTHROPIC_API_KEY"));
 
         ParsedConfig {
-            keys: crate::config::ParsedKeyConfig {
-                bindings: HashMap::new(),
+            tui: ParsedTuiConfig {
+                dashboard: ParsedDashboardConfig {
+                    key_bindings: HashMap::new(),
+                },
+                chat: ParsedChatConfig {
+                    key_bindings: HashMap::new(),
+                },
+                graph: ParsedGraphConfig {
+                    key_bindings: HashMap::new(),
+                },
             },
             mcp_servers: HashMap::new(),
             whitelisted_commands: vec![],
@@ -635,10 +654,7 @@ mod tests {
                 sub_manager_model: create_test_model_config("gpt-4o", HashMap::new()), // Same as main manager
                 worker_model: create_test_model_config("gpt-3.5-turbo", worker_params),
                 temporal: ParsedTemporalConfig {
-                    check_health: Some(create_test_model_config(
-                        "claude-3-sonnet",
-                        temporal_params,
-                    )),
+                    check_health: create_test_model_config("claude-3-sonnet", temporal_params),
                 },
                 litellm: crate::config::LiteLLMConfig::default(),
             },
@@ -715,7 +731,7 @@ mod tests {
         parsed_config.hive.main_manager_model = same_model.clone();
         parsed_config.hive.sub_manager_model = same_model.clone();
         parsed_config.hive.worker_model = same_model.clone();
-        parsed_config.hive.temporal.check_health = Some(same_model);
+        parsed_config.hive.temporal.check_health = same_model;
 
         let config_content =
             LiteLLMManager::generate_config(&parsed_config).expect("Should generate config");
@@ -736,7 +752,7 @@ mod tests {
         parsed_config.hive.main_manager_model.model_name = "".to_string();
         parsed_config.hive.sub_manager_model.model_name = "".to_string();
         parsed_config.hive.worker_model.model_name = "".to_string();
-        parsed_config.hive.temporal.check_health = None;
+        parsed_config.hive.temporal.check_health.model_name = "".to_string();
 
         let result = LiteLLMManager::generate_config(&parsed_config);
 
@@ -874,8 +890,16 @@ mod tests {
         openai_params.insert("api_key".to_string(), json!("os.environ/OPENAI_API_KEY"));
 
         ParsedConfig {
-            keys: crate::config::ParsedKeyConfig {
-                bindings: HashMap::new(),
+            tui: ParsedTuiConfig {
+                dashboard: ParsedDashboardConfig {
+                    key_bindings: HashMap::new(),
+                },
+                chat: ParsedChatConfig {
+                    key_bindings: HashMap::new(),
+                },
+                graph: ParsedGraphConfig {
+                    key_bindings: HashMap::new(),
+                },
             },
             mcp_servers: HashMap::new(),
             whitelisted_commands: vec![],
@@ -899,7 +923,14 @@ mod tests {
                     litellm_params: openai_params.clone(),
                     base_url: "http://localhost:4001".to_string(),
                 },
-                temporal: ParsedTemporalConfig { check_health: None },
+                temporal: ParsedTemporalConfig {
+                    check_health: ParsedModelConfig {
+                        model_name: "gpt-4o".to_string(),
+                        system_prompt: "You are a helpful assistant.".to_string(),
+                        litellm_params: openai_params.clone(),
+                        base_url: "http://localhost:4001".to_string(),
+                    },
+                },
                 litellm: crate::config::LiteLLMConfig {
                     port: 4001,
                     image: "ghcr.io/berriai/litellm:main-latest".to_string(),

@@ -1,10 +1,12 @@
 use crate::{
     actors::{ActorMessage, AgentType, tui::model::TuiMessage},
+    config::ParsedTuiConfig,
     hive::{MAIN_MANAGER_ROLE, MAIN_MANAGER_SCOPE},
     scope::Scope,
 };
-use agent::AgentComponent;
+use agent::{AgentComponent, AgentMetrics};
 use ratatui::{text::Span, widgets::Paragraph};
+use serde::Deserialize;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
@@ -13,9 +15,16 @@ use tuirealm::{
 
 use super::scrollable::ScrollableComponentTrait;
 
+mod agent;
+
 const LINE_INDENT: u16 = 5;
 
-mod agent;
+/// Actions the user can bind keys to
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+pub enum GraphUserAction {
+    SelectDown,
+    SelectUp,
+}
 
 struct AgentNode {
     is_selected: bool,
@@ -29,6 +38,17 @@ impl AgentNode {
             component,
             spawned_agents: vec![],
             is_selected: false,
+        }
+    }
+
+    fn increment_metrics(&mut self, scope: &Scope, metrics: AgentMetrics) -> bool {
+        if self.scope() == scope {
+            self.component.increment_metrics(metrics);
+            return true;
+        } else {
+            self.spawned_agents
+                .iter_mut()
+                .any(|child| child.increment_metrics(scope, metrics))
         }
     }
 
@@ -72,10 +92,11 @@ impl AgentNode {
 #[derive(MockComponent)]
 pub struct GraphAreaComponent {
     component: GraphArea,
+    config: ParsedTuiConfig,
 }
 
 impl GraphAreaComponent {
-    pub fn new() -> Self {
+    pub fn new(config: ParsedTuiConfig) -> Self {
         Self {
             component: GraphArea {
                 state: State::None,
@@ -90,6 +111,7 @@ impl GraphAreaComponent {
                 content_height: 0,
                 is_modified: false,
             },
+            config,
         }
     }
 }
@@ -222,8 +244,20 @@ impl Component<TuiMessage, ActorMessage> for GraphAreaComponent {
             Event::Keyboard(key_event) => None,
             Event::Mouse(mouse_event) => None,
             Event::User(actor_message) => match actor_message.message {
-                crate::actors::Message::AssistantRequest(assistant_request) => None,
-                crate::actors::Message::ToolCallUpdate(tool_call_update) => None,
+                crate::actors::Message::AssistantRequest(_) => {
+                    let metrics = AgentMetrics::with_completion_request();
+                    self.component
+                        .root_node
+                        .increment_metrics(&actor_message.scope, metrics);
+                    Some(TuiMessage::Redraw)
+                }
+                crate::actors::Message::AssistantToolCall(_) => {
+                    let metrics = AgentMetrics::with_tool_call();
+                    self.component
+                        .root_node
+                        .increment_metrics(&actor_message.scope, metrics);
+                    Some(TuiMessage::Redraw)
+                }
                 crate::actors::Message::Agent(agent_message) => match agent_message.message {
                     crate::actors::AgentMessageType::AgentSpawned {
                         agent_type,

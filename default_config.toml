@@ -5,42 +5,13 @@ auto_approve_commands = true
 
 # Commands that can be executed without user confirmation
 # Common safe commands are whitelisted by default
-whitelisted_commands = [
-    "ls",
-    "pwd",
-    "echo",
-    "cat",
-    "grep",
-    "rg",
-    "find",
-    "git",
-    "cargo",
-    "npm",
-    "node",
-    "python",
-    "pip",
-    "which",
-    "date",
-    "whoami",
-    "uname",
-    "head",
-    "tail",
-    "wc",
-    "sort",
-    "uniq",
-    "diff",
-    "tree"
-]
+whitelisted_commands = []
 
-[key_bindings]
-clear_defaults = false
+[tui.dashboard.key_bindings]
+"ctrl-n" = "ToggleFocus"
 
-[key_bindings.bindings]
-# "cmd-alt-w" = "CaptureWindow"
-# "cmd-alt-y" = "CaptureClipboard"
-# "cmd-alt-a" = "Assist"
-# "cmd-alt-m" = "ToggleRecordMicrophone"
-# "ctrl-c" = "Exit"
+[tui.chat.key_bindings]
+"ctrl-enter" = "Assist"
 
 # HIVE Multi-Agent System Configuration
 [hive]
