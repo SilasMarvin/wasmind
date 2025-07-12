@@ -87,8 +87,6 @@ impl Component<TuiMessage, ActorMessage> for LLMTextAreaComponent {
     fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
         match ev {
             Event::Keyboard(key_event) => {
-                tracing::error!("THE KEY EVENT: {:?}", key_event);
-                tracing::error!("THE ACTIONS: {:?}", self.config.chat.key_bindings);
                 if let Some(action) = self.config.chat.key_bindings.get(&key_event) {
                     match action {
                         super::chat::ChatUserAction::Assist => {

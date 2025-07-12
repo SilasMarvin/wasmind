@@ -11,7 +11,7 @@ whitelisted_commands = []
 "ctrl-n" = "ToggleFocus"
 
 [tui.chat.key_bindings]
-"ctrl-enter" = "Assist"
+"ctrl-a" = "Assist"
 
 # HIVE Multi-Agent System Configuration
 [hive]
