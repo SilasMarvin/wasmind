@@ -242,8 +242,8 @@ impl SystemState {
     }
 
     /// Remove an agent (when task is complete)
-    pub fn remove_agent(&mut self, agent_id: &Scope) {
-        if self.agents.remove(agent_id).is_some() {}
+    pub fn remove_agent(&mut self, agent_id: &Scope) -> Option<AgentTaskInfo> {
+        self.agents.remove(agent_id)
     }
 
     /// Get all agents

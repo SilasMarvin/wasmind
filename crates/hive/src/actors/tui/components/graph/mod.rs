@@ -1,5 +1,7 @@
 use crate::{
-    actors::{ActorMessage, AgentType, tui::model::TuiMessage},
+    actors::{
+        ActorMessage, AgentMessageType, AgentStatus, AgentType, Message, tui::model::TuiMessage,
+    },
     config::ParsedTuiConfig,
     hive::{MAIN_MANAGER_ROLE, MAIN_MANAGER_SCOPE},
     scope::Scope,
@@ -176,6 +178,17 @@ impl AgentNode {
         &self.component.component.id
     }
 
+    fn set_status(&mut self, scope: &Scope, status: &AgentStatus) -> bool {
+        if self.scope() == scope {
+            self.component.set_status(status.clone());
+            return true;
+        } else {
+            self.spawned_agents
+                .iter_mut()
+                .any(|agent| agent.set_status(scope, status))
+        }
+    }
+
     fn insert(&mut self, parent_scope: &Scope, node: AgentNode) -> Result<(), AgentNode> {
         if self.scope() == parent_scope {
             self.spawned_agents.push(Box::new(node));
@@ -199,6 +212,102 @@ impl AgentNode {
         }
 
         Err(node_to_insert)
+    }
+
+    /// Removes the node with the given scope and selects the previous node.
+    /// Returns the scope of the newly selected node, or None if no previous node exists.
+    fn remove(&mut self, scope: &Scope) -> Option<Scope> {
+        // Check if we need to remove self
+        if self.scope() == scope {
+            // Can't remove self from within the method
+            // This case should be handled by the parent
+            return None;
+        }
+
+        // Find and remove the child with the matching scope
+        let mut child_index = None;
+        for (index, child) in self.spawned_agents.iter().enumerate() {
+            if child.scope() == scope {
+                child_index = Some(index);
+                break;
+            }
+        }
+
+        if let Some(index) = child_index {
+            // Remove the child
+            let removed_child = self.spawned_agents.remove(index);
+
+            // Determine what to select next
+            if removed_child.component.component.is_selected {
+                // The removed node was selected, so select previous
+                if index > 0 {
+                    // Select the last descendant of the previous sibling
+                    let prev_sibling = &mut self.spawned_agents[index - 1];
+                    return Some(prev_sibling.select_last());
+                } else {
+                    // No previous sibling, select parent (self)
+                    self.component.component.is_selected = true;
+                    return Some(self.scope().clone());
+                }
+            } else {
+                // The removed node wasn't selected, so no selection change needed
+                // Return the currently selected node's scope if any
+                return self.find_selected_scope();
+            }
+        }
+
+        // Try to remove from children
+        for (index, child) in self.spawned_agents.iter_mut().enumerate() {
+            if child.contains_scope(scope) {
+                if let Some(new_selection) = child.remove(scope) {
+                    return Some(new_selection);
+                } else {
+                    // Child couldn't handle the removal (trying to remove itself)
+                    // Remove this child and handle selection
+                    let removed_child = self.spawned_agents.remove(index);
+
+                    if removed_child.contains_selected() {
+                        // Need to select previous
+                        if index > 0 {
+                            let prev_sibling = &mut self.spawned_agents[index - 1];
+                            return Some(prev_sibling.select_last());
+                        } else {
+                            self.component.component.is_selected = true;
+                            return Some(self.scope().clone());
+                        }
+                    } else {
+                        return self.find_selected_scope();
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Helper function to check if this subtree contains a node with the given scope
+    fn contains_scope(&self, scope: &Scope) -> bool {
+        if self.scope() == scope {
+            return true;
+        }
+        self.spawned_agents
+            .iter()
+            .any(|child| child.contains_scope(scope))
+    }
+
+    /// Helper function to find and return the scope of the currently selected node
+    fn find_selected_scope(&self) -> Option<Scope> {
+        if self.component.component.is_selected {
+            return Some(self.scope().clone());
+        }
+
+        for child in &self.spawned_agents {
+            if let Some(selected_scope) = child.find_selected_scope() {
+                return Some(selected_scope);
+            }
+        }
+
+        None
     }
 }
 
@@ -369,22 +478,43 @@ impl Component<TuiMessage, ActorMessage> for GraphAreaComponent {
                 }
             }
             Event::User(actor_message) => match actor_message.message {
-                crate::actors::Message::AssistantRequest(_) => {
+                Message::AssistantRequest(_) => {
                     let metrics = AgentMetrics::with_completion_request();
                     self.component
                         .root_node
                         .increment_metrics(&actor_message.scope, metrics);
                     Some(TuiMessage::Redraw)
                 }
-                crate::actors::Message::AssistantToolCall(_) => {
+                Message::AssistantToolCall(_) => {
                     let metrics = AgentMetrics::with_tool_call();
                     self.component
                         .root_node
                         .increment_metrics(&actor_message.scope, metrics);
                     Some(TuiMessage::Redraw)
                 }
-                crate::actors::Message::Agent(agent_message) => match agent_message.message {
-                    crate::actors::AgentMessageType::AgentSpawned {
+                Message::Agent(agent_message) => match agent_message.message {
+                    AgentMessageType::InterAgentMessage(
+                        crate::actors::InterAgentMessage::StatusUpdate { status },
+                    ) => {
+                        if matches!(status, AgentStatus::Done(_)) {
+                            if let Some(new_scope) =
+                                self.component.root_node.remove(&agent_message.agent_id)
+                            {
+                                Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(new_scope)))
+                            } else {
+                                tracing::error!("Error removing node and selecting previous");
+                                Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
+                                    MAIN_MANAGER_SCOPE.clone(),
+                                )))
+                            }
+                        } else {
+                            self.component
+                                .root_node
+                                .set_status(&agent_message.agent_id, &status);
+                            Some(TuiMessage::Redraw)
+                        }
+                    }
+                    AgentMessageType::AgentSpawned {
                         agent_type,
                         role,
                         task_description,

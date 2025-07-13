@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::{
     actors::{
-        Actor, ActorContext, AssistantRequest, Message, PendingToolCall, ToolCallStatus,
+        Actor, ActorContext, AssistantChatState, Message, PendingToolCall, ToolCallStatus,
         ToolCallUpdate,
     },
     config::ParsedModelConfig,
@@ -31,10 +31,16 @@ const ATTEMPTED_WAIT_ERROR_MESSAGE: &'static str =
     "ERROR: Attempted to wait when all sub agents are done. You must perform a different action.";
 
 /// Format an agent response for successful task completion
-pub fn format_agent_response_success(agent_id: &Scope, success: bool, summary: &str) -> String {
+pub fn format_agent_response_success(
+    agent_id: &Scope,
+    task: &str,
+    success: bool,
+    summary: &str,
+) -> String {
     format!(
-        "<sub_agent_complete id={}>status: {}\n\n{}</sub_agent_complete>",
+        "<sub_agent_complete id={}>\n<task>{}</task>\n<status>{}</status>\n<summary>{}</summary>\n</sub_agent_complete>",
         agent_id,
+        task,
         if success { "SUCCESS" } else { "FAILURE" },
         summary
     )
@@ -249,7 +255,13 @@ impl Assistant {
     /// Update chat history with a new message and broadcast the change
     fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessage>) {
         self.chat_history.extend(messages);
-        self.broadcast(Message::AssistantChatUpdated(self.chat_history.clone()));
+
+        let system_prompt = self.render_system_prompt();
+        self.broadcast(Message::AssistantChatUpdated(AssistantChatState {
+            system: system_prompt,
+            tools: self.available_tools.clone(),
+            messages: self.chat_history.clone(),
+        }));
     }
 
     fn handle_tools_available(&mut self, new_tools: Vec<llm_client::Tool>) {
@@ -376,7 +388,7 @@ impl Assistant {
 
         let system_prompt = self.render_system_prompt();
 
-        self.broadcast(Message::AssistantRequest(AssistantRequest {
+        self.broadcast(Message::AssistantRequest(AssistantChatState {
             system: system_prompt.clone(),
             tools: self.available_tools.clone(),
             messages: self.chat_history.clone(),
@@ -852,30 +864,38 @@ impl Actor for Assistant {
 
                                 match status {
                                     AgentStatus::Done(agent_task_result) => {
+                                        // We don't keep done agents in the system prompt
+                                        // This could cause issues with exploding prompt sizes
                                         self.live_spawned_agents_scope.remove(&message.scope);
 
-                                        let formatted_message = match &agent_task_result {
-                                            Ok(response) => format_agent_response_success(
-                                                &message.scope,
-                                                response.success,
-                                                &response.summary,
-                                            ),
-                                            Err(err) => {
-                                                format_agent_response_failure(&message.scope, err)
-                                            }
-                                        };
-                                        self.add_system_message(formatted_message);
+                                        if let Some(agent_task_info) =
+                                            self.system_state.remove_agent(&message.scope)
+                                        {
+                                            let formatted_message = match &agent_task_result {
+                                                Ok(response) => format_agent_response_success(
+                                                    &message.scope,
+                                                    &agent_task_info.task_description,
+                                                    response.success,
+                                                    &response.summary,
+                                                ),
+                                                Err(err) => format_agent_response_failure(
+                                                    &message.scope,
+                                                    err,
+                                                ),
+                                            };
+                                            self.add_system_message(formatted_message);
 
-                                        match self.state.clone() {
-                                            AgentStatus::Wait {
-                                                reason: WaitReason::WaitForSystem { .. },
+                                            match self.state.clone() {
+                                                AgentStatus::Wait {
+                                                    reason: WaitReason::WaitForSystem { .. },
+                                                }
+                                                | AgentStatus::Wait {
+                                                    reason: WaitReason::WaitingForUserInput,
+                                                } => {
+                                                    self.submit_pending_message(false);
+                                                }
+                                                _ => (),
                                             }
-                                            | AgentStatus::Wait {
-                                                reason: WaitReason::WaitingForUserInput,
-                                            } => {
-                                                self.submit_pending_message(false);
-                                            }
-                                            _ => (),
                                         }
                                     }
                                     _ => (),

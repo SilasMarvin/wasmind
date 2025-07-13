@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
 use crate::actors::tui::icons;
-use crate::actors::tui::utils::{center, center_horizontal, create_block_with_title, offset_y};
+use crate::actors::tui::utils::{center_horizontal, create_block_with_title, offset_y};
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
-use crate::actors::{AgentMessage, AgentMessageType, AgentType, ToolCallStatus};
+use crate::actors::{
+    AgentMessage, AgentMessageType, AgentType, AssistantChatState, ToolCallStatus,
+};
 use crate::hive::{MAIN_MANAGER_ROLE, MAIN_MANAGER_SCOPE};
 use crate::llm_client::{AssistantChatMessage, ChatMessage, ToolCall};
 use crate::scope::Scope;
-use ratatui::layout::{Alignment, Constraint};
+use ratatui::layout::Alignment;
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{
     Block, Borders, Padding, Paragraph, StatefulWidget, Widget, WidgetRef, Wrap,
@@ -182,7 +184,7 @@ struct AssistantInfo {
     role: String,
     _assistant_type: AgentType,
     _task_description: Option<String>,
-    chat_history: Vec<ChatMessage>,
+    chat_state: Option<AssistantChatState>,
     pending_user_message: Option<String>,
     tool_call_updates: HashMap<String, ToolCallStatus>,
 }
@@ -193,7 +195,7 @@ impl AssistantInfo {
             role,
             _assistant_type,
             _task_description,
-            chat_history: vec![],
+            chat_state: None,
             pending_user_message: None,
             tool_call_updates: HashMap::new(),
         }
@@ -218,7 +220,7 @@ impl AssistantInfo {
         area = offset_y(area, min_height + MESSAGE_GAP);
         total_height += min_height + MESSAGE_GAP;
 
-        if self.chat_history.is_empty() && self.pending_user_message.is_none() {
+        if self.chat_state.is_none() && self.pending_user_message.is_none() {
             let content = "It's quiet, too quiet...\n\nSend a message - don't be shy!".to_string();
             let block = Block::new()
                 .borders(Borders::ALL)
@@ -236,9 +238,15 @@ impl AssistantInfo {
             paragraph.render(area, buf);
 
             total_height += height + 10;
-        } else {
+        } else if let Some(chat_state) = self.chat_state {
+            let (widget, height) = create_system_widget(chat_state.system, area);
+            area.height = height;
+            widget.render_ref(area, buf);
+            area = offset_y(area, height + MESSAGE_GAP);
+            total_height += height + MESSAGE_GAP;
+
             // Render chat history
-            for message in self.chat_history {
+            for message in chat_state.messages {
                 let widgets = match message {
                     ChatMessage::System { content } => {
                         vec![create_system_widget(content, area)]
@@ -390,13 +398,13 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
                         return Some(TuiMessage::Redraw);
                     }
                 }
-                crate::actors::Message::AssistantChatUpdated(messages) => {
+                crate::actors::Message::AssistantChatUpdated(chat_state) => {
                     if let Some(actor_info) = self
                         .component
                         .chat_history_map
                         .get_mut(&actor_message.scope)
                     {
-                        actor_info.chat_history = messages;
+                        actor_info.chat_state = Some(chat_state);
                         self.component.is_modified = true;
 
                         return Some(TuiMessage::Redraw);

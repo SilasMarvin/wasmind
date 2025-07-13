@@ -163,7 +163,7 @@ pub enum UserContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AssistantRequest {
+pub struct AssistantChatState {
     system: String,
     tools: Vec<llm_client::Tool>,
     messages: Vec<llm_client::ChatMessage>,
@@ -180,8 +180,8 @@ pub enum Message {
     // Shutdown this scope
     Exit,
 
-    AssistantRequest(AssistantRequest),
-    AssistantChatUpdated(Vec<llm_client::ChatMessage>),
+    AssistantRequest(AssistantChatState),
+    AssistantChatUpdated(AssistantChatState),
     AssistantToolCall(ToolCall),
     AssistantResponse {
         id: Uuid,

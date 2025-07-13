@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 
 use crate::{
-    actors::{Actor, ActorContext, ActorMessage, AssistantRequest, agent::TemporalAgent},
+    actors::{Actor, ActorContext, ActorMessage, AssistantChatState, agent::TemporalAgent},
     config::ParsedConfig,
     scope::Scope,
 };
@@ -21,7 +21,7 @@ pub struct CheckHealthActor {
     parent_scope: Scope,
     check_interval: Duration,
     last_check: Instant,
-    last_assistant_request: Option<AssistantRequest>,
+    last_assistant_request: Option<AssistantChatState>,
 }
 
 impl CheckHealthActor {
@@ -43,7 +43,7 @@ impl CheckHealthActor {
         }
     }
 
-    pub fn handle_assistant_request(&mut self, assistant_request: AssistantRequest) {
+    pub fn handle_assistant_request(&mut self, assistant_request: AssistantChatState) {
         self.last_assistant_request = Some(assistant_request.clone());
         if self.last_check.elapsed() >= self.check_interval {
             let parsed_model_config = self.config.hive.temporal.check_health.clone();
