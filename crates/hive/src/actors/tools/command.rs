@@ -489,7 +489,9 @@ impl Tool for CommandTool {
 
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call.id,
-                status: ToolCallStatus::AwaitingUserYNConfirmation,
+                status: ToolCallStatus::AwaitingUserYNConfirmation {
+                    tui_display: None,
+                },
             }));
         }
     }

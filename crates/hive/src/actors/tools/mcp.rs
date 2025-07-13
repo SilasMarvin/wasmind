@@ -158,7 +158,9 @@ impl MCP {
 
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received,
+            status: ToolCallStatus::Received {
+                tui_display: None,
+            },
         }));
 
         self.execute_mcp_tool(tool_call, &server_name).await;

@@ -28,7 +28,9 @@ pub trait Tool: ActorContext {
     async fn handle_tool_call(&mut self, tool_call: llm_client::ToolCall) {
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
-            status: ToolCallStatus::Received,
+            status: ToolCallStatus::Received {
+                tui_display: None,
+            },
         }));
 
         let params = match self.deserialize_params(&tool_call.function.arguments) {
@@ -100,12 +102,15 @@ impl<T: Tool + Send + 'static> Actor for T {
                 self.handle_tool_call(tool_call).await;
             }
             Message::ToolCallUpdate(update) => match update.status {
-                crate::actors::ToolCallStatus::ReceivedUserYNConfirmation(confirmation) => {
+                crate::actors::ToolCallStatus::ReceivedUserYNConfirmation {
+                    confirmed,
+                    ..
+                } => {
                     if self
                         .awaiting_user_confirmation()
                         .is_some_and(|call_id| call_id == update.call_id)
                     {
-                        if confirmation {
+                        if confirmed {
                             self.handle_user_confirmed().await;
                         } else {
                             self.handle_user_denied().await;

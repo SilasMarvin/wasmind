@@ -89,21 +89,42 @@ fn create_tool_widget(
         .unwrap_or(tool_call.function.arguments);
 
     let (title, content, expanded_content) = match status {
-        ToolCallStatus::Received => (
-            format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
-            "Processing".to_string(),
-            None,
-        ),
-        ToolCallStatus::AwaitingUserYNConfirmation => (
-            format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
-            "Awaiting user confirmation".to_string(),
-            None,
-        ),
-        ToolCallStatus::ReceivedUserYNConfirmation(_) => (
-            format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
-            "ReceivedUserYNConfirmation".to_string(),
-            None,
-        ),
+        ToolCallStatus::Received { tui_display } => {
+            let (content, expanded_content) = match tui_display {
+                Some(tui_display) => (tui_display.collapsed.clone(), tui_display.expanded.clone()),
+                None => ("Processing".to_string(), None),
+            };
+            (
+                format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
+                content,
+                expanded_content,
+            )
+        }
+        ToolCallStatus::AwaitingUserYNConfirmation { tui_display } => {
+            let (content, expanded_content) = match tui_display {
+                Some(tui_display) => (tui_display.collapsed.clone(), tui_display.expanded.clone()),
+                None => ("Awaiting user confirmation".to_string(), None),
+            };
+            (
+                format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
+                content,
+                expanded_content,
+            )
+        }
+        ToolCallStatus::ReceivedUserYNConfirmation {
+            confirmed: _,
+            tui_display,
+        } => {
+            let (content, expanded_content) = match tui_display {
+                Some(tui_display) => (tui_display.collapsed.clone(), tui_display.expanded.clone()),
+                None => ("ReceivedUserYNConfirmation".to_string(), None),
+            };
+            (
+                format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
+                content,
+                expanded_content,
+            )
+        }
         ToolCallStatus::Finished {
             result,
             tui_display,

@@ -45,9 +45,16 @@ pub struct ToolDisplayInfo {
 /// ToolCall Status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ToolCallStatus {
-    Received,
-    AwaitingUserYNConfirmation,
-    ReceivedUserYNConfirmation(bool),
+    Received {
+        tui_display: Option<ToolDisplayInfo>,
+    },
+    AwaitingUserYNConfirmation {
+        tui_display: Option<ToolDisplayInfo>,
+    },
+    ReceivedUserYNConfirmation {
+        confirmed: bool,
+        tui_display: Option<ToolDisplayInfo>,
+    },
     Finished {
         result: ToolCallResult,
         tui_display: Option<ToolDisplayInfo>,
@@ -164,9 +171,9 @@ pub enum UserContext {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssistantChatState {
-    system: String,
-    tools: Vec<llm_client::Tool>,
-    messages: Vec<llm_client::ChatMessage>,
+    pub system: String,
+    pub tools: Vec<llm_client::Tool>,
+    pub messages: Vec<llm_client::ChatMessage>,
 }
 
 /// The various messages actors can send

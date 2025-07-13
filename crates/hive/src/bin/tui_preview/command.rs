@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use hive::actors::tools::command::CommandTool;
 use hive::actors::tui::TuiActor;
-use hive::actors::{Actor, ActorMessage, Message};
+use hive::actors::{Actor, ActorMessage, AssistantChatState, Message};
 use hive::config::{Config, ParsedConfig};
 use hive::hive::MAIN_MANAGER_SCOPE;
 use hive::llm_client::ChatMessage;
@@ -33,7 +33,11 @@ pub async fn run() {
     chat_history.push(assistant_response_chat_history_message);
     let _ = tx.send(ActorMessage {
         scope: scope.clone(),
-        message: Message::AssistantChatUpdated(chat_history.clone()),
+        message: Message::AssistantChatUpdated(AssistantChatState {
+            system: "System message..".to_string(),
+            tools: vec![],
+            messages: chat_history.clone(),
+        }),
     });
     let _ = tx.send(command_tool_call_actor_message);
 
