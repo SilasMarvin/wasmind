@@ -1,11 +1,11 @@
 use ratatui::{
     layout::{Alignment, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
 };
 use tui_realm_textarea::{
     INACTIVE_BORDERS, TEXTAREA_CMD_CLEAR, TEXTAREA_CMD_MOVE_WORD_BACK,
     TEXTAREA_CMD_MOVE_WORD_FORWARD, TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO,
-    TextArea,
+    TITLE_STYLE, TextArea,
 };
 use tuirealm::{
     AttrValue, Attribute, Component, Event, MockComponent,
@@ -17,7 +17,10 @@ use tuirealm::{
 use crate::{
     actors::{ActorMessage, tui::model::TuiMessage},
     config::ParsedTuiConfig,
+    utils::key_event_to_string,
 };
+
+use super::chat::ChatUserAction;
 
 mod tui_realm_textarea;
 
@@ -29,14 +32,23 @@ pub struct LLMTextAreaComponent {
 
 impl LLMTextAreaComponent {
     pub fn new(config: ParsedTuiConfig) -> Self {
+        let (binding, _) = config.chat.key_bindings.iter().find(|(_, action)| **action == ChatUserAction::Assist).expect("No binding to chat action: Assist - this should be impossible? File a bug please thank you!");
+
         let mut textarea = TextArea::new(vec![])
-            .title("[ Input ]", Alignment::Left)
+            .title(
+                format!("[ Input | ({}) to submit ]", key_event_to_string(binding)),
+                Alignment::Left,
+            )
             .borders(Borders::default().modifiers(BorderType::Thick))
             .cursor_style(Style::new().bg(Color::Red).fg(Color::Red));
         textarea.attr(Attribute::Focus, AttrValue::Flag(true));
         textarea.attr(
             Attribute::Custom(INACTIVE_BORDERS),
             AttrValue::Borders(Borders::default()),
+        );
+        textarea.attr(
+            Attribute::Custom(TITLE_STYLE),
+            AttrValue::Style(Style::new().add_modifier(Modifier::BOLD)),
         );
 
         Self {
@@ -57,7 +69,7 @@ impl Component<TuiMessage, ActorMessage> for LLMTextAreaComponent {
             Event::Keyboard(key_event) => {
                 if let Some(action) = self.config.chat.key_bindings.get(&key_event) {
                     match action {
-                        super::chat::ChatUserAction::Assist => {
+                        ChatUserAction::Assist => {
                             let content = self
                                 .component
                                 .state()

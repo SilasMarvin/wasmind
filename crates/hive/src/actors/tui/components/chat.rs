@@ -3,7 +3,6 @@ use crate::actors::tui::utils;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::config::ParsedTuiConfig;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::widgets::Padding;
 use tuirealm::props::{BorderSides, Borders};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State, StateValue,

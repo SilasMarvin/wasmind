@@ -18,12 +18,14 @@ use crate::{
     scope::Scope,
 };
 
+use super::litellm_manager::LiteLLMManager;
 use super::{
     ActorMessage, AgentType,
     temporal::{
         check_health::CheckHealthActor,
         tools::{
-            flag_issue_for_review::FlagIssueForReviewTool, report_progress_normal::ReportProgressNormal,
+            flag_issue_for_review::FlagIssueForReviewTool,
+            report_progress_normal::ReportProgressNormal,
         },
     },
     tools::{file_reader::FileReader, wait::WaitTool},
@@ -184,6 +186,10 @@ impl Agent {
             Some(file_reader.clone()),
         )
         .run();
+
+        if self.actors.contains(LiteLLMManager::ACTOR_ID) {
+            LiteLLMManager::new(self.config.clone(), self.tx.clone(), self.scope.clone()).run();
+        }
 
         if self.actors.contains(Planner::ACTOR_ID) {
             Planner::new(

@@ -1,5 +1,9 @@
 use model::Model;
-use std::thread;
+use ratatui::crossterm::{
+    event::{KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags},
+    execute,
+};
+use std::{io::stdout, thread};
 use tokio::sync::broadcast::Sender;
 use tuirealm::{PollStrategy, Update};
 
@@ -41,6 +45,16 @@ impl Actor for TuiActor {
 }
 
 fn start_model(config: ParsedTuiConfig, tx: Sender<ActorMessage>) {
+    let mut stdout = stdout();
+    if let Err(e) = execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    ) {
+        tracing::error!(
+            "Error enabling the Kitty Keyboard Protocol - some key bindings may not work as expected. See: https://sw.kovidgoyal.net/kitty/keyboard-protocol Error: {e:?}"
+        );
+    }
+
     // Setup model
     let mut model = Model::new(config, tx);
     // Enter alternate screen
@@ -76,4 +90,6 @@ fn start_model(config: ParsedTuiConfig, tx: Sender<ActorMessage>) {
     let _ = model.terminal.leave_alternate_screen();
     let _ = model.terminal.disable_raw_mode();
     let _ = model.terminal.clear_screen();
+
+    execute!(stdout, PopKeyboardEnhancementFlags).ok();
 }

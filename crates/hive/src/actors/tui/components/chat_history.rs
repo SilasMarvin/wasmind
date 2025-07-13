@@ -1,15 +1,17 @@
 use std::collections::HashMap;
 
 use crate::actors::tui::icons;
-use crate::actors::tui::utils::{create_block_with_title, offset_y};
+use crate::actors::tui::utils::{center, center_horizontal, create_block_with_title, offset_y};
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::actors::{AgentMessage, AgentMessageType, AgentType, ToolCallStatus};
 use crate::hive::{MAIN_MANAGER_ROLE, MAIN_MANAGER_SCOPE};
 use crate::llm_client::{AssistantChatMessage, ChatMessage, ToolCall};
 use crate::scope::Scope;
-use ratatui::layout::Alignment;
+use ratatui::layout::{Alignment, Constraint};
 use ratatui::style::{Color, Style};
-use ratatui::widgets::{Block, Padding, Paragraph, StatefulWidget, Widget, WidgetRef, Wrap};
+use ratatui::widgets::{
+    Block, Borders, Padding, Paragraph, StatefulWidget, Widget, WidgetRef, Wrap,
+};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
@@ -217,19 +219,23 @@ impl AssistantInfo {
         total_height += min_height + MESSAGE_GAP;
 
         if self.chat_history.is_empty() && self.pending_user_message.is_none() {
-            let content =
-                "\nIt's quiet, too quiet...\n\nSend a message - don't be shy!".to_string();
+            let content = "It's quiet, too quiet...\n\nSend a message - don't be shy!".to_string();
+            let block = Block::new()
+                .borders(Borders::ALL)
+                .padding(Padding::uniform(1));
             let paragraph = Paragraph::new(content)
-                .block(Block::bordered())
-                .style(Style::new())
                 .alignment(Alignment::Center)
-                .wrap(Wrap { trim: true });
-            area.y += 5;
-            area.x += 5;
-            area.width -= 10;
-            area.height = 7;
+                .wrap(Wrap { trim: true })
+                .block(block);
+
+            let width = paragraph.line_width();
+            let mut area = center_horizontal(area, width as u16);
+            let height = paragraph.line_count(area.width) as u16;
+            area.y += 10;
+            area.height = height;
             paragraph.render(area, buf);
-            total_height += 12;
+
+            total_height += height + 10;
         } else {
             // Render chat history
             for message in self.chat_history {

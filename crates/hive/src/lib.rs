@@ -2,7 +2,6 @@ pub mod actors;
 pub mod cli;
 pub mod config;
 pub mod hive;
-pub mod litellm_manager;
 pub mod llm_client;
 pub mod prompt_preview;
 pub mod scope;
@@ -24,12 +23,6 @@ pub enum Error {
     Config {
         #[snafu(source)]
         source: config::ConfigError,
-    },
-
-    #[snafu(display("LiteLLM Error"))]
-    LiteLLM {
-        #[snafu(source)]
-        source: litellm_manager::LiteLLMError,
     },
 
     #[cfg(feature = "gui")]

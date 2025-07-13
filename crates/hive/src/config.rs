@@ -8,10 +8,13 @@ use std::{
     path::{Path, PathBuf},
 };
 use toml::Table;
-use tuirealm::event::{Key, KeyEvent, KeyModifiers};
+use tuirealm::event::KeyEvent;
 
-use crate::actors::tui::components::{
-    chat::ChatUserAction, dashboard::DashboardUserAction, graph::GraphUserAction,
+use crate::{
+    actors::tui::components::{
+        chat::ChatUserAction, dashboard::DashboardUserAction, graph::GraphUserAction,
+    },
+    utils::parse_key_combination,
 };
 
 /// Errors while getting the config
@@ -225,10 +228,6 @@ pub struct LiteLLMConfig {
     #[serde(default = "default_container_name")]
     pub container_name: String,
 
-    /// Whether to remove container on exit
-    #[serde(default = "default_auto_remove")]
-    pub auto_remove: bool,
-
     /// Additional env var overrides
     #[serde(default)]
     pub env_overrides: HashMap<String, String>,
@@ -246,17 +245,12 @@ fn default_container_name() -> String {
     "hive-litellm".to_string()
 }
 
-fn default_auto_remove() -> bool {
-    false
-}
-
 impl Default for LiteLLMConfig {
     fn default() -> Self {
         Self {
             image: default_litellm_image(),
             port: default_litellm_port(),
             container_name: default_container_name(),
-            auto_remove: default_auto_remove(),
             env_overrides: HashMap::new(),
         }
     }
@@ -510,38 +504,6 @@ fn parse_model_config(
     } else {
         None
     }
-}
-
-fn parse_key_combination(input: &str) -> Option<KeyEvent> {
-    let parts: Vec<&str> = input.split('-').collect();
-    let mut modifiers = KeyModifiers::empty();
-
-    // Handle the last part as the key, everything before it as modifiers
-    let (modifier_parts, key_part) = parts.split_at(parts.len() - 1);
-
-    // Parse modifiers
-    for modifier in modifier_parts {
-        match *modifier {
-            "ctrl" => modifiers.insert(KeyModifiers::CONTROL),
-            "alt" | "cmd" => modifiers.insert(KeyModifiers::ALT),
-            "shift" => modifiers.insert(KeyModifiers::SHIFT),
-            _ => return None,
-        }
-    }
-
-    // Parse the actual key
-    let code = match key_part[0] {
-        s if s.len() == 1 => Key::Char(s.chars().next().unwrap()),
-        // TODO: Add other special keys here
-        "esc" => Key::Esc,
-        "enter" => Key::Enter,
-        "tab" => Key::Tab,
-        "down" => Key::Down,
-        "up" => Key::Up,
-        _ => return None,
-    };
-
-    Some(KeyEvent::new(code, modifiers))
 }
 
 #[cfg(test)]

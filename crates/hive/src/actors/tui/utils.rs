@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Flex, Layout, Rect},
     widgets::{Block, Padding, block::Title},
 };
 use tuirealm::props::Borders;
@@ -26,4 +26,21 @@ pub fn offset_y(rect: Rect, offset: u16) -> Rect {
         y: rect.y + offset,
         ..rect
     }
+}
+
+// Center both horizontally and vertically. See: https://ratatui.rs/recipes/layout/center-a-widget/
+pub fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
+    let [area] = Layout::horizontal([horizontal])
+        .flex(Flex::Center)
+        .areas(area);
+    let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
+    area
+}
+
+// Center horizontally: See https://ratatui.rs/recipes/layout/center-a-widget/
+pub fn center_horizontal(area: Rect, width: u16) -> Rect {
+    let [area] = Layout::horizontal([Constraint::Length(width)])
+        .flex(Flex::Center)
+        .areas(area);
+    area
 }

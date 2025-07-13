@@ -1,15 +1,13 @@
 use std::time::Duration;
-
-use snafu::ResultExt;
-use tokio::{select, sync::broadcast, task::JoinHandle, time::sleep};
-use tracing::{info, warn};
+use tokio::{sync::broadcast, time::sleep};
 
 use crate::{
-    LiteLLMSnafu, SResult,
+    SResult,
     actors::{
         Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
         InterAgentMessage, Message,
         agent::Agent,
+        litellm_manager::LiteLLMManager,
         tools::{
             complete::CompleteTool, planner::Planner, send_message::SendMessage,
             spawn_agent::SpawnAgent, wait::WaitTool,
@@ -17,7 +15,6 @@ use crate::{
         tui::TuiActor,
     },
     config::ParsedConfig,
-    litellm_manager::{LiteLLMConfig, LiteLLMManager},
     scope::Scope,
 };
 
@@ -36,67 +33,34 @@ pub async fn start_hive(config: ParsedConfig) -> SResult<()> {
 
     let mut rx = tx.subscribe();
 
-    // Create the TUI before waiting for LiteLLM to come up
+    // Create the TUI immediatly
     TuiActor::new(config.clone(), tx.clone(), MAIN_MANAGER_SCOPE).run();
 
-    // Start LiteLLM in background task
-    let _: JoinHandle<SResult<()>> = tokio::spawn(async move {
-        // Start LiteLLM Docker container
-        let litellm_config = LiteLLMConfig {
-            port: config.hive.litellm.port,
-            image: config.hive.litellm.image.clone(),
-            container_name: config.hive.litellm.container_name.clone(),
-            auto_remove: config.hive.litellm.auto_remove,
-            env_overrides: config.hive.litellm.env_overrides.clone(),
-        };
-        let litellm_manager = LiteLLMManager::start(&litellm_config, &config)
-            .await
-            .context(LiteLLMSnafu)?;
+    // #[cfg(feature = "gui")]
+    // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+    // #[cfg(feature = "audio")]
+    // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
 
-        // #[cfg(feature = "gui")]
-        // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
-        // #[cfg(feature = "audio")]
-        // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+    // Create the Main Manager agent
+    let main_manager = Agent::new(
+        tx.clone(),
+        MAIN_MANAGER_ROLE.to_string(),
+        None,
+        config.clone(),
+        Scope::new(), // parent_scope means nothing for the MainManager
+        AgentType::MainManager,
+    )
+    .with_scope(MAIN_MANAGER_SCOPE)
+    .with_actors([
+        Planner::ACTOR_ID,
+        SpawnAgent::ACTOR_ID,
+        SendMessage::ACTOR_ID,
+        WaitTool::ACTOR_ID,
+        LiteLLMManager::ACTOR_ID,
+    ]);
 
-        // Pretending LITELLM is an actor to delay the Assistant processing is kind of hacky but
-        // works well.
-
-        // Create the Main Manager agent
-        let main_manager = Agent::new(
-            tx.clone(),
-            MAIN_MANAGER_ROLE.to_string(),
-            None,
-            config.clone(),
-            Scope::new(), // parent_scope means nothing for the MainManager
-            AgentType::MainManager,
-        )
-        .with_scope(MAIN_MANAGER_SCOPE)
-        .with_actors([
-            Planner::ACTOR_ID,
-            SpawnAgent::ACTOR_ID,
-            SendMessage::ACTOR_ID,
-            WaitTool::ACTOR_ID,
-            "LITELLM_DUMMY_ACTOR",
-        ]);
-
-        // Start the Main Manager
-        main_manager.run();
-
-        // Wait for LITELLM
-        litellm_manager
-            .wait_for_health()
-            .await
-            .context(LiteLLMSnafu)?;
-
-        let _ = tx.send(ActorMessage {
-            scope: MAIN_MANAGER_SCOPE.clone(),
-            message: Message::ActorReady {
-                actor_id: "LITELLM_DUMMY_ACTOR".to_string(),
-            },
-        });
-
-        Ok(())
-    });
+    // Start the Main Manager
+    main_manager.run();
 
     // Listen for messages
     loop {
@@ -107,15 +71,8 @@ pub async fn start_hive(config: ParsedConfig) -> SResult<()> {
 
         match msg.message {
             Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
-                // Stop the LiteLLM container with a timeout
-                select! {
-                    _ = LiteLLMManager::stop() => {
-                        info!("LiteLLM container stopped");
-                    }
-                    _ = sleep(Duration::from_millis(500)) => {
-                        warn!("Timed out waiting for LiteLLM container to stop");
-                    }
-                }
+                // Let everything clean up
+                sleep(Duration::from_millis(500)).await;
                 return Ok(());
             }
             _ => (),
@@ -132,24 +89,6 @@ pub async fn start_headless_hive(
     let tx = tx.unwrap_or_else(|| broadcast::channel::<ActorMessage>(1024).0);
 
     let mut rx = tx.subscribe();
-
-    // Start LiteLLM Docker container
-    let litellm_config = LiteLLMConfig {
-        port: config.hive.litellm.port,
-        image: config.hive.litellm.image.clone(),
-        container_name: config.hive.litellm.container_name.clone(),
-        auto_remove: config.hive.litellm.auto_remove,
-        env_overrides: config.hive.litellm.env_overrides.clone(),
-    };
-    match LiteLLMManager::start(&litellm_config, &config).await {
-        Ok(manager) => {
-            manager.wait_for_health().await.context(LiteLLMSnafu)?;
-        }
-        Err(e) => {
-            tracing::error!("Failed to start LiteLLM container: {}", e);
-            return Ok(());
-        }
-    };
 
     // // Create and run Context and Microphone actors (no TUI in headless mode)
     // #[cfg(feature = "gui")]
@@ -172,6 +111,7 @@ pub async fn start_headless_hive(
         SendMessage::ACTOR_ID,
         WaitTool::ACTOR_ID,
         CompleteTool::ACTOR_ID,
+        LiteLLMManager::ACTOR_ID,
     ]);
 
     // Start the Main Manager
@@ -186,15 +126,7 @@ pub async fn start_headless_hive(
 
         match msg.message {
             Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
-                // Stop the LiteLLM container with a timeout
-                select! {
-                    _ = LiteLLMManager::stop() => {
-                        info!("LiteLLM container stopped");
-                    }
-                    _ = sleep(Duration::from_millis(200)) => {
-                        warn!("Timed out waiting for LiteLLM container to stop");
-                    }
-                }
+                sleep(Duration::from_millis(200)).await;
                 return Ok(());
             }
             Message::Agent(AgentMessage {

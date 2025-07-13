@@ -1,13 +1,17 @@
 use serde::{Deserialize, Serialize};
 use snafu::{Location, ResultExt, Snafu, location};
 use std::collections::HashMap;
-use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::process::Command;
+use tokio::sync::broadcast::Sender;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, info, warn};
 
-use crate::config::ParsedConfig;
+use crate::actors::Message;
+use crate::config::{LiteLLMConfig, ParsedConfig};
+use crate::scope::Scope;
+
+use super::{Actor, ActorContext, ActorMessage};
 
 #[derive(Debug, Snafu)]
 pub enum LiteLLMError {
@@ -144,43 +148,23 @@ pub struct LiteLLMHealthResponse {
     pub unhealthy_count: u32,
 }
 
-#[derive(Debug, Clone)]
-pub struct LiteLLMConfig {
-    /// Docker image to use
-    pub image: String,
-
-    /// Port to expose LiteLLM on
-    pub port: u16,
-
-    /// Container name (for easy management)
-    pub container_name: String,
-
-    /// Whether to remove container on exit
-    pub auto_remove: bool,
-
-    /// Additional env var overrides (optional)
-    pub env_overrides: HashMap<String, String>,
-}
-
-impl Default for LiteLLMConfig {
-    fn default() -> Self {
-        Self {
-            image: "ghcr.io/berriai/litellm:main-latest".to_string(),
-            port: 4000,
-            container_name: "hive-litellm".to_string(),
-            auto_remove: true,
-            env_overrides: HashMap::new(),
-        }
-    }
-}
-
-static CONTAINER_ID: OnceLock<String> = OnceLock::new();
-
 pub struct LiteLLMManager {
-    config: LiteLLMConfig,
+    scope: Scope,
+    tx: Sender<ActorMessage>,
+    config: ParsedConfig,
+    container_id: Option<String>,
 }
 
 impl LiteLLMManager {
+    pub fn new(config: ParsedConfig, tx: Sender<ActorMessage>, scope: Scope) -> Self {
+        Self {
+            config,
+            tx,
+            scope,
+            container_id: None,
+        }
+    }
+
     /// Generate LiteLLM config from parsed config
     pub fn generate_config(parsed_config: &ParsedConfig) -> Result<String, LiteLLMError> {
         let mut model_list = Vec::new();
@@ -255,29 +239,28 @@ impl LiteLLMManager {
         Ok(yaml_content)
     }
 
-    pub async fn start(
-        config: &LiteLLMConfig,
-        parsed_config: &ParsedConfig,
-    ) -> Result<Self, LiteLLMError> {
+    pub async fn start(&mut self) -> Result<(), LiteLLMError> {
         info!("Starting LiteLLM Docker container...");
 
         // Check if Docker is available
         Self::check_docker_available().await?;
 
         // Stop any existing container with our name
-        Self::cleanup_existing_container(&config.container_name).await?;
+        Self::cleanup_existing_container(&self.config.hive.litellm.container_name).await?;
 
         // Generate config content
-        let config_content = Self::generate_config(parsed_config)?;
+        let config_content = Self::generate_config(&self.config)?;
 
         // Collect environment variables
-        let env_vars = Self::collect_env_vars(&config.env_overrides);
+        let env_vars = Self::collect_env_vars(&self.config.hive.litellm.env_overrides);
 
         // Start the container
-        let container_id = Self::start_container(config, &config_content, env_vars).await?;
+        let container_id =
+            Self::start_container(&self.config.hive.litellm, &config_content, env_vars).await?;
+        self.container_id = Some(container_id);
 
         // Start streaming container logs in background for debugging
-        let container_name_for_logs = config.container_name.clone();
+        let container_name_for_logs = self.config.hive.litellm.container_name.clone();
         tokio::spawn(async move {
             if let Err(e) = Self::stream_container_logs(&container_name_for_logs).await {
                 warn!("Container log streaming failed: {}", e);
@@ -286,20 +269,12 @@ impl LiteLLMManager {
 
         info!(
             "LiteLLM container started successfully at http://localhost:{}",
-            config.port
+            self.config.hive.litellm.port
         );
 
-        // Store container ID in static OnceLock
-        CONTAINER_ID
-            .set(container_id.clone())
-            .map_err(|_| LiteLLMError::ContainerStartFailed {
-                message: "Failed to store container ID".to_string(),
-                location: location!(),
-            })?;
+        self.wait_for_health().await?;
 
-        Ok(Self {
-            config: config.clone(),
-        })
+        Ok(())
     }
 
     async fn check_docker_available() -> Result<(), LiteLLMError> {
@@ -367,6 +342,7 @@ impl LiteLLMManager {
     ) -> Result<String, LiteLLMError> {
         let mut cmd = Command::new("docker");
         cmd.arg("run")
+            .arg("--rm")
             .arg("-d") // Detached mode - runs container in background and returns immediately
             .arg("--name")
             .arg(&config.container_name)
@@ -415,7 +391,7 @@ impl LiteLLMManager {
     }
 
     pub async fn wait_for_health(&self) -> Result<(), LiteLLMError> {
-        let base_url = format!("http://localhost:{}", self.config.port);
+        let base_url = format!("http://localhost:{}", self.config.hive.litellm.port);
         let client = reqwest::Client::new();
         let health_url = format!("{}/health", base_url);
         let max_attempts = 30;
@@ -498,7 +474,7 @@ impl LiteLLMManager {
     }
 
     pub fn get_base_url(&self) -> String {
-        format!("http://localhost:{}", self.config.port)
+        format!("http://localhost:{}", self.config.hive.litellm.port)
     }
 
     async fn stream_container_logs(
@@ -543,38 +519,55 @@ impl LiteLLMManager {
 
         Ok(())
     }
-}
 
-impl LiteLLMManager {
     /// Stop the LiteLLM container if it's running
-    pub async fn stop() {
-        if let Some(container_id) = CONTAINER_ID.get() {
+    pub async fn stop(&mut self) -> Result<(), LiteLLMError> {
+        if let Some(container_id) = self.container_id.take() {
             info!("Stopping LiteLLM container: {}", container_id);
 
             // Try to stop the container with timeout
-            let stop_result = Command::new("docker")
-                .args(["stop", container_id])
+            Command::new("docker")
+                .args(["stop".to_string(), container_id])
                 .output()
-                .await;
+                .await
+                .context(DockerCommandSnafu)
+                .map(|_| ())
+        } else {
+            Ok(())
+        }
+    }
+}
 
-            match stop_result {
-                Ok(output) => {
-                    if output.status.success() {
-                        info!("Successfully stopped LiteLLM container");
-                    } else {
-                        let stderr = String::from_utf8_lossy(&output.stderr);
-                        warn!("Failed to stop container: {}", stderr);
-                    }
-                }
-                Err(e) => {
-                    warn!("Error stopping container: {}", e);
-                }
-            }
+impl ActorContext for LiteLLMManager {
+    fn get_scope(&self) -> &Scope {
+        &self.scope
+    }
 
-            // let _ = Command::new("docker")
-            //     .args(["rm", container_id])
-            //     .output()
-            //     .await;
+    fn get_tx(&self) -> tokio::sync::broadcast::Sender<ActorMessage> {
+        self.tx.clone()
+    }
+
+    fn get_rx(&self) -> tokio::sync::broadcast::Receiver<ActorMessage> {
+        self.tx.subscribe()
+    }
+}
+
+#[async_trait::async_trait]
+impl Actor for LiteLLMManager {
+    const ACTOR_ID: &str = "litellm_manager";
+
+    async fn handle_message(&mut self, _message: ActorMessage) {}
+
+    async fn on_start(&mut self) {
+        if let Err(e) = self.start().await {
+            tracing::error!("Failed to start LiteLLM docker container with error: {e:?}");
+            self.broadcast(Message::Exit);
+        }
+    }
+
+    async fn on_stop(&mut self) {
+        if let Err(e) = self.stop().await {
+            tracing::error!("FAiled to stop LiteLLM docker container with error: {e:?}");
         }
     }
 }
@@ -770,29 +763,17 @@ mod tests {
             return;
         }
 
-        let parsed_config = create_test_parsed_config_with_openai();
+        let mut parsed_config = create_test_parsed_config_with_openai();
+        parsed_config.hive.litellm.port = 4001;
 
-        // Create LiteLLM config
-        let litellm_config = LiteLLMConfig {
-            port: 4001, // Use different port to avoid conflicts
-            image: "ghcr.io/berriai/litellm:main-latest".to_string(),
-            container_name: "hive-litellm-integration-test".to_string(),
-            auto_remove: true,
-            env_overrides: HashMap::new(),
-        };
+        let (tx, _) = tokio::sync::broadcast::channel::<ActorMessage>(1024);
 
-        info!(
-            "Starting LiteLLM Docker container on port {}",
-            litellm_config.port
-        );
-
-        // Start the LiteLLM container (runs in detached mode with -d flag)
-        let litellm_manager = LiteLLMManager::start(&litellm_config, &parsed_config)
-            .await
-            .expect("Should start LiteLLM container");
+        let mut litellm_manager =
+            LiteLLMManager::new(parsed_config.clone(), tx.clone(), Scope::new());
+        litellm_manager.start().await.unwrap();
 
         // Start streaming container logs in background
-        let container_name = litellm_config.container_name.clone();
+        let container_name = parsed_config.hive.litellm.container_name.clone();
         tokio::spawn(async move {
             if let Err(e) = LiteLLMManager::stream_container_logs(&container_name).await {
                 warn!("Container log streaming failed: {}", e);
@@ -800,10 +781,8 @@ mod tests {
         });
 
         // Create LLM client pointing to our container
-        let base_url = format!("http://localhost:{}", litellm_config.port);
-        let client = LLMClient::new(base_url.clone());
-
-        info!("Making API request to LiteLLM at {}", base_url);
+        let base_url = litellm_manager.get_base_url();
+        let client = LLMClient::new(base_url);
 
         // Make a simple chat request
         let messages = vec![ChatMessage::user(
@@ -861,7 +840,7 @@ mod tests {
             _ => panic!("Expected assistant message with content"),
         }
 
-        drop(litellm_manager);
+        litellm_manager.stop().await.unwrap();
 
         info!("Integration test completed successfully");
     }
@@ -917,7 +896,6 @@ mod tests {
                     port: 4001,
                     image: "ghcr.io/berriai/litellm:main-latest".to_string(),
                     container_name: "hive-litellm-integration-test".to_string(),
-                    auto_remove: true,
                     env_overrides: HashMap::new(),
                 },
             },

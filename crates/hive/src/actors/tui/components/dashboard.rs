@@ -1,7 +1,11 @@
+use crate::actors::litellm_manager::LiteLLMManager;
+use crate::actors::tui::utils::center;
+use crate::actors::{Actor, Message};
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::config::ParsedTuiConfig;
 use crate::scope::Scope;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, Wrap};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
@@ -38,7 +42,6 @@ impl TryFrom<&str> for DashboardUserAction {
 pub struct DashboardComponent {
     component: Dashboard,
     config: ParsedTuiConfig,
-    focus_chat: bool,
 }
 
 impl DashboardComponent {
@@ -52,9 +55,9 @@ impl DashboardComponent {
                     false,
                 ),
                 chat_area_component: ChatAreaComponent::new(config.clone()),
+                litellm_is_ready: false,
             },
             config,
-            focus_chat: true,
         }
     }
 }
@@ -64,6 +67,7 @@ struct Dashboard {
     state: State,
     graph_area_component: ScrollableComponent,
     chat_area_component: ChatAreaComponent,
+    litellm_is_ready: bool,
 }
 
 impl MockComponent for Dashboard {
@@ -73,7 +77,26 @@ impl MockComponent for Dashboard {
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
                 .split(area);
-            self.graph_area_component.view(frame, chunks[0]);
+
+            if self.litellm_is_ready {
+                self.graph_area_component.view(frame, chunks[0]);
+            } else {
+                let block = Block::new()
+                    .borders(Borders::ALL)
+                    .padding(Padding::uniform(1));
+                let paragraph = Paragraph::new(
+                    "Waiting for LiteLLM docker container health check.\n\nThis should only take a few seconds...",
+                ).alignment(Alignment::Center).wrap(Wrap { trim: true }).block(block);
+
+                let width = paragraph.line_width();
+                let height = paragraph.line_count(area.width);
+                let area = center(
+                    chunks[0],
+                    Constraint::Length(width as u16),
+                    Constraint::Length(height as u16),
+                );
+                paragraph.render(area, frame.buffer_mut());
+            }
             self.chat_area_component.view(frame, chunks[1]);
         }
     }
@@ -110,6 +133,18 @@ impl Component<TuiMessage, ActorMessage> for DashboardComponent {
                 }
             }
         }
+
+        if let Event::User(ActorMessage {
+            message: Message::ActorReady { actor_id },
+            ..
+        }) = &ev
+        {
+            if actor_id == LiteLLMManager::ACTOR_ID {
+                self.component.litellm_is_ready = true;
+                return Some(TuiMessage::Redraw);
+            }
+        }
+
         match (
             self.component.graph_area_component.on(ev.clone()),
             self.component.chat_area_component.on(ev),

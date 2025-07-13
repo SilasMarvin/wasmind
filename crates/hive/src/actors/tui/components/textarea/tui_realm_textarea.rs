@@ -144,6 +144,7 @@
 
 #[cfg(feature = "clipboard")]
 use cli_clipboard::{ClipboardContext, ClipboardProvider};
+use ratatui::text::Span;
 use tui_textarea::{CursorMove, TextArea as TextAreaWidget};
 use tuirealm::command::{Cmd, CmdResult, Direction, Position};
 use tuirealm::props::{
@@ -163,6 +164,7 @@ pub const TEXTAREA_HARD_TAB: &str = "hard-tab";
 pub const TEXTAREA_SINGLE_LINE: &str = "single-line";
 pub const TEXTAREA_LAYOUT_MARGIN: &str = "layout-margin";
 pub const INACTIVE_BORDERS: &str = "inactive-borders";
+pub const TITLE_STYLE: &str = "title-style";
 
 // -- cmd
 pub const TEXTAREA_CMD_NEWLINE: &str = "0";
@@ -324,6 +326,14 @@ impl<'a> TextArea<'a> {
     fn get_block(&self) -> Option<Block<'a>> {
         let mut block = Block::default();
         if let Some(AttrValue::Title((title, alignment))) = self.query(Attribute::Title) {
+            let title_style = self
+                .props
+                .get_or(
+                    Attribute::Custom(TITLE_STYLE),
+                    AttrValue::Style(Style::new()),
+                )
+                .unwrap_style();
+            let title = Span::from(title).style(title_style);
             block = block.title(title).title_alignment(alignment);
         }
         let focus = self
