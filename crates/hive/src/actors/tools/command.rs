@@ -7,6 +7,7 @@ use tracing::{debug, error, info};
 
 use crate::actors::{
     ActorContext, ActorMessage, Message, ToolCallStatus, ToolCallUpdate, ToolDisplayInfo,
+    tui::icons,
 };
 use crate::config::ParsedConfig;
 use crate::scope::Scope;
@@ -37,13 +38,13 @@ enum CommandOutcome {
 /// Create TUI display info for command execution
 fn create_command_tui_display(command: &str, outcome: CommandOutcome) -> ToolDisplayInfo {
     let collapsed = match &outcome {
-        CommandOutcome::Success { .. } => format!("✓ Command succeeded: {}", command),
+        CommandOutcome::Success { .. } => format!("{} Command succeeded:\n{}", icons::SUCCESS_ICON, command),
         CommandOutcome::Failed { exit_code, .. } => {
-            format!("✗ Command failed (exit {}): {}", exit_code, command)
+            format!("{} Command failed (exit {}):\n{}", icons::FAILED_ICON, exit_code, command)
         }
-        CommandOutcome::Timeout => format!("Command timed out: {}", command),
-        CommandOutcome::Signal => format!("Command terminated by signal: {}", command),
-        CommandOutcome::Error(_) => format!("Command error: {}", command),
+        CommandOutcome::Timeout => format!("{} Command timed out:\n{}", icons::TIMEOUT_ICON, command),
+        CommandOutcome::Signal => format!("{} Command terminated by signal:\n{}", icons::SIGNAL_ICON, command),
+        CommandOutcome::Error(_) => format!("{} Command error:\n{}", icons::ERROR_ICON, command),
     };
 
     let expanded = match &outcome {
@@ -58,6 +59,23 @@ fn create_command_tui_display(command: &str, outcome: CommandOutcome) -> ToolDis
             format!("{}\n\n{}", collapsed, error)
         }
     };
+
+    ToolDisplayInfo {
+        collapsed,
+        expanded: Some(expanded),
+    }
+}
+
+/// Format command for TUI display during processing states
+fn format_command_for_display(command: &str, args: &[String], state: &str) -> ToolDisplayInfo {
+    let full_command = if args.is_empty() {
+        command.to_string()
+    } else {
+        format!("{} {}", command, args.join(" "))
+    };
+
+    let collapsed = format!("{} {}:\n{}", icons::GEAR_ICON, state, full_command);
+    let expanded = format!("{} {}:\n{}", icons::GEAR_ICON, state, full_command);
 
     ToolDisplayInfo {
         collapsed,
@@ -424,6 +442,11 @@ impl Tool for CommandTool {
             .map(|cmd| cmd.tool_call_id.as_str())
     }
 
+    fn create_received_tui_display(&self, _tool_call: &ToolCall, params: &Self::Params) -> Option<ToolDisplayInfo> {
+        let args = params.args.as_deref().unwrap_or(&[]);
+        Some(format_command_for_display(&params.command, args, "Executing"))
+    }
+
     async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
         // Cleanup completed commands periodically
         self.cleanup_completed_commands();
@@ -487,10 +510,16 @@ impl Tool for CommandTool {
                 tool_call_id: tool_call.id.clone(),
             });
 
+            let tui_display = Some(format_command_for_display(
+                command,
+                &args_array,
+                "Awaiting confirmation"
+            ));
+
             self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
                 call_id: tool_call.id,
                 status: ToolCallStatus::AwaitingUserYNConfirmation {
-                    tui_display: None,
+                    tui_display,
                 },
             }));
         }
