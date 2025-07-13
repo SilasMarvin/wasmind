@@ -4,6 +4,7 @@ use crate::config::ParsedTuiConfig;
 use crate::hive::MAIN_MANAGER_SCOPE;
 use crate::scope::Scope;
 use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::style::{Modifier, Style};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
@@ -120,6 +121,23 @@ impl Component<TuiMessage, ActorMessage> for DashboardComponent {
                             return Some(TuiMessage::Exit);
                         }
                     }
+
+                    if self.focus_chat {
+                        self.component
+                            .chat_area_component
+                            .attr(Attribute::Focus, AttrValue::Flag(true));
+                        self.component
+                            .graph_area_component
+                            .attr(Attribute::Focus, AttrValue::Flag(false));
+                    } else {
+                        self.component
+                            .chat_area_component
+                            .attr(Attribute::Focus, AttrValue::Flag(false));
+                        self.component
+                            .graph_area_component
+                            .attr(Attribute::Focus, AttrValue::Flag(true));
+                    }
+
                     None
                 } else {
                     if self.focus_chat {

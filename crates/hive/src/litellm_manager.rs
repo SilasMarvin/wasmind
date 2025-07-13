@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use snafu::{Location, ResultExt, Snafu, location};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::{sleep, timeout};
@@ -173,9 +174,10 @@ impl Default for LiteLLMConfig {
     }
 }
 
+static CONTAINER_ID: OnceLock<String> = OnceLock::new();
+
 pub struct LiteLLMManager {
     config: LiteLLMConfig,
-    container_id: Option<String>,
 }
 
 impl LiteLLMManager {
@@ -287,9 +289,16 @@ impl LiteLLMManager {
             config.port
         );
 
+        // Store container ID in static OnceLock
+        CONTAINER_ID.set(container_id.clone()).map_err(|_| {
+            LiteLLMError::ContainerStartFailed {
+                message: "Failed to store container ID".to_string(),
+                location: location!(),
+            }
+        })?;
+
         Ok(Self {
             config: config.clone(),
-            container_id: Some(container_id),
         })
     }
 
@@ -536,20 +545,44 @@ impl LiteLLMManager {
     }
 }
 
-impl Drop for LiteLLMManager {
-    fn drop(&mut self) {
-        if let Some(container_id) = &self.container_id {
-            // Try to stop the container in a blocking way
-            // This is not ideal but Drop doesn't support async
-            let _ = std::process::Command::new("docker")
-                .args(["stop", container_id])
-                .output();
+impl LiteLLMManager {
+    /// Stop the LiteLLM container if it's running
+    pub async fn stop() {
+        if let Some(container_id) = CONTAINER_ID.get() {
+            info!("Stopping LiteLLM container: {}", container_id);
+            
+            // Try to stop the container with timeout
+            let stop_result = timeout(
+                Duration::from_millis(200),
+                Command::new("docker")
+                    .args(["stop", container_id])
+                    .output()
+            )
+            .await;
 
-            if self.config.auto_remove {
-                let _ = std::process::Command::new("docker")
-                    .args(["rm", container_id])
-                    .output();
+            match stop_result {
+                Ok(Ok(output)) => {
+                    if output.status.success() {
+                        info!("Successfully stopped LiteLLM container");
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        warn!("Failed to stop container: {}", stderr);
+                    }
+                }
+                Ok(Err(e)) => {
+                    warn!("Error stopping container: {}", e);
+                }
+                Err(_) => {
+                    warn!("Timeout waiting for container stop (200ms)");
+                }
             }
+            
+            // Always try to remove the container if auto_remove was set
+            // Note: We don't have access to config here, so we'll always try to remove
+            let _ = Command::new("docker")
+                .args(["rm", container_id])
+                .output()
+                .await;
         }
     }
 }

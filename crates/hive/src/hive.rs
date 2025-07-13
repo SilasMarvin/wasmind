@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use snafu::ResultExt;
 use tokio::{select, sync::broadcast, task::JoinHandle, time::sleep};
+use tracing::{info, warn};
 
 use crate::{
     LiteLLMSnafu, SResult,
@@ -38,95 +39,74 @@ pub async fn start_hive(config: ParsedConfig) -> SResult<()> {
     // Create the TUI before waiting for LiteLLM to come up
     TuiActor::new(config.clone(), tx.clone(), MAIN_MANAGER_SCOPE).run();
 
-    // Need to keep this alive as the drop method shuts down the docker container
-    let mut litellm_manager = None;
-    let mut join_handle: Option<JoinHandle<SResult<LiteLLMManager>>> =
-        Some(tokio::spawn(async move {
-            // Start LiteLLM Docker container
-            let litellm_config = LiteLLMConfig {
-                port: config.hive.litellm.port,
-                image: config.hive.litellm.image.clone(),
-                container_name: config.hive.litellm.container_name.clone(),
-                auto_remove: config.hive.litellm.auto_remove,
-                env_overrides: config.hive.litellm.env_overrides.clone(),
-            };
-            let litellm_manager = LiteLLMManager::start(&litellm_config, &config)
-                .await
-                .context(LiteLLMSnafu)?;
-
-            litellm_manager
-                .wait_for_health()
-                .await
-                .context(LiteLLMSnafu)?;
-
-            // #[cfg(feature = "gui")]
-            // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
-            // #[cfg(feature = "audio")]
-            // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
-
-            // Create the Main Manager agent
-            let main_manager = Agent::new(
-                tx.clone(),
-                MAIN_MANAGER_ROLE.to_string(),
-                None,
-                config.clone(),
-                Scope::new(), // parent_scope means nothing for the MainManager
-                AgentType::MainManager,
-            )
-            .with_scope(MAIN_MANAGER_SCOPE)
-            .with_actors([
-                Planner::ACTOR_ID,
-                SpawnAgent::ACTOR_ID,
-                SendMessage::ACTOR_ID,
-                WaitTool::ACTOR_ID,
-            ]);
-
-            // Start the Main Manager
-            main_manager.run();
-
-            Ok(litellm_manager)
-        }));
-
-    // We can only await on JoinHandle once so we must do it when we know it is done
-    // The code below is rather gross but clear and works
-    loop {
-        let msg = if join_handle.is_some() {
-            if join_handle
-                .as_ref()
-                .is_some_and(|handle| handle.is_finished())
-            {
-                litellm_manager = Some(
-                    join_handle
-                        .take()
-                        .unwrap()
-                        .await
-                        .expect("Error joining tokio handle")?,
-                );
-
-                None
-            } else {
-                select! {
-                    _ = sleep(Duration::from_millis(200)) => None,
-                    msg = rx.recv() => Some(msg)
-                }
-            }
-        } else {
-            Some(rx.recv().await)
+    // Start LiteLLM in background task
+    let _: JoinHandle<SResult<()>> = tokio::spawn(async move {
+        // Start LiteLLM Docker container
+        let litellm_config = LiteLLMConfig {
+            port: config.hive.litellm.port,
+            image: config.hive.litellm.image.clone(),
+            container_name: config.hive.litellm.container_name.clone(),
+            auto_remove: config.hive.litellm.auto_remove,
+            env_overrides: config.hive.litellm.env_overrides.clone(),
         };
+        let litellm_manager = LiteLLMManager::start(&litellm_config, &config)
+            .await
+            .context(LiteLLMSnafu)?;
 
-        if let Some(msg) = msg {
-            let msg = msg.expect("Error receiving in hive");
-            let message_json = serde_json::to_string(&msg).unwrap_or_else(|_| format!("{:?}", msg));
-            tracing::debug!(name = "hive_received_message", message = %message_json, message_type = std::any::type_name::<Message>());
+        litellm_manager
+            .wait_for_health()
+            .await
+            .context(LiteLLMSnafu)?;
 
-            match msg.message {
-                Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
-                    drop(litellm_manager);
-                    sleep(Duration::from_millis(50)).await;
-                    return Ok(());
+        // #[cfg(feature = "gui")]
+        // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+        // #[cfg(feature = "audio")]
+        // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+
+        // Create the Main Manager agent
+        let main_manager = Agent::new(
+            tx.clone(),
+            MAIN_MANAGER_ROLE.to_string(),
+            None,
+            config.clone(),
+            Scope::new(), // parent_scope means nothing for the MainManager
+            AgentType::MainManager,
+        )
+        .with_scope(MAIN_MANAGER_SCOPE)
+        .with_actors([
+            Planner::ACTOR_ID,
+            SpawnAgent::ACTOR_ID,
+            SendMessage::ACTOR_ID,
+            WaitTool::ACTOR_ID,
+        ]);
+
+        // Start the Main Manager
+        main_manager.run();
+
+        Ok(())
+    });
+
+    // Listen for messages
+    loop {
+        let msg = rx.recv().await;
+        let msg = msg.expect("Error receiving in hive");
+        let message_json = serde_json::to_string(&msg).unwrap_or_else(|_| format!("{:?}", msg));
+        tracing::debug!(name = "hive_received_message", message = %message_json, message_type = std::any::type_name::<Message>());
+
+        match msg.message {
+            Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
+                // Stop the LiteLLM container with a timeout
+                select! {
+                    _ = LiteLLMManager::stop() => {
+                        info!("LiteLLM container stopped");
+                    }
+                    _ = sleep(Duration::from_millis(200)) => {
+                        warn!("Timed out waiting for LiteLLM container to stop");
+                    }
                 }
-                _ => (),
+                return Ok(());
             }
+            _ => (),
         }
     }
 }
@@ -149,8 +129,10 @@ pub async fn start_headless_hive(
         auto_remove: config.hive.litellm.auto_remove,
         env_overrides: config.hive.litellm.env_overrides.clone(),
     };
-    let _litellm_manager = match LiteLLMManager::start(&litellm_config, &config).await {
-        Ok(manager) => manager,
+    match LiteLLMManager::start(&litellm_config, &config).await {
+        Ok(manager) => {
+            manager.wait_for_health().await.context(LiteLLMSnafu)?;
+        }
         Err(e) => {
             tracing::error!("Failed to start LiteLLM container: {}", e);
             return Ok(());
@@ -191,7 +173,18 @@ pub async fn start_headless_hive(
         tracing::debug!(name = "hive_message", message_type = std::any::type_name::<Message>(), message = %message_json);
 
         match msg.message {
-            Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => return Ok(()),
+            Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
+                // Stop the LiteLLM container with a timeout
+                select! {
+                    _ = LiteLLMManager::stop() => {
+                        info!("LiteLLM container stopped");
+                    }
+                    _ = sleep(Duration::from_millis(200)) => {
+                        warn!("Timed out waiting for LiteLLM container to stop");
+                    }
+                }
+                return Ok(());
+            }
             Message::Agent(AgentMessage {
                 agent_id,
                 message:

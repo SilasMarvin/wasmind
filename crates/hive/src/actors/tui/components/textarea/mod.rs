@@ -42,7 +42,7 @@ impl LLMTextAreaComponent {
 
     pub fn get_height(&self, _area: Rect) -> usize {
         // Add two for the borders
-        self.component.state().unwrap_vec().len() + 2
+        (self.component.state().unwrap_vec().len() + 2).min(20)
     }
 }
 
