@@ -15,7 +15,7 @@ pub async fn run() {
     info!("Starting command execution scenario");
 
     // Create config
-    let config: ParsedConfig = Config::new(true).unwrap().try_into().unwrap();
+    let config: ParsedConfig = Config::new(false).unwrap().try_into().unwrap();
     let scope = MAIN_MANAGER_SCOPE;
 
     // Set up broadcast channel

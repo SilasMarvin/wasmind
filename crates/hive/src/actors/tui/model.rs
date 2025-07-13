@@ -90,7 +90,7 @@ where
                     Duration::from_millis(20),
                     1024,
                 )
-                .tick_interval(Duration::from_secs(100))
+                .tick_interval(Duration::from_millis(250))
                 .poll_timeout(Duration::from_millis(20)),
         );
 

@@ -463,6 +463,10 @@ impl ScrollableComponentTrait<TuiMessage, ActorMessage> for GraphAreaComponent {
 impl Component<TuiMessage, ActorMessage> for GraphAreaComponent {
     fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
         let msg = match ev {
+            Event::Tick => {
+                self.component.is_modified = true;
+                Some(TuiMessage::Redraw)
+            }
             Event::Keyboard(key_event) => {
                 if let Some(action) = self.config.graph.key_bindings.get(&key_event) {
                     let scope = match action {

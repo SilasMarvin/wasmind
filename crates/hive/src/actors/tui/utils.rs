@@ -1,7 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Constraint, Flex, Layout, Rect},
     widgets::{Block, Padding, block::Title},
 };
+use throbber_widgets_tui::{Throbber, ThrobberState};
 use tuirealm::props::Borders;
 
 pub fn create_block<'a>(borders: Borders, _focus: bool, padding: Option<Padding>) -> Block<'a> {

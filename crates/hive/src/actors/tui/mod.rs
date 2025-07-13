@@ -10,6 +10,7 @@ use tuirealm::{PollStrategy, Update};
 pub mod components;
 pub mod icons;
 mod model;
+mod throbber_in_title_ext;
 mod utils;
 
 use crate::{

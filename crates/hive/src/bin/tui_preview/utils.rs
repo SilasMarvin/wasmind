@@ -1,6 +1,6 @@
 use hive::{
     actors::{
-        ActorMessage, AgentMessage, AgentType, Message,
+        ActorMessage, AgentMessage, AgentStatus, AgentType, Message,
         tools::{
             Tool,
             command::{CommandParams, CommandTool},
@@ -33,6 +33,18 @@ pub fn create_spawn_agent_message(
         },
         new_scope,
     )
+}
+
+pub fn create_agent_status_update_message(scope: &Scope, status: AgentStatus) -> ActorMessage {
+    ActorMessage {
+        scope: scope.clone(),
+        message: Message::Agent(AgentMessage {
+            agent_id: scope.clone(),
+            message: hive::actors::AgentMessageType::InterAgentMessage(
+                hive::actors::InterAgentMessage::StatusUpdate { status },
+            ),
+        }),
+    }
 }
 
 pub fn create_command_tool_call(

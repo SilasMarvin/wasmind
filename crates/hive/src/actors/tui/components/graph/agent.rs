@@ -1,15 +1,12 @@
 use crate::{
     actors::{
         ActorMessage, AgentStatus, AgentType,
-        tui::{
-            icons::{MAIN_MANAGER_ICON, SUB_MANGER_ICON, WORKER_ICON},
-            model::TuiMessage,
-            utils,
-        },
+        tui::{model::TuiMessage, throbber_in_title_ext::ThrobberInTitleExt, utils},
     },
     scope::Scope,
 };
 use ratatui::widgets::{Padding, Paragraph, Widget, Wrap};
+use throbber_widgets_tui::{Throbber, ThrobberState, WHITE_SQUARE};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
@@ -20,14 +17,6 @@ use tuirealm::{
 
 pub const WIDGET_WIDTH: u16 = 50;
 pub const WIDGET_HEIGHT: u16 = 9;
-
-fn get_icon_for_agent_type(agent_type: AgentType) -> &'static str {
-    match agent_type {
-        AgentType::MainManager => MAIN_MANAGER_ICON,
-        AgentType::SubManager => SUB_MANGER_ICON,
-        AgentType::Worker => WORKER_ICON,
-    }
-}
 
 #[derive(Default, Copy, Clone)]
 pub struct AgentMetrics {
@@ -89,6 +78,7 @@ impl AgentComponent {
                 task,
                 status: None,
                 context_size: 0,
+                throbber_state: ThrobberState::default(),
             },
         }
     }
@@ -99,6 +89,20 @@ impl AgentComponent {
 
     pub fn increment_metrics(&mut self, metrics: AgentMetrics) {
         self.component.metrics = self.component.metrics.clone() + metrics;
+    }
+}
+
+fn format_agent_status(status: &AgentStatus) -> &'static str {
+    match status {
+        AgentStatus::Processing { .. } => "Processing ⌘",
+        AgentStatus::Wait { reason } => match reason {
+            crate::actors::WaitReason::WaitingForUserInput => "Waiting on user",
+            crate::actors::WaitReason::WaitForSystem { .. } => "Waiting on system",
+            crate::actors::WaitReason::WaitingForManager { .. } => "Waiting on manager",
+            crate::actors::WaitReason::WaitingForTools { .. } => "Calling tool ⌘",
+            crate::actors::WaitReason::WaitingForActors { .. } => "Waiting on actors",
+        },
+        AgentStatus::Done(..) => "Done ",
     }
 }
 
@@ -113,6 +117,7 @@ pub struct Agent {
     task: Option<String>,
     context_size: u64,
     status: Option<AgentStatus>,
+    throbber_state: ThrobberState,
 }
 
 impl MockComponent for Agent {
@@ -125,14 +130,22 @@ impl MockComponent for Agent {
             } else {
                 Borders::default()
             };
-            let title = format!(
-                "[ {} {} ]",
-                get_icon_for_agent_type(self.agent_type),
-                self.agent_type
-            );
+            let title = if let Some(status) = &self.status {
+                format!("[ {} | {} ]", self.agent_type, format_agent_status(status))
+            } else {
+                format!("[ {} ]", self.agent_type)
+            };
+            let maybe_loc = title.chars().position(|c| c == '⌘');
             let div =
                 utils::create_block_with_title(title, borders, false, Some(Padding::uniform(1)));
-            frame.render_widget(div, area);
+            let throbber = Throbber::default().throbber_set(WHITE_SQUARE);
+
+            if let Some(loc) = maybe_loc {
+                self.throbber_state.calc_next();
+                div.render_with_throbber(frame, area, loc, throbber, &mut self.throbber_state);
+            } else {
+                frame.render_widget_ref(div, area);
+            }
 
             // Render the Role
             let role_paragraph_chunk = Rect::new(area.x + 2, area.y + 2, area.width - 4, 1);
@@ -195,7 +208,7 @@ impl MockComponent for Agent {
 }
 
 impl Component<TuiMessage, ActorMessage> for AgentComponent {
-    fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
+    fn on(&mut self, _ev: Event<ActorMessage>) -> Option<TuiMessage> {
         None
     }
 }
