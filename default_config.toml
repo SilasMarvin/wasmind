@@ -9,7 +9,6 @@ whitelisted_commands = []
 
 [tui.dashboard.key_bindings]
 "ctrl-c" = "Exit"
-"ctrl-n" = "ToggleFocus"
 
 [tui.chat.key_bindings]
 "ctrl-a" = "Assist"

@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Alignment, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
 };
 use tui_realm_textarea::{
     INACTIVE_BORDERS, TEXTAREA_CMD_CLEAR, TEXTAREA_CMD_MOVE_WORD_BACK,

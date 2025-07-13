@@ -14,8 +14,6 @@ use config::{Config, ParsedConfig};
 use snafu::ResultExt;
 use snafu::{Location, Snafu};
 use std::sync::OnceLock;
-use tokio::runtime;
-use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub static IS_HEADLESS: OnceLock<bool> = OnceLock::new();

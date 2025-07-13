@@ -609,6 +609,8 @@ impl Actor for Assistant {
                             if let Some(task_description) = self.task_description.clone() {
                                 self.pending_message.set_user_content(task_description);
                                 self.submit_pending_message(true);
+                            } else if self.pending_message.has_content() {
+                                self.submit_pending_message(false);
                             } else {
                                 self.set_state(
                                     AgentStatus::Wait {

@@ -290,12 +290,12 @@ impl LiteLLMManager {
         );
 
         // Store container ID in static OnceLock
-        CONTAINER_ID.set(container_id.clone()).map_err(|_| {
-            LiteLLMError::ContainerStartFailed {
+        CONTAINER_ID
+            .set(container_id.clone())
+            .map_err(|_| LiteLLMError::ContainerStartFailed {
                 message: "Failed to store container ID".to_string(),
                 location: location!(),
-            }
-        })?;
+            })?;
 
         Ok(Self {
             config: config.clone(),
@@ -550,18 +550,15 @@ impl LiteLLMManager {
     pub async fn stop() {
         if let Some(container_id) = CONTAINER_ID.get() {
             info!("Stopping LiteLLM container: {}", container_id);
-            
+
             // Try to stop the container with timeout
-            let stop_result = timeout(
-                Duration::from_millis(200),
-                Command::new("docker")
-                    .args(["stop", container_id])
-                    .output()
-            )
-            .await;
+            let stop_result = Command::new("docker")
+                .args(["stop", container_id])
+                .output()
+                .await;
 
             match stop_result {
-                Ok(Ok(output)) => {
+                Ok(output) => {
                     if output.status.success() {
                         info!("Successfully stopped LiteLLM container");
                     } else {
@@ -569,20 +566,15 @@ impl LiteLLMManager {
                         warn!("Failed to stop container: {}", stderr);
                     }
                 }
-                Ok(Err(e)) => {
+                Err(e) => {
                     warn!("Error stopping container: {}", e);
                 }
-                Err(_) => {
-                    warn!("Timeout waiting for container stop (200ms)");
-                }
             }
-            
-            // Always try to remove the container if auto_remove was set
-            // Note: We don't have access to config here, so we'll always try to remove
-            let _ = Command::new("docker")
-                .args(["rm", container_id])
-                .output()
-                .await;
+
+            // let _ = Command::new("docker")
+            //     .args(["rm", container_id])
+            //     .output()
+            //     .await;
         }
     }
 }

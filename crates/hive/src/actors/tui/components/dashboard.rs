@@ -1,10 +1,7 @@
-use crate::actors::Message;
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::config::ParsedTuiConfig;
-use crate::hive::MAIN_MANAGER_SCOPE;
 use crate::scope::Scope;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::style::{Modifier, Style};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
@@ -23,9 +20,6 @@ pub const SCOPE_ATTR: &'static str = "SCOPE_ATTR";
 /// Actions the user can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DashboardUserAction {
-    ToggleFocus,
-    FocusGraph,
-    FocusChat,
     Exit,
 }
 
@@ -34,9 +28,6 @@ impl TryFrom<&str> for DashboardUserAction {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "ToggleFocus" => Ok(DashboardUserAction::ToggleFocus),
-            "FocusGraph" => Ok(DashboardUserAction::FocusGraph),
-            "FocusChat" => Ok(DashboardUserAction::FocusChat),
             "Exit" => Ok(DashboardUserAction::Exit),
             _ => Err(()),
         }
@@ -110,61 +101,23 @@ impl MockComponent for Dashboard {
 
 impl Component<TuiMessage, ActorMessage> for DashboardComponent {
     fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
-        match &ev {
-            Event::Keyboard(key_event) => {
-                if let Some(action) = self.config.dashboard.key_bindings.get(&key_event) {
-                    match action {
-                        DashboardUserAction::ToggleFocus => self.focus_chat = !self.focus_chat,
-                        DashboardUserAction::FocusGraph => self.focus_chat = false,
-                        DashboardUserAction::FocusChat => self.focus_chat = true,
-                        DashboardUserAction::Exit => {
-                            return Some(TuiMessage::Exit);
-                        }
-                    }
-
-                    if self.focus_chat {
-                        self.component
-                            .chat_area_component
-                            .attr(Attribute::Focus, AttrValue::Flag(true));
-                        self.component
-                            .graph_area_component
-                            .attr(Attribute::Focus, AttrValue::Flag(false));
-                    } else {
-                        self.component
-                            .chat_area_component
-                            .attr(Attribute::Focus, AttrValue::Flag(false));
-                        self.component
-                            .graph_area_component
-                            .attr(Attribute::Focus, AttrValue::Flag(true));
-                    }
-
-                    Some(TuiMessage::Redraw)
-                } else {
-                    if self.focus_chat {
-                        self.component.chat_area_component.on(ev)
-                    } else {
-                        self.component.graph_area_component.on(ev.clone())
+        if let Event::Keyboard(key_event) = &ev {
+            if let Some(action) = self.config.dashboard.key_bindings.get(&key_event) {
+                match action {
+                    DashboardUserAction::Exit => {
+                        return Some(TuiMessage::Exit);
                     }
                 }
             }
-            Event::Mouse(_) => {
-                if self.focus_chat {
-                    self.component.chat_area_component.on(ev)
-                } else {
-                    self.component.graph_area_component.on(ev.clone())
-                }
-            }
-            _ => {
-                match (
-                    self.component.graph_area_component.on(ev.clone()),
-                    self.component.chat_area_component.on(ev),
-                ) {
-                    (None, None) => None,
-                    (None, Some(msg)) => Some(msg),
-                    (Some(msg), None) => Some(msg),
-                    (Some(msg1), Some(msg2)) => Some(TuiMessage::Batch(vec![msg1, msg2])),
-                }
-            }
+        }
+        match (
+            self.component.graph_area_component.on(ev.clone()),
+            self.component.chat_area_component.on(ev),
+        ) {
+            (None, None) => None,
+            (None, Some(msg)) => Some(msg),
+            (Some(msg), None) => Some(msg),
+            (Some(msg1), Some(msg2)) => Some(TuiMessage::Batch(vec![msg1, msg2])),
         }
     }
 }

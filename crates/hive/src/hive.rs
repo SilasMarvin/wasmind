@@ -53,15 +53,13 @@ pub async fn start_hive(config: ParsedConfig) -> SResult<()> {
             .await
             .context(LiteLLMSnafu)?;
 
-        litellm_manager
-            .wait_for_health()
-            .await
-            .context(LiteLLMSnafu)?;
-
         // #[cfg(feature = "gui")]
         // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
         // #[cfg(feature = "audio")]
         // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+
+        // Pretending LITELLM is an actor to delay the Assistant processing is kind of hacky but
+        // works well.
 
         // Create the Main Manager agent
         let main_manager = Agent::new(
@@ -78,10 +76,24 @@ pub async fn start_hive(config: ParsedConfig) -> SResult<()> {
             SpawnAgent::ACTOR_ID,
             SendMessage::ACTOR_ID,
             WaitTool::ACTOR_ID,
+            "LITELLM_DUMMY_ACTOR",
         ]);
 
         // Start the Main Manager
         main_manager.run();
+
+        // Wait for LITELLM
+        litellm_manager
+            .wait_for_health()
+            .await
+            .context(LiteLLMSnafu)?;
+
+        let _ = tx.send(ActorMessage {
+            scope: MAIN_MANAGER_SCOPE.clone(),
+            message: Message::ActorReady {
+                actor_id: "LITELLM_DUMMY_ACTOR".to_string(),
+            },
+        });
 
         Ok(())
     });
@@ -100,7 +112,7 @@ pub async fn start_hive(config: ParsedConfig) -> SResult<()> {
                     _ = LiteLLMManager::stop() => {
                         info!("LiteLLM container stopped");
                     }
-                    _ = sleep(Duration::from_millis(200)) => {
+                    _ = sleep(Duration::from_millis(500)) => {
                         warn!("Timed out waiting for LiteLLM container to stop");
                     }
                 }

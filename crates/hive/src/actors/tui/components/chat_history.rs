@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::actors::tui::icons;
 use crate::actors::tui::utils::{create_block_with_title, offset_y};
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
-use crate::actors::{AgentMessage, AgentType, ToolCallStatus};
+use crate::actors::{AgentMessage, AgentMessageType, AgentType, ToolCallStatus};
 use crate::hive::{MAIN_MANAGER_ROLE, MAIN_MANAGER_SCOPE};
 use crate::llm_client::{AssistantChatMessage, ChatMessage, ToolCall};
 use crate::scope::Scope;
@@ -11,7 +11,7 @@ use ratatui::layout::Alignment;
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Padding, Paragraph, StatefulWidget, Widget, WidgetRef, Wrap};
 use tuirealm::{
-    AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State, StateValue,
+    AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
@@ -20,6 +20,24 @@ use super::dashboard::SCOPE_ATTR;
 use super::scrollable::ScrollableComponentTrait;
 
 const MESSAGE_GAP: u16 = 1;
+
+fn create_pending_user_message_widget(content: String, area: Rect) -> (Box<dyn WidgetRef>, u16) {
+    let borders = tuirealm::props::Borders::default();
+    let block = create_block_with_title(
+        format!("[ {} You - PENDING ]", icons::USER_ICON),
+        borders,
+        false,
+        Some(Padding::uniform(1)),
+    );
+    let message_paragraph = Paragraph::new(content)
+        .block(block)
+        .style(Style::new())
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+    let min_height = message_paragraph.line_count(area.width) as u16;
+
+    (Box::new(message_paragraph), min_height)
+}
 
 fn create_user_widget(content: String, area: Rect) -> (Box<dyn WidgetRef>, u16) {
     let borders = tuirealm::props::Borders::default();
@@ -127,7 +145,9 @@ fn create_assistant_widgets(
 ) -> Vec<(Box<dyn WidgetRef>, u16)> {
     let mut widgets: Vec<(Box<dyn WidgetRef>, u16)> = vec![];
 
-    if let Some(text_content) = message.content {
+    if let Some(text_content) = message.content
+        && !text_content.is_empty()
+    {
         let borders = tuirealm::props::Borders::default();
         let block = create_block_with_title(
             format!("[ {} Assistant ]", icons::LLM_ICON),
@@ -160,9 +180,22 @@ struct AssistantInfo {
     role: String,
     _assistant_type: AgentType,
     _task_description: Option<String>,
-    chat_history: Option<Vec<ChatMessage>>,
+    chat_history: Vec<ChatMessage>,
     pending_user_message: Option<String>,
     tool_call_updates: HashMap<String, ToolCallStatus>,
+}
+
+impl AssistantInfo {
+    fn new(role: String, _assistant_type: AgentType, _task_description: Option<String>) -> Self {
+        Self {
+            role,
+            _assistant_type,
+            _task_description,
+            chat_history: vec![],
+            pending_user_message: None,
+            tool_call_updates: HashMap::new(),
+        }
+    }
 }
 
 impl AssistantInfo {
@@ -174,7 +207,7 @@ impl AssistantInfo {
         let mut total_height = 0;
 
         // Render top role title
-        let title_paragraph = Paragraph::new(self.role.clone())
+        let title_paragraph = Paragraph::new(format!("[ {} ]", self.role.clone()))
             .style(Style::new())
             .alignment(Alignment::Center);
         let min_height = title_paragraph.line_count(area.width) as u16;
@@ -183,53 +216,51 @@ impl AssistantInfo {
         area = offset_y(area, min_height + MESSAGE_GAP);
         total_height += min_height + MESSAGE_GAP;
 
-        if self.chat_history.is_none() && self.pending_user_message.is_none() {
-            let content = "Type to send a message".to_string();
+        if self.chat_history.is_empty() && self.pending_user_message.is_none() {
+            let content =
+                "\nIt's quiet, too quiet...\n\nSend a message - don't be shy!".to_string();
             let paragraph = Paragraph::new(content)
                 .block(Block::bordered())
                 .style(Style::new())
                 .alignment(Alignment::Center)
                 .wrap(Wrap { trim: true });
-            area.height = 3;
+            area.y += 5;
+            area.x += 5;
+            area.width -= 10;
+            area.height = 7;
             paragraph.render(area, buf);
-            total_height += 3;
+            total_height += 12;
         } else {
             // Render chat history
-            if let Some(chat_messages) = self.chat_history {
-                for message in chat_messages {
-                    let widgets = match message {
-                        ChatMessage::System { content } => {
-                            vec![create_system_widget(content, area)]
-                        }
-                        ChatMessage::User { content } => {
-                            vec![create_user_widget(content, area)]
-                        }
-                        ChatMessage::Assistant(assistant_chat_message) => create_assistant_widgets(
-                            assistant_chat_message,
-                            area,
-                            &self.tool_call_updates,
-                        ),
-                        ChatMessage::Tool { .. } => vec![],
-                    };
-                    for (widget, height) in widgets {
-                        area.height = height;
-                        widget.render_ref(area, buf);
-                        area = offset_y(area, height + MESSAGE_GAP);
-                        total_height += height + MESSAGE_GAP;
+            for message in self.chat_history {
+                let widgets = match message {
+                    ChatMessage::System { content } => {
+                        vec![create_system_widget(content, area)]
                     }
+                    ChatMessage::User { content } => {
+                        vec![create_user_widget(content, area)]
+                    }
+                    ChatMessage::Assistant(assistant_chat_message) => create_assistant_widgets(
+                        assistant_chat_message,
+                        area,
+                        &self.tool_call_updates,
+                    ),
+                    ChatMessage::Tool { .. } => vec![],
+                };
+                for (widget, height) in widgets {
+                    area.height = height;
+                    widget.render_ref(area, buf);
+                    area = offset_y(area, height + MESSAGE_GAP);
+                    total_height += height + MESSAGE_GAP;
                 }
             }
 
             // Render pending message
             if let Some(pending_message) = self.pending_user_message {
-                let pending_message_paragraph = Paragraph::new(pending_message)
-                    .block(Block::bordered())
-                    .style(Style::new())
-                    .alignment(Alignment::Center);
-                let min_height = pending_message_paragraph.line_count(area.width) as u16;
-                area.height = min_height;
-                pending_message_paragraph.render(area, buf);
-                total_height += min_height + MESSAGE_GAP;
+                let (widget, height) = create_pending_user_message_widget(pending_message, area);
+                area.height = height;
+                widget.render_ref(area, buf);
+                total_height += height + MESSAGE_GAP;
             }
         }
 
@@ -267,14 +298,7 @@ impl ChatHistoryComponent {
                 state: State::None,
                 chat_history_map: HashMap::from([(
                     MAIN_MANAGER_SCOPE.clone(),
-                    AssistantInfo {
-                        role: MAIN_MANAGER_ROLE.to_string(),
-                        _assistant_type: AgentType::MainManager,
-                        _task_description: None,
-                        chat_history: None,
-                        pending_user_message: None,
-                        tool_call_updates: HashMap::new(),
-                    },
+                    AssistantInfo::new(MAIN_MANAGER_ROLE.to_string(), AgentType::MainManager, None),
                 )]),
                 last_content_height: None,
                 is_modified: false,
@@ -366,7 +390,7 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
                         .chat_history_map
                         .get_mut(&actor_message.scope)
                     {
-                        actor_info.chat_history = Some(messages);
+                        actor_info.chat_history = messages;
                         self.component.is_modified = true;
 
                         return Some(TuiMessage::Redraw);
@@ -387,7 +411,21 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
                     }
                 }
                 // This let's us track new agent creation
-                crate::actors::Message::Agent(AgentMessage { .. }) => (),
+                crate::actors::Message::Agent(AgentMessage {
+                    agent_id,
+                    message:
+                        AgentMessageType::AgentSpawned {
+                            agent_type,
+                            role,
+                            task_description,
+                            ..
+                        },
+                }) => {
+                    self.component.chat_history_map.insert(
+                        agent_id,
+                        AssistantInfo::new(role, agent_type, Some(task_description)),
+                    );
+                }
                 _ => (),
             },
             _ => (),
