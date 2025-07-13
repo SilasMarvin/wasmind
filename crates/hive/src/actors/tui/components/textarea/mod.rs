@@ -1,16 +1,17 @@
 use ratatui::{
     layout::{Alignment, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
 };
 use tui_realm_textarea::{
-    TEXTAREA_CMD_CLEAR, TEXTAREA_CMD_MOVE_WORD_BACK, TEXTAREA_CMD_MOVE_WORD_FORWARD,
-    TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO, TextArea,
+    INACTIVE_BORDERS, TEXTAREA_CMD_CLEAR, TEXTAREA_CMD_MOVE_WORD_BACK,
+    TEXTAREA_CMD_MOVE_WORD_FORWARD, TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO,
+    TextArea,
 };
 use tuirealm::{
     AttrValue, Attribute, Component, Event, MockComponent,
     command::{Cmd, Direction, Position},
     event::{Key, KeyEvent, KeyModifiers},
-    props::Borders,
+    props::{BorderType, Borders},
 };
 
 use crate::{
@@ -30,9 +31,13 @@ impl LLMTextAreaComponent {
     pub fn new(config: ParsedTuiConfig) -> Self {
         let mut textarea = TextArea::new(vec![])
             .title("[ Input ]", Alignment::Left)
-            .borders(Borders::default())
+            .borders(Borders::default().modifiers(BorderType::Thick))
             .cursor_style(Style::new().bg(Color::Red).fg(Color::Red));
         textarea.attr(Attribute::Focus, AttrValue::Flag(true));
+        textarea.attr(
+            Attribute::Custom(INACTIVE_BORDERS),
+            AttrValue::Borders(Borders::default()),
+        );
 
         Self {
             component: textarea,

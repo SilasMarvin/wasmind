@@ -162,6 +162,7 @@ pub const TEXTAREA_TAB_SIZE: &str = "tab-size";
 pub const TEXTAREA_HARD_TAB: &str = "hard-tab";
 pub const TEXTAREA_SINGLE_LINE: &str = "single-line";
 pub const TEXTAREA_LAYOUT_MARGIN: &str = "layout-margin";
+pub const INACTIVE_BORDERS: &str = "inactive-borders";
 
 // -- cmd
 pub const TEXTAREA_CMD_NEWLINE: &str = "0";
@@ -325,25 +326,31 @@ impl<'a> TextArea<'a> {
         if let Some(AttrValue::Title((title, alignment))) = self.query(Attribute::Title) {
             block = block.title(title).title_alignment(alignment);
         }
-        if let Some(AttrValue::Borders(borders)) = self.query(Attribute::Borders) {
-            let inactive_style = self
-                .query(Attribute::FocusStyle)
-                .unwrap_or_else(|| AttrValue::Style(Style::default()))
-                .unwrap_style();
-            let focus = self
-                .props
-                .get_or(Attribute::Focus, AttrValue::Flag(false))
-                .unwrap_flag();
+        let focus = self
+            .props
+            .get_or(Attribute::Focus, AttrValue::Flag(false))
+            .unwrap_flag();
 
-            return Some(
-                block
-                    .border_style(match focus {
-                        true => borders.style(),
-                        false => inactive_style,
-                    })
-                    .border_type(borders.modifiers)
-                    .borders(borders.sides),
-            );
+        if focus {
+            if let Some(AttrValue::Borders(borders)) = self.query(Attribute::Borders) {
+                return Some(
+                    block
+                        .border_style(borders.style())
+                        .border_type(borders.modifiers)
+                        .borders(borders.sides),
+                );
+            }
+        } else {
+            if let Some(AttrValue::Borders(borders)) =
+                self.query(Attribute::Custom(INACTIVE_BORDERS))
+            {
+                return Some(
+                    block
+                        .border_style(borders.style())
+                        .border_type(borders.modifiers)
+                        .borders(borders.sides),
+                );
+            }
         }
 
         None

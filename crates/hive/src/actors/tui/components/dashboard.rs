@@ -138,7 +138,7 @@ impl Component<TuiMessage, ActorMessage> for DashboardComponent {
                             .attr(Attribute::Focus, AttrValue::Flag(true));
                     }
 
-                    None
+                    Some(TuiMessage::Redraw)
                 } else {
                     if self.focus_chat {
                         self.component.chat_area_component.on(ev)
