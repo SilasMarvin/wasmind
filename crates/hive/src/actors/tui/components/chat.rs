@@ -58,18 +58,21 @@ struct ChatArea {
 }
 
 impl MockComponent for ChatArea {
-    fn view(&mut self, frame: &mut Frame, area: Rect) {
+    fn view(&mut self, frame: &mut Frame, mut area: Rect) {
         // Check if visible
         if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
             let textarea_height = self.llm_textarea.get_height(area);
 
             let borders = Borders::default().sides(BorderSides::LEFT);
-            let div = utils::create_block(borders, false, Some(Padding::uniform(1)));
+            let div = utils::create_block(borders, false, None);
             frame.render_widget(div, area);
+
+            // Adjust the x for the border on the left
+            area.x += 1;
+            area.width -= 1;
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .margin(1)
                 .constraints(
                     [
                         Constraint::Percentage(100),

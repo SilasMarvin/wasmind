@@ -349,6 +349,17 @@ impl Component<TuiMessage, ActorMessage> for ChatHistoryComponent {
                         return Some(TuiMessage::Redraw);
                     }
                 }
+                crate::actors::Message::AssistantRequest(_) => {
+                    if let Some(actor_info) = self
+                        .component
+                        .chat_history_map
+                        .get_mut(&actor_message.scope)
+                    {
+                        actor_info.pending_user_message = None;
+                        self.component.is_modified = true;
+                        return Some(TuiMessage::Redraw);
+                    }
+                }
                 crate::actors::Message::AssistantChatUpdated(messages) => {
                     if let Some(actor_info) = self
                         .component

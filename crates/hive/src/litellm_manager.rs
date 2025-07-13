@@ -282,9 +282,6 @@ impl LiteLLMManager {
             }
         });
 
-        // Wait for health check
-        Self::wait_for_health(&format!("http://localhost:{}", config.port)).await?;
-
         info!(
             "LiteLLM container started successfully at http://localhost:{}",
             config.port
@@ -408,7 +405,8 @@ impl LiteLLMManager {
         Ok(container_id)
     }
 
-    async fn wait_for_health(base_url: &str) -> Result<(), LiteLLMError> {
+    pub async fn wait_for_health(&self) -> Result<(), LiteLLMError> {
+        let base_url = format!("http://localhost:{}", self.config.port);
         let client = reqwest::Client::new();
         let health_url = format!("{}/health", base_url);
         let max_attempts = 30;
@@ -492,45 +490,6 @@ impl LiteLLMManager {
 
     pub fn get_base_url(&self) -> String {
         format!("http://localhost:{}", self.config.port)
-    }
-
-    pub async fn stop(&mut self) -> Result<(), LiteLLMError> {
-        if let Some(container_id) = &self.container_id {
-            info!("Stopping LiteLLM container: {}", container_id);
-
-            let output = Command::new("docker")
-                .args(["stop", container_id])
-                .output()
-                .await
-                .context(DockerCommandSnafu)?;
-
-            if !output.status.success() {
-                warn!(
-                    "Failed to stop container: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-
-            if self.config.auto_remove {
-                let output = Command::new("docker")
-                    .args(["rm", container_id])
-                    .output()
-                    .await
-                    .context(DockerCommandSnafu)?;
-
-                if !output.status.success() {
-                    warn!(
-                        "Failed to remove container: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                }
-            }
-
-            self.container_id = None;
-            info!("LiteLLM container stopped");
-        }
-
-        Ok(())
     }
 
     async fn stream_container_logs(
@@ -803,7 +762,7 @@ mod tests {
         );
 
         // Start the LiteLLM container (runs in detached mode with -d flag)
-        let mut litellm_manager = LiteLLMManager::start(&litellm_config, &parsed_config)
+        let litellm_manager = LiteLLMManager::start(&litellm_config, &parsed_config)
             .await
             .expect("Should start LiteLLM container");
 
@@ -877,9 +836,7 @@ mod tests {
             _ => panic!("Expected assistant message with content"),
         }
 
-        // Clean up
-        info!("Cleaning up Docker container");
-        litellm_manager.stop().await.expect("Should stop container");
+        drop(litellm_manager);
 
         info!("Integration test completed successfully");
     }

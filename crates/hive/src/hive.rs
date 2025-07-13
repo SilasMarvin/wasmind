@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use snafu::ResultExt;
-use tokio::{select, sync::broadcast, task::JoinHandle};
+use tokio::{select, sync::broadcast, task::JoinHandle, time::sleep};
 
 use crate::{
     LiteLLMSnafu, SResult,
@@ -36,58 +38,77 @@ pub async fn start_hive(config: ParsedConfig) -> SResult<()> {
     // Create the TUI before waiting for LiteLLM to come up
     TuiActor::new(config.clone(), tx.clone(), MAIN_MANAGER_SCOPE).run();
 
-    let mut join_handle: Option<JoinHandle<SResult<()>>> = Some(tokio::spawn(async move {
-        // Start LiteLLM Docker container
-        let litellm_config = LiteLLMConfig {
-            port: config.hive.litellm.port,
-            image: config.hive.litellm.image.clone(),
-            container_name: config.hive.litellm.container_name.clone(),
-            auto_remove: config.hive.litellm.auto_remove,
-            env_overrides: config.hive.litellm.env_overrides.clone(),
-        };
-        LiteLLMManager::start(&litellm_config, &config)
-            .await
-            .context(LiteLLMSnafu)?;
+    // Need to keep this alive as the drop method shuts down the docker container
+    let mut litellm_manager = None;
+    let mut join_handle: Option<JoinHandle<SResult<LiteLLMManager>>> =
+        Some(tokio::spawn(async move {
+            // Start LiteLLM Docker container
+            let litellm_config = LiteLLMConfig {
+                port: config.hive.litellm.port,
+                image: config.hive.litellm.image.clone(),
+                container_name: config.hive.litellm.container_name.clone(),
+                auto_remove: config.hive.litellm.auto_remove,
+                env_overrides: config.hive.litellm.env_overrides.clone(),
+            };
+            let litellm_manager = LiteLLMManager::start(&litellm_config, &config)
+                .await
+                .context(LiteLLMSnafu)?;
 
-        // #[cfg(feature = "gui")]
-        // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
-        // #[cfg(feature = "audio")]
-        // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+            litellm_manager
+                .wait_for_health()
+                .await
+                .context(LiteLLMSnafu)?;
 
-        // Create the Main Manager agent
-        let main_manager = Agent::new(
-            tx.clone(),
-            MAIN_MANAGER_ROLE.to_string(),
-            None,
-            config.clone(),
-            Scope::new(), // parent_scope means nothing for the MainManager
-            AgentType::MainManager,
-        )
-        .with_scope(MAIN_MANAGER_SCOPE)
-        .with_actors([
-            Planner::ACTOR_ID,
-            SpawnAgent::ACTOR_ID,
-            SendMessage::ACTOR_ID,
-            WaitTool::ACTOR_ID,
-        ]);
+            // #[cfg(feature = "gui")]
+            // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+            // #[cfg(feature = "audio")]
+            // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
 
-        // Start the Main Manager
-        main_manager.run();
+            // Create the Main Manager agent
+            let main_manager = Agent::new(
+                tx.clone(),
+                MAIN_MANAGER_ROLE.to_string(),
+                None,
+                config.clone(),
+                Scope::new(), // parent_scope means nothing for the MainManager
+                AgentType::MainManager,
+            )
+            .with_scope(MAIN_MANAGER_SCOPE)
+            .with_actors([
+                Planner::ACTOR_ID,
+                SpawnAgent::ACTOR_ID,
+                SendMessage::ACTOR_ID,
+                WaitTool::ACTOR_ID,
+            ]);
 
-        Ok(())
-    }));
+            // Start the Main Manager
+            main_manager.run();
 
+            Ok(litellm_manager)
+        }));
+
+    // We can only await on JoinHandle once so we must do it when we know it is done
+    // The code below is rather gross but clear and works
     loop {
-        let msg = if let Some(handle) = join_handle.take()
-            && !handle.is_finished()
-        {
-            select! {
-                res = handle => {
-                    res.expect("Error joining manager spawn process in hive")?;
-                    join_handle = None;
-                    None
-                },
-                msg = rx.recv() => Some(msg)
+        let msg = if join_handle.is_some() {
+            if join_handle
+                .as_ref()
+                .is_some_and(|handle| handle.is_finished())
+            {
+                litellm_manager = Some(
+                    join_handle
+                        .take()
+                        .unwrap()
+                        .await
+                        .expect("Error joining tokio handle")?,
+                );
+
+                None
+            } else {
+                select! {
+                    _ = sleep(Duration::from_millis(200)) => None,
+                    msg = rx.recv() => Some(msg)
+                }
             }
         } else {
             Some(rx.recv().await)
@@ -100,8 +121,8 @@ pub async fn start_hive(config: ParsedConfig) -> SResult<()> {
 
             match msg.message {
                 Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
-                    // This is a horrible hack to let the tui restore the terminal first
-                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    drop(litellm_manager);
+                    sleep(Duration::from_millis(50)).await;
                     return Ok(());
                 }
                 _ => (),
