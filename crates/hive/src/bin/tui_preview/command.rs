@@ -28,7 +28,11 @@ pub async fn run() {
     let mut chat_history = vec![ChatMessage::user("Use the command tool do something!")];
 
     let (command_tool_call_actor_message, assistant_response_chat_history_message) =
-        create_command_tool_call(&scope, "echo", &["test"]);
+        create_command_tool_call(
+            &scope,
+            "sleep 10 && echo 'Command completed after 10 seconds!'",
+            &[],
+        );
 
     chat_history.push(assistant_response_chat_history_message);
     let _ = tx.send(ActorMessage {

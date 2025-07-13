@@ -25,11 +25,23 @@ pub trait Tool: ActorContext {
 
     type Params: DeserializeOwned;
 
+    /// Create TUI display info for when the tool call is received
+    /// Override this method to provide custom display for your tool
+    fn create_received_tui_display(&self, _tool_call: &llm_client::ToolCall, _params: &Self::Params) -> Option<crate::actors::ToolDisplayInfo> {
+        None
+    }
+
     async fn handle_tool_call(&mut self, tool_call: llm_client::ToolCall) {
+        // Try to parse params early to get display info
+        let tui_display = match self.deserialize_params(&tool_call.function.arguments) {
+            Ok(ref params) => self.create_received_tui_display(&tool_call, params),
+            Err(_) => None,
+        };
+
         self.broadcast(Message::ToolCallUpdate(ToolCallUpdate {
             call_id: tool_call.id.clone(),
             status: ToolCallStatus::Received {
-                tui_display: None,
+                tui_display,
             },
         }));
 
