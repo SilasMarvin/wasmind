@@ -150,8 +150,8 @@ use tuirealm::command::{Cmd, CmdResult, Direction, Position};
 use tuirealm::props::{
     Alignment, AttrValue, Attribute, Borders, PropPayload, PropValue, Props, Style, TextModifiers,
 };
-use tuirealm::ratatui::layout::{Constraint, Direction as LayoutDirection, Layout, Rect};
-use tuirealm::ratatui::widgets::{Block, Paragraph};
+use tuirealm::ratatui::layout::Rect;
+use tuirealm::ratatui::widgets::Block;
 use tuirealm::{Frame, MockComponent, State, StateValue};
 
 // -- props

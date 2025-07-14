@@ -2,7 +2,7 @@ use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use ratatui::buffer::Buffer;
 use std::u16;
 use tuirealm::{
-    AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State, StateValue,
+    AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
@@ -29,7 +29,6 @@ impl ScrollableComponent {
         Self {
             component: Scrollable {
                 props: Props::default(),
-                state: State::One(StateValue::String("".to_string())),
                 child,
                 scroll_offset: 0,
                 content_height: 0,
@@ -43,7 +42,6 @@ impl ScrollableComponent {
 
 struct Scrollable {
     props: Props,
-    state: State,
     child: Box<dyn ScrollableComponentTrait<TuiMessage, ActorMessage>>,
     scroll_offset: u16,
     content_height: u16,
