@@ -6,7 +6,9 @@ use crate::{
     scope::Scope,
 };
 use ratatui::widgets::{Padding, Paragraph, Widget, Wrap};
-use throbber_widgets_tui::{Throbber, ThrobberState, WHITE_SQUARE};
+use throbber_widgets_tui::{
+    BLACK_CIRCLE, OGHAM_C, Throbber, ThrobberState, VERTICAL_BLOCK, symbols::throbber,
+};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
@@ -20,9 +22,9 @@ pub const WIDGET_HEIGHT: u16 = 9;
 
 #[derive(Default, Copy, Clone)]
 pub struct AgentMetrics {
-    completion_requests_sent: u64,
-    tools_called: u64,
-    total_tokens_used: u64,
+    pub completion_requests_sent: u64,
+    pub tools_called: u64,
+    pub total_tokens_used: u64,
 }
 
 impl AgentMetrics {
@@ -41,15 +43,12 @@ impl AgentMetrics {
     }
 }
 
-impl std::ops::Add<AgentMetrics> for AgentMetrics {
-    type Output = AgentMetrics;
-
-    fn add(self, rhs: AgentMetrics) -> Self::Output {
-        AgentMetrics {
-            completion_requests_sent: self.completion_requests_sent + rhs.completion_requests_sent,
-            tools_called: self.tools_called + rhs.tools_called,
-            total_tokens_used: self.total_tokens_used + rhs.total_tokens_used,
-        }
+impl std::ops::AddAssign<AgentMetrics> for AgentMetrics {
+    fn add_assign(&mut self, rhs: AgentMetrics) {
+        self.completion_requests_sent =
+            self.completion_requests_sent + rhs.completion_requests_sent;
+        self.tools_called = self.tools_called + rhs.tools_called;
+        self.total_tokens_used = self.total_tokens_used + rhs.total_tokens_used;
     }
 }
 
@@ -88,7 +87,7 @@ impl AgentComponent {
     }
 
     pub fn increment_metrics(&mut self, metrics: AgentMetrics) {
-        self.component.metrics = self.component.metrics.clone() + metrics;
+        self.component.metrics += metrics;
     }
 }
 
@@ -97,12 +96,26 @@ fn format_agent_status(status: &AgentStatus) -> &'static str {
         AgentStatus::Processing { .. } => "Processing ⌘",
         AgentStatus::Wait { reason } => match reason {
             crate::actors::WaitReason::WaitingForUserInput => "Waiting on user",
-            crate::actors::WaitReason::WaitForSystem { .. } => "Waiting on system",
-            crate::actors::WaitReason::WaitingForManager { .. } => "Waiting on manager",
+            crate::actors::WaitReason::WaitForSystem { .. } => "Waiting on system ⌘",
+            crate::actors::WaitReason::WaitingForManager { .. } => "Waiting on manager ⌘",
             crate::actors::WaitReason::WaitingForTools { .. } => "Calling tool ⌘",
-            crate::actors::WaitReason::WaitingForActors { .. } => "Waiting on actors",
+            crate::actors::WaitReason::WaitingForActors { .. } => "Waiting on actors ⌘",
         },
-        AgentStatus::Done(..) => "Done ",
+        AgentStatus::Done(..) => "Done",
+    }
+}
+
+fn get_throbber_for_agent_status(status: &AgentStatus) -> Option<throbber::Set> {
+    match status {
+        AgentStatus::Processing { .. } => Some(BLACK_CIRCLE),
+        AgentStatus::Wait { reason } => match reason {
+            crate::actors::WaitReason::WaitingForUserInput => None,
+            crate::actors::WaitReason::WaitForSystem { .. } => Some(OGHAM_C),
+            crate::actors::WaitReason::WaitingForManager { .. } => Some(OGHAM_C),
+            crate::actors::WaitReason::WaitingForTools { .. } => Some(VERTICAL_BLOCK),
+            crate::actors::WaitReason::WaitingForActors { .. } => Some(OGHAM_C),
+        },
+        AgentStatus::Done(..) => None,
     }
 }
 
@@ -138,9 +151,12 @@ impl MockComponent for Agent {
             let maybe_loc = title.chars().position(|c| c == '⌘');
             let div =
                 utils::create_block_with_title(title, borders, false, Some(Padding::uniform(1)));
-            let throbber = Throbber::default().throbber_set(WHITE_SQUARE);
 
-            if let Some(loc) = maybe_loc {
+            if let Some(loc) = maybe_loc
+                && let Some(status) = &self.status
+                && let Some(throbber_set) = get_throbber_for_agent_status(&status)
+            {
+                let throbber = Throbber::default().throbber_set(throbber_set);
                 self.throbber_state.calc_next();
                 div.render_with_throbber(frame, area, loc, throbber, &mut self.throbber_state);
             } else {

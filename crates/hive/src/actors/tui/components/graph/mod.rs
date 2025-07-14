@@ -1,16 +1,22 @@
 use crate::{
     actors::{
-        ActorMessage, AgentMessageType, AgentStatus, AgentType, Message, tui::model::TuiMessage,
+        ActorMessage, AgentMessageType, AgentStatus, AgentType, Message,
+        tui::{model::TuiMessage, utils::create_block_with_title},
     },
     config::ParsedTuiConfig,
     hive::{MAIN_MANAGER_ROLE, MAIN_MANAGER_SCOPE},
     scope::Scope,
 };
 use agent::{AgentComponent, AgentMetrics};
-use ratatui::{text::Span, widgets::Paragraph};
+use ratatui::{
+    layout::{Flex, Layout},
+    text::Span,
+    widgets::{Clear, Padding, Paragraph, Widget},
+};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
+    props::Borders,
     ratatui::layout::Rect,
 };
 
@@ -319,6 +325,8 @@ pub struct GraphAreaComponent {
 
 impl GraphAreaComponent {
     pub fn new(config: ParsedTuiConfig) -> Self {
+        let mut stats = TotalStats::default();
+        stats.agents_spawned += 1;
         Self {
             component: GraphArea {
                 state: State::None,
@@ -332,10 +340,17 @@ impl GraphAreaComponent {
                 )),
                 content_height: 0,
                 is_modified: false,
+                stats,
             },
             config,
         }
     }
+}
+
+#[derive(Default)]
+struct TotalStats {
+    agents_spawned: u64,
+    aggregated_agent_metrics: AgentMetrics,
 }
 
 struct GraphArea {
@@ -344,6 +359,7 @@ struct GraphArea {
     root_node: AgentNode,
     content_height: u16,
     is_modified: bool,
+    stats: TotalStats,
 }
 
 fn render_tree_node(
@@ -426,9 +442,35 @@ fn render_tree_node(
 impl MockComponent for GraphArea {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
+            // Render the agent graph
             let mut y_offset = 0;
             render_tree_node(frame, area, &mut self.root_node, 0, &mut y_offset);
             self.content_height = y_offset;
+
+            // Render the overall stats
+            let live_agents = self.root_node.count();
+
+            let block = create_block_with_title(
+                "[ System Stats ]",
+                Borders::default(),
+                false,
+                Some(Padding::uniform(1)),
+            );
+            let stats_paragraph = Paragraph::new(format!(
+                "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}",
+                live_agents,
+                self.stats.agents_spawned,
+                self.stats.aggregated_agent_metrics.completion_requests_sent,
+                self.stats.aggregated_agent_metrics.tools_called,
+                self.stats.aggregated_agent_metrics.total_tokens_used
+            )).block(block);
+            let [mut area] = Layout::horizontal([stats_paragraph.line_width() as u16])
+                .flex(Flex::End)
+                .areas(area);
+            area.height = stats_paragraph.line_count(area.width) as u16;
+            Clear.render(area, frame.buffer_mut());
+            frame.render_widget(stats_paragraph, area);
+
             self.is_modified = false;
         }
     }
@@ -484,6 +526,7 @@ impl Component<TuiMessage, ActorMessage> for GraphAreaComponent {
             Event::User(actor_message) => match actor_message.message {
                 Message::AssistantRequest(_) => {
                     let metrics = AgentMetrics::with_completion_request();
+                    self.component.stats.aggregated_agent_metrics += metrics;
                     self.component
                         .root_node
                         .increment_metrics(&actor_message.scope, metrics);
@@ -491,6 +534,7 @@ impl Component<TuiMessage, ActorMessage> for GraphAreaComponent {
                 }
                 Message::AssistantToolCall(_) => {
                     let metrics = AgentMetrics::with_tool_call();
+                    self.component.stats.aggregated_agent_metrics += metrics;
                     self.component
                         .root_node
                         .increment_metrics(&actor_message.scope, metrics);
@@ -533,6 +577,8 @@ impl Component<TuiMessage, ActorMessage> for GraphAreaComponent {
                         );
                         let node = AgentNode::new(agent_component);
                         let _ = self.component.root_node.insert(&actor_message.scope, node);
+
+                        self.component.stats.agents_spawned += 1;
 
                         Some(TuiMessage::Redraw)
                     }
