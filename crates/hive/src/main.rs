@@ -1,4 +1,4 @@
-use hive::{SResult, init_test_logger, run_headless_program, run_main_program};
+use hive::{init_test_logger, run_headless_program, run_main_program, SResult};
 
 #[tokio::main]
 async fn main() -> SResult<()> {
@@ -9,17 +9,18 @@ async fn main() -> SResult<()> {
     // Parse command line arguments
     let cli = hive::cli::Cli::parse();
 
-    match cli.command.unwrap_or_default() {
-        hive::cli::Commands::Run => {
-            run_main_program().await?;
+    match cli.command {
+        None => {
+            // No subcommand provided, use top-level prompt if any
+            run_main_program(cli.prompt).await?;
         }
-        hive::cli::Commands::Headless {
+        Some(hive::cli::Commands::Headless {
             prompt,
             auto_approve_commands,
-        } => {
+        }) => {
             run_headless_program(prompt, auto_approve_commands).await?;
         }
-        hive::cli::Commands::PromptPreview {
+        Some(hive::cli::Commands::PromptPreview {
             all,
             empty,
             files,
@@ -29,7 +30,7 @@ async fn main() -> SResult<()> {
             full,
             agent_types,
             config,
-        } => {
+        }) => {
             if let Err(e) = hive::prompt_preview::execute_demo(
                 all,
                 empty,

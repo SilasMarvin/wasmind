@@ -1,6 +1,6 @@
 use crate::actors::litellm_manager::LiteLLMManager;
 use crate::actors::tui::utils::center;
-use crate::actors::{Actor, Message};
+use crate::actors::{Actor, Message, UserContext};
 use crate::actors::{ActorMessage, tui::model::TuiMessage};
 use crate::config::ParsedTuiConfig;
 use crate::scope::Scope;
@@ -15,6 +15,7 @@ use tuirealm::{
 use super::chat::ChatAreaComponent;
 use super::graph::GraphAreaComponent;
 use super::scrollable::ScrollableComponent;
+use super::splash::SplashComponent;
 
 pub const DASHBOARD_SCOPE: Scope =
     Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-d68b0e6c4cf1"));
@@ -45,7 +46,7 @@ pub struct DashboardComponent {
 }
 
 impl DashboardComponent {
-    pub fn new(config: ParsedTuiConfig) -> Self {
+    pub fn new(config: ParsedTuiConfig, initial_prompt: Option<String>) -> Self {
         Self {
             component: Dashboard {
                 state: State::None,
@@ -54,7 +55,9 @@ impl DashboardComponent {
                     Box::new(GraphAreaComponent::new(config.clone())),
                     false,
                 ),
-                chat_area_component: ChatAreaComponent::new(config.clone()),
+                show_splash: initial_prompt.is_none(),
+                chat_area_component: ChatAreaComponent::new(config.clone(), initial_prompt),
+                splash_component: SplashComponent::new(config.clone()),
                 litellm_is_ready: false,
             },
             config,
@@ -67,37 +70,43 @@ struct Dashboard {
     state: State,
     graph_area_component: ScrollableComponent,
     chat_area_component: ChatAreaComponent,
+    splash_component: SplashComponent,
     litellm_is_ready: bool,
+    show_splash: bool,
 }
 
 impl MockComponent for Dashboard {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
-            let chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-                .split(area);
-
-            if self.litellm_is_ready {
-                self.graph_area_component.view(frame, chunks[0]);
+            if self.show_splash {
+                self.splash_component.view(frame, area);
             } else {
-                let block = Block::new()
-                    .borders(Borders::ALL)
-                    .padding(Padding::uniform(1));
-                let paragraph = Paragraph::new(
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .split(area);
+
+                if self.litellm_is_ready {
+                    self.graph_area_component.view(frame, chunks[0]);
+                } else {
+                    let block = Block::new()
+                        .borders(Borders::ALL)
+                        .padding(Padding::uniform(1));
+                    let paragraph = Paragraph::new(
                     "Waiting for LiteLLM docker container health check.\n\nThis should only take a few seconds...",
                 ).alignment(Alignment::Center).wrap(Wrap { trim: true }).block(block);
 
-                let width = paragraph.line_width();
-                let height = paragraph.line_count(area.width);
-                let area = center(
-                    chunks[0],
-                    Constraint::Length(width as u16),
-                    Constraint::Length(height as u16),
-                );
-                paragraph.render(area, frame.buffer_mut());
+                    let width = paragraph.line_width();
+                    let height = paragraph.line_count(area.width);
+                    let area = center(
+                        chunks[0],
+                        Constraint::Length(width as u16),
+                        Constraint::Length(height as u16),
+                    );
+                    paragraph.render(area, frame.buffer_mut());
+                }
+                self.chat_area_component.view(frame, chunks[1]);
             }
-            self.chat_area_component.view(frame, chunks[1]);
         }
     }
 
@@ -124,6 +133,14 @@ impl MockComponent for Dashboard {
 
 impl Component<TuiMessage, ActorMessage> for DashboardComponent {
     fn on(&mut self, ev: Event<ActorMessage>) -> Option<TuiMessage> {
+        if let Event::User(ActorMessage {
+            message: Message::UserContext(UserContext::UserTUIInput(_)),
+            ..
+        }) = &ev
+        {
+            self.component.show_splash = false;
+        }
+
         if let Event::Keyboard(key_event) = &ev {
             if let Some(action) = self.config.dashboard.key_bindings.get(&key_event) {
                 match action {
@@ -145,10 +162,13 @@ impl Component<TuiMessage, ActorMessage> for DashboardComponent {
             }
         }
 
-        match (
-            self.component.graph_area_component.on(ev.clone()),
-            self.component.chat_area_component.on(ev),
-        ) {
+        let textarea_event = if self.component.show_splash {
+            self.component.splash_component.on(ev.clone())
+        } else {
+            self.component.chat_area_component.on(ev.clone())
+        };
+
+        match (self.component.graph_area_component.on(ev), textarea_event) {
             (None, None) => None,
             (None, Some(msg)) => Some(msg),
             (Some(msg), None) => Some(msg),

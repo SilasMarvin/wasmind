@@ -53,9 +53,13 @@ where
 }
 
 impl Model<CrosstermTerminalAdapter> {
-    pub fn new(config: ParsedTuiConfig, tx: Sender<ActorMessage>) -> Self {
+    pub fn new(
+        config: ParsedTuiConfig,
+        tx: Sender<ActorMessage>,
+        initial_prompt: Option<String>,
+    ) -> Self {
         Self {
-            app: Self::init_app(config, tx.subscribe()),
+            app: Self::init_app(config, tx.subscribe(), initial_prompt),
             tx,
             quit: false,
             redraw: true,
@@ -81,6 +85,7 @@ where
     pub fn init_app(
         config: ParsedTuiConfig,
         rx: Receiver<ActorMessage>,
+        initial_prompt: Option<String>,
     ) -> Application<Scope, TuiMessage, ActorMessage> {
         let mut app: Application<Scope, TuiMessage, ActorMessage> = Application::init(
             EventListenerCfg::default()
@@ -97,7 +102,7 @@ where
         assert!(
             app.mount(
                 DASHBOARD_SCOPE.clone(),
-                Box::new(DashboardComponent::new(config)),
+                Box::new(DashboardComponent::new(config, initial_prompt)),
                 Vec::default()
             )
             .is_ok()

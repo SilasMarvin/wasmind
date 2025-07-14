@@ -29,12 +29,21 @@ pub struct TuiActor {
 }
 
 impl TuiActor {
-    pub fn new(config: ParsedConfig, tx: Sender<ActorMessage>, scope: Scope) -> Self {
+    pub fn new(
+        config: ParsedConfig,
+        tx: Sender<ActorMessage>,
+        scope: Scope,
+        initial_prompt: Option<String>,
+    ) -> Self {
         let local_tx = tx.clone();
         let tui_config = config.tui.clone();
-        thread::spawn(|| start_model(tui_config, local_tx));
+        thread::spawn(|| start_model(tui_config, local_tx, initial_prompt));
 
-        Self { config, tx, scope }
+        Self {
+            config,
+            tx,
+            scope,
+        }
     }
 }
 
@@ -45,7 +54,7 @@ impl Actor for TuiActor {
     async fn handle_message(&mut self, _message: ActorMessage) {}
 }
 
-fn start_model(config: ParsedTuiConfig, tx: Sender<ActorMessage>) {
+fn start_model(config: ParsedTuiConfig, tx: Sender<ActorMessage>, initial_prompt: Option<String>) {
     let mut stdout = stdout();
     if let Err(e) = execute!(
         stdout,
@@ -57,7 +66,7 @@ fn start_model(config: ParsedTuiConfig, tx: Sender<ActorMessage>) {
     }
 
     // Setup model
-    let mut model = Model::new(config, tx);
+    let mut model = Model::new(config, tx, initial_prompt);
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
     let _ = model.terminal.enable_raw_mode();

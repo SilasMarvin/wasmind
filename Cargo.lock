@@ -1535,6 +1535,7 @@ dependencies = [
  "libc",
  "minijinja",
  "pathdiff",
+ "rand 0.9.1",
  "ratatui",
  "reqwest",
  "rmcp",

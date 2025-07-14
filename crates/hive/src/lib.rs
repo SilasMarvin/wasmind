@@ -93,14 +93,14 @@ pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
         .init();
 }
 
-pub async fn run_main_program() -> SResult<()> {
+pub async fn run_main_program(initial_prompt: Option<String>) -> SResult<()> {
     IS_HEADLESS.set(false).unwrap();
 
     let config = Config::new(false).context(ConfigSnafu)?;
     let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
 
     // Start the HIVE multi-agent system
-    hive::start_hive(parsed_config).await
+    hive::start_hive(parsed_config, initial_prompt).await
 }
 
 pub async fn run_headless_program(

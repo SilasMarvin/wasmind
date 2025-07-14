@@ -28,13 +28,19 @@ pub const MAIN_MANAGER_SCOPE: Scope =
 pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
 
 /// Start the HIVE multi-agent system with TUI
-pub async fn start_hive(config: ParsedConfig) -> SResult<()> {
+pub async fn start_hive(config: ParsedConfig, mut initial_prompt: Option<String>) -> SResult<()> {
     let (tx, _) = broadcast::channel::<ActorMessage>(1024);
 
     let mut rx = tx.subscribe();
 
     // Create the TUI immediatly
-    TuiActor::new(config.clone(), tx.clone(), MAIN_MANAGER_SCOPE).run();
+    TuiActor::new(
+        config.clone(),
+        tx.clone(),
+        MAIN_MANAGER_SCOPE,
+        initial_prompt.clone(),
+    )
+    .run();
 
     // #[cfg(feature = "gui")]
     // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
@@ -61,6 +67,15 @@ pub async fn start_hive(config: ParsedConfig) -> SResult<()> {
 
     // Start the Main Manager
     main_manager.run();
+
+    // Submit the initial user prompt if it exists
+    if let Some(prompt) = initial_prompt.take() {
+        sleep(Duration::from_millis(250)).await;
+        let _ = tx.send(ActorMessage {
+            scope: MAIN_MANAGER_SCOPE.clone(),
+            message: Message::UserContext(crate::actors::UserContext::UserTUIInput(prompt)),
+        });
+    }
 
     // Listen for messages
     loop {

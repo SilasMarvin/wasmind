@@ -21,7 +21,7 @@ pub async fn run() {
     let (tx, _rx) = broadcast::channel(1000);
 
     // Create actors
-    TuiActor::new(config.clone(), tx.clone(), scope.clone()).run();
+    TuiActor::new(config.clone(), tx.clone(), scope.clone(), None).run();
     // Send the LiteLLM Actor Ready message
     // Need to actually let the dashboard mount first
     tokio::time::sleep(Duration::from_secs(1)).await;

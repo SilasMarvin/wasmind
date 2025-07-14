@@ -4,14 +4,15 @@ use clap::{Parser, Subcommand};
 #[command(name = "hive")]
 #[command(about = "AI-powered assistant with file and plan management")]
 pub struct Cli {
+    /// Optional initial prompt when running without subcommand
+    pub prompt: Option<String>,
+    
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Run the main hive assistant (default behavior)
-    Run,
     /// Run in headless mode with an initial prompt
     Headless {
         /// The initial prompt to send to the LLM
@@ -50,10 +51,4 @@ pub enum Commands {
         #[arg(long, value_name = "FILE")]
         config: Option<String>,
     },
-}
-
-impl Default for Commands {
-    fn default() -> Self {
-        Commands::Run
-    }
 }

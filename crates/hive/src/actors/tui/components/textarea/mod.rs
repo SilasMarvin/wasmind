@@ -22,7 +22,7 @@ use crate::{
 
 use super::chat::ChatUserAction;
 
-mod tui_realm_textarea;
+pub mod tui_realm_textarea;
 
 #[derive(MockComponent)]
 pub struct LLMTextAreaComponent {
@@ -36,7 +36,7 @@ impl LLMTextAreaComponent {
 
         let mut textarea = TextArea::new(vec![])
             .title(
-                format!("[ Input | ({}) to submit ]", key_event_to_string(binding)),
+                format!("[ Prompt | ({}) to submit ]", key_event_to_string(binding)),
                 Alignment::Left,
             )
             .borders(Borders::default().modifiers(BorderType::Thick))

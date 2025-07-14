@@ -22,7 +22,7 @@ pub async fn run() {
     let (tx, _rx) = broadcast::channel(1000);
 
     // Create actors
-    TuiActor::new(config.clone(), tx.clone(), scope.clone()).run();
+    TuiActor::new(config.clone(), tx.clone(), scope.clone(), None).run();
     CommandTool::new(config.clone(), tx.clone(), scope.clone()).run();
 
     let mut chat_history = vec![ChatMessage::user("Use the command tool do something!")];

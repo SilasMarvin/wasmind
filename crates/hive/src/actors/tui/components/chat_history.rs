@@ -259,34 +259,36 @@ impl AssistantInfo {
             paragraph.render(area, buf);
 
             total_height += height + 10;
-        } else if let Some(chat_state) = self.chat_state {
-            let (widget, height) = create_system_widget(chat_state.system, area);
-            area.height = height;
-            widget.render_ref(area, buf);
-            area = offset_y(area, height + MESSAGE_GAP);
-            total_height += height + MESSAGE_GAP;
+        } else {
+            if let Some(chat_state) = self.chat_state {
+                let (widget, height) = create_system_widget(chat_state.system, area);
+                area.height = height;
+                widget.render_ref(area, buf);
+                area = offset_y(area, height + MESSAGE_GAP);
+                total_height += height + MESSAGE_GAP;
 
-            // Render chat history
-            for message in chat_state.messages {
-                let widgets = match message {
-                    ChatMessage::System { content } => {
-                        vec![create_system_widget(content, area)]
+                // Render chat history
+                for message in chat_state.messages {
+                    let widgets = match message {
+                        ChatMessage::System { content } => {
+                            vec![create_system_widget(content, area)]
+                        }
+                        ChatMessage::User { content } => {
+                            vec![create_user_widget(content, area)]
+                        }
+                        ChatMessage::Assistant(assistant_chat_message) => create_assistant_widgets(
+                            assistant_chat_message,
+                            area,
+                            &self.tool_call_updates,
+                        ),
+                        ChatMessage::Tool { .. } => vec![],
+                    };
+                    for (widget, height) in widgets {
+                        area.height = height;
+                        widget.render_ref(area, buf);
+                        area = offset_y(area, height + MESSAGE_GAP);
+                        total_height += height + MESSAGE_GAP;
                     }
-                    ChatMessage::User { content } => {
-                        vec![create_user_widget(content, area)]
-                    }
-                    ChatMessage::Assistant(assistant_chat_message) => create_assistant_widgets(
-                        assistant_chat_message,
-                        area,
-                        &self.tool_call_updates,
-                    ),
-                    ChatMessage::Tool { .. } => vec![],
-                };
-                for (widget, height) in widgets {
-                    area.height = height;
-                    widget.render_ref(area, buf);
-                    area = offset_y(area, height + MESSAGE_GAP);
-                    total_height += height + MESSAGE_GAP;
                 }
             }
 
@@ -321,19 +323,24 @@ pub struct ChatHistoryComponent {
 }
 
 impl ChatHistoryComponent {
-    pub fn new() -> Self {
+    pub fn new(initial_prompt: Option<String>) -> Self {
         let mut props = Props::default();
         props.set(
             Attribute::Custom(SCOPE_ATTR),
             AttrValue::String(MAIN_MANAGER_SCOPE.to_string()),
         );
+
+        let mut manager_assistant_info =
+            AssistantInfo::new(MAIN_MANAGER_ROLE.to_string(), AgentType::MainManager, None);
+        manager_assistant_info.pending_user_message = initial_prompt;
+
         Self {
             component: ChatHistory {
                 props,
                 state: State::None,
                 chat_history_map: HashMap::from([(
                     MAIN_MANAGER_SCOPE.clone(),
-                    AssistantInfo::new(MAIN_MANAGER_ROLE.to_string(), AgentType::MainManager, None),
+                    manager_assistant_info,
                 )]),
                 last_content_height: None,
                 is_modified: false,

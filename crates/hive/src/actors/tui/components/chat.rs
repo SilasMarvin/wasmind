@@ -37,13 +37,16 @@ pub struct ChatAreaComponent {
 }
 
 impl ChatAreaComponent {
-    pub fn new(config: ParsedTuiConfig) -> Self {
+    pub fn new(config: ParsedTuiConfig, initial_prompt: Option<String>) -> Self {
         Self {
             component: ChatArea {
                 props: Props::default(),
                 state: State::One(StateValue::String("".to_string())),
                 llm_textarea: LLMTextAreaComponent::new(config.clone()),
-                chat_history: ScrollableComponent::new(Box::new(ChatHistoryComponent::new()), true),
+                chat_history: ScrollableComponent::new(
+                    Box::new(ChatHistoryComponent::new(initial_prompt)),
+                    true,
+                ),
             },
         }
     }
