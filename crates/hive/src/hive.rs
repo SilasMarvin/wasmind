@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fs, time::Duration};
 use tokio::{sync::broadcast, time::sleep};
 
 use crate::{
@@ -8,6 +8,7 @@ use crate::{
         InterAgentMessage, Message,
         agent::Agent,
         litellm_manager::LiteLLMManager,
+        manager::Manager,
         tools::{
             complete::CompleteTool, planner::Planner, send_message::SendMessage,
             spawn_agent::SpawnAgent, wait::WaitTool,
@@ -31,68 +32,78 @@ pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
 pub async fn start_hive(config: ParsedConfig, mut initial_prompt: Option<String>) -> SResult<()> {
     let (tx, _) = broadcast::channel::<ActorMessage>(1024);
 
+    println!("WE GOT HERE");
+
+    let bytes = std::fs::read(
+        "/Users/silasmarvin/github/hive/target/wasm32-wasip1/release/actor_execute_bash.wasm",
+    )
+    .unwrap();
+    let manager = Manager::new("EXECUTE_BASH".to_string(), &bytes).await;
+
     let mut rx = tx.subscribe();
 
-    // Create the TUI immediatly
-    TuiActor::new(
-        config.clone(),
-        tx.clone(),
-        MAIN_MANAGER_SCOPE,
-        initial_prompt.clone(),
-    )
-    .run();
+    return Ok(());
 
-    // #[cfg(feature = "gui")]
-    // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
-    // #[cfg(feature = "audio")]
-    // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
-
-    // Create the Main Manager agent
-    let main_manager = Agent::new(
-        tx.clone(),
-        MAIN_MANAGER_ROLE.to_string(),
-        None,
-        config.clone(),
-        Scope::new(), // parent_scope means nothing for the MainManager
-        AgentType::MainManager,
-    )
-    .with_scope(MAIN_MANAGER_SCOPE)
-    .with_actors([
-        Planner::ACTOR_ID,
-        SpawnAgent::ACTOR_ID,
-        SendMessage::ACTOR_ID,
-        WaitTool::ACTOR_ID,
-        LiteLLMManager::ACTOR_ID,
-    ]);
-
-    // Start the Main Manager
-    main_manager.run();
-
-    // Submit the initial user prompt if it exists
-    if let Some(prompt) = initial_prompt.take() {
-        sleep(Duration::from_millis(250)).await;
-        let _ = tx.send(ActorMessage {
-            scope: MAIN_MANAGER_SCOPE.clone(),
-            message: Message::UserContext(crate::actors::UserContext::UserTUIInput(prompt)),
-        });
-    }
-
-    // Listen for messages
-    loop {
-        let msg = rx.recv().await;
-        let msg = msg.expect("Error receiving in hive");
-        let message_json = serde_json::to_string(&msg).unwrap_or_else(|_| format!("{:?}", msg));
-        tracing::debug!(name = "hive_received_message", message = %message_json, message_type = std::any::type_name::<Message>());
-
-        match msg.message {
-            Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
-                // Let everything clean up
-                sleep(Duration::from_millis(500)).await;
-                return Ok(());
-            }
-            _ => (),
-        }
-    }
+    // // Create the TUI immediatly
+    // TuiActor::new(
+    //     config.clone(),
+    //     tx.clone(),
+    //     MAIN_MANAGER_SCOPE,
+    //     initial_prompt.clone(),
+    // )
+    // .run();
+    //
+    // // #[cfg(feature = "gui")]
+    // // Context::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+    // // #[cfg(feature = "audio")]
+    // // Microphone::new(config.clone(), tx.clone(), ROOT_AGENT_SCOPE).run();
+    //
+    // // Create the Main Manager agent
+    // let main_manager = Agent::new(
+    //     tx.clone(),
+    //     MAIN_MANAGER_ROLE.to_string(),
+    //     None,
+    //     config.clone(),
+    //     Scope::new(), // parent_scope means nothing for the MainManager
+    //     AgentType::MainManager,
+    // )
+    // .with_scope(MAIN_MANAGER_SCOPE)
+    // .with_actors([
+    //     Planner::ACTOR_ID,
+    //     SpawnAgent::ACTOR_ID,
+    //     SendMessage::ACTOR_ID,
+    //     WaitTool::ACTOR_ID,
+    //     LiteLLMManager::ACTOR_ID,
+    // ]);
+    //
+    // // Start the Main Manager
+    // main_manager.run();
+    //
+    // // Submit the initial user prompt if it exists
+    // if let Some(prompt) = initial_prompt.take() {
+    //     sleep(Duration::from_millis(250)).await;
+    //     let _ = tx.send(ActorMessage {
+    //         scope: MAIN_MANAGER_SCOPE.clone(),
+    //         message: Message::UserContext(crate::actors::UserContext::UserTUIInput(prompt)),
+    //     });
+    // }
+    //
+    // // Listen for messages
+    // loop {
+    //     let msg = rx.recv().await;
+    //     let msg = msg.expect("Error receiving in hive");
+    //     let message_json = serde_json::to_string(&msg).unwrap_or_else(|_| format!("{:?}", msg));
+    //     tracing::debug!(name = "hive_received_message", message = %message_json, message_type = std::any::type_name::<Message>());
+    //
+    //     match msg.message {
+    //         Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
+    //             // Let everything clean up
+    //             sleep(Duration::from_millis(500)).await;
+    //             return Ok(());
+    //         }
+    //         _ => (),
+    //     }
+    // }
 }
 
 /// Start the HIVE multi-agent system in headless mode

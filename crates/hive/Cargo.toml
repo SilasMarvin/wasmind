@@ -27,6 +27,14 @@ clipboard = [] # TODO: Update this
 test-utils = []
 
 [dependencies]
+serde = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "time", "process", "sync", "signal"] }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+snafu = { workspace = true }
+
 rand = "0.9"
 throbber-widgets-tui = "0.8"
 lazy-regex = "3.4.1"
@@ -34,15 +42,11 @@ hive_macros = { path = "../hive_macros" }
 base64 = "0.22.1"
 etcetera = "0.10.0"
 image = "0.25.6"
-serde = { version = "1.0.219", features = ["derive"] }
-tokio = { version = "1.45.0", features = ["rt-multi-thread", "time", "process", "sync", "signal"] }
-snafu = "0.8.5"
 toml = "0.8.22"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 futures = "0.3.31"
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = ["server", "transport-child-process", "client"] }
-serde_json = "1.0.140"
 libc = "0.2"
 ratatui = { version = "0.29", features = ["unstable-rendered-line-info", "unstable-widget-ref"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -51,7 +55,6 @@ clap = { version = "4.0", features = ["derive"] }
 async-trait = "0.1"
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
 tuirealm = { version = "3", default-features = false, features = [ "derive", "crossterm", "async-ports"]}
-reqwest = { version = "0.12", features = ["json"] }
 serde_yaml = "0.9"
 tempfile = "3"
 tui-textarea = "^0.7"

@@ -5,6 +5,7 @@ pub mod assistant;
 // #[cfg(feature = "audio")]
 // pub mod microphone;
 pub mod litellm_manager;
+pub mod manager;
 pub mod state_system;
 pub mod temporal;
 pub mod tools;

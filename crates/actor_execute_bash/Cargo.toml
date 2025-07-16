@@ -1,0 +1,20 @@
+[package]
+name = "actor_execute_bash"
+version = "0.1.0"
+
+description.workspace = true
+repository.workspace = true
+readme.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wit-bindgen-rt = { workspace = true }
+
+hive_actor_bindings = { path = "../hive_actor_bindings" }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "component:add"

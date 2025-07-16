@@ -10,6 +10,17 @@ repository = "https://github.com/SilasMarvin/hive"
 readme = "README.md"
 authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 
+[workspace.dependencies]
+tokio = { version = "1.45.0" }
+serde = { version = "1" }
+wasmtime = { version = "34", features = ["async"] }
+wasmtime-wasi = "34"
+serde_json = "1.0.140"
+reqwest = { version = "0.12", features = ["json"] }
+wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }
+snafu = "0.8"
+url = "2.5"
+
 [profile.release]
 incremental = true
 # Set this to 1 or 2 to get more useful backtraces in debugger.

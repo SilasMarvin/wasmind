@@ -1,0 +1,18 @@
+[package]
+name = "hive_config"
+version = "0.1.0"
+
+description.workspace = true
+repository.workspace = true
+readme.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+
+[dependencies]
+snafu = { workspace = true }
+url = { workspace = true }
+
+etcetera = "0.10.0"
+
