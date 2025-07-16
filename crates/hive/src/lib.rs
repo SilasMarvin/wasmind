@@ -10,8 +10,10 @@ pub mod template;
 pub mod utils;
 
 use config::{Config, ParsedConfig};
+use hive_actor_loader::{ActorLoader, LoadedActor};
 use snafu::ResultExt;
 use snafu::{Location, Snafu};
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -23,6 +25,14 @@ pub enum Error {
     Config {
         #[snafu(source)]
         source: config::ConfigError,
+    },
+
+    #[snafu(display("Actor loader error"))]
+    ActorLoader {
+        #[snafu(source)]
+        source: hive_actor_loader::Error,
+        #[snafu(implicit)]
+        location: Location,
     },
 
     #[cfg(feature = "gui")]
@@ -93,11 +103,28 @@ pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
         .init();
 }
 
+async fn load_actors(actors: Vec<hive_config::Actor>) -> SResult<Vec<LoadedActor>> {
+    let temp_cache = PathBuf::from("/tmp/hive_cache");
+    let actor_loader = ActorLoader::new(Some(temp_cache)).context(ActorLoaderSnafu)?;
+    actor_loader
+        .load_actors(actors)
+        .await
+        .context(ActorLoaderSnafu)
+}
+
 pub async fn run_main_program(initial_prompt: Option<String>) -> SResult<()> {
     IS_HEADLESS.set(false).unwrap();
 
     let config = Config::new(false).context(ConfigSnafu)?;
     let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
+
+    let config_actors = vec![hive_config::Actor {
+        name: "execute_bash".to_string(),
+        source: hive_config::ActorSource::Path(
+            "/Users/silasmarvin/github/hive/actors/execute_bash".to_string(),
+        ),
+    }];
+    let loaded_actors = load_actors(config_actors).await?;
 
     // Start the HIVE multi-agent system
     hive::start_hive(parsed_config, initial_prompt).await

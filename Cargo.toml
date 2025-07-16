@@ -1,5 +1,7 @@
 [workspace]
 members = ["crates/*"]
+# It seems we can't use wildcards in the exclude array
+exclude = ["actors/execute_bash"]
 resolver = "2"
 
 [workspace.package]
@@ -20,6 +22,9 @@ reqwest = { version = "0.12", features = ["json"] }
 wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }
 snafu = "0.8"
 url = "2.5"
+tempfile = "3.8"
+chrono = { version = "0.4", features = ["serde"] }
+toml = "0.8.22"
 
 [profile.release]
 incremental = true

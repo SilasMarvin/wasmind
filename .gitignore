@@ -2,3 +2,7 @@
 log.txt
 .claude
 test-logs/
+
+# Ignore target directories for actor crates
+actors/**/target/
+actors/**/Cargo.lock

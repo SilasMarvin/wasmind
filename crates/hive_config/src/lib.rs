@@ -15,33 +15,33 @@ pub enum Error {
 }
 
 #[derive(Clone, Debug)]
-pub enum GitSourceSpecifier {
+pub enum GitRef {
     Branch(String),
     Tag(String),
     Rev(String),
 }
 
 #[derive(Clone, Debug)]
-pub struct GitSource {
-    url: Url,
-    specified: GitSourceSpecifier,
+pub struct Repository {
+    pub url: Url,
+    pub git_ref: Option<GitRef>,
 }
 
 #[derive(Clone, Debug)]
 pub enum ActorSource {
     Path(String),
-    Git(Url),
+    Git(Repository),
 }
 
 #[derive(Clone, Debug)]
-pub struct Actors {
+pub struct Actor {
     pub name: String,
     pub source: ActorSource,
 }
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub actors: Vec<Actors>,
+    pub actors: Vec<Actor>,
 }
 
 // TODO: Implement config parsing

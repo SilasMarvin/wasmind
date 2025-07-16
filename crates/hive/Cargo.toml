@@ -35,6 +35,9 @@ wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 snafu = { workspace = true }
 
+hive_actor_loader = { path = "../hive_actor_loader" }
+hive_config = { path = "../hive_config" }
+
 rand = "0.9"
 throbber-widgets-tui = "0.8"
 lazy-regex = "3.4.1"
@@ -42,7 +45,7 @@ hive_macros = { path = "../hive_macros" }
 base64 = "0.22.1"
 etcetera = "0.10.0"
 image = "0.25.6"
-toml = "0.8.22"
+toml = { workspace = true }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 futures = "0.3.31"
