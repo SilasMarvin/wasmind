@@ -6,27 +6,24 @@
 pub mod hive {
     pub mod actor {
         /// =================================================================
-        /// INTERFACE 2: Host Runtime
-        /// This interface defines the set of capabilities that the host
-        /// environment provides to all running actors.
+        /// CAPABILITY INTERFACES
+        /// Each interface represents a distinct capability that can be
+        /// optionally provided to actors
         /// =================================================================
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-        pub mod runtime_interface {
+        pub mod messaging {
             #[used]
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             #[allow(unused_unsafe, clippy::all)]
-            /// Broadcasts a message to all other actors in the system. The host
-            /// will automatically wrap the payload in a `message-envelope`,
-            /// adding the sender's ID and scope before delivery.
-            /// @param payload - The raw byte representation of the message to send.
+            /// Broadcasts a message to all other actors in the system
             pub fn broadcast(payload: &[u8]) -> () {
                 unsafe {
                     let vec0 = payload;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/runtime-interface@0.1.0")]
+                    #[link(wasm_import_module = "hive:actor/messaging@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "broadcast"]
                         fn wit_import1(_: *mut u8, _: usize);
@@ -52,7 +49,7 @@ pub mod exports {
             /// to create a stateful, message-driven actors.
             /// =================================================================
             #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-            pub mod actor_interface {
+            pub mod actor {
                 #[used]
                 #[doc(hidden)]
                 static __FORCE_SECTION_REF: fn() = super::super::super::super::__link_custom_section_describing_imports;
@@ -196,7 +193,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor-interface@0.1.0"
+                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-drop]actor"]
@@ -271,7 +268,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor-interface@0.1.0"
+                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-new]actor"]
@@ -293,7 +290,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor-interface@0.1.0"
+                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-rep]actor"]
@@ -317,36 +314,35 @@ pub mod exports {
                     fn destructor(&self) -> ();
                 }
                 #[doc(hidden)]
-                macro_rules! __export_hive_actor_actor_interface_0_1_0_cabi {
+                macro_rules! __export_hive_actor_actor_0_1_0_cabi {
                     ($ty:ident with_types_in $($path_to_types:tt)*) => {
                         const _ : () = { #[unsafe (export_name =
-                        "hive:actor/actor-interface@0.1.0#[constructor]actor")] unsafe
-                        extern "C" fn export_constructor_actor(arg0 : * mut u8, arg1 :
-                        usize,) -> i32 { unsafe { $($path_to_types)*::
+                        "hive:actor/actor@0.1.0#[constructor]actor")] unsafe extern "C"
+                        fn export_constructor_actor(arg0 : * mut u8, arg1 : usize,) ->
+                        i32 { unsafe { $($path_to_types)*::
                         _export_constructor_actor_cabi::<<$ty as $($path_to_types)*::
                         Guest >::Actor > (arg0, arg1) } } #[unsafe (export_name =
-                        "hive:actor/actor-interface@0.1.0#[method]actor.handle-message")]
-                        unsafe extern "C" fn export_method_actor_handle_message(arg0 : *
-                        mut u8, arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 :
-                        usize, arg5 : * mut u8, arg6 : usize,) { unsafe {
-                        $($path_to_types)*::
+                        "hive:actor/actor@0.1.0#[method]actor.handle-message")] unsafe
+                        extern "C" fn export_method_actor_handle_message(arg0 : * mut u8,
+                        arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 : usize,
+                        arg5 : * mut u8, arg6 : usize,) { unsafe { $($path_to_types)*::
                         _export_method_actor_handle_message_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Actor > (arg0, arg1, arg2, arg3,
                         arg4, arg5, arg6) } } #[unsafe (export_name =
-                        "hive:actor/actor-interface@0.1.0#[method]actor.destructor")]
-                        unsafe extern "C" fn export_method_actor_destructor(arg0 : * mut
-                        u8,) { unsafe { $($path_to_types)*::
+                        "hive:actor/actor@0.1.0#[method]actor.destructor")] unsafe extern
+                        "C" fn export_method_actor_destructor(arg0 : * mut u8,) { unsafe
+                        { $($path_to_types)*::
                         _export_method_actor_destructor_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Actor > (arg0) } } const _ : () = {
                         #[doc(hidden)] #[unsafe (export_name =
-                        "hive:actor/actor-interface@0.1.0#[dtor]actor")]
-                        #[allow(non_snake_case)] unsafe extern "C" fn dtor(rep : * mut
-                        u8) { unsafe { $($path_to_types)*:: Actor::dtor::< <$ty as
-                        $($path_to_types)*:: Guest >::Actor > (rep) } } }; };
+                        "hive:actor/actor@0.1.0#[dtor]actor")] #[allow(non_snake_case)]
+                        unsafe extern "C" fn dtor(rep : * mut u8) { unsafe {
+                        $($path_to_types)*:: Actor::dtor::< <$ty as $($path_to_types)*::
+                        Guest >::Actor > (rep) } } }; };
                     };
                 }
                 #[doc(hidden)]
-                pub(crate) use __export_hive_actor_actor_interface_0_1_0_cabi;
+                pub(crate) use __export_hive_actor_actor_0_1_0_cabi;
             }
         }
     }
@@ -468,8 +464,8 @@ macro_rules! __export_actor_world_impl {
     };
     ($ty:ident with_types_in $($path_to_types_root:tt)*) => {
         $($path_to_types_root)*::
-        exports::hive::actor::actor_interface::__export_hive_actor_actor_interface_0_1_0_cabi!($ty
-        with_types_in $($path_to_types_root)*:: exports::hive::actor::actor_interface);
+        exports::hive::actor::actor::__export_hive_actor_actor_0_1_0_cabi!($ty
+        with_types_in $($path_to_types_root)*:: exports::hive::actor::actor);
     };
 }
 #[doc(inline)]
@@ -480,17 +476,17 @@ pub(crate) use __export_actor_world_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 498] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf0\x02\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 480] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xde\x02\x01A\x02\x01\
 A\x04\x01B\x03\x01p}\x01@\x01\x07payload\0\x01\0\x04\0\x09broadcast\x01\x01\x03\0\
-\"hive:actor/runtime-interface@0.1.0\x05\0\x01B\x0c\x01p}\x01r\x03\x0dfrom-actor\
--ids\x0afrom-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05ac\
-tor\x03\x01\x01i\x03\x01@\x01\x05scopes\0\x04\x04\0\x12[constructor]actor\x01\x05\
-\x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handl\
-e-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\
-\x08\x04\0\x20hive:actor/actor-interface@0.1.0\x05\x01\x04\0$execute-bash:actor/\
-actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\
-\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x0c\x01p}\x01r\x03\x0dfrom-actor-ids\x0a\
+from-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05actor\x03\x01\
+\x01i\x03\x01@\x01\x05scopes\0\x04\x04\0\x12[constructor]actor\x01\x05\x01h\x03\x01\
+@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handle-message\x01\
+\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\x08\x04\0\x16\
+hive:actor/actor@0.1.0\x05\x01\x04\0$execute-bash:actor/actor-world@0.1.0\x04\0\x0b\
+\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit\
+-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

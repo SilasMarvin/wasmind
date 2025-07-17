@@ -1,6 +1,6 @@
 use bindings::{
-    exports::hive::actor::actor_interface::{Guest, GuestActor},
-    hive::actor::runtime_interface::broadcast,
+    exports::hive::actor::actor::{Guest, GuestActor, MessageEnvelope},
+    hive::actor::messaging::broadcast,
 };
 
 #[allow(warnings)]
@@ -21,10 +21,7 @@ impl GuestActor for Actor {
         Self { scope }
     }
 
-    fn handle_message(
-        &self,
-        message: bindings::exports::hive::actor::actor_interface::MessageEnvelope,
-    ) -> () {
+    fn handle_message(&self, message: MessageEnvelope) -> () {
         broadcast("TEST2".as_bytes());
     }
 

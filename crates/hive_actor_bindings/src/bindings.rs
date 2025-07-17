@@ -6,27 +6,24 @@
 pub mod hive {
     pub mod actor {
         /// =================================================================
-        /// INTERFACE 2: Host Runtime
-        /// This interface defines the set of capabilities that the host
-        /// environment provides to all running actors.
+        /// CAPABILITY INTERFACES
+        /// Each interface represents a distinct capability that can be
+        /// optionally provided to actors
         /// =================================================================
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-        pub mod runtime_interface {
+        pub mod messaging {
             #[used]
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             #[allow(unused_unsafe, clippy::all)]
-            /// Broadcasts a message to all other actors in the system. The host
-            /// will automatically wrap the payload in a `message-envelope`,
-            /// adding the sender's ID and scope before delivery.
-            /// @param payload - The raw byte representation of the message to send.
+            /// Broadcasts a message to all other actors in the system
             pub fn broadcast(payload: &[u8]) -> () {
                 unsafe {
                     let vec0 = payload;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/runtime-interface@0.1.0")]
+                    #[link(wasm_import_module = "hive:actor/messaging@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "broadcast"]
                         fn wit_import1(_: *mut u8, _: usize);
@@ -36,6 +33,415 @@ pub mod hive {
                         unreachable!()
                     }
                     unsafe { wit_import1(ptr0.cast_mut(), len0) };
+                }
+            }
+        }
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod command {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            #[derive(Clone)]
+            pub enum ExitStatus {
+                Exited(u8),
+                Signaled(u8),
+                FailedToStart(_rt::String),
+                TimeoutExpired,
+            }
+            impl ::core::fmt::Debug for ExitStatus {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        ExitStatus::Exited(e) => {
+                            f.debug_tuple("ExitStatus::Exited").field(e).finish()
+                        }
+                        ExitStatus::Signaled(e) => {
+                            f.debug_tuple("ExitStatus::Signaled").field(e).finish()
+                        }
+                        ExitStatus::FailedToStart(e) => {
+                            f.debug_tuple("ExitStatus::FailedToStart").field(e).finish()
+                        }
+                        ExitStatus::TimeoutExpired => {
+                            f.debug_tuple("ExitStatus::TimeoutExpired").finish()
+                        }
+                    }
+                }
+            }
+            #[derive(Clone)]
+            pub struct CommandOutput {
+                pub stdout: _rt::Vec<u8>,
+                pub stderr: _rt::Vec<u8>,
+                pub status: ExitStatus,
+            }
+            impl ::core::fmt::Debug for CommandOutput {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("CommandOutput")
+                        .field("stdout", &self.stdout)
+                        .field("stderr", &self.stderr)
+                        .field("status", &self.status)
+                        .finish()
+                }
+            }
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct Cmd {
+                handle: _rt::Resource<Cmd>,
+            }
+            impl Cmd {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: u32) -> Self {
+                    Self {
+                        handle: unsafe { _rt::Resource::from_handle(handle) },
+                    }
+                }
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> u32 {
+                    _rt::Resource::take_handle(&self.handle)
+                }
+                #[doc(hidden)]
+                pub fn handle(&self) -> u32 {
+                    _rt::Resource::handle(&self.handle)
+                }
+            }
+            unsafe impl _rt::WasmResource for Cmd {
+                #[inline]
+                unsafe fn drop(_handle: u32) {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unreachable!();
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[resource-drop]cmd"]
+                            fn drop(_: u32);
+                        }
+                        unsafe { drop(_handle) };
+                    }
+                }
+            }
+            impl Cmd {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn new(command: &str) -> Self {
+                    unsafe {
+                        let vec0 = command;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[constructor]cmd"]
+                            fn wit_import1(_: *mut u8, _: usize) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(_: *mut u8, _: usize) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe { wit_import1(ptr0.cast_mut(), len0) };
+                        unsafe { Cmd::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Cmd {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn args(&self, args: &[_rt::String]) -> Cmd {
+                    unsafe {
+                        let vec1 = args;
+                        let len1 = vec1.len();
+                        let layout1 = _rt::alloc::Layout::from_size_align_unchecked(
+                            vec1.len() * (2 * ::core::mem::size_of::<*const u8>()),
+                            ::core::mem::size_of::<*const u8>(),
+                        );
+                        let result1 = if layout1.size() != 0 {
+                            let ptr = _rt::alloc::alloc(layout1).cast::<u8>();
+                            if ptr.is_null() {
+                                _rt::alloc::handle_alloc_error(layout1);
+                            }
+                            ptr
+                        } else {
+                            ::core::ptr::null_mut()
+                        };
+                        for (i, e) in vec1.into_iter().enumerate() {
+                            let base = result1
+                                .add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                            {
+                                let vec0 = e;
+                                let ptr0 = vec0.as_ptr().cast::<u8>();
+                                let len0 = vec0.len();
+                                *base
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>() = len0;
+                                *base.add(0).cast::<*mut u8>() = ptr0.cast_mut();
+                            }
+                        }
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]cmd.args"]
+                            fn wit_import2(_: i32, _: *mut u8, _: usize) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import2(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                        ) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import2((self).handle() as i32, result1, len1)
+                        };
+                        if layout1.size() != 0 {
+                            _rt::alloc::dealloc(result1.cast(), layout1);
+                        }
+                        unsafe { Cmd::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Cmd {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn current_dir(&self, dir: &str) -> Cmd {
+                    unsafe {
+                        let vec0 = dir;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]cmd.current-dir"]
+                            fn wit_import1(_: i32, _: *mut u8, _: usize) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                        ) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import1((self).handle() as i32, ptr0.cast_mut(), len0)
+                        };
+                        unsafe { Cmd::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Cmd {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn timeout(&self, seconds: u32) -> Cmd {
+                    unsafe {
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]cmd.timeout"]
+                            fn wit_import0(_: i32, _: i32) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import0(_: i32, _: i32) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import0((self).handle() as i32, _rt::as_i32(&seconds))
+                        };
+                        unsafe { Cmd::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Cmd {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn env(&self, key: &str, value: &str) -> Cmd {
+                    unsafe {
+                        let vec0 = key;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        let vec1 = value;
+                        let ptr1 = vec1.as_ptr().cast::<u8>();
+                        let len1 = vec1.len();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]cmd.env"]
+                            fn wit_import2(
+                                _: i32,
+                                _: *mut u8,
+                                _: usize,
+                                _: *mut u8,
+                                _: usize,
+                            ) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import2(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                        ) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import2(
+                                (self).handle() as i32,
+                                ptr0.cast_mut(),
+                                len0,
+                                ptr1.cast_mut(),
+                                len1,
+                            )
+                        };
+                        unsafe { Cmd::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Cmd {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn env_clear(&self) -> Cmd {
+                    unsafe {
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]cmd.env-clear"]
+                            fn wit_import0(_: i32) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import0(_: i32) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe { wit_import0((self).handle() as i32) };
+                        unsafe { Cmd::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Cmd {
+                #[allow(unused_unsafe, clippy::all)]
+                pub fn run(&self) -> Result<CommandOutput, _rt::String> {
+                    unsafe {
+                        #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                        #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 8 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit(); 8
+                                * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]cmd.run"]
+                            fn wit_import1(_: i32, _: *mut u8);
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import1((self).handle() as i32, ptr0) };
+                        let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                        let result19 = match l2 {
+                            0 => {
+                                let e = {
+                                    let l3 = *ptr0
+                                        .add(::core::mem::size_of::<*const u8>())
+                                        .cast::<*mut u8>();
+                                    let l4 = *ptr0
+                                        .add(2 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>();
+                                    let len5 = l4;
+                                    let l6 = *ptr0
+                                        .add(3 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<*mut u8>();
+                                    let l7 = *ptr0
+                                        .add(4 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>();
+                                    let len8 = l7;
+                                    let l9 = i32::from(
+                                        *ptr0
+                                            .add(5 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<u8>(),
+                                    );
+                                    let v15 = match l9 {
+                                        0 => {
+                                            let e15 = {
+                                                let l10 = i32::from(
+                                                    *ptr0
+                                                        .add(6 * ::core::mem::size_of::<*const u8>())
+                                                        .cast::<u8>(),
+                                                );
+                                                l10 as u8
+                                            };
+                                            ExitStatus::Exited(e15)
+                                        }
+                                        1 => {
+                                            let e15 = {
+                                                let l11 = i32::from(
+                                                    *ptr0
+                                                        .add(6 * ::core::mem::size_of::<*const u8>())
+                                                        .cast::<u8>(),
+                                                );
+                                                l11 as u8
+                                            };
+                                            ExitStatus::Signaled(e15)
+                                        }
+                                        2 => {
+                                            let e15 = {
+                                                let l12 = *ptr0
+                                                    .add(6 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l13 = *ptr0
+                                                    .add(7 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len14 = l13;
+                                                let bytes14 = _rt::Vec::from_raw_parts(
+                                                    l12.cast(),
+                                                    len14,
+                                                    len14,
+                                                );
+                                                _rt::string_lift(bytes14)
+                                            };
+                                            ExitStatus::FailedToStart(e15)
+                                        }
+                                        n => {
+                                            debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                            ExitStatus::TimeoutExpired
+                                        }
+                                    };
+                                    CommandOutput {
+                                        stdout: _rt::Vec::from_raw_parts(l3.cast(), len5, len5),
+                                        stderr: _rt::Vec::from_raw_parts(l6.cast(), len8, len8),
+                                        status: v15,
+                                    }
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l16 = *ptr0
+                                        .add(::core::mem::size_of::<*const u8>())
+                                        .cast::<*mut u8>();
+                                    let l17 = *ptr0
+                                        .add(2 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>();
+                                    let len18 = l17;
+                                    let bytes18 = _rt::Vec::from_raw_parts(
+                                        l16.cast(),
+                                        len18,
+                                        len18,
+                                    );
+                                    _rt::string_lift(bytes18)
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result19
+                    }
                 }
             }
         }
@@ -52,7 +458,7 @@ pub mod exports {
             /// to create a stateful, message-driven actors.
             /// =================================================================
             #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-            pub mod actor_interface {
+            pub mod actor {
                 #[used]
                 #[doc(hidden)]
                 static __FORCE_SECTION_REF: fn() = super::super::super::super::__link_custom_section_describing_imports;
@@ -196,7 +602,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor-interface@0.1.0"
+                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-drop]actor"]
@@ -271,7 +677,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor-interface@0.1.0"
+                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-new]actor"]
@@ -293,7 +699,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor-interface@0.1.0"
+                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-rep]actor"]
@@ -317,36 +723,35 @@ pub mod exports {
                     fn destructor(&self) -> ();
                 }
                 #[doc(hidden)]
-                macro_rules! __export_hive_actor_actor_interface_0_1_0_cabi {
+                macro_rules! __export_hive_actor_actor_0_1_0_cabi {
                     ($ty:ident with_types_in $($path_to_types:tt)*) => {
                         const _ : () = { #[unsafe (export_name =
-                        "hive:actor/actor-interface@0.1.0#[constructor]actor")] unsafe
-                        extern "C" fn export_constructor_actor(arg0 : * mut u8, arg1 :
-                        usize,) -> i32 { unsafe { $($path_to_types)*::
+                        "hive:actor/actor@0.1.0#[constructor]actor")] unsafe extern "C"
+                        fn export_constructor_actor(arg0 : * mut u8, arg1 : usize,) ->
+                        i32 { unsafe { $($path_to_types)*::
                         _export_constructor_actor_cabi::<<$ty as $($path_to_types)*::
                         Guest >::Actor > (arg0, arg1) } } #[unsafe (export_name =
-                        "hive:actor/actor-interface@0.1.0#[method]actor.handle-message")]
-                        unsafe extern "C" fn export_method_actor_handle_message(arg0 : *
-                        mut u8, arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 :
-                        usize, arg5 : * mut u8, arg6 : usize,) { unsafe {
-                        $($path_to_types)*::
+                        "hive:actor/actor@0.1.0#[method]actor.handle-message")] unsafe
+                        extern "C" fn export_method_actor_handle_message(arg0 : * mut u8,
+                        arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 : usize,
+                        arg5 : * mut u8, arg6 : usize,) { unsafe { $($path_to_types)*::
                         _export_method_actor_handle_message_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Actor > (arg0, arg1, arg2, arg3,
                         arg4, arg5, arg6) } } #[unsafe (export_name =
-                        "hive:actor/actor-interface@0.1.0#[method]actor.destructor")]
-                        unsafe extern "C" fn export_method_actor_destructor(arg0 : * mut
-                        u8,) { unsafe { $($path_to_types)*::
+                        "hive:actor/actor@0.1.0#[method]actor.destructor")] unsafe extern
+                        "C" fn export_method_actor_destructor(arg0 : * mut u8,) { unsafe
+                        { $($path_to_types)*::
                         _export_method_actor_destructor_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Actor > (arg0) } } const _ : () = {
                         #[doc(hidden)] #[unsafe (export_name =
-                        "hive:actor/actor-interface@0.1.0#[dtor]actor")]
-                        #[allow(non_snake_case)] unsafe extern "C" fn dtor(rep : * mut
-                        u8) { unsafe { $($path_to_types)*:: Actor::dtor::< <$ty as
-                        $($path_to_types)*:: Guest >::Actor > (rep) } } }; };
+                        "hive:actor/actor@0.1.0#[dtor]actor")] #[allow(non_snake_case)]
+                        unsafe extern "C" fn dtor(rep : * mut u8) { unsafe {
+                        $($path_to_types)*:: Actor::dtor::< <$ty as $($path_to_types)*::
+                        Guest >::Actor > (rep) } } }; };
                     };
                 }
                 #[doc(hidden)]
-                pub(crate) use __export_hive_actor_actor_interface_0_1_0_cabi;
+                pub(crate) use __export_hive_actor_actor_0_1_0_cabi;
             }
         }
     }
@@ -430,10 +835,65 @@ mod _rt {
             }
         }
     }
-    pub use alloc_crate::boxed::Box;
-    #[cfg(target_arch = "wasm32")]
-    pub fn run_ctors_once() {
-        wit_bindgen_rt::run_ctors_once();
+    pub use alloc_crate::alloc;
+    pub fn as_i32<T: AsI32>(t: T) -> i32 {
+        t.as_i32()
+    }
+    pub trait AsI32 {
+        fn as_i32(self) -> i32;
+    }
+    impl<'a, T: Copy + AsI32> AsI32 for &'a T {
+        fn as_i32(self) -> i32 {
+            (*self).as_i32()
+        }
+    }
+    impl AsI32 for i32 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for u32 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for i16 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for u16 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for i8 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for u8 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for char {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for usize {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
     pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
         if cfg!(debug_assertions) {
@@ -441,6 +901,18 @@ mod _rt {
         } else {
             String::from_utf8_unchecked(bytes)
         }
+    }
+    pub unsafe fn invalid_enum_discriminant<T>() -> T {
+        if cfg!(debug_assertions) {
+            panic!("invalid enum discriminant")
+        } else {
+            unsafe { core::hint::unreachable_unchecked() }
+        }
+    }
+    pub use alloc_crate::boxed::Box;
+    #[cfg(target_arch = "wasm32")]
+    pub fn run_ctors_once() {
+        wit_bindgen_rt::run_ctors_once();
     }
     extern crate alloc as alloc_crate;
 }
@@ -468,8 +940,8 @@ macro_rules! __export_actor_world_impl {
     };
     ($ty:ident with_types_in $($path_to_types_root:tt)*) => {
         $($path_to_types_root)*::
-        exports::hive::actor::actor_interface::__export_hive_actor_actor_interface_0_1_0_cabi!($ty
-        with_types_in $($path_to_types_root)*:: exports::hive::actor::actor_interface);
+        exports::hive::actor::actor::__export_hive_actor_actor_0_1_0_cabi!($ty
+        with_types_in $($path_to_types_root)*:: exports::hive::actor::actor);
     };
 }
 #[doc(inline)]
@@ -480,17 +952,27 @@ pub(crate) use __export_actor_world_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 490] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xe8\x02\x01A\x02\x01\
-A\x04\x01B\x03\x01p}\x01@\x01\x07payload\0\x01\0\x04\0\x09broadcast\x01\x01\x03\0\
-\"hive:actor/runtime-interface@0.1.0\x05\0\x01B\x0c\x01p}\x01r\x03\x0dfrom-actor\
--ids\x0afrom-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05ac\
-tor\x03\x01\x01i\x03\x01@\x01\x05scopes\0\x04\x04\0\x12[constructor]actor\x01\x05\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 928] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x9e\x06\x01A\x02\x01\
+A\x06\x01B\x03\x01p}\x01@\x01\x07payload\0\x01\0\x04\0\x09broadcast\x01\x01\x03\0\
+\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x18\x01q\x04\x06exited\x01}\0\x08signa\
+led\x01}\0\x0ffailed-to-start\x01s\0\x0ftimeout-expired\0\0\x04\0\x0bexit-status\
+\x03\0\0\x01p}\x01r\x03\x06stdout\x02\x06stderr\x02\x06status\x01\x04\0\x0ecomma\
+nd-output\x03\0\x03\x04\0\x03cmd\x03\x01\x01i\x05\x01@\x01\x07commands\0\x06\x04\
+\0\x10[constructor]cmd\x01\x07\x01h\x05\x01ps\x01@\x02\x04self\x08\x04args\x09\0\
+\x06\x04\0\x10[method]cmd.args\x01\x0a\x01@\x02\x04self\x08\x03dirs\0\x06\x04\0\x17\
+[method]cmd.current-dir\x01\x0b\x01@\x02\x04self\x08\x07secondsy\0\x06\x04\0\x13\
+[method]cmd.timeout\x01\x0c\x01@\x03\x04self\x08\x03keys\x05values\0\x06\x04\0\x0f\
+[method]cmd.env\x01\x0d\x01@\x01\x04self\x08\0\x06\x04\0\x15[method]cmd.env-clea\
+r\x01\x0e\x01j\x01\x04\x01s\x01@\x01\x04self\x08\0\x0f\x04\0\x0f[method]cmd.run\x01\
+\x10\x03\0\x18hive:actor/command@0.1.0\x05\x01\x01B\x0c\x01p}\x01r\x03\x0dfrom-a\
+ctor-ids\x0afrom-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05\
+actor\x03\x01\x01i\x03\x01@\x01\x05scopes\0\x04\x04\0\x12[constructor]actor\x01\x05\
 \x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handl\
 e-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\
-\x08\x04\0\x20hive:actor/actor-interface@0.1.0\x05\x01\x04\0\x1chive:actor/actor\
--world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\x0cp\
-rocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x02\x04\0\x1chive:actor/actor-world@0.1\
+.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\x0cprocessed-b\
+y\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

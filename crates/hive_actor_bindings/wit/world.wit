@@ -6,7 +6,7 @@ package hive:actor@0.1.0;
 // This interface defines the essential types and behaviors required
 // to create a stateful, message-driven actors.
 // =================================================================
-interface actor-interface {
+interface actor {
     /// An envelope that wraps every message passed between actors.
     /// It provides context about the message's origin.
     record message-envelope {
@@ -41,16 +41,46 @@ interface actor-interface {
 }
 
 // =================================================================
-// INTERFACE 2: Host Runtime
-// This interface defines the set of capabilities that the host
-// environment provides to all running actors.
+// CAPABILITY INTERFACES
+// Each interface represents a distinct capability that can be 
+// optionally provided to actors
 // =================================================================
-interface runtime-interface {
-    /// Broadcasts a message to all other actors in the system. The host
-    /// will automatically wrap the payload in a `message-envelope`,
-    /// adding the sender's ID and scope before delivery.
-    /// @param payload - The raw byte representation of the message to send.
+
+interface messaging {
+    /// Broadcasts a message to all other actors in the system
     broadcast: func(payload: list<u8>);
+}
+
+interface command {
+    variant exit-status {
+        exited(u8),
+        signaled(u8),
+        failed-to-start(string),
+        timeout-expired,
+    }
+
+    record command-output {
+        stdout: list<u8>,
+        stderr: list<u8>,
+        status: exit-status,
+    }
+
+    resource cmd {
+        constructor(command: string);
+        args: func(args: list<string>) -> cmd;
+        current-dir: func(dir: string) -> cmd;
+        timeout: func(seconds: u32) -> cmd;
+        env: func(key: string, value: string) -> cmd;
+        env-clear: func() -> cmd;
+        run: func() -> result<command-output, string>;
+    }
+}
+
+interface http {
+    // Future HTTP client capabilities
+    resource request {
+        // ...
+    }
 }
 
 // =================================================================
@@ -59,10 +89,9 @@ interface runtime-interface {
 // a complete, runnable Hive Actor.
 // =================================================================
 world actor-world {
-    // An Actor requires the host to provide an implementation of the
-    // `runtime` interface.
-    import runtime-interface;
+    import messaging;
+    import command;
 
     // An actor must provide an implementation of the `actor` resource.
-    export actor-interface;
+    export actor;
 }
