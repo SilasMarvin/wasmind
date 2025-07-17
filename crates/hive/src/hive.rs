@@ -1,3 +1,4 @@
+use hive_actor_loader::LoadedActor;
 use std::{fs, time::Duration};
 use tokio::{sync::broadcast, time::sleep};
 
@@ -29,16 +30,21 @@ pub const MAIN_MANAGER_SCOPE: Scope =
 pub const MAIN_MANAGER_ROLE: &str = "Main Manager";
 
 /// Start the HIVE multi-agent system with TUI
-pub async fn start_hive(config: ParsedConfig, mut initial_prompt: Option<String>) -> SResult<()> {
+pub async fn start_hive(
+    config: ParsedConfig,
+    loaded_actors: Vec<LoadedActor>,
+    mut initial_prompt: Option<String>,
+) -> SResult<()> {
     let (tx, _) = broadcast::channel::<ActorMessage>(1024);
 
-    println!("WE GOT HERE");
-
-    let bytes = std::fs::read(
-        "/Users/silasmarvin/github/hive/target/wasm32-wasip1/release/actor_execute_bash.wasm",
-    )
-    .unwrap();
-    let manager = Manager::new("EXECUTE_BASH".to_string(), &bytes).await;
+    for actor in loaded_actors {
+        let manager = Manager::new(
+            actor.crate_name.to_string(),
+            MAIN_MANAGER_SCOPE.clone(),
+            &actor.wasm,
+        )
+        .await;
+    }
 
     let mut rx = tx.subscribe();
 

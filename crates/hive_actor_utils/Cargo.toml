@@ -13,3 +13,5 @@ license.workspace = true
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+
+hive_actor_bindings = { path = "../hive_actor_bindings" }

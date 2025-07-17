@@ -1,3 +1,4 @@
+#[allow(warnings)]
 mod bindings;
 
-pub use bindings::{_export_add_cabi, Guest, export, host};
+pub use bindings::exports::hive::actor::actor_interface::MessageEnvelope;

@@ -1,9 +1,68 @@
-package hive-actor:actor;
+// The top-level package for the Hive Actor Plugin System.
+package hive:actor@0.1.0;
 
-world actor {
-  import host: interface {
-    send-message: func(a: u32); 
-  }
+// =================================================================
+// INTERFACE 1: Core Actor Model
+// This interface defines the essential types and behaviors required
+// to create a stateful, message-driven actors.
+// =================================================================
+interface actor-interface {
+    /// An envelope that wraps every message passed between actors.
+    /// It provides context about the message's origin.
+    record message-envelope {
+        /// The unique identifier of the actor that sent the message.
+        from-actor-id: string,
+        /// The scope in which the sending actor was operating.
+        from-scope: string,
+        /// The raw, serialized message data. The format (e.g., JSON)
+        /// is determined by the sending actor's implementation.
+        payload: list<u8>,
+    }
 
-  export add: func(x: u32, y: u32) -> u32;
+    /// Represents a stateful actor instance. Actor authors must provide
+    /// an implementation for this resource.
+    resource actor {
+        /// Called by the host once when the actor is first instantiated.
+        /// Use this to initialize the actor's state.
+        /// @param scope - The execution scope provided by the host.
+        constructor(scope: string);
+
+        /// The primary entry point for processing incoming messages. This
+        /// function is called by the host whenever another actor broadcasts
+        /// a message to the system.
+        /// @param message - The incoming message envelope, containing the
+        /// payload and sender's context.
+        handle-message: func(message: message-envelope);
+
+        /// Called by the host when the actor instance is being shut down.
+        /// Use this for cleanup tasks like persisting state.
+        destructor: func();
+    }
+}
+
+// =================================================================
+// INTERFACE 2: Host Runtime
+// This interface defines the set of capabilities that the host
+// environment provides to all running actors.
+// =================================================================
+interface runtime-interface {
+    /// Broadcasts a message to all other actors in the system. The host
+    /// will automatically wrap the payload in a `message-envelope`,
+    /// adding the sender's ID and scope before delivery.
+    /// @param payload - The raw byte representation of the message to send.
+    broadcast: func(payload: list<u8>);
+}
+
+// =================================================================
+// WORLD: Definition
+// This world assembles the required imports and exports to define
+// a complete, runnable Hive Actor.
+// =================================================================
+world actor-world {
+    // An Actor requires the host to provide an implementation of the
+    // `runtime` interface.
+    import runtime-interface;
+
+    // An actor must provide an implementation of the `actor` resource.
+    export actor-interface;
 }

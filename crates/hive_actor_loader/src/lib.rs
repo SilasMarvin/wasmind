@@ -496,6 +496,36 @@ impl ActorLoader {
             }
         }
 
+        // Update the component WIT
+        if let Some(dependencies) = cargo_toml
+            .get_mut("package")
+            .map(|x| x.get_mut("metadata"))
+            .flatten()
+            .map(|x| x.get_mut("component"))
+            .flatten()
+            .map(|x| x.get_mut("target"))
+            .flatten()
+            .map(|x| x.get_mut("dependencies"))
+            .flatten()
+            .and_then(|x| x.as_table_mut())
+        {
+            if dependencies.contains_key("hive:actor") {
+                dependencies.insert(
+                    "hive:actor".to_string(),
+                    toml::Value::Table({
+                        let mut table = toml::Table::new();
+                        table.insert(
+                            "path".to_string(),
+                            toml::Value::String(
+                                hive_actor_bindings_path.join("wit").display().to_string(),
+                            ),
+                        );
+                        table
+                    }),
+                );
+            }
+        }
+
         // Write the updated Cargo.toml
         let updated_content = toml::to_string_pretty(&cargo_toml).unwrap();
 

@@ -476,21 +476,21 @@ macro_rules! __export_actor_world_impl {
 pub(crate) use __export_actor_world_impl as export;
 #[cfg(target_arch = "wasm32")]
 #[unsafe(
-    link_section = "component-type:wit-bindgen:0.41.0:hive:actor@0.1.0:actor-world:encoded world"
+    link_section = "component-type:wit-bindgen:0.41.0:execute-bash:actor@0.1.0:actor-world:encoded world"
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 490] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xe8\x02\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 498] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf0\x02\x01A\x02\x01\
 A\x04\x01B\x03\x01p}\x01@\x01\x07payload\0\x01\0\x04\0\x09broadcast\x01\x01\x03\0\
 \"hive:actor/runtime-interface@0.1.0\x05\0\x01B\x0c\x01p}\x01r\x03\x0dfrom-actor\
 -ids\x0afrom-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05ac\
 tor\x03\x01\x01i\x03\x01@\x01\x05scopes\0\x04\x04\0\x12[constructor]actor\x01\x05\
 \x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handl\
 e-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\
-\x08\x04\0\x20hive:actor/actor-interface@0.1.0\x05\x01\x04\0\x1chive:actor/actor\
--world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\x0cp\
-rocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\x08\x04\0\x20hive:actor/actor-interface@0.1.0\x05\x01\x04\0$execute-bash:actor/\
+actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\
+\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

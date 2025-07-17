@@ -1,12 +1,34 @@
-use hive_actor_bindings::{Guest, host::send_message};
+use bindings::{
+    exports::hive::actor::actor_interface::{Guest, GuestActor},
+    hive::actor::runtime_interface::broadcast,
+};
+
+#[allow(warnings)]
+mod bindings;
 
 struct Component;
 
-impl Guest for Component {
-    fn add(x: u32, y: u32) -> u32 {
-        send_message(x + y);
-        x + y
-    }
+struct Actor {
+    scope: String,
 }
 
-hive_actor_bindings::export!(Component with_types_in hive_actor_bindings);
+impl Guest for Component {
+    type Actor = Actor;
+}
+
+impl GuestActor for Actor {
+    fn new(scope: String) -> Self {
+        Self { scope }
+    }
+
+    fn handle_message(
+        &self,
+        message: bindings::exports::hive::actor::actor_interface::MessageEnvelope,
+    ) -> () {
+        broadcast("TEST2".as_bytes());
+    }
+
+    fn destructor(&self) -> () {}
+}
+
+bindings::export!(Component with_types_in bindings);

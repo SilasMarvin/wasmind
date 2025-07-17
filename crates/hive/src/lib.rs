@@ -127,7 +127,7 @@ pub async fn run_main_program(initial_prompt: Option<String>) -> SResult<()> {
     let loaded_actors = load_actors(config_actors).await?;
 
     // Start the HIVE multi-agent system
-    hive::start_hive(parsed_config, initial_prompt).await
+    hive::start_hive(parsed_config, loaded_actors, initial_prompt).await
 }
 
 pub async fn run_headless_program(

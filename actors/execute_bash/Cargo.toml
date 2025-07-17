@@ -8,10 +8,12 @@ repository = "https://github.com/SilasMarvin/hive"
 readme = "README.md"
 authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 
-[dependencies]
-wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }
-
-hive_actor_bindings = { path = "../../crates/hive_actor_bindings" }
-
 [lib]
 crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }
+serde = "1"
+
+[package.metadata.component.target.dependencies]
+"hive:actor" = { path = "../../crates/hive_actor_bindings/wit" }
