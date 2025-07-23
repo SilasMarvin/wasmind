@@ -7,9 +7,9 @@ use crate::{
     actors::{
         Actor, ActorMessage, AgentMessage, AgentMessageType, AgentStatus, AgentType,
         InterAgentMessage, Message,
+        actor_manager::Manager,
         agent::Agent,
         litellm_manager::LiteLLMManager,
-        manager::Manager,
         tools::{
             complete::CompleteTool, planner::Planner, send_message::SendMessage,
             spawn_agent::SpawnAgent, wait::WaitTool,

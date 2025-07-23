@@ -1,4 +1,3 @@
-#[allow(warnings)]
-mod bindings;
+// Nothing should actually be exported from this crate
+// This is only used to store the world.wit that is used by actors and be included as a component
 
-pub use bindings::exports::hive::actor::actor_interface::MessageEnvelope;

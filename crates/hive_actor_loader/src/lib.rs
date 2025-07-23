@@ -475,20 +475,9 @@ impl ActorLoader {
                             "path".to_string(),
                             toml::Value::String(hive_actor_utils_path.display().to_string()),
                         );
-                        table
-                    }),
-                );
-            }
-
-            // Update hive_actor_bindings
-            if dependencies.contains_key("hive_actor_bindings") {
-                dependencies.insert(
-                    "hive_actor_bindings".to_string(),
-                    toml::Value::Table({
-                        let mut table = toml::Table::new();
                         table.insert(
-                            "path".to_string(),
-                            toml::Value::String(hive_actor_bindings_path.display().to_string()),
+                            "features".to_string(),
+                            toml::Value::Array(vec![toml::Value::String("macros".to_string())]),
                         );
                         table
                     }),

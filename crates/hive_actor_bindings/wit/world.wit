@@ -10,6 +10,8 @@ interface actor {
     /// An envelope that wraps every message passed between actors.
     /// It provides context about the message's origin.
     record message-envelope {
+        /// The unique identifier of the message type
+        message-type: string,
         /// The unique identifier of the actor that sent the message.
         from-actor-id: string,
         /// The scope in which the sending actor was operating.
@@ -48,7 +50,7 @@ interface actor {
 
 interface messaging {
     /// Broadcasts a message to all other actors in the system
-    broadcast: func(payload: list<u8>);
+    broadcast: func(message-type: string, payload: list<u8>);
 }
 
 interface command {

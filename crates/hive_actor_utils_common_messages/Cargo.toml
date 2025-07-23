@@ -1,5 +1,5 @@
 [package]
-name = "hive_actor_utils"
+name = "hive_actor_utils_common_messages"
 version = "0.1.0"
 
 description.workspace = true
@@ -13,10 +13,3 @@ license.workspace = true
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-
-hive_actor_utils_common_messages = { path = "../hive_actor_utils_common_messages" }
-hive_actor_utils_macros = { path = "../hive_actor_utils_macros", optional = true }
-
-[features]
-default = []
-macros = ["hive_actor_utils_macros"]

@@ -13,7 +13,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }
-serde = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+hive_actor_utils = { path = "../../crates/hive_actor_utils", features = ["macros"] }
 
 [package.metadata.component.target.dependencies]
 "hive:actor" = { path = "../../crates/hive_actor_bindings/wit" }
