@@ -11,8 +11,8 @@ pub mod temporal;
 pub mod tools;
 pub mod tui;
 
-use crate::llm_client::{self, ToolCall};
 use crate::scope::Scope;
+use hive_llm_client::types::ToolCall;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -173,8 +173,8 @@ pub enum UserContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssistantChatState {
     pub system: String,
-    pub tools: Vec<llm_client::Tool>,
-    pub messages: Vec<llm_client::ChatMessage>,
+    pub tools: Vec<hive_llm_client::types::Tool>,
+    pub messages: Vec<hive_llm_client::types::ChatMessage>,
 }
 
 /// The various messages actors can send
@@ -193,12 +193,12 @@ pub enum Message {
     AssistantToolCall(ToolCall),
     AssistantResponse {
         id: Uuid,
-        message: llm_client::AssistantChatMessage,
+        message: hive_llm_client::types::AssistantChatMessage,
     },
 
     // Tool messages
     ToolCallUpdate(ToolCallUpdate),
-    ToolsAvailable(Vec<llm_client::Tool>),
+    ToolsAvailable(Vec<hive_llm_client::Tool>),
 
     // System state update messages
     FileRead {

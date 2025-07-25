@@ -38,6 +38,7 @@ uuid = { workspace = true }
 
 hive_actor_loader = { path = "../hive_actor_loader" }
 hive_config = { path = "../hive_config" }
+hive_llm_client = { path = "../hive_llm_client", features = ["client"] }
 
 rand = "0.9"
 throbber-widgets-tui = "0.8"

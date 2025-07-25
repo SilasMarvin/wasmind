@@ -1,7 +1,9 @@
+use hive_actor_utils_common_messages::tools::ExecuteTool;
+
 pub trait Tool: Sized {
     fn new() -> Self;
 
-    fn handle_call(&self, input: serde_json::Value);
+    fn handle_call(&self, input: ExecuteTool);
 }
 
 #[cfg(feature = "macros")]

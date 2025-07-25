@@ -575,15 +575,16 @@ impl Actor for LiteLLMManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        config::{
-            ParsedChatConfig, ParsedConfig, ParsedDashboardConfig, ParsedGraphConfig,
-            ParsedHiveConfig, ParsedModelConfig, ParsedTemporalConfig, ParsedTuiConfig,
-        },
-        llm_client::{AssistantChatMessage, Tool},
+    use crate::config::{
+        ParsedChatConfig, ParsedConfig, ParsedDashboardConfig, ParsedGraphConfig, ParsedHiveConfig,
+        ParsedModelConfig, ParsedTemporalConfig, ParsedTuiConfig,
+    };
+    use hive_llm_client::{
+        client::LLMClient,
+        types::{AssistantChatMessage, ChatMessage, Tool, ToolFunctionDefinition},
     };
     use serde_json::json;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, env};
 
     fn create_test_model_config(
         model_name: &str,
@@ -746,9 +747,6 @@ mod tests {
     #[tokio::test]
     #[ignore] // Skip by default - requires Docker and API keys
     async fn test_integration_docker_container_with_llm_client() {
-        use crate::llm_client::{ChatMessage, LLMClient};
-        use std::env;
-
         // Initialize tracing for this test to see debug output
         let _ = tracing_subscriber::fmt()
             .with_env_filter(
@@ -791,7 +789,7 @@ mod tests {
 
         let tools = vec![Tool {
             tool_type: "function".to_string(),
-            function: crate::llm_client::ToolFunction {
+            function: ToolFunctionDefinition {
                 name: "get_current_weather".to_string(),
                 description: "Get the current weather in a given location".to_string(),
                 parameters: serde_json::json!({

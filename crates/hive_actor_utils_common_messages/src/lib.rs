@@ -175,11 +175,11 @@ pub mod tools {
 
     // hive.common.tools.ExecuteToolCall
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct ExecuteToolCall {
+    pub struct ExecuteTool {
         tool_call: hive_llm_client::types::ToolCall,
     }
 
-    impl CommonMessage for ExecuteToolCall {
+    impl CommonMessage for ExecuteTool {
         const MESSAGE_TYPE: &str = "hive.common.tools.ExecuteToolCall";
     }
 

@@ -1978,6 +1978,7 @@ dependencies = [
  "futures",
  "hive_actor_loader",
  "hive_config",
+ "hive_llm_client",
  "hive_macros",
  "hound",
  "image",

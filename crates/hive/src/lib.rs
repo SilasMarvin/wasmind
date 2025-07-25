@@ -2,7 +2,6 @@ pub mod actors;
 pub mod cli;
 pub mod config;
 pub mod hive;
-pub mod llm_client;
 pub mod prompt_preview;
 pub mod scope;
 pub mod system_state;

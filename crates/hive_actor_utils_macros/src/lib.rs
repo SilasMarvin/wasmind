@@ -57,8 +57,8 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
                     &::hive_actor_utils::tools::macros::__private::serde_json::to_string(&
                         ::hive_actor_utils::common_messages::tools::ToolsAvailable {
                             tools: vec![
-                                ::hive_actor_utils::common_messages::tools::macros::__private::hive_llm_client::types::Tool {
-                                    type: "function".to_string(),
+                                ::hive_actor_utils::tools::macros::__private::hive_llm_client::types::Tool {
+                                    tool_type: "function".to_string(),
                                     function: ::hive_actor_utils::tools::macros::__private::hive_llm_client::types::ToolFunctionDefinition {
                                         name: #tool_name.to_string(),
                                         description: #tool_desc.to_string(),
@@ -84,10 +84,10 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
 
             fn handle_message(&self, message: crate::bindings::exports::hive::actor::actor::MessageEnvelope) {
                 use ::hive_actor_utils::common_messages::CommonMessage;
-                if message.message_type == ::hive_actor_utils::common_messages::tools::ToolCall::MESSAGE_TYPE {
+                if message.message_type == ::hive_actor_utils::common_messages::tools::ExecuteTool::MESSAGE_TYPE {
                     if let Ok(json_string) = String::from_utf8(message.payload) {
-                        if let Ok(json_value) = ::hive_actor_utils::tools::macros::__private::serde_json::from_str(&json_string) {
-                            <#name as ::hive_actor_utils::tools::Tool>::handle_call(&self.tool, json_value)
+                        if let Ok(execute_tool_call) = ::hive_actor_utils::tools::macros::__private::serde_json::from_str::<::hive_actor_utils::common_messages::tools::ExecuteTool>(&json_string) {
+                            <#name as ::hive_actor_utils::tools::Tool>::handle_call(&self.tool, execute_tool_call)
                         }
                     }
                 }

@@ -1,5 +1,7 @@
 use snafu::{Location, ResultExt, Snafu, location};
 
+use crate::types::{ChatMessage, ChatRequest, ChatResponse, Tool};
+
 #[derive(Debug, Snafu)]
 pub enum LLMClientError {
     #[snafu(display("Request failed"))]
@@ -24,6 +26,13 @@ pub enum LLMClientError {
         #[snafu(source)]
         source: serde_json::Error,
         text: String,
+    },
+
+    #[snafu(whatever, display("{message}"))]
+    Whatever {
+        message: String,
+        #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 }
 

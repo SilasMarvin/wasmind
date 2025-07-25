@@ -1,4 +1,7 @@
-use hive_actor_utils::{common_messages::tools::UIDisplayInfo, tools};
+use hive_actor_utils::{
+    common_messages::tools::{ExecuteTool, UIDisplayInfo},
+    tools,
+};
 
 #[allow(warnings)]
 mod bindings;
@@ -47,7 +50,7 @@ impl tools::Tool for CommandTool {
         Self {}
     }
 
-    fn handle_call(&self, json_string: serde_json::Value) {
+    fn handle_call(&self, tool_call: ExecuteTool) {
         todo!()
     }
 }
