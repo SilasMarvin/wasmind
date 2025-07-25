@@ -2100,6 +2100,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hive_tui"
+version = "0.1.0"
+dependencies = [
+ "etcetera",
+ "snafu",
+ "url",
+]
+
+[[package]]
 name = "home"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"

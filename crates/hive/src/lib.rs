@@ -1,29 +1,20 @@
 pub mod actors;
-pub mod cli;
-pub mod config;
 pub mod hive;
-pub mod prompt_preview;
 pub mod scope;
-pub mod system_state;
-pub mod template;
-pub mod utils;
 
-use config::{Config, ParsedConfig};
 use hive_actor_loader::{ActorLoader, LoadedActor};
+
 use snafu::ResultExt;
 use snafu::{Location, Snafu};
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-
-pub static IS_HEADLESS: OnceLock<bool> = OnceLock::new();
 
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Config Error"))]
     Config {
         #[snafu(source)]
-        source: config::ConfigError,
+        source: hive_config::Error,
     },
 
     #[snafu(display("Actor loader error"))]
@@ -34,36 +25,11 @@ pub enum Error {
         location: Location,
     },
 
-    #[cfg(feature = "gui")]
-    #[snafu(display("Error copying clipboard"))]
-    Clipboard {
-        #[snafu(implicit)]
-        location: Location,
-        #[snafu(source)]
-        source: arboard::Error,
-    },
-
-    #[cfg(feature = "gui")]
-    #[snafu(display("Error copying clipboard"))]
-    Xcap {
-        #[snafu(implicit)]
-        location: Location,
-        #[snafu(source)]
-        source: xcap::XCapError,
-    },
-
     #[snafu(whatever, display("{message}"))]
     Whatever {
         message: String,
         #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
-    },
-
-    #[snafu(display("Tool execution not found for call_id: {call_id}"))]
-    ToolExecutionNotFound {
-        #[snafu(implicit)]
-        location: Location,
-        call_id: String,
     },
 }
 
@@ -111,12 +77,7 @@ async fn load_actors(actors: Vec<hive_config::Actor>) -> SResult<Vec<LoadedActor
         .context(ActorLoaderSnafu)
 }
 
-pub async fn run_main_program(initial_prompt: Option<String>) -> SResult<()> {
-    IS_HEADLESS.set(false).unwrap();
-
-    let config = Config::new(false).context(ConfigSnafu)?;
-    let parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
-
+pub async fn run() -> SResult<()> {
     let config_actors = vec![hive_config::Actor {
         name: "execute_bash".to_string(),
         source: hive_config::ActorSource::Path(
@@ -126,23 +87,5 @@ pub async fn run_main_program(initial_prompt: Option<String>) -> SResult<()> {
     let loaded_actors = load_actors(config_actors).await?;
 
     // Start the HIVE multi-agent system
-    hive::start_hive(parsed_config, loaded_actors, initial_prompt).await
-}
-
-pub async fn run_headless_program(
-    prompt: String,
-    auto_approve_commands_override: bool,
-) -> SResult<()> {
-    IS_HEADLESS.set(true).unwrap();
-
-    let config = Config::new(true).context(ConfigSnafu)?;
-    let mut parsed_config: ParsedConfig = config.try_into().context(ConfigSnafu)?;
-
-    // Override config setting if CLI flag is provided
-    if auto_approve_commands_override {
-        parsed_config.auto_approve_commands = true;
-    }
-
-    // Start the HIVE system without TUI
-    hive::start_headless_hive(parsed_config, prompt, None).await
+    hive::start_hive(loaded_actors).await
 }

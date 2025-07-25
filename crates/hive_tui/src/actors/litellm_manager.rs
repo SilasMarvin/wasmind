@@ -3,15 +3,10 @@ use snafu::{Location, ResultExt, Snafu, location};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::process::Command;
-use tokio::sync::broadcast::Sender;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, info, warn};
 
-use crate::actors::Message;
 use crate::config::{LiteLLMConfig, ParsedConfig};
-use crate::scope::Scope;
-
-use super::{Actor, ActorContext, ActorMessage};
 
 #[derive(Debug, Snafu)]
 pub enum LiteLLMError {
@@ -149,18 +144,14 @@ pub struct LiteLLMHealthResponse {
 }
 
 pub struct LiteLLMManager {
-    scope: Scope,
-    tx: Sender<ActorMessage>,
     config: ParsedConfig,
     container_id: Option<String>,
 }
 
 impl LiteLLMManager {
-    pub fn new(config: ParsedConfig, tx: Sender<ActorMessage>, scope: Scope) -> Self {
+    pub fn new(config: ParsedConfig) -> Self {
         Self {
             config,
-            tx,
-            scope,
             container_id: None,
         }
     }
@@ -538,40 +529,6 @@ impl LiteLLMManager {
     }
 }
 
-impl ActorContext for LiteLLMManager {
-    fn get_scope(&self) -> &Scope {
-        &self.scope
-    }
-
-    fn get_tx(&self) -> tokio::sync::broadcast::Sender<ActorMessage> {
-        self.tx.clone()
-    }
-
-    fn get_rx(&self) -> tokio::sync::broadcast::Receiver<ActorMessage> {
-        self.tx.subscribe()
-    }
-}
-
-#[async_trait::async_trait]
-impl Actor for LiteLLMManager {
-    const ACTOR_ID: &str = "litellm_manager";
-
-    async fn handle_message(&mut self, _message: ActorMessage) {}
-
-    async fn on_start(&mut self) {
-        if let Err(e) = self.start().await {
-            tracing::error!("Failed to start LiteLLM docker container with error: {e:?}");
-            self.broadcast(Message::Exit);
-        }
-    }
-
-    async fn on_stop(&mut self) {
-        if let Err(e) = self.stop().await {
-            tracing::error!("FAiled to stop LiteLLM docker container with error: {e:?}");
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -764,10 +721,7 @@ mod tests {
         let mut parsed_config = create_test_parsed_config_with_openai();
         parsed_config.hive.litellm.port = 4001;
 
-        let (tx, _) = tokio::sync::broadcast::channel::<ActorMessage>(1024);
-
-        let mut litellm_manager =
-            LiteLLMManager::new(parsed_config.clone(), tx.clone(), Scope::new());
+        let mut litellm_manager = LiteLLMManager::new(parsed_config.clone());
         litellm_manager.start().await.unwrap();
 
         // Start streaming container logs in background
