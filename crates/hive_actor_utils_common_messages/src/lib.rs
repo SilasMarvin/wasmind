@@ -1,6 +1,10 @@
-pub trait CommonMessage {
+use serde::{Serialize, de::DeserializeOwned};
+
+pub trait CommonMessage: Serialize + DeserializeOwned {
     const MESSAGE_TYPE: &str;
 }
+
+pub type Scope = String;
 
 pub mod actors {
     use super::CommonMessage;
@@ -17,60 +21,172 @@ pub mod actors {
     }
 }
 
+pub mod assistant {
+    use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
+    use uuid::Uuid;
+
+    use crate::Scope;
+
+    use super::CommonMessage;
+    use super::tools;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct PendingToolCall {
+        pub tool_call: hive_llm_client::types::ToolCall,
+        pub result: Option<tools::ToolCallResult>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum WaitReason {
+        WaitingForUserInput,
+        WaitForSystem {
+            tool_name: Option<String>,
+            tool_call_id: String,
+        },
+        WaitingForTools {
+            tool_calls: HashMap<String, PendingToolCall>,
+        },
+        WaitingForActors {
+            pending_actors: Vec<String>,
+        },
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct AgentTaskResponse {
+        pub summary: String,
+        pub success: bool,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum Status {
+        Processing {
+            request_id: Uuid,
+        },
+        Wait {
+            reason: WaitReason,
+        },
+        Done {
+            result: Result<AgentTaskResponse, String>,
+        },
+    }
+
+    // hive.common.assistant.StatusUpdate
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct StatusUpdate {
+        pub status: Status,
+    }
+
+    impl CommonMessage for StatusUpdate {
+        const MESSAGE_TYPE: &str = "hive.common.assistant.StatusUpdate";
+    }
+
+    // hive.common.assistant.RequestStatusUpdate
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RequestStatusUpdate {
+        pub agent: Scope,
+        pub status: Status,
+    }
+
+    impl CommonMessage for RequestStatusUpdate {
+        const MESSAGE_TYPE: &str = "hive.common.assistant.RequestStatusUpdate";
+    }
+
+    // hive.common.assistant.InterruptAndForceWaitForSystem
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct InterruptAndForceWaitForSystem {
+        pub agent: Scope,
+        pub required_scope: Option<Scope>,
+    }
+
+    impl CommonMessage for InterruptAndForceWaitForSystem {
+        const MESSAGE_TYPE: &str = "hive.common.assistant.InterruptAndForceWaitForSystem";
+    }
+
+    // hive.common.assistant.AddMessage
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct AddMessage {
+        pub agent: Scope,
+        pub message: hive_llm_client::types::ChatMessage,
+    }
+
+    impl CommonMessage for AddMessage {
+        const MESSAGE_TYPE: &str = "hive.common.assistant.AddMessage";
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ChatState {
+        pub system: hive_llm_client::types::SystemChatMessage,
+        pub tools: Vec<hive_llm_client::types::Tool>,
+        pub messages: Vec<hive_llm_client::types::ChatMessage>,
+    }
+
+    // hive.common.assistant.Request
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Request {
+        chat_state: ChatState,
+    }
+
+    impl CommonMessage for Request {
+        const MESSAGE_TYPE: &str = "hive.common.assistant.Request";
+    }
+
+    // hive.common.assistant.Response
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Response {
+        request_id: Uuid,
+        message: hive_llm_client::types::AssistantChatMessage,
+    }
+
+    impl CommonMessage for Response {
+        const MESSAGE_TYPE: &str = "hive.common.assistant.Response";
+    }
+
+    // hive.common.assistant.ChatStateUpdated
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ChatStateUpdated {
+        chat_state: ChatState,
+    }
+
+    impl CommonMessage for ChatStateUpdated {
+        const MESSAGE_TYPE: &str = "hive.common.assistant.ChatStateUpdated";
+    }
+}
+
 pub mod tools {
     use super::CommonMessage;
     use serde::{Deserialize, Serialize};
-    use serde_json::Value;
 
-    // hive.common.tools.UIDisplayInfo
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct UIDisplayInfo {
         pub collapsed: String,
         pub expanded: Option<String>,
     }
 
-    impl CommonMessage for UIDisplayInfo {
-        const MESSAGE_TYPE: &str = "hive.common.tools.UIDisplayInfo";
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct ToolDefinition {
-        pub name: String,
-        pub description: String,
-        pub schema: Value,
-    }
-
     // hive.common.tools.ToolsAvailable
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ToolsAvailable {
-        pub tools: Vec<ToolDefinition>,
+        pub tools: Vec<hive_llm_client::types::Tool>,
     }
 
     impl CommonMessage for ToolsAvailable {
         const MESSAGE_TYPE: &str = "hive.common.tools.ToolsAvailable";
     }
 
-    // hive.common.tools.ToolCall
+    // hive.common.tools.ExecuteToolCall
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct ToolCall {
-        pub id: String,
-        pub name: String,
-        pub arguments: Value,
+    pub struct ExecuteToolCall {
+        tool_call: hive_llm_client::types::ToolCall,
     }
 
-    impl CommonMessage for ToolCall {
-        const MESSAGE_TYPE: &str = "hive.common.tools.ToolCall";
+    impl CommonMessage for ExecuteToolCall {
+        const MESSAGE_TYPE: &str = "hive.common.tools.ExecuteToolCall";
     }
 
-    // hive.common.tools.ToolCallResult
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ToolCallResult {
         pub content: String,
         pub ui_display_info: UIDisplayInfo,
-    }
-
-    impl CommonMessage for ToolCallResult {
-        const MESSAGE_TYPE: &str = "hive.common.tools.ToolCallResult";
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,9 +198,15 @@ pub mod tools {
     // hive.common.tools.ToolStatusUpdate
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum ToolCallStatusUpdate {
-        Received(UIDisplayInfo),
-        AwaitingSystem(AwaitingSystemDetails),
-        Done(Result<ToolCallResult, ToolCallResult>),
+        Received {
+            display_info: UIDisplayInfo,
+        },
+        AwaitingSystem {
+            details: AwaitingSystemDetails,
+        },
+        Done {
+            result: Result<ToolCallResult, ToolCallResult>,
+        },
     }
 
     impl CommonMessage for ToolCallStatusUpdate {

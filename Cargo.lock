@@ -2045,6 +2045,7 @@ version = "0.1.0"
 dependencies = [
  "hive_actor_utils_common_messages",
  "hive_actor_utils_macros",
+ "hive_llm_client",
  "serde",
  "serde_json",
 ]
@@ -2053,8 +2054,10 @@ dependencies = [
 name = "hive_actor_utils_common_messages"
 version = "0.1.0"
 dependencies = [
+ "hive_llm_client",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -2073,6 +2076,16 @@ dependencies = [
  "etcetera",
  "snafu",
  "url",
+]
+
+[[package]]
+name = "hive_llm_client"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "snafu",
 ]
 
 [[package]]

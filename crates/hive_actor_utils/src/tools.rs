@@ -7,6 +7,7 @@ pub trait Tool: Sized {
 #[cfg(feature = "macros")]
 pub mod macros {
     pub mod __private {
+        pub use hive_llm_client;
         pub use serde_json;
     }
 
