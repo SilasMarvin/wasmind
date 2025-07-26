@@ -1,31 +1,33 @@
 use hive_actor_loader::LoadedActor;
+use hive_actor_utils_common_messages::{CommonMessage, actors};
 use tokio::sync::broadcast;
 
 use crate::{
-    SResult,
-    actors::{MessageEnvelope, actor_manager::Manager},
+    HiveResult,
+    actors::{ActorExecutor, MessageEnvelope},
     scope::Scope,
 };
 
-pub const MAIN_MANAGER_SCOPE: Scope =
+pub const STARTING_SCOPE: Scope =
     Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-000000000000"));
 
 /// Start the HIVE multi-agent system with TUI
-pub async fn start_hive(loaded_actors: Vec<LoadedActor>) -> SResult<()> {
+pub async fn start_hive<T: ActorExecutor + Clone>(
+    starting_actors: &[&str],
+    actors: Vec<T>,
+) -> HiveResult<()> {
     let (tx, _) = broadcast::channel::<MessageEnvelope>(1024);
-
-    for actor in loaded_actors {
-        let manager = Manager::new(
-            actor.crate_name.to_string(),
-            MAIN_MANAGER_SCOPE.clone(),
-            &actor.wasm,
-        )
-        .await;
-    }
-
     let mut rx = tx.subscribe();
 
-    return Ok(());
+    // Start the starting actors
+    for actor in actors.clone().into_iter().filter(|actor| {
+        starting_actors
+            .iter()
+            .find(|sa| actor.actor_id() == **sa)
+            .is_some()
+    }) {
+        actor.run(STARTING_SCOPE.clone(), tx.clone()).await;
+    }
 
     // // Create the TUI immediatly
     // TuiActor::new(
@@ -70,21 +72,20 @@ pub async fn start_hive(loaded_actors: Vec<LoadedActor>) -> SResult<()> {
     //         message: Message::UserContext(crate::actors::UserContext::UserTUIInput(prompt)),
     //     });
     // }
-    //
-    // // Listen for messages
-    // loop {
-    //     let msg = rx.recv().await;
-    //     let msg = msg.expect("Error receiving in hive");
-    //     let message_json = serde_json::to_string(&msg).unwrap_or_else(|_| format!("{:?}", msg));
-    //     tracing::debug!(name = "hive_received_message", message = %message_json, message_type = std::any::type_name::<Message>());
-    //
-    //     match msg.message {
-    //         Message::Exit if msg.scope == MAIN_MANAGER_SCOPE => {
-    //             // Let everything clean up
-    //             sleep(Duration::from_millis(500)).await;
-    //             return Ok(());
-    //         }
-    //         _ => (),
-    //     }
-    // }
+
+    // Listen for messages
+    loop {
+        let msg = rx.recv().await;
+        let msg = msg.expect("Error receiving in hive");
+        let message_json = if let Ok(json_string) = String::from_utf8(msg.payload) {
+            json_string
+        } else {
+            "na".to_string()
+        };
+        tracing::debug!(name = "hive_received_message", message_type = msg.message_type, message = %message_json);
+
+        if msg.message_type == actors::Exit::MESSAGE_TYPE {
+            return Ok(());
+        }
+    }
 }

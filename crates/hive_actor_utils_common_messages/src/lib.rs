@@ -12,12 +12,18 @@ pub mod actors {
 
     // hive.common.actors.ActorReady
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct ActorReady {
-        pub scope: String,
-    }
+    pub struct ActorReady;
 
     impl CommonMessage for ActorReady {
         const MESSAGE_TYPE: &str = "hive.common.actors.ActorReady";
+    }
+
+    // hive.common.actors.Exit
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Exit;
+
+    impl CommonMessage for Exit {
+        const MESSAGE_TYPE: &str = "hive.common.actors.Exit";
     }
 }
 

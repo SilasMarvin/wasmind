@@ -28,13 +28,13 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
     }
 
     let expanded = quote! {
-    // Ensure the ToolTrait is implemented
-    const _: () = {
-        fn assert_impl_tool<T: ::hive_actor_utils::tools::Tool>() {}
-        fn assert() {
-            assert_impl_tool::<#name>();
-        }
-    };
+        // Ensure the ToolTrait is implemented
+        const _: () = {
+            fn assert_impl_tool<T: ::hive_actor_utils::tools::Tool>() {}
+            fn assert() {
+                assert_impl_tool::<#name>();
+            }
+        };
 
 
         // Actor wrapper type
@@ -66,15 +66,6 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
                                     }
                                 }
                             ]
-                        }
-                    ).unwrap().into_bytes()
-                );
-
-                crate::bindings::hive::actor::messaging::broadcast(
-                    ::hive_actor_utils::common_messages::actors::ActorReady::MESSAGE_TYPE,
-                    &::hive_actor_utils::tools::macros::__private::serde_json::to_string(&
-                        ::hive_actor_utils::common_messages::actors::ActorReady {
-                            scope
                         }
                     ).unwrap().into_bytes()
                 );

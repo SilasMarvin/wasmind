@@ -33,7 +33,7 @@ pub enum Error {
     },
 }
 
-pub type SResult<T> = Result<T, Error>;
+pub type HiveResult<T> = Result<T, Error>;
 
 // Library functions that main.rs can use
 pub fn init_test_logger() {
@@ -68,24 +68,11 @@ pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
         .init();
 }
 
-async fn load_actors(actors: Vec<hive_config::Actor>) -> SResult<Vec<LoadedActor>> {
+pub async fn load_actors(actors: Vec<hive_config::Actor>) -> HiveResult<Vec<LoadedActor>> {
     let temp_cache = PathBuf::from("/tmp/hive_cache");
     let actor_loader = ActorLoader::new(Some(temp_cache)).context(ActorLoaderSnafu)?;
     actor_loader
         .load_actors(actors)
         .await
         .context(ActorLoaderSnafu)
-}
-
-pub async fn run() -> SResult<()> {
-    let config_actors = vec![hive_config::Actor {
-        name: "execute_bash".to_string(),
-        source: hive_config::ActorSource::Path(
-            "/Users/silasmarvin/github/hive/actors/execute_bash".to_string(),
-        ),
-    }];
-    let loaded_actors = load_actors(config_actors).await?;
-
-    // Start the HIVE multi-agent system
-    hive::start_hive(loaded_actors).await
 }

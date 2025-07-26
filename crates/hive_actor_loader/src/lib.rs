@@ -111,9 +111,9 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
 pub struct LoadedActor {
+    pub id: String,
     pub name: String,
     pub version: String,
-    pub crate_name: String,
     pub wasm: Vec<u8>,
 }
 
@@ -230,7 +230,7 @@ impl ActorLoader {
         Ok(LoadedActor {
             name: actor.name,
             version,
-            crate_name,
+            id: crate_name,
             wasm,
         })
     }
@@ -265,7 +265,7 @@ impl ActorLoader {
             return Ok(Some(LoadedActor {
                 name: actor.name.clone(),
                 version,
-                crate_name,
+                id: crate_name,
                 wasm,
             }));
         }

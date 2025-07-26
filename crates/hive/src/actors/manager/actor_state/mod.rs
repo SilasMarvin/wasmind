@@ -1,14 +1,21 @@
+use tokio::sync::broadcast;
 use wasmtime_wasi::{
     ResourceTable,
     p2::{IoView, WasiCtx, WasiCtxBuilder, WasiView},
 };
 
+use super::ActorId;
+use crate::{actors::MessageEnvelope, scope::Scope};
+
 pub mod command;
 pub mod messaging;
 
 pub struct ActorState {
+    pub actor_id: ActorId,
     pub ctx: WasiCtx,
     pub table: ResourceTable,
+    pub tx: broadcast::Sender<MessageEnvelope>,
+    pub scope: Scope,
 }
 
 impl IoView for ActorState {
@@ -24,12 +31,14 @@ impl WasiView for ActorState {
 }
 
 impl ActorState {
-    pub fn new() -> Self {
+    pub fn new(actor_id: ActorId, scope: Scope, tx: broadcast::Sender<MessageEnvelope>) -> Self {
         let mut builder = WasiCtxBuilder::new();
         ActorState {
+            actor_id,
+            tx,
+            scope,
             ctx: builder.build(),
             table: ResourceTable::new(),
         }
     }
 }
-

@@ -4,7 +4,7 @@ use tokio::process::Command;
 use tokio::time::timeout;
 use wasmtime::component::Resource;
 
-use crate::actors::actor_manager::hive::actor::command;
+use crate::actors::manager::hive::actor::command;
 
 use super::ActorState;
 
