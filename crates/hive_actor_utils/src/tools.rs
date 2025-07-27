@@ -3,7 +3,7 @@ use hive_actor_utils_common_messages::tools::ExecuteTool;
 pub trait Tool: Sized {
     fn new() -> Self;
 
-    fn handle_call(&self, input: ExecuteTool);
+    fn handle_call(&mut self, input: ExecuteTool);
 }
 
 #[cfg(feature = "macros")]

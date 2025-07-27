@@ -1,0 +1,6 @@
+package execute-bash:actor@0.1.0;
+
+world actor-world {
+  import hive:actor/messaging@0.1.0; 
+  export hive:actor/actor@0.1.0; 
+}

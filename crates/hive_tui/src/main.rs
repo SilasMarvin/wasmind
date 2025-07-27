@@ -6,14 +6,21 @@ async fn main() -> HiveResult<()> {
 
     hive::init_test_logger();
 
-    let starting_actors = vec!["execute_bash"];
-    let config_actors = vec![hive_config::Actor {
-        name: "execute_bash".to_string(),
-        source: hive_config::ActorSource::Path(
-            "/Users/silasmarvin/github/hive/actors/execute_bash".to_string(),
-        ),
-    }];
-
+    let starting_actors = vec!["execute_bash", "assistant"];
+    let config_actors = vec![
+        hive_config::Actor {
+            name: "assistant".to_string(),
+            source: hive_config::ActorSource::Path(
+                "/Users/silasmarvin/github/hive/actors/assistant".to_string(),
+            ),
+        },
+        hive_config::Actor {
+            name: "execute_bash".to_string(),
+            source: hive_config::ActorSource::Path(
+                "/Users/silasmarvin/github/hive/actors/execute_bash".to_string(),
+            ),
+        },
+    ];
     let loaded_actors = hive::load_actors(config_actors).await?;
 
     hive::hive::start_hive(&starting_actors, loaded_actors).await?;

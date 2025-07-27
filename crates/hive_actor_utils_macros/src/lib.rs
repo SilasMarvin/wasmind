@@ -2,6 +2,87 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{DeriveInput, Lit, parse_macro_input};
 
+#[proc_macro]
+pub fn generate_actor_trait(_input: TokenStream) -> TokenStream {
+    let expanded = quote! {
+        trait GeneratedActorTrait {
+            fn new(scope: String) -> Self;
+
+            fn handle_message(&mut self, message: crate::bindings::exports::hive::actor::actor::MessageEnvelope);
+
+            fn destructor(&mut self) {}
+
+
+            fn broadcast<T: ToString, S: ::hive_actor_utils::actors::macros::__private::serde::ser::Serialize>(message_type: T, payload: S) -> Result<(), ::hive_actor_utils::actors::macros::__private::serde_json::Error> {
+                Ok(crate::bindings::hive::actor::messaging::broadcast(
+                    &message_type.to_string(),
+                    &::hive_actor_utils::tools::macros::__private::serde_json::to_string(&
+                        payload
+                    )?.into_bytes()
+                ))
+            }
+
+            fn parse_as<S: ::hive_actor_utils::actors::macros::__private::serde::de::DeserializeOwned>(message_type: &str, msg: &crate::bindings::exports::hive::actor::actor::MessageEnvelope) -> Option<S> {
+                if let Ok(json_string) = str::from_utf8(&msg.payload) && message_type == &msg.message_type {
+                    ::hive_actor_utils::tools::macros::__private::serde_json::from_str::<S>(json_string).ok()
+                } else {
+                    None
+                }
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+#[proc_macro_derive(Actor)]
+pub fn actor_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+    let actor_name = syn::Ident::new(&format!("{}Actor", name), name.span());
+
+    let expanded = quote! {
+        const _: () = {
+            fn assert_impl_tool<T: GeneratedActorTrait>() {}
+            fn assert() {
+                assert_impl_tool::<#name>();
+            }
+        };
+
+        // Actor wrapper type
+        pub struct #actor_name {
+            actor: std::cell::RefCell<#name>
+        }
+
+        impl crate::bindings::exports::hive::actor::actor::GuestActor for #actor_name {
+            fn new(scope: String) -> Self {
+                let actor = <#name as GeneratedActorTrait>::new(scope);
+                Self {
+                    actor: std::cell::RefCell::new(actor)
+                }
+            }
+
+            fn handle_message(&self, message: crate::bindings::exports::hive::actor::actor::MessageEnvelope) {
+               self.actor.borrow_mut().handle_message(message);
+            }
+
+            fn destructor(&self) {
+               self.actor.borrow_mut().destructor();
+            }
+        }
+
+        pub struct Component;
+
+        impl crate::bindings::exports::hive::actor::actor::Guest for Component {
+            type Actor = #actor_name;
+        }
+
+       crate::bindings::export!(Component with_types_in bindings);
+    };
+
+    TokenStream::from(expanded)
+}
+
 struct ToolAttributes {
     name: String,
     description: String,
@@ -40,14 +121,14 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
         // Actor wrapper type
         pub struct #actor_name {
             scope: String,
-            tool: #name
+            tool: std::cell::RefCell<#name>
         }
 
         impl crate::bindings::exports::hive::actor::actor::GuestActor for #actor_name {
             fn new(scope: String) -> Self {
                 let s = Self {
                     scope: scope.clone(),
-                    tool: <#name as ::hive_actor_utils::tools::Tool>::new()
+                    tool: std::cell::RefCell::new(<#name as ::hive_actor_utils::tools::Tool>::new())
                 };
 
                 use ::hive_actor_utils::common_messages::CommonMessage;
@@ -78,7 +159,7 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
                 if message.message_type == ::hive_actor_utils::common_messages::tools::ExecuteTool::MESSAGE_TYPE {
                     if let Ok(json_string) = String::from_utf8(message.payload) {
                         if let Ok(execute_tool_call) = ::hive_actor_utils::tools::macros::__private::serde_json::from_str::<::hive_actor_utils::common_messages::tools::ExecuteTool>(&json_string) {
-                            <#name as ::hive_actor_utils::tools::Tool>::handle_call(&self.tool, execute_tool_call)
+                            <#name as ::hive_actor_utils::tools::Tool>::handle_call(&mut *self.tool.borrow_mut(), execute_tool_call)
                         }
                     }
                 }
@@ -93,7 +174,7 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
             type Actor = #actor_name;
         }
 
-       bindings::export!(Component with_types_in bindings);
+       crate::bindings::export!(Component with_types_in bindings);
     };
 
     TokenStream::from(expanded)

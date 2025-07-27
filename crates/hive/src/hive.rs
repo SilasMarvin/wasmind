@@ -1,4 +1,3 @@
-use hive_actor_loader::LoadedActor;
 use hive_actor_utils_common_messages::{CommonMessage, actors};
 use tokio::sync::broadcast;
 
@@ -11,7 +10,7 @@ use crate::{
 pub const STARTING_SCOPE: Scope =
     Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-000000000000"));
 
-/// Start the HIVE multi-agent system with TUI
+/// Start the HIVE multi-agent system
 pub async fn start_hive<T: ActorExecutor + Clone>(
     starting_actors: &[&str],
     actors: Vec<T>,
@@ -82,7 +81,7 @@ pub async fn start_hive<T: ActorExecutor + Clone>(
         } else {
             "na".to_string()
         };
-        tracing::debug!(name = "hive_received_message", message_type = msg.message_type, message = %message_json);
+        tracing::debug!(name = "hive_received_message", actor_id = msg.from_actor_id, message_type = msg.message_type, message = %message_json);
 
         if msg.message_type == actors::Exit::MESSAGE_TYPE {
             return Ok(());

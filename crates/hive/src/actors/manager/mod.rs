@@ -1,5 +1,4 @@
 use hive::actor::{command, messaging};
-use hive_actor_loader::LoadedActor;
 use hive_actor_utils_common_messages::{CommonMessage, actors};
 use tokio::sync::broadcast;
 use wasmtime::{
@@ -34,14 +33,6 @@ pub struct Manager {
 }
 
 impl Manager {
-    pub async fn from_loaded_actor(
-        loaded_actor: &LoadedActor,
-        scope: Scope,
-        tx: broadcast::Sender<MessageEnvelope>,
-    ) -> Self {
-        Manager::new(loaded_actor.id.clone(), &loaded_actor.wasm, scope, tx).await
-    }
-
     pub async fn new(
         actor_id: ActorId,
         wasm: &[u8],

@@ -50,7 +50,7 @@ impl tools::Tool for CommandTool {
         Self {}
     }
 
-    fn handle_call(&self, tool_call: ExecuteTool) {
+    fn handle_call(&mut self, tool_call: ExecuteTool) {
         todo!()
     }
 }

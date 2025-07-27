@@ -45,16 +45,13 @@ pub mod assistant {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum WaitReason {
-        WaitingForUserInput,
+        WaitingForInput,
         WaitForSystem {
             tool_name: Option<String>,
             tool_call_id: String,
         },
         WaitingForTools {
             tool_calls: HashMap<String, PendingToolCall>,
-        },
-        WaitingForActors {
-            pending_actors: Vec<String>,
         },
     }
 
