@@ -8,6 +8,7 @@ use super::ActorId;
 use crate::{actors::MessageEnvelope, scope::Scope};
 
 pub mod command;
+pub mod http;
 pub mod messaging;
 
 pub struct ActorState {

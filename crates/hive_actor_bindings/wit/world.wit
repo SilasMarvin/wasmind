@@ -79,9 +79,46 @@ interface command {
 }
 
 interface http {
-    // Future HTTP client capabilities
+    /// Headers as a list of key-value pairs
+    record headers {
+        headers: list<tuple<string, string>>
+    }
+    
+    /// Possible errors that can occur during HTTP operations
+    variant request-error {
+        network-error(string),
+        timeout,
+        invalid-url(string),
+        builder-error(string),
+    }
+    
+    /// HTTP response containing status, headers, and body
+    record response {
+        status: u16,
+        headers: headers,
+        body: list<u8>,
+    }
+    
+    /// HTTP request builder following a builder pattern similar to reqwest
     resource request {
-        // ...
+        /// Create a new HTTP request with the given method and URL
+        /// Common methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
+        constructor(method: string, url: string);
+        
+        /// Add a single header to the request
+        header: func(key: string, value: string) -> request;
+        
+        /// Add multiple headers to the request
+        headers: func(headers: headers) -> request;
+        
+        /// Set the request body
+        body: func(body: list<u8>) -> request;
+        
+        /// Set request timeout in seconds
+        timeout: func(seconds: u32) -> request;
+        
+        /// Execute the request and return the response
+        send: func() -> result<response, request-error>;
     }
 }
 
@@ -93,6 +130,7 @@ interface http {
 world actor-world {
     import messaging;
     import command;
+    import http;
 
     // An actor must provide an implementation of the `actor` resource.
     export actor;

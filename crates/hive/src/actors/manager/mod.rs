@@ -1,5 +1,5 @@
-use hive::actor::{command, messaging};
-use hive_actor_utils_common_messages::{CommonMessage, actors};
+use hive::actor::{command, http, messaging};
+use hive_actor_utils_common_messages::{Message, actors};
 use tokio::sync::broadcast;
 use wasmtime::{
     Config, Engine, Store,
@@ -18,7 +18,8 @@ pub type ActorId = String;
 bindgen!({
     world: "actor-world", async: true,
     with: {
-        "hive:actor/command/cmd": CommandResource
+        "hive:actor/command/cmd": CommandResource,
+        "hive:actor/http/request": actor_state::http::HttpRequestResource,
     },
     path: "../hive_actor_bindings/wit/world.wit"
 });
@@ -54,6 +55,7 @@ impl Manager {
         wasmtime_wasi::p2::add_to_linker_async(&mut linker).unwrap();
         messaging::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
         command::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
+        http::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
 
         let actor_world = ActorWorld::instantiate_async(&mut store, &component, &linker)
             .await

@@ -1,4 +1,4 @@
-use hive_actor_utils_common_messages::{CommonMessage, actors};
+use hive_actor_utils_common_messages::{Message, actors};
 use tokio::sync::broadcast;
 
 use crate::{
