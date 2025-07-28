@@ -13,17 +13,19 @@ pub fn generate_actor_trait(_input: TokenStream) -> TokenStream {
             fn destructor(&mut self) {}
 
 
-            fn broadcast<T: ToString, S: ::hive_actor_utils::actors::macros::__private::serde::ser::Serialize>(message_type: T, payload: S) -> Result<(), ::hive_actor_utils::actors::macros::__private::serde_json::Error> {
+            fn broadcast<S: ::hive_actor_utils::actors::macros::__private::serde::ser::Serialize + ::hive_actor_utils::messages::Message>(payload: S) -> Result<(), ::hive_actor_utils::actors::macros::__private::serde_json::Error> {
+                use ::hive_actor_utils::messages::Message;
                 Ok(crate::bindings::hive::actor::messaging::broadcast(
-                    &message_type.to_string(),
+                    S::MESSAGE_TYPE,
                     &::hive_actor_utils::tools::macros::__private::serde_json::to_string(&
                         payload
                     )?.into_bytes()
                 ))
             }
 
-            fn parse_as<S: ::hive_actor_utils::actors::macros::__private::serde::de::DeserializeOwned>(message_type: &str, msg: &crate::bindings::exports::hive::actor::actor::MessageEnvelope) -> Option<S> {
-                if let Ok(json_string) = str::from_utf8(&msg.payload) && message_type == &msg.message_type {
+            fn parse_as<S: ::hive_actor_utils::actors::macros::__private::serde::de::DeserializeOwned + ::hive_actor_utils::messages::Message>(msg: &crate::bindings::exports::hive::actor::actor::MessageEnvelope) -> Option<S> {
+                use ::hive_actor_utils::messages::Message;
+                if let Ok(json_string) = str::from_utf8(&msg.payload) && S::MESSAGE_TYPE == &msg.message_type {
                     ::hive_actor_utils::tools::macros::__private::serde_json::from_str::<S>(json_string).ok()
                 } else {
                     None
@@ -131,12 +133,12 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
                     tool: std::cell::RefCell::new(<#name as ::hive_actor_utils::tools::Tool>::new())
                 };
 
-                use ::hive_actor_utils::common_messages::CommonMessage;
+                use ::hive_actor_utils::messages::Message;
 
                 crate::bindings::hive::actor::messaging::broadcast(
-                    ::hive_actor_utils::common_messages::tools::ToolsAvailable::MESSAGE_TYPE,
+                    ::hive_actor_utils::messages::common_messages::tools::ToolsAvailable::MESSAGE_TYPE,
                     &::hive_actor_utils::tools::macros::__private::serde_json::to_string(&
-                        ::hive_actor_utils::common_messages::tools::ToolsAvailable {
+                        ::hive_actor_utils::messages::common_messages::tools::ToolsAvailable {
                             tools: vec![
                                 ::hive_actor_utils::tools::macros::__private::hive_llm_client::types::Tool {
                                     tool_type: "function".to_string(),
@@ -155,10 +157,10 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
             }
 
             fn handle_message(&self, message: crate::bindings::exports::hive::actor::actor::MessageEnvelope) {
-                use ::hive_actor_utils::common_messages::CommonMessage;
-                if message.message_type == ::hive_actor_utils::common_messages::tools::ExecuteTool::MESSAGE_TYPE {
+                use ::hive_actor_utils::messages::common_messages::Message;
+                if message.message_type == ::hive_actor_utils::messages::common_messages::tools::ExecuteTool::MESSAGE_TYPE {
                     if let Ok(json_string) = String::from_utf8(message.payload) {
-                        if let Ok(execute_tool_call) = ::hive_actor_utils::tools::macros::__private::serde_json::from_str::<::hive_actor_utils::common_messages::tools::ExecuteTool>(&json_string) {
+                        if let Ok(execute_tool_call) = ::hive_actor_utils::tools::macros::__private::serde_json::from_str::<::hive_actor_utils::messages::common_messages::tools::ExecuteTool>(&json_string) {
                             <#name as ::hive_actor_utils::tools::Tool>::handle_call(&mut *self.tool.borrow_mut(), execute_tool_call)
                         }
                     }

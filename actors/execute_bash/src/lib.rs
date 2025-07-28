@@ -1,5 +1,5 @@
 use hive_actor_utils::{
-    common_messages::tools::{ExecuteTool, UIDisplayInfo},
+    messages::common_messages::tools::{ExecuteTool, UIDisplayInfo},
     tools,
 };
 

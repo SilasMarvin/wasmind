@@ -1,20 +1,20 @@
 use serde::{Serialize, de::DeserializeOwned};
 
-pub trait CommonMessage: Serialize + DeserializeOwned {
+pub trait Message: Serialize + DeserializeOwned {
     const MESSAGE_TYPE: &str;
 }
 
 pub type Scope = String;
 
 pub mod actors {
-    use super::CommonMessage;
+    use super::Message;
     use serde::{Deserialize, Serialize};
 
     // hive.common.actors.ActorReady
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ActorReady;
 
-    impl CommonMessage for ActorReady {
+    impl Message for ActorReady {
         const MESSAGE_TYPE: &str = "hive.common.actors.ActorReady";
     }
 
@@ -22,7 +22,7 @@ pub mod actors {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Exit;
 
-    impl CommonMessage for Exit {
+    impl Message for Exit {
         const MESSAGE_TYPE: &str = "hive.common.actors.Exit";
     }
 }
@@ -34,21 +34,22 @@ pub mod assistant {
 
     use crate::Scope;
 
-    use super::CommonMessage;
+    use super::Message;
     use super::tools;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PendingToolCall {
         pub tool_call: hive_llm_client::types::ToolCall,
-        pub result: Option<tools::ToolCallResult>,
+        pub result: Option<Result<tools::ToolCallResult, tools::ToolCallResult>>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum WaitReason {
-        WaitingForInput,
+        WaitingForUserInput,
         WaitForSystem {
             tool_name: Option<String>,
             tool_call_id: String,
+            required_scope_id: Option<String>,
         },
         WaitingForTools {
             tool_calls: HashMap<String, PendingToolCall>,
@@ -80,7 +81,7 @@ pub mod assistant {
         pub status: Status,
     }
 
-    impl CommonMessage for StatusUpdate {
+    impl Message for StatusUpdate {
         const MESSAGE_TYPE: &str = "hive.common.assistant.StatusUpdate";
     }
 
@@ -89,9 +90,10 @@ pub mod assistant {
     pub struct RequestStatusUpdate {
         pub agent: Scope,
         pub status: Status,
+        pub tool_call_id: Option<String>,
     }
 
-    impl CommonMessage for RequestStatusUpdate {
+    impl Message for RequestStatusUpdate {
         const MESSAGE_TYPE: &str = "hive.common.assistant.RequestStatusUpdate";
     }
 
@@ -102,7 +104,7 @@ pub mod assistant {
         pub required_scope: Option<Scope>,
     }
 
-    impl CommonMessage for InterruptAndForceWaitForSystem {
+    impl Message for InterruptAndForceWaitForSystem {
         const MESSAGE_TYPE: &str = "hive.common.assistant.InterruptAndForceWaitForSystem";
     }
 
@@ -113,7 +115,7 @@ pub mod assistant {
         pub message: hive_llm_client::types::ChatMessage,
     }
 
-    impl CommonMessage for AddMessage {
+    impl Message for AddMessage {
         const MESSAGE_TYPE: &str = "hive.common.assistant.AddMessage";
     }
 
@@ -130,7 +132,7 @@ pub mod assistant {
         chat_state: ChatState,
     }
 
-    impl CommonMessage for Request {
+    impl Message for Request {
         const MESSAGE_TYPE: &str = "hive.common.assistant.Request";
     }
 
@@ -141,7 +143,7 @@ pub mod assistant {
         message: hive_llm_client::types::AssistantChatMessage,
     }
 
-    impl CommonMessage for Response {
+    impl Message for Response {
         const MESSAGE_TYPE: &str = "hive.common.assistant.Response";
     }
 
@@ -151,13 +153,13 @@ pub mod assistant {
         chat_state: ChatState,
     }
 
-    impl CommonMessage for ChatStateUpdated {
+    impl Message for ChatStateUpdated {
         const MESSAGE_TYPE: &str = "hive.common.assistant.ChatStateUpdated";
     }
 }
 
 pub mod tools {
-    use super::CommonMessage;
+    use super::Message;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -172,7 +174,7 @@ pub mod tools {
         pub tools: Vec<hive_llm_client::types::Tool>,
     }
 
-    impl CommonMessage for ToolsAvailable {
+    impl Message for ToolsAvailable {
         const MESSAGE_TYPE: &str = "hive.common.tools.ToolsAvailable";
     }
 
@@ -182,7 +184,7 @@ pub mod tools {
         tool_call: hive_llm_client::types::ToolCall,
     }
 
-    impl CommonMessage for ExecuteTool {
+    impl Message for ExecuteTool {
         const MESSAGE_TYPE: &str = "hive.common.tools.ExecuteToolCall";
     }
 
@@ -198,9 +200,8 @@ pub mod tools {
         pub ui_display_info: UIDisplayInfo,
     }
 
-    // hive.common.tools.ToolStatusUpdate
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub enum ToolCallStatusUpdate {
+    pub enum ToolCallStatus {
         Received {
             display_info: UIDisplayInfo,
         },
@@ -212,7 +213,14 @@ pub mod tools {
         },
     }
 
-    impl CommonMessage for ToolCallStatusUpdate {
+    // hive.common.tools.ToolCallStatusUpdate
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ToolCallStatusUpdate {
+        pub status: ToolCallStatus,
+        pub id: String,
+    }
+
+    impl Message for ToolCallStatusUpdate {
         const MESSAGE_TYPE: &str = "hive.common.tools.ToolCallStatusUpdate";
     }
 }
