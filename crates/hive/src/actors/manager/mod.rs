@@ -39,6 +39,7 @@ impl Manager {
         wasm: &[u8],
         scope: Scope,
         tx: broadcast::Sender<MessageEnvelope>,
+        actor_config: Option<toml::Table>,
     ) -> Self {
         let mut config = Config::new();
         config.async_support(true);
@@ -61,10 +62,12 @@ impl Manager {
             .await
             .unwrap();
 
+        let config_str = actor_config.map(|c| toml::to_string(&c).unwrap_or_default()).unwrap_or_default();
+        
         let actor_resource = actor_world
             .hive_actor_actor()
             .actor()
-            .call_constructor(&mut store, &scope.to_string())
+            .call_constructor(&mut store, &scope.to_string(), &config_str)
             .await
             .unwrap();
 

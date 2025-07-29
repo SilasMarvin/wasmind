@@ -46,7 +46,7 @@ const TRUNCATION_TAIL_CHARS: usize = 4_000; // Keep last 4k chars
 struct CommandTool {}
 
 impl tools::Tool for CommandTool {
-    fn new() -> Self {
+    fn new(_config: String) -> Self {
         Self {}
     }
 

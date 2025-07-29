@@ -1,6 +1,7 @@
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
+use serde::Deserialize;
 use snafu::{Location, ResultExt, Snafu};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use url::Url;
 
 #[derive(Debug, Snafu)]
@@ -12,39 +13,66 @@ pub enum Error {
         #[snafu(implicit)]
         location: Location,
     },
+    
+    #[snafu(display("IO Error: {}", source))]
+    Io {
+        #[snafu(source)]
+        source: std::io::Error,
+        #[snafu(implicit)]
+        location: Location,
+    },
+    
+    #[snafu(display("TOML parsing error: {}", source))]
+    TomlParse {
+        #[snafu(source)]
+        source: toml::de::Error,
+        #[snafu(implicit)]
+        location: Location,
+    },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum GitRef {
     Branch(String),
     Tag(String),
     Rev(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Repository {
     pub url: Url,
     pub git_ref: Option<GitRef>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub enum ActorSource {
     Path(String),
     Git(Repository),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Actor {
     pub name: String,
     pub source: ActorSource,
+    #[serde(default)]
+    pub config: Option<toml::Table>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     pub actors: Vec<Actor>,
 }
 
-// TODO: Implement config parsing
+pub fn load_from_path<P: AsRef<Path>>(path: P) -> Result<Config, Error> {
+    let content = std::fs::read_to_string(path).context(IoSnafu)?;
+    let config: Config = toml::from_str(&content).context(TomlParseSnafu)?;
+    Ok(config)
+}
+
+pub fn load_default_config() -> Result<Config, Error> {
+    let config_path = get_config_file_path()?;
+    load_from_path(config_path)
+}
 
 pub fn get_config_dir() -> Result<PathBuf, Error> {
     // Create an instance of Etcetera for your application "hive".

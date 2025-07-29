@@ -6,7 +6,7 @@ use syn::{DeriveInput, Lit, parse_macro_input};
 pub fn generate_actor_trait(_input: TokenStream) -> TokenStream {
     let expanded = quote! {
         trait GeneratedActorTrait {
-            fn new(scope: String) -> Self;
+            fn new(scope: String, config: String) -> Self;
 
             fn handle_message(&mut self, message: crate::bindings::exports::hive::actor::actor::MessageEnvelope);
 
@@ -57,8 +57,8 @@ pub fn actor_derive(input: TokenStream) -> TokenStream {
         }
 
         impl crate::bindings::exports::hive::actor::actor::GuestActor for #actor_name {
-            fn new(scope: String) -> Self {
-                let actor = <#name as GeneratedActorTrait>::new(scope);
+            fn new(scope: String, config: String) -> Self {
+                let actor = <#name as GeneratedActorTrait>::new(scope, config);
                 Self {
                     actor: std::cell::RefCell::new(actor)
                 }
@@ -127,10 +127,10 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
         }
 
         impl crate::bindings::exports::hive::actor::actor::GuestActor for #actor_name {
-            fn new(scope: String) -> Self {
+            fn new(scope: String, config: String) -> Self {
                 let s = Self {
                     scope: scope.clone(),
-                    tool: std::cell::RefCell::new(<#name as ::hive_actor_utils::tools::Tool>::new())
+                    tool: std::cell::RefCell::new(<#name as ::hive_actor_utils::tools::Tool>::new(config))
                 };
 
                 use ::hive_actor_utils::messages::Message;

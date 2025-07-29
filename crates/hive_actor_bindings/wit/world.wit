@@ -27,7 +27,8 @@ interface actor {
         /// Called by the host once when the actor is first instantiated.
         /// Use this to initialize the actor's state.
         /// @param scope - The execution scope provided by the host.
-        constructor(scope: string);
+        /// @param config - The configuration string (TOML format) for this actor.
+        constructor(scope: string, config: string);
 
         /// The primary entry point for processing incoming messages. This
         /// function is called by the host whenever another actor broadcasts

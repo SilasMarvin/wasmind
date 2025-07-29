@@ -8,8 +8,6 @@ readme.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[lib]
-
 [dependencies]
 snafu = { workspace = true }
 url = { workspace = true }

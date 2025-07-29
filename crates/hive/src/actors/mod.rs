@@ -29,7 +29,7 @@ impl ActorExecutor for LoadedActor {
     where
         Self: Sized,
     {
-        let manager = manager::Manager::new(self.id, &self.wasm, scope, tx).await;
+        let manager = manager::Manager::new(self.id, &self.wasm, scope, tx, self.config).await;
         manager.run();
     }
 }

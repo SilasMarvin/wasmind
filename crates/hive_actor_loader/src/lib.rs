@@ -115,6 +115,7 @@ pub struct LoadedActor {
     pub name: String,
     pub version: String,
     pub wasm: Vec<u8>,
+    pub config: Option<toml::Table>,
 }
 
 pub struct ActorLoader {
@@ -228,10 +229,11 @@ impl ActorLoader {
         }
 
         Ok(LoadedActor {
-            name: actor.name,
+            name: actor.name.clone(),
             version,
             id: crate_name,
             wasm,
+            config: actor.config,
         })
     }
 
@@ -267,6 +269,7 @@ impl ActorLoader {
                 version,
                 id: crate_name,
                 wasm,
+                config: actor.config.clone(),
             }));
         }
 

@@ -44,6 +44,492 @@ pub mod hive {
                 }
             }
         }
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod http {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            /// Headers as a list of key-value pairs
+            #[derive(Clone)]
+            pub struct Headers {
+                pub headers: _rt::Vec<(_rt::String, _rt::String)>,
+            }
+            impl ::core::fmt::Debug for Headers {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Headers").field("headers", &self.headers).finish()
+                }
+            }
+            /// Possible errors that can occur during HTTP operations
+            #[derive(Clone)]
+            pub enum RequestError {
+                NetworkError(_rt::String),
+                Timeout,
+                InvalidUrl(_rt::String),
+                BuilderError(_rt::String),
+            }
+            impl ::core::fmt::Debug for RequestError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        RequestError::NetworkError(e) => {
+                            f.debug_tuple("RequestError::NetworkError").field(e).finish()
+                        }
+                        RequestError::Timeout => {
+                            f.debug_tuple("RequestError::Timeout").finish()
+                        }
+                        RequestError::InvalidUrl(e) => {
+                            f.debug_tuple("RequestError::InvalidUrl").field(e).finish()
+                        }
+                        RequestError::BuilderError(e) => {
+                            f.debug_tuple("RequestError::BuilderError").field(e).finish()
+                        }
+                    }
+                }
+            }
+            impl ::core::fmt::Display for RequestError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+            impl std::error::Error for RequestError {}
+            /// HTTP response containing status, headers, and body
+            #[derive(Clone)]
+            pub struct Response {
+                pub status: u16,
+                pub headers: Headers,
+                pub body: _rt::Vec<u8>,
+            }
+            impl ::core::fmt::Debug for Response {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Response")
+                        .field("status", &self.status)
+                        .field("headers", &self.headers)
+                        .field("body", &self.body)
+                        .finish()
+                }
+            }
+            /// HTTP request builder following a builder pattern similar to reqwest
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct Request {
+                handle: _rt::Resource<Request>,
+            }
+            impl Request {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: u32) -> Self {
+                    Self {
+                        handle: unsafe { _rt::Resource::from_handle(handle) },
+                    }
+                }
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> u32 {
+                    _rt::Resource::take_handle(&self.handle)
+                }
+                #[doc(hidden)]
+                pub fn handle(&self) -> u32 {
+                    _rt::Resource::handle(&self.handle)
+                }
+            }
+            unsafe impl _rt::WasmResource for Request {
+                #[inline]
+                unsafe fn drop(_handle: u32) {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unreachable!();
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[resource-drop]request"]
+                            fn drop(_: u32);
+                        }
+                        unsafe { drop(_handle) };
+                    }
+                }
+            }
+            impl Request {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Create a new HTTP request with the given method and URL
+                /// Common methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
+                pub fn new(method: &str, url: &str) -> Self {
+                    unsafe {
+                        let vec0 = method;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        let vec1 = url;
+                        let ptr1 = vec1.as_ptr().cast::<u8>();
+                        let len1 = vec1.len();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[constructor]request"]
+                            fn wit_import2(
+                                _: *mut u8,
+                                _: usize,
+                                _: *mut u8,
+                                _: usize,
+                            ) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import2(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                        ) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import2(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1)
+                        };
+                        unsafe { Request::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Request {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Add a single header to the request
+                pub fn header(&self, key: &str, value: &str) -> Request {
+                    unsafe {
+                        let vec0 = key;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        let vec1 = value;
+                        let ptr1 = vec1.as_ptr().cast::<u8>();
+                        let len1 = vec1.len();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]request.header"]
+                            fn wit_import2(
+                                _: i32,
+                                _: *mut u8,
+                                _: usize,
+                                _: *mut u8,
+                                _: usize,
+                            ) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import2(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                        ) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import2(
+                                (self).handle() as i32,
+                                ptr0.cast_mut(),
+                                len0,
+                                ptr1.cast_mut(),
+                                len1,
+                            )
+                        };
+                        unsafe { Request::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Request {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Add multiple headers to the request
+                pub fn headers(&self, headers: &Headers) -> Request {
+                    unsafe {
+                        let Headers { headers: headers0 } = headers;
+                        let vec4 = headers0;
+                        let len4 = vec4.len();
+                        let layout4 = _rt::alloc::Layout::from_size_align_unchecked(
+                            vec4.len() * (4 * ::core::mem::size_of::<*const u8>()),
+                            ::core::mem::size_of::<*const u8>(),
+                        );
+                        let result4 = if layout4.size() != 0 {
+                            let ptr = _rt::alloc::alloc(layout4).cast::<u8>();
+                            if ptr.is_null() {
+                                _rt::alloc::handle_alloc_error(layout4);
+                            }
+                            ptr
+                        } else {
+                            ::core::ptr::null_mut()
+                        };
+                        for (i, e) in vec4.into_iter().enumerate() {
+                            let base = result4
+                                .add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                            {
+                                let (t1_0, t1_1) = e;
+                                let vec2 = t1_0;
+                                let ptr2 = vec2.as_ptr().cast::<u8>();
+                                let len2 = vec2.len();
+                                *base
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>() = len2;
+                                *base.add(0).cast::<*mut u8>() = ptr2.cast_mut();
+                                let vec3 = t1_1;
+                                let ptr3 = vec3.as_ptr().cast::<u8>();
+                                let len3 = vec3.len();
+                                *base
+                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>() = len3;
+                                *base
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>() = ptr3.cast_mut();
+                            }
+                        }
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]request.headers"]
+                            fn wit_import5(_: i32, _: *mut u8, _: usize) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import5(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                        ) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import5((self).handle() as i32, result4, len4)
+                        };
+                        if layout4.size() != 0 {
+                            _rt::alloc::dealloc(result4.cast(), layout4);
+                        }
+                        unsafe { Request::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Request {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Set the request body
+                pub fn body(&self, body: &[u8]) -> Request {
+                    unsafe {
+                        let vec0 = body;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]request.body"]
+                            fn wit_import1(_: i32, _: *mut u8, _: usize) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                        ) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import1((self).handle() as i32, ptr0.cast_mut(), len0)
+                        };
+                        unsafe { Request::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Request {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Set request timeout in seconds
+                pub fn timeout(&self, seconds: u32) -> Request {
+                    unsafe {
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]request.timeout"]
+                            fn wit_import0(_: i32, _: i32) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import0(_: i32, _: i32) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import0((self).handle() as i32, _rt::as_i32(&seconds))
+                        };
+                        unsafe { Request::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Request {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Execute the request and return the response
+                pub fn send(&self) -> Result<Response, RequestError> {
+                    unsafe {
+                        #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                        #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 6 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit(); 6
+                                * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]request.send"]
+                            fn wit_import1(_: i32, _: *mut u8);
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import1((self).handle() as i32, ptr0) };
+                        let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                        let result27 = match l2 {
+                            0 => {
+                                let e = {
+                                    let l3 = i32::from(
+                                        *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u16>(),
+                                    );
+                                    let l4 = *ptr0
+                                        .add(2 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<*mut u8>();
+                                    let l5 = *ptr0
+                                        .add(3 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>();
+                                    let base12 = l4;
+                                    let len12 = l5;
+                                    let mut result12 = _rt::Vec::with_capacity(len12);
+                                    for i in 0..len12 {
+                                        let base = base12
+                                            .add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                                        let e12 = {
+                                            let l6 = *base.add(0).cast::<*mut u8>();
+                                            let l7 = *base
+                                                .add(::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            let l9 = *base
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *base
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            (_rt::string_lift(bytes8), _rt::string_lift(bytes11))
+                                        };
+                                        result12.push(e12);
+                                    }
+                                    _rt::cabi_dealloc(
+                                        base12,
+                                        len12 * (4 * ::core::mem::size_of::<*const u8>()),
+                                        ::core::mem::size_of::<*const u8>(),
+                                    );
+                                    let l13 = *ptr0
+                                        .add(4 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<*mut u8>();
+                                    let l14 = *ptr0
+                                        .add(5 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>();
+                                    let len15 = l14;
+                                    Response {
+                                        status: l3 as u16,
+                                        headers: Headers { headers: result12 },
+                                        body: _rt::Vec::from_raw_parts(l13.cast(), len15, len15),
+                                    }
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l16 = i32::from(
+                                        *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                    );
+                                    let v26 = match l16 {
+                                        0 => {
+                                            let e26 = {
+                                                let l17 = *ptr0
+                                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l18 = *ptr0
+                                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len19 = l18;
+                                                let bytes19 = _rt::Vec::from_raw_parts(
+                                                    l17.cast(),
+                                                    len19,
+                                                    len19,
+                                                );
+                                                _rt::string_lift(bytes19)
+                                            };
+                                            RequestError::NetworkError(e26)
+                                        }
+                                        1 => RequestError::Timeout,
+                                        2 => {
+                                            let e26 = {
+                                                let l20 = *ptr0
+                                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l21 = *ptr0
+                                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len22 = l21;
+                                                let bytes22 = _rt::Vec::from_raw_parts(
+                                                    l20.cast(),
+                                                    len22,
+                                                    len22,
+                                                );
+                                                _rt::string_lift(bytes22)
+                                            };
+                                            RequestError::InvalidUrl(e26)
+                                        }
+                                        n => {
+                                            debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                            let e26 = {
+                                                let l23 = *ptr0
+                                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l24 = *ptr0
+                                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len25 = l24;
+                                                let bytes25 = _rt::Vec::from_raw_parts(
+                                                    l23.cast(),
+                                                    len25,
+                                                    len25,
+                                                );
+                                                _rt::string_lift(bytes25)
+                                            };
+                                            RequestError::BuilderError(e26)
+                                        }
+                                    };
+                                    v26
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result27
+                    }
+                }
+            }
+        }
     }
 }
 #[rustfmt::skip]
@@ -219,12 +705,18 @@ pub mod exports {
                 pub unsafe fn _export_constructor_actor_cabi<T: GuestActor>(
                     arg0: *mut u8,
                     arg1: usize,
+                    arg2: *mut u8,
+                    arg3: usize,
                 ) -> i32 {
                     #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
                     let len0 = arg1;
                     let bytes0 = _rt::Vec::from_raw_parts(arg0.cast(), len0, len0);
-                    let result1 = Actor::new(T::new(_rt::string_lift(bytes0)));
-                    (result1).take_handle() as i32
+                    let len1 = arg3;
+                    let bytes1 = _rt::Vec::from_raw_parts(arg2.cast(), len1, len1);
+                    let result2 = Actor::new(
+                        T::new(_rt::string_lift(bytes0), _rt::string_lift(bytes1)),
+                    );
+                    (result2).take_handle() as i32
                 }
                 #[doc(hidden)]
                 #[allow(non_snake_case)]
@@ -318,7 +810,8 @@ pub mod exports {
                     /// Called by the host once when the actor is first instantiated.
                     /// Use this to initialize the actor's state.
                     /// @param scope - The execution scope provided by the host.
-                    fn new(scope: _rt::String) -> Self;
+                    /// @param config - The configuration string (TOML format) for this actor.
+                    fn new(scope: _rt::String, config: _rt::String) -> Self;
                     /// The primary entry point for processing incoming messages. This
                     /// function is called by the host whenever another actor broadcasts
                     /// a message to the system.
@@ -334,10 +827,11 @@ pub mod exports {
                     ($ty:ident with_types_in $($path_to_types:tt)*) => {
                         const _ : () = { #[unsafe (export_name =
                         "hive:actor/actor@0.1.0#[constructor]actor")] unsafe extern "C"
-                        fn export_constructor_actor(arg0 : * mut u8, arg1 : usize,) ->
-                        i32 { unsafe { $($path_to_types)*::
+                        fn export_constructor_actor(arg0 : * mut u8, arg1 : usize, arg2 :
+                        * mut u8, arg3 : usize,) -> i32 { unsafe { $($path_to_types)*::
                         _export_constructor_actor_cabi::<<$ty as $($path_to_types)*::
-                        Guest >::Actor > (arg0, arg1) } } #[unsafe (export_name =
+                        Guest >::Actor > (arg0, arg1, arg2, arg3) } } #[unsafe
+                        (export_name =
                         "hive:actor/actor@0.1.0#[method]actor.handle-message")] unsafe
                         extern "C" fn export_method_actor_handle_message(arg0 : * mut u8,
                         arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 : usize,
@@ -367,8 +861,8 @@ pub mod exports {
 #[rustfmt::skip]
 mod _rt {
     #![allow(dead_code, clippy::all)]
-    pub use alloc_crate::string::String;
     pub use alloc_crate::vec::Vec;
+    pub use alloc_crate::string::String;
     use core::fmt;
     use core::marker;
     use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
@@ -443,10 +937,65 @@ mod _rt {
             }
         }
     }
-    pub use alloc_crate::boxed::Box;
-    #[cfg(target_arch = "wasm32")]
-    pub fn run_ctors_once() {
-        wit_bindgen_rt::run_ctors_once();
+    pub use alloc_crate::alloc;
+    pub fn as_i32<T: AsI32>(t: T) -> i32 {
+        t.as_i32()
+    }
+    pub trait AsI32 {
+        fn as_i32(self) -> i32;
+    }
+    impl<'a, T: Copy + AsI32> AsI32 for &'a T {
+        fn as_i32(self) -> i32 {
+            (*self).as_i32()
+        }
+    }
+    impl AsI32 for i32 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for u32 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for i16 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for u16 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for i8 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for u8 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for char {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    impl AsI32 for usize {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
     pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
         if cfg!(debug_assertions) {
@@ -454,6 +1003,25 @@ mod _rt {
         } else {
             String::from_utf8_unchecked(bytes)
         }
+    }
+    pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
+        if size == 0 {
+            return;
+        }
+        let layout = alloc::Layout::from_size_align_unchecked(size, align);
+        alloc::dealloc(ptr, layout);
+    }
+    pub unsafe fn invalid_enum_discriminant<T>() -> T {
+        if cfg!(debug_assertions) {
+            panic!("invalid enum discriminant")
+        } else {
+            unsafe { core::hint::unreachable_unchecked() }
+        }
+    }
+    pub use alloc_crate::boxed::Box;
+    #[cfg(target_arch = "wasm32")]
+    pub fn run_ctors_once() {
+        wit_bindgen_rt::run_ctors_once();
     }
     extern crate alloc as alloc_crate;
 }
@@ -489,22 +1057,32 @@ macro_rules! __export_actor_world_impl {
 pub(crate) use __export_actor_world_impl as export;
 #[cfg(target_arch = "wasm32")]
 #[unsafe(
-    link_section = "component-type:wit-bindgen:0.41.0:execute-bash:actor@0.1.0:actor-world:encoded world"
+    link_section = "component-type:wit-bindgen:0.41.0:assistant:actor@0.1.0:actor-world:encoded world"
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 508] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xfa\x02\x01A\x02\x01\
-A\x04\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
-cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x0c\x01p}\x01r\x04\x0c\
-message-types\x0dfrom-actor-ids\x0afrom-scopes\x07payload\0\x04\0\x10message-env\
-elope\x03\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01@\x01\x05scopes\0\x04\x04\0\x12\
-[constructor]actor\x01\x05\x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\x04\
-\0\x1c[method]actor.handle-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[\
-method]actor.destructor\x01\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x01\x04\0$ex\
-ecute-bash:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\
-\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen\
--rust\x060.41.0";
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 990] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xdc\x06\x01A\x02\x01\
+A\x06\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
+cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x19\x01o\x02ss\x01p\0\
+\x01r\x01\x07headers\x01\x04\0\x07headers\x03\0\x02\x01q\x04\x0dnetwork-error\x01\
+s\0\x07timeout\0\0\x0binvalid-url\x01s\0\x0dbuilder-error\x01s\0\x04\0\x0dreques\
+t-error\x03\0\x04\x01p}\x01r\x03\x06status{\x07headers\x03\x04body\x06\x04\0\x08\
+response\x03\0\x07\x04\0\x07request\x03\x01\x01i\x09\x01@\x02\x06methods\x03urls\
+\0\x0a\x04\0\x14[constructor]request\x01\x0b\x01h\x09\x01@\x03\x04self\x0c\x03ke\
+ys\x05values\0\x0a\x04\0\x16[method]request.header\x01\x0d\x01@\x02\x04self\x0c\x07\
+headers\x03\0\x0a\x04\0\x17[method]request.headers\x01\x0e\x01@\x02\x04self\x0c\x04\
+body\x06\0\x0a\x04\0\x14[method]request.body\x01\x0f\x01@\x02\x04self\x0c\x07sec\
+ondsy\0\x0a\x04\0\x17[method]request.timeout\x01\x10\x01j\x01\x08\x01\x05\x01@\x01\
+\x04self\x0c\0\x11\x04\0\x14[method]request.send\x01\x12\x03\0\x15hive:actor/htt\
+p@0.1.0\x05\x01\x01B\x0c\x01p}\x01r\x04\x0cmessage-types\x0dfrom-actor-ids\x0afr\
+om-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05actor\x03\x01\
+\x01i\x03\x01@\x02\x05scopes\x06configs\0\x04\x04\0\x12[constructor]actor\x01\x05\
+\x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handl\
+e-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\
+\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x02\x04\0!assistant:actor/actor-world@0\
+.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\x0cprocessed\
+-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

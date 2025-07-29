@@ -1,4 +1,7 @@
+use clap::Parser;
 use hive::HiveResult;
+
+mod cli;
 
 #[tokio::main]
 async fn main() -> HiveResult<()> {
@@ -6,22 +9,20 @@ async fn main() -> HiveResult<()> {
 
     hive::init_test_logger();
 
+    let cli = cli::Cli::parse();
+    
+    // Load configuration
+    let config = if let Some(config_path) = cli.config {
+        hive_config::load_from_path(config_path)
+    } else {
+        hive_config::load_default_config()
+    }.map_err(|e| hive::Error::Whatever { 
+        message: format!("Failed to load config: {}", e),
+        source: None 
+    })?;
+    
     let starting_actors = vec!["execute_bash", "assistant"];
-    let config_actors = vec![
-        hive_config::Actor {
-            name: "assistant".to_string(),
-            source: hive_config::ActorSource::Path(
-                "/Users/silasmarvin/github/hive/actors/assistant".to_string(),
-            ),
-        },
-        hive_config::Actor {
-            name: "execute_bash".to_string(),
-            source: hive_config::ActorSource::Path(
-                "/Users/silasmarvin/github/hive/actors/execute_bash".to_string(),
-            ),
-        },
-    ];
-    let loaded_actors = hive::load_actors(config_actors).await?;
+    let loaded_actors = hive::load_actors(config.actors).await?;
 
     hive::hive::start_hive(&starting_actors, loaded_actors).await?;
 

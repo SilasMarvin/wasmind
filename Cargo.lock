@@ -1459,7 +1459,9 @@ name = "hive_config"
 version = "0.1.0"
 dependencies = [
  "etcetera",
+ "serde",
  "snafu",
+ "toml",
  "url",
 ]
 
@@ -3889,6 +3891,7 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
+ "serde",
 ]
 
 [[package]]

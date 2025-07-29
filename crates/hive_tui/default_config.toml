@@ -2,11 +2,17 @@ starting_actors = ["assistant", "execute_bash"]
 
 [[actors]]
 name = "execute_bash"
-path = "/Users/silasmarvin/github/hive/actors/execute_bash"
+source = { Path = "/Users/silasmarvin/github/hive/actors/execute_bash" }
 
 [[actors]]
 name = "assistant"
-path = "/Users/silasmarvin/github/hive/actors/assistant"
+source = { Path = "/Users/silasmarvin/github/hive/actors/assistant" }
+
+[actors.config]
+model_name = "gpt-4"
+system_prompt = "You are a helpful assistant."
+base_url = "http://localhost:4000"
+litellm_params = {}
 
 # # Automatically approve non-whitelisted commands (default: false)
 # # When false, non-whitelisted commands require user confirmation

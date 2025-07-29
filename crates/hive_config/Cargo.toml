@@ -12,7 +12,9 @@ license.workspace = true
 
 [dependencies]
 snafu = { workspace = true }
-url = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+toml = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 
 etcetera = "0.10.0"
 

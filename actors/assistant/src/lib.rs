@@ -3,11 +3,21 @@ use hive_actor_utils::{
         assistant::{self, Status, WaitReason},
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
     },
-    llm_client_types::{self, ChatMessage, SystemChatMessage, UserChatMessage},
+    llm_client_types::{self, ChatMessage, ChatRequest, ChatResponse, SystemChatMessage, Tool, UserChatMessage},
 };
+use serde::Deserialize;
+use std::collections::HashMap;
 
 #[allow(warnings)]
 mod bindings;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AssistantConfig {
+    pub model_name: String,
+    pub system_prompt: String,
+    pub litellm_params: HashMap<String, serde_json::Value>,
+    pub base_url: String,
+}
 
 /// Pending message that accumulates user input and system messages to be submitted to the LLM when appropriate
 #[derive(Debug, Clone, Default)]
@@ -70,9 +80,125 @@ pub struct Assistant {
     chat_history: Vec<ChatMessage>,
     available_tools: Vec<llm_client_types::Tool>,
     status: Status,
+    config: AssistantConfig,
 }
 
 impl Assistant {
+    fn submit_with_retry(&mut self, request_id: uuid::Uuid, attempt: u32) {
+        const MAX_ATTEMPTS: u32 = 3;
+        const BASE_DELAY_MS: u64 = 1000; // 1 second base delay
+        
+        if attempt >= MAX_ATTEMPTS {
+            tracing::error!("Max retry attempts reached for completion request");
+            self.set_status(
+                Status::Wait {
+                    reason: WaitReason::WaitingForUserInput,
+                },
+                true,
+            );
+            return;
+        }
+
+        // Generate system prompt
+        let system_prompt = self.render_system_prompt();
+
+        // Make the completion request
+        match self.make_completion_request(
+            &system_prompt,
+            &self.chat_history,
+            Some(&self.available_tools),
+        ) {
+            Ok(response) => {
+                // Process the response
+                if let Some(choice) = response.choices.first() {
+                    match &choice.message {
+                        ChatMessage::Assistant(assistant_msg) => {
+                            // Add response to chat history
+                            self.add_chat_messages([choice.message.clone()]);
+                            
+                            // Broadcast the response for other actors to handle
+                            Self::broadcast(assistant::Response {
+                                request_id,
+                                message: assistant_msg.clone(),
+                            }).unwrap();
+                        }
+                        _ => {
+                            tracing::error!("Unexpected message type in LLM response, retrying...");
+                            self.schedule_retry(request_id, attempt + 1, BASE_DELAY_MS);
+                        }
+                    }
+                } else {
+                    tracing::error!("No choices in LLM completion response, retrying...");
+                    self.schedule_retry(request_id, attempt + 1, BASE_DELAY_MS);
+                }
+            }
+            Err(e) => {
+                tracing::error!("LLM completion request failed (attempt {}): {}", attempt + 1, e);
+                self.schedule_retry(request_id, attempt + 1, BASE_DELAY_MS);
+            }
+        }
+    }
+
+    fn schedule_retry(&mut self, request_id: uuid::Uuid, attempt: u32, base_delay_ms: u64) {
+        // Exponential backoff: delay = base_delay * 2^attempt
+        let delay_ms = base_delay_ms * (2_u64.pow(attempt.saturating_sub(1)));
+        
+        // TODO: In a real system, we'd schedule this with a timer
+        // For now, we'll just retry immediately (you could implement a timer actor)
+        tracing::info!("Scheduling retry {} after {}ms", attempt + 1, delay_ms);
+        
+        // For immediate retry (would be better with actual scheduling):
+        self.submit_with_retry(request_id, attempt);
+    }
+
+    fn make_completion_request(
+        &self,
+        system_prompt: &str,
+        messages: &[ChatMessage],
+        tools: Option<&[Tool]>,
+    ) -> Result<ChatResponse, String> {
+        // Build the request
+        let mut all_messages = vec![ChatMessage::system(system_prompt)];
+        all_messages.extend_from_slice(messages);
+        
+        let request = ChatRequest {
+            model: self.config.model_name.clone(),
+            messages: all_messages,
+            tools: tools.map(|t| t.to_vec()),
+        };
+        
+        // Serialize to JSON
+        let body = serde_json::to_vec(&request)
+            .map_err(|e| format!("Failed to serialize request: {}", e))?;
+        
+        // Make HTTP request using our interface
+        let request = bindings::hive::actor::http::Request::new(
+            "POST",
+            &format!("{}/v1/chat/completions", self.config.base_url),
+        );
+        
+        let response = request
+            .header("Content-Type", "application/json")
+            .body(&body)
+            .timeout(120) // 120 second timeout
+            .send()
+            .map_err(|e| format!("HTTP request failed: {:?}", e))?;
+        
+        // Check status
+        if response.status < 200 || response.status >= 300 {
+            let error_text = String::from_utf8_lossy(&response.body);
+            return Err(format!("API error ({}): {}", response.status, error_text));
+        }
+        
+        // Deserialize response
+        serde_json::from_slice(&response.body)
+            .map_err(|e| format!("Failed to deserialize response: {}", e))
+    }
+
+    fn render_system_prompt(&self) -> String {
+        self.config.system_prompt.clone()
+    }
+
     fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessage>) {
         self.chat_history.extend(messages);
 
@@ -94,7 +220,28 @@ impl Assistant {
     }
 
     fn submit(&mut self, submit_if_pending_message_is_empty: bool) {
-        todo!()
+        // Check if we have any pending messages to submit
+        if !submit_if_pending_message_is_empty && !self.pending_message.has_content() {
+            return;
+        }
+
+        // Add pending messages to chat history
+        let new_messages = self.pending_message.to_chat_messages();
+        if !new_messages.is_empty() {
+            self.add_chat_messages(new_messages);
+        }
+
+        // Generate a unique request ID for this submission
+        let request_id = uuid::Uuid::new_v4();
+
+        // Set status to processing with the request ID
+        self.set_status(
+            Status::Processing { request_id },
+            true,
+        );
+
+        // Start the retry process with attempt 0
+        self.submit_with_retry(request_id, 0);
     }
 
     fn handle_tool_call_update(&mut self, update: ToolCallStatusUpdate) {
@@ -168,7 +315,10 @@ impl Assistant {
 hive_actor_utils::actors::macros::generate_actor_trait!();
 
 impl GeneratedActorTrait for Assistant {
-    fn new(scope: String) -> Self {
+    fn new(scope: String, config_str: String) -> Self {
+        let config: AssistantConfig = toml::from_str(&config_str)
+            .expect("Failed to parse assistant config");
+        
         Self {
             scope,
             chat_history: vec![],
@@ -177,6 +327,7 @@ impl GeneratedActorTrait for Assistant {
                 reason: WaitReason::WaitingForUserInput,
             },
             pending_message: PendingMessage::new(),
+            config,
         }
     }
 
@@ -209,6 +360,53 @@ impl GeneratedActorTrait for Assistant {
                         if matches!(status_update_request.status, Status::Done { .. }) {
                             // TODO: Broadcast Exit?
                         }
+                    }
+                }
+            }
+        }
+
+        // Handle assistant response messages - only when we're in processing state with matching ID
+        if let Some(response) = Self::parse_as::<assistant::Response>(&message) {
+            if let Status::Processing { request_id } = &self.status {
+                if response.request_id == *request_id {
+                    // This is our response! Handle tool calls if any
+                    if let Some(tool_calls) = &response.message.tool_calls {
+                        // Convert tool calls to pending tool calls map
+                        let mut pending_tool_calls = std::collections::HashMap::new();
+                        for tool_call in tool_calls {
+                            pending_tool_calls.insert(
+                                tool_call.id.clone(),
+                                assistant::PendingToolCall {
+                                    tool_call: tool_call.clone(),
+                                    result: None,
+                                },
+                            );
+                        }
+
+                        // Set status to waiting for tools
+                        self.set_status(
+                            Status::Wait {
+                                reason: WaitReason::WaitingForTools {
+                                    tool_calls: pending_tool_calls,
+                                },
+                            },
+                            true,
+                        );
+
+                        // Broadcast tool calls for execution
+                        for tool_call in tool_calls {
+                            Self::broadcast(tools::ExecuteTool {
+                                tool_call: tool_call.clone(),
+                            }).unwrap();
+                        }
+                    } else {
+                        // No tool calls - we're done, wait for user input
+                        self.set_status(
+                            Status::Wait {
+                                reason: WaitReason::WaitingForUserInput,
+                            },
+                            true,
+                        );
                     }
                 }
             }

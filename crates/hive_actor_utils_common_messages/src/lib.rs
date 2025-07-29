@@ -139,8 +139,8 @@ pub mod assistant {
     // hive.common.assistant.Response
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Response {
-        request_id: Uuid,
-        message: hive_llm_client::types::AssistantChatMessage,
+        pub request_id: Uuid,
+        pub message: hive_llm_client::types::AssistantChatMessage,
     }
 
     impl Message for Response {
@@ -181,7 +181,7 @@ pub mod tools {
     // hive.common.tools.ExecuteToolCall
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ExecuteTool {
-        tool_call: hive_llm_client::types::ToolCall,
+        pub tool_call: hive_llm_client::types::ToolCall,
     }
 
     impl Message for ExecuteTool {
