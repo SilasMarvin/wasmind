@@ -157,6 +157,37 @@ pub mod assistant {
     impl Message for ChatStateUpdated {
         const MESSAGE_TYPE: &str = "hive.common.assistant.ChatStateUpdated";
     }
+
+    // System prompt contribution system
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum SystemPromptContent {
+        /// Pre-rendered text that goes directly into the prompt
+        Text(String),
+        /// Structured data with a default template for rendering
+        Data {
+            data: serde_json::Value,
+            default_template: String,
+        },
+    }
+
+    // hive.common.assistant.SystemPromptContribution
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct SystemPromptContribution {
+        /// The agent (scope) this contribution is targeting
+        pub agent: Scope,
+        /// Unique key in format "actor_type.contribution_name" (e.g., "file_reader.open_files")
+        pub key: String,
+        /// The actual content to include in the system prompt
+        pub content: SystemPromptContent,
+        /// Priority for ordering within sections (higher = earlier)
+        pub priority: i32,
+        /// Optional section this belongs to (e.g., "context", "tools", "instructions")
+        pub section: Option<String>,
+    }
+
+    impl Message for SystemPromptContribution {
+        const MESSAGE_TYPE: &str = "hive.common.assistant.SystemPromptContribution";
+    }
 }
 
 pub mod tools {

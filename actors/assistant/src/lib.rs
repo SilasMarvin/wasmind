@@ -1,6 +1,6 @@
 use hive_actor_utils::{
     common_messages::{
-        assistant::{self, Status, WaitReason},
+        assistant::{self, Status, SystemPromptContribution, WaitReason},
         litellm,
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
     },
@@ -9,16 +9,30 @@ use hive_actor_utils::{
     },
 };
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[allow(warnings)]
 mod bindings;
 
+mod system_prompt;
+use system_prompt::{SystemPromptConfig, SystemPromptRenderer};
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AssistantConfig {
     pub model_name: String,
-    pub system_prompt: String,
+    pub system_prompt: SystemPromptConfig,
     #[serde(default)]
     pub base_url: Option<String>,
+}
+
+impl Default for AssistantConfig {
+    fn default() -> Self {
+        Self {
+            model_name: "gpt-4".to_string(),
+            system_prompt: SystemPromptConfig::default(),
+            base_url: None,
+        }
+    }
 }
 
 /// Pending message that accumulates user input and system messages to be submitted to the LLM when appropriate
@@ -84,6 +98,7 @@ pub struct Assistant {
     status: Status,
     config: AssistantConfig,
     base_url: Option<String>,
+    system_prompt_renderer: SystemPromptRenderer,
 }
 
 impl Assistant {
@@ -123,7 +138,8 @@ impl Assistant {
                             Self::broadcast(assistant::Response {
                                 request_id,
                                 message: assistant_msg.clone(),
-                            }).unwrap();
+                            })
+                            .unwrap();
                         }
                         _ => {
                             tracing::error!("Unexpected message type in LLM response, retrying...");
@@ -225,7 +241,14 @@ impl Assistant {
     }
 
     fn render_system_prompt(&self) -> String {
-        self.config.system_prompt.clone()
+        match self.system_prompt_renderer.render() {
+            Ok(rendered) => rendered,
+            Err(e) => {
+                tracing::error!("Failed to render system prompt: {}", e);
+                // Fallback to a basic prompt if rendering fails
+                "You are a helpful AI assistant.".to_string()
+            }
+        }
     }
 
     fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessage>) {
@@ -356,6 +379,9 @@ impl GeneratedActorTrait for Assistant {
         };
         let base_url = config.base_url.clone();
 
+        let system_prompt_renderer =
+            SystemPromptRenderer::new(config.system_prompt.clone(), scope.clone());
+
         Self {
             scope,
             chat_history: vec![],
@@ -364,6 +390,7 @@ impl GeneratedActorTrait for Assistant {
             pending_message: PendingMessage::new(),
             config,
             base_url,
+            system_prompt_renderer,
         }
     }
 
@@ -399,51 +426,50 @@ impl GeneratedActorTrait for Assistant {
                     }
                 }
             }
-        }
+            // Handle assistant response messages - only when we're in processing state with matching ID
+            else if let Some(response) = Self::parse_as::<assistant::Response>(&message) {
+                if let Status::Processing { request_id } = &self.status {
+                    if response.request_id == *request_id {
+                        // This is our response! Handle tool calls if any
+                        if let Some(tool_calls) = &response.message.tool_calls {
+                            // Convert tool calls to pending tool calls map
+                            let mut pending_tool_calls = std::collections::HashMap::new();
+                            for tool_call in tool_calls {
+                                pending_tool_calls.insert(
+                                    tool_call.id.clone(),
+                                    assistant::PendingToolCall {
+                                        tool_call: tool_call.clone(),
+                                        result: None,
+                                    },
+                                );
+                            }
 
-        // Handle assistant response messages - only when we're in processing state with matching ID
-        if let Some(response) = Self::parse_as::<assistant::Response>(&message) {
-            if let Status::Processing { request_id } = &self.status {
-                if response.request_id == *request_id {
-                    // This is our response! Handle tool calls if any
-                    if let Some(tool_calls) = &response.message.tool_calls {
-                        // Convert tool calls to pending tool calls map
-                        let mut pending_tool_calls = std::collections::HashMap::new();
-                        for tool_call in tool_calls {
-                            pending_tool_calls.insert(
-                                tool_call.id.clone(),
-                                assistant::PendingToolCall {
-                                    tool_call: tool_call.clone(),
-                                    result: None,
+                            // Set status to waiting for tools
+                            self.set_status(
+                                Status::Wait {
+                                    reason: WaitReason::WaitingForTools {
+                                        tool_calls: pending_tool_calls,
+                                    },
                                 },
+                                true,
+                            );
+
+                            // Broadcast tool calls for execution
+                            for tool_call in tool_calls {
+                                Self::broadcast(tools::ExecuteTool {
+                                    tool_call: tool_call.clone(),
+                                })
+                                .unwrap();
+                            }
+                        } else {
+                            // No tool calls - we're done, wait for user input
+                            self.set_status(
+                                Status::Wait {
+                                    reason: WaitReason::WaitingForUserInput,
+                                },
+                                true,
                             );
                         }
-
-                        // Set status to waiting for tools
-                        self.set_status(
-                            Status::Wait {
-                                reason: WaitReason::WaitingForTools {
-                                    tool_calls: pending_tool_calls,
-                                },
-                            },
-                            true,
-                        );
-
-                        // Broadcast tool calls for execution
-                        for tool_call in tool_calls {
-                            Self::broadcast(tools::ExecuteTool {
-                                tool_call: tool_call.clone(),
-                            })
-                            .unwrap();
-                        }
-                    } else {
-                        // No tool calls - we're done, wait for user input
-                        self.set_status(
-                            Status::Wait {
-                                reason: WaitReason::WaitingForUserInput,
-                            },
-                            true,
-                        );
                     }
                 }
             }
@@ -521,6 +547,13 @@ impl GeneratedActorTrait for Assistant {
                     }
                 }
                 _ => (), // For right now we don't support adding any message besides a User or System
+            }
+        }
+
+        // Handle system prompt contributions from any actor
+        if let Some(contribution) = Self::parse_as::<SystemPromptContribution>(&message) {
+            if let Err(e) = self.system_prompt_renderer.add_contribution(contribution) {
+                tracing::error!("Failed to add system prompt contribution: {}", e);
             }
         }
     }

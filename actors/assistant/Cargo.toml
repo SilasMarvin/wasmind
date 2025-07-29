@@ -18,6 +18,8 @@ serde_json = "1"
 toml = "0.8"
 uuid = "1.0"
 tracing = "0.1"
+minijinja = "2.5"
+regex = "1.10"
 
 hive_actor_utils = { path = "../../crates/hive_actor_utils", features = ["macros"] }
 
