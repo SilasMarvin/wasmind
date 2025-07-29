@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::process::Command;
@@ -9,6 +10,10 @@ use crate::actors::manager::hive::actor::command;
 use super::ActorState;
 
 pub struct CommandResource {
+    pub inner: Arc<Mutex<CommandResourceInner>>,
+}
+
+pub struct CommandResourceInner {
     pub command: Command,
     pub timeout_seconds: Option<u32>,
 }
@@ -22,8 +27,10 @@ impl command::HostCmd for ActorState {
     // semantics and causes "cannot lower a `borrow` resource into an `own`" errors.
     async fn new(&mut self, command: String) -> wasmtime::component::Resource<CommandResource> {
         let command_resource = CommandResource {
-            command: Command::new(command),
-            timeout_seconds: None,
+            inner: Arc::new(Mutex::new(CommandResourceInner {
+                command: Command::new(command),
+                timeout_seconds: None,
+            })),
         };
         let resource = self.table.push(command_resource).unwrap();
         resource
@@ -35,15 +42,29 @@ impl command::HostCmd for ActorState {
         key: String,
         value: String,
     ) -> wasmtime::component::Resource<CommandResource> {
-        let mut cmd = self.table.delete(self_).unwrap();
-        cmd.command.env(key, value);
-        self.table.push(cmd).unwrap()
+        let cmd = self.table.get(&self_).unwrap();
+        let mut inner = cmd.inner.lock().unwrap();
+        inner.command.env(key, value);
+        drop(inner);
+        
+        // Create new resource with cloned Arc
+        let new_resource = CommandResource {
+            inner: Arc::clone(&cmd.inner),
+        };
+        self.table.push(new_resource).unwrap()
     }
 
     async fn env_clear(&mut self, self_: Resource<CommandResource>) -> Resource<CommandResource> {
-        let mut cmd = self.table.delete(self_).unwrap();
-        cmd.command.env_clear();
-        self.table.push(cmd).unwrap()
+        let cmd = self.table.get(&self_).unwrap();
+        let mut inner = cmd.inner.lock().unwrap();
+        inner.command.env_clear();
+        drop(inner);
+        
+        // Create new resource with cloned Arc
+        let new_resource = CommandResource {
+            inner: Arc::clone(&cmd.inner),
+        };
+        self.table.push(new_resource).unwrap()
     }
 
     async fn args(
@@ -51,9 +72,16 @@ impl command::HostCmd for ActorState {
         self_: Resource<CommandResource>,
         args: Vec<String>,
     ) -> Resource<CommandResource> {
-        let mut cmd = self.table.delete(self_).unwrap();
-        cmd.command.args(args);
-        self.table.push(cmd).unwrap()
+        let cmd = self.table.get(&self_).unwrap();
+        let mut inner = cmd.inner.lock().unwrap();
+        inner.command.args(args);
+        drop(inner);
+        
+        // Create new resource with cloned Arc
+        let new_resource = CommandResource {
+            inner: Arc::clone(&cmd.inner),
+        };
+        self.table.push(new_resource).unwrap()
     }
 
     async fn current_dir(
@@ -61,9 +89,16 @@ impl command::HostCmd for ActorState {
         self_: Resource<CommandResource>,
         dir: String,
     ) -> Resource<CommandResource> {
-        let mut cmd = self.table.delete(self_).unwrap();
-        cmd.command.current_dir(dir);
-        self.table.push(cmd).unwrap()
+        let cmd = self.table.get(&self_).unwrap();
+        let mut inner = cmd.inner.lock().unwrap();
+        inner.command.current_dir(dir);
+        drop(inner);
+        
+        // Create new resource with cloned Arc
+        let new_resource = CommandResource {
+            inner: Arc::clone(&cmd.inner),
+        };
+        self.table.push(new_resource).unwrap()
     }
 
     async fn timeout(
@@ -71,18 +106,61 @@ impl command::HostCmd for ActorState {
         self_: Resource<CommandResource>,
         seconds: u32,
     ) -> Resource<CommandResource> {
-        let mut cmd = self.table.delete(self_).unwrap();
-        cmd.timeout_seconds = Some(seconds);
-        self.table.push(cmd).unwrap()
+        let cmd = self.table.get(&self_).unwrap();
+        let mut inner = cmd.inner.lock().unwrap();
+        inner.timeout_seconds = Some(seconds);
+        drop(inner);
+        
+        // Create new resource with cloned Arc
+        let new_resource = CommandResource {
+            inner: Arc::clone(&cmd.inner),
+        };
+        self.table.push(new_resource).unwrap()
     }
 
     async fn run(
         &mut self,
         self_: Resource<CommandResource>,
     ) -> std::result::Result<command::CommandOutput, String> {
-        let mut cmd_resource = self.table.delete(self_).map_err(|e| e.to_string())?;
+        let cmd_resource = self.table.get(&self_).map_err(|e| e.to_string())?;
+        
+        // Extract all necessary data before spawning to avoid holding the lock
+        let (mut new_command, timeout_seconds) = {
+            let inner = cmd_resource.inner.lock().unwrap();
+            
+            // We need to take ownership of the command to spawn it
+            // Create a new command with the same configuration
+            let program = inner.command.as_std().get_program();
+            let mut new_command = Command::new(program);
+            
+            // Copy args
+            let args: Vec<_> = inner.command.as_std().get_args().collect();
+            for arg in args {
+                new_command.arg(arg);
+            }
+            
+            // Copy environment variables
+            let envs: Vec<_> = inner.command.as_std().get_envs()
+                .filter_map(|(k, v)| {
+                    match (k.to_str(), v) {
+                        (Some(k), Some(v)) => v.to_str().map(|v| (k.to_string(), v.to_string())),
+                        _ => None,
+                    }
+                })
+                .collect();
+            for (k, v) in envs {
+                new_command.env(k, v);
+            }
+            
+            // Copy current directory if set
+            if let Some(dir) = inner.command.as_std().get_current_dir() {
+                new_command.current_dir(dir);
+            }
+            
+            (new_command, inner.timeout_seconds)
+        }; // Lock is dropped here
 
-        let child = match cmd_resource.command.spawn() {
+        let child = match new_command.spawn() {
             Ok(child) => child,
             Err(e) => {
                 return Ok(command::CommandOutput {
@@ -93,7 +171,7 @@ impl command::HostCmd for ActorState {
             }
         };
 
-        let output = if let Some(timeout_seconds) = cmd_resource.timeout_seconds {
+        let output = if let Some(timeout_seconds) = timeout_seconds {
             let duration = Duration::from_secs(timeout_seconds as u64);
             match timeout(duration, child.wait_with_output()).await {
                 Ok(Ok(output)) => output,

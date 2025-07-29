@@ -4,7 +4,9 @@ use hive_actor_utils::{
         litellm,
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
     },
-    llm_client_types::{self, ChatMessage, ChatRequest, ChatResponse, SystemChatMessage, Tool, UserChatMessage},
+    llm_client_types::{
+        self, ChatMessage, ChatRequest, ChatResponse, SystemChatMessage, Tool, UserChatMessage,
+    },
 };
 use serde::Deserialize;
 
@@ -86,19 +88,11 @@ pub struct Assistant {
 
 impl Assistant {
     fn submit_with_retry(&mut self, request_id: uuid::Uuid, attempt: u32) {
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Debug,
-            &format!("Entering submit_with_retry - request_id: {}, attempt: {}", request_id, attempt)
-        );
-        
         const MAX_ATTEMPTS: u32 = 3;
         const BASE_DELAY_MS: u64 = 1000; // 1 second base delay
-        
+
         if attempt >= MAX_ATTEMPTS {
-            bindings::hive::actor::logger::log(
-                bindings::hive::actor::logger::LogLevel::Error,
-                "Max retry attempts reached for completion request"
-            );
+            tracing::error!("Max retry attempts reached for completion request");
             self.set_status(
                 Status::Wait {
                     reason: WaitReason::WaitingForUserInput,
@@ -108,93 +102,28 @@ impl Assistant {
             return;
         }
 
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Debug,
-            "About to render system prompt..."
-        );
-
         // Generate system prompt
         let system_prompt = self.render_system_prompt();
-        
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Debug,
-            "Successfully rendered system prompt"
-        );
 
         // Make the completion request
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Debug,
-            "About to call make_completion_request"
-        );
-        
-        let completion_result = self.make_completion_request(
+        match self.make_completion_request(
             &system_prompt,
             &self.chat_history,
             Some(&self.available_tools),
-        );
-        
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Debug,
-            "make_completion_request returned, now processing result"
-        );
-        
-        match completion_result {
+        ) {
             Ok(response) => {
-                bindings::hive::actor::logger::log(
-                    bindings::hive::actor::logger::LogLevel::Debug,
-                    "Received LLM response, processing..."
-                );
-                
                 // Process the response
                 if let Some(choice) = response.choices.first() {
-                    bindings::hive::actor::logger::log(
-                        bindings::hive::actor::logger::LogLevel::Debug,
-                        "Found choice in response, checking message type..."
-                    );
-                    
                     match &choice.message {
                         ChatMessage::Assistant(assistant_msg) => {
-                            bindings::hive::actor::logger::log(
-                                bindings::hive::actor::logger::LogLevel::Debug,
-                                "Processing assistant message, adding to chat history..."
-                            );
-                            
                             // Add response to chat history
-                            bindings::hive::actor::logger::log(
-                                bindings::hive::actor::logger::LogLevel::Debug,
-                                "About to add message to chat history..."
-                            );
                             self.add_chat_messages([choice.message.clone()]);
-                            
-                            bindings::hive::actor::logger::log(
-                                bindings::hive::actor::logger::LogLevel::Debug,
-                                "Successfully added message to chat history, now broadcasting response to other actors..."
-                            );
-                            
+
                             // Broadcast the response for other actors to handle
-                            match Self::broadcast(assistant::Response {
+                            Self::broadcast(assistant::Response {
                                 request_id,
                                 message: assistant_msg.clone(),
-                            }) {
-                                Ok(_) => {
-                                    bindings::hive::actor::logger::log(
-                                        bindings::hive::actor::logger::LogLevel::Debug,
-                                        "Broadcast call completed successfully"
-                                    );
-                                }
-                                Err(e) => {
-                                    bindings::hive::actor::logger::log(
-                                        bindings::hive::actor::logger::LogLevel::Error,
-                                        &format!("Broadcast call failed: {:?}", e)
-                                    );
-                                    return;
-                                }
-                            }
-                            
-                            bindings::hive::actor::logger::log(
-                                bindings::hive::actor::logger::LogLevel::Debug,
-                                "Successfully broadcasted response"
-                            );
+                            }).unwrap();
                         }
                         _ => {
                             tracing::error!("Unexpected message type in LLM response, retrying...");
@@ -209,7 +138,9 @@ impl Assistant {
             Err(e) => {
                 // Check if this is a "no base URL" error - if so, go back to waiting for system or user input
                 if e.contains("No LiteLLM base URL available") {
-                    tracing::warn!("LiteLLM base URL not available, staying in waiting for system or user input");
+                    tracing::warn!(
+                        "LiteLLM base URL not available, staying in waiting for system or user input"
+                    );
                     self.set_status(
                         Status::Wait {
                             reason: WaitReason::WaitingForSystemOrUser {
@@ -222,8 +153,12 @@ impl Assistant {
                     );
                     return;
                 }
-                
-                tracing::error!("LLM completion request failed (attempt {}): {}", attempt + 1, e);
+
+                tracing::error!(
+                    "LLM completion request failed (attempt {}): {}",
+                    attempt + 1,
+                    e
+                );
                 self.schedule_retry(request_id, attempt + 1, BASE_DELAY_MS);
             }
         }
@@ -232,11 +167,11 @@ impl Assistant {
     fn schedule_retry(&mut self, request_id: uuid::Uuid, attempt: u32, base_delay_ms: u64) {
         // Exponential backoff: delay = base_delay * 2^attempt
         let delay_ms = base_delay_ms * (2_u64.pow(attempt.saturating_sub(1)));
-        
+
         // TODO: In a real system, we'd schedule this with a timer
         // For now, we'll just retry immediately (you could implement a timer actor)
         tracing::info!("Scheduling retry {} after {}ms", attempt + 1, delay_ms);
-        
+
         // For immediate retry (would be better with actual scheduling):
         self.submit_with_retry(request_id, attempt);
     }
@@ -248,41 +183,42 @@ impl Assistant {
         tools: Option<&[Tool]>,
     ) -> Result<ChatResponse, String> {
         // Check if we have a base URL from LiteLLM
-        let base_url = self.base_url.as_ref()
-            .ok_or_else(|| "No LiteLLM base URL available - waiting for LiteLLM manager to start".to_string())?;
+        let base_url = self.base_url.as_ref().ok_or_else(|| {
+            "No LiteLLM base URL available - waiting for LiteLLM manager to start".to_string()
+        })?;
         // Build the request
         let mut all_messages = vec![ChatMessage::system(system_prompt)];
         all_messages.extend_from_slice(messages);
-        
+
         let request = ChatRequest {
             model: self.config.model_name.clone(),
             messages: all_messages,
             tools: tools.map(|t| t.to_vec()),
         };
-        
+
         // Serialize to JSON
         let body = serde_json::to_vec(&request)
             .map_err(|e| format!("Failed to serialize request: {}", e))?;
-        
+
         // Make HTTP request using our interface
         let request = bindings::hive::actor::http::Request::new(
             "POST",
             &format!("{}/v1/chat/completions", base_url),
         );
-        
+
         let response = request
             .header("Content-Type", "application/json")
             .body(&body)
             .timeout(120) // 120 second timeout
             .send()
             .map_err(|e| format!("HTTP request failed: {:?}", e))?;
-        
+
         // Check status
         if response.status < 200 || response.status >= 300 {
             let error_text = String::from_utf8_lossy(&response.body);
             return Err(format!("API error ({}): {}", response.status, error_text));
         }
-        
+
         // Deserialize response
         serde_json::from_slice(&response.body)
             .map_err(|e| format!("Failed to deserialize response: {}", e))
@@ -293,17 +229,7 @@ impl Assistant {
     }
 
     fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessage>) {
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Debug,
-            "Starting add_chat_messages..."
-        );
-        
         self.chat_history.extend(messages);
-        
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Debug,
-            "Successfully extended chat history"
-        );
 
         // TODO: Broadcast the system state
         // let system_prompt = self.render_system_prompt();
@@ -338,10 +264,7 @@ impl Assistant {
         let request_id = uuid::Uuid::new_v4();
 
         // Set status to processing with the request ID
-        self.set_status(
-            Status::Processing { request_id },
-            true,
-        );
+        self.set_status(Status::Processing { request_id }, true);
 
         // Start the retry process with attempt 0
         self.submit_with_retry(request_id, 0);
@@ -419,14 +342,9 @@ hive_actor_utils::actors::macros::generate_actor_trait!();
 
 impl GeneratedActorTrait for Assistant {
     fn new(scope: String, config_str: String) -> Self {
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Error,
-            "ASSISTANT CREATED - Testing logging functionality"
-        );
-        
-        let config: AssistantConfig = toml::from_str(&config_str)
-            .expect("Failed to parse assistant config");
-        
+        let config: AssistantConfig =
+            toml::from_str(&config_str).expect("Failed to parse assistant config");
+
         // Always start waiting for system or user input
         // Base URL will be provided either through config or broadcast
         let initial_status = Status::Wait {
@@ -437,7 +355,7 @@ impl GeneratedActorTrait for Assistant {
             },
         };
         let base_url = config.base_url.clone();
-        
+
         Self {
             scope,
             chat_history: vec![],
@@ -453,10 +371,6 @@ impl GeneratedActorTrait for Assistant {
         &mut self,
         message: bindings::exports::hive::actor::actor::MessageEnvelope,
     ) -> () {
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Debug,
-            &format!("handle_message called with message type: {}", message.message_type)
-        );
         // Messages where it matters if they are from our own scope
         if message.from_scope == self.scope {
             // Update our tools
@@ -519,7 +433,8 @@ impl GeneratedActorTrait for Assistant {
                         for tool_call in tool_calls {
                             Self::broadcast(tools::ExecuteTool {
                                 tool_call: tool_call.clone(),
-                            }).unwrap();
+                            })
+                            .unwrap();
                         }
                     } else {
                         // No tool calls - we're done, wait for user input
@@ -536,11 +451,19 @@ impl GeneratedActorTrait for Assistant {
 
         // Handle LiteLLM base URL updates
         if let Some(base_url_update) = Self::parse_as::<litellm::BaseUrlUpdate>(&message) {
-            tracing::info!("Received LiteLLM base URL update: {}", base_url_update.base_url);
+            tracing::info!(
+                "Received LiteLLM base URL update: {}",
+                base_url_update.base_url
+            );
             self.base_url = Some(base_url_update.base_url);
-            
+
             // If we were waiting for LiteLLM, transition to waiting for system or user input
-            if matches!(self.status, Status::Wait { reason: WaitReason::WaitingForLiteLLM }) {
+            if matches!(
+                self.status,
+                Status::Wait {
+                    reason: WaitReason::WaitingForLiteLLM
+                }
+            ) {
                 self.set_status(
                     Status::Wait {
                         reason: WaitReason::WaitingForSystemOrUser {

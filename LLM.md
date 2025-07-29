@@ -73,3 +73,20 @@ The codebase is in transition:
 2. **Message Envelopes**: Standardized message format with metadata for routing
 3. **Tool System**: Actors can expose tools/capabilities to other actors
 4. **WASM Isolation**: Each actor runs in its own WASM sandbox for security and stability
+
+## Building WASM Actors
+
+To build WASM actor components:
+
+1. **Navigate to the actor directory**: You must be in the specific actor's directory (e.g., `/actors/assistant` or `/actors/execute_bash`)
+2. **Run the build command**: `cargo component build`
+
+**Important**: The `cargo component build` command must be run from within the actor's directory, NOT from the project root. Each actor is built as a separate WASM component.
+
+Example:
+```bash
+cd actors/assistant
+cargo component build
+```
+
+This will generate the WASM component in `target/wasm32-wasip1/debug/` directory.
