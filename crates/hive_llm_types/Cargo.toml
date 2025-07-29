@@ -1,5 +1,5 @@
 [package]
-name = "hive_llm_client"
+name = "hive_llm_types"
 version = "0.1.0"
 
 description.workspace = true
@@ -11,12 +11,5 @@ license.workspace = true
 [lib]
 
 [dependencies]
-snafu = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-
-reqwest = { workspace = true, optional = true }
-
-[features]
-default = []
-client = ["reqwest"]

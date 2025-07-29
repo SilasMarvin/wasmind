@@ -26,7 +26,7 @@ uuid = { workspace = true }
 
 hive_actor_loader = { path = "../hive_actor_loader" }
 hive_config = { path = "../hive_config" }
-hive_llm_client = { path = "../hive_llm_client", features = ["client"] }
+hive_llm_types = { path = "../hive_llm_types" }
 hive_actor_utils_common_messages = { path = "../hive_actor_utils_common_messages" }
 
 rand = "0.9"

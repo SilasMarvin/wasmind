@@ -1366,7 +1366,7 @@ dependencies = [
  "hive_actor_loader",
  "hive_actor_utils_common_messages",
  "hive_config",
- "hive_llm_client",
+ "hive_llm_types",
  "hive_macros",
  "image",
  "lazy-regex",
@@ -1430,7 +1430,7 @@ version = "0.1.0"
 dependencies = [
  "hive_actor_utils_common_messages",
  "hive_actor_utils_macros",
- "hive_llm_client",
+ "hive_llm_types",
  "serde",
  "serde_json",
 ]
@@ -1439,7 +1439,7 @@ dependencies = [
 name = "hive_actor_utils_common_messages"
 version = "0.1.0"
 dependencies = [
- "hive_llm_client",
+ "hive_llm_types",
  "serde",
  "serde_json",
  "uuid",
@@ -1466,13 +1466,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "hive_llm_client"
+name = "hive_llm_types"
 version = "0.1.0"
 dependencies = [
- "reqwest",
  "serde",
  "serde_json",
- "snafu",
 ]
 
 [[package]]

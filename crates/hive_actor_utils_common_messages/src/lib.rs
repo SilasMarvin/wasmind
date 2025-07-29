@@ -39,7 +39,7 @@ pub mod assistant {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PendingToolCall {
-        pub tool_call: hive_llm_client::types::ToolCall,
+        pub tool_call: hive_llm_types::types::ToolCall,
         pub result: Option<Result<tools::ToolCallResult, tools::ToolCallResult>>,
     }
 
@@ -112,7 +112,7 @@ pub mod assistant {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct AddMessage {
         pub agent: Scope,
-        pub message: hive_llm_client::types::ChatMessage,
+        pub message: hive_llm_types::types::ChatMessage,
     }
 
     impl Message for AddMessage {
@@ -121,9 +121,9 @@ pub mod assistant {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ChatState {
-        pub system: hive_llm_client::types::SystemChatMessage,
-        pub tools: Vec<hive_llm_client::types::Tool>,
-        pub messages: Vec<hive_llm_client::types::ChatMessage>,
+        pub system: hive_llm_types::types::SystemChatMessage,
+        pub tools: Vec<hive_llm_types::types::Tool>,
+        pub messages: Vec<hive_llm_types::types::ChatMessage>,
     }
 
     // hive.common.assistant.Request
@@ -140,7 +140,7 @@ pub mod assistant {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Response {
         pub request_id: Uuid,
-        pub message: hive_llm_client::types::AssistantChatMessage,
+        pub message: hive_llm_types::types::AssistantChatMessage,
     }
 
     impl Message for Response {
@@ -171,7 +171,7 @@ pub mod tools {
     // hive.common.tools.ToolsAvailable
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ToolsAvailable {
-        pub tools: Vec<hive_llm_client::types::Tool>,
+        pub tools: Vec<hive_llm_types::types::Tool>,
     }
 
     impl Message for ToolsAvailable {
@@ -181,7 +181,7 @@ pub mod tools {
     // hive.common.tools.ExecuteToolCall
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ExecuteTool {
-        pub tool_call: hive_llm_client::types::ToolCall,
+        pub tool_call: hive_llm_types::types::ToolCall,
     }
 
     impl Message for ExecuteTool {

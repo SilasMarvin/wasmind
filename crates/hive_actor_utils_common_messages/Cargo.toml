@@ -15,4 +15,4 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 
-hive_llm_client = { path = "../hive_llm_client" }
+hive_llm_types = { path = "../hive_llm_types" }

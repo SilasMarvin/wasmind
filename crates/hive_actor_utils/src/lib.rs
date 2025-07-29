@@ -3,4 +3,4 @@ pub mod messages;
 pub mod tools;
 
 pub use hive_actor_utils_common_messages as common_messages;
-pub use hive_llm_client::types as llm_client_types;
+pub use hive_llm_types::types as llm_client_types;

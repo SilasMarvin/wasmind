@@ -536,10 +536,11 @@ mod tests {
         ParsedChatConfig, ParsedConfig, ParsedDashboardConfig, ParsedGraphConfig, ParsedHiveConfig,
         ParsedModelConfig, ParsedTemporalConfig, ParsedTuiConfig,
     };
-    use hive_llm_client::{
-        client::LLMClient,
-        types::{AssistantChatMessage, ChatMessage, Tool, ToolFunctionDefinition},
-    };
+    use hive_llm_types::types::{AssistantChatMessage, ChatMessage, Tool, ToolFunctionDefinition};
+    
+    // TODO: Replace with HTTP interface - temporary client implementation
+    use reqwest;
+    use serde_json;
     use serde_json::json;
     use std::{collections::HashMap, env};
 
@@ -734,7 +735,8 @@ mod tests {
 
         // Create LLM client pointing to our container
         let base_url = litellm_manager.get_base_url();
-        let client = LLMClient::new(base_url);
+        // TODO: Replace with HTTP interface
+        // let client = LLMClient::new(base_url);
 
         // Make a simple chat request
         let messages = vec![ChatMessage::user(
