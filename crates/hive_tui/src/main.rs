@@ -5,8 +5,6 @@ mod cli;
 
 #[tokio::main]
 async fn main() -> HiveResult<()> {
-    println!("RUNNING THE HIVE TUI");
-
     hive::init_test_logger();
 
     let cli = cli::Cli::parse();

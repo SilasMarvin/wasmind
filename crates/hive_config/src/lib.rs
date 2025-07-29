@@ -6,22 +6,31 @@ use url::Url;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Config Error"))]
+    #[snafu(display("Config error"))]
     Config {
         #[snafu(source)]
         source: etcetera::HomeDirError,
         #[snafu(implicit)]
         location: Location,
     },
-    
-    #[snafu(display("IO Error: {}", source))]
+
+    #[snafu(display("IO error: {}", source))]
     Io {
         #[snafu(source)]
         source: std::io::Error,
         #[snafu(implicit)]
         location: Location,
     },
-    
+
+    #[snafu(display("Error reading file: `{:?}` {}", file, source))]
+    ReadingFile {
+        file: PathBuf,
+        #[snafu(source)]
+        source: std::io::Error,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
     #[snafu(display("TOML parsing error: {}", source))]
     TomlParse {
         #[snafu(source)]
@@ -63,8 +72,10 @@ pub struct Config {
     pub actors: Vec<Actor>,
 }
 
-pub fn load_from_path<P: AsRef<Path>>(path: P) -> Result<Config, Error> {
-    let content = std::fs::read_to_string(path).context(IoSnafu)?;
+pub fn load_from_path<P: AsRef<Path> + ToOwned<Owned = PathBuf>>(path: P) -> Result<Config, Error> {
+    let content = std::fs::read_to_string(&path).context(ReadingFileSnafu {
+        file: path.to_owned(),
+    })?;
     let config: Config = toml::from_str(&content).context(TomlParseSnafu)?;
     Ok(config)
 }

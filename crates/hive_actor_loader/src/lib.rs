@@ -433,6 +433,7 @@ impl ActorLoader {
         // Find the workspace root and construct absolute paths
         let workspace_root = std::env::current_dir().context(IoSnafu { path: None })?;
         let hive_actor_utils_path = workspace_root.join("crates").join("hive_actor_utils");
+        let hive_llm_types = workspace_root.join("crates").join("hive_llm_types");
         let hive_actor_bindings_path = workspace_root.join("crates").join("hive_actor_bindings");
 
         // Verify both paths exist
@@ -463,28 +464,43 @@ impl ActorLoader {
                 text: cargo_content,
             })?;
 
-        // Update dependencies to use absolute paths
-        if let Some(dependencies) = cargo_toml
-            .get_mut("dependencies")
-            .and_then(|d| d.as_table_mut())
-        {
-            // Update hive_actor_utils
-            if dependencies.contains_key("hive_actor_utils") {
-                dependencies.insert(
-                    "hive_actor_utils".to_string(),
-                    toml::Value::Table({
-                        let mut table = toml::Table::new();
-                        table.insert(
-                            "path".to_string(),
-                            toml::Value::String(hive_actor_utils_path.display().to_string()),
-                        );
-                        table.insert(
-                            "features".to_string(),
-                            toml::Value::Array(vec![toml::Value::String("macros".to_string())]),
-                        );
-                        table
-                    }),
-                );
+        for dependency_type in ["dependencies", "dev-dependencies"] {
+            // Update dependencies to use absolute paths
+            if let Some(dependencies) = cargo_toml
+                .get_mut(dependency_type)
+                .and_then(|d| d.as_table_mut())
+            {
+                if dependencies.contains_key("hive_actor_utils") {
+                    dependencies.insert(
+                        "hive_actor_utils".to_string(),
+                        toml::Value::Table({
+                            let mut table = toml::Table::new();
+                            table.insert(
+                                "path".to_string(),
+                                toml::Value::String(hive_actor_utils_path.display().to_string()),
+                            );
+                            table.insert(
+                                "features".to_string(),
+                                toml::Value::Array(vec![toml::Value::String("macros".to_string())]),
+                            );
+                            table
+                        }),
+                    );
+                }
+
+                if dependencies.contains_key("hive_llm_types") {
+                    dependencies.insert(
+                        "hive_llm_types".to_string(),
+                        toml::Value::Table({
+                            let mut table = toml::Table::new();
+                            table.insert(
+                                "path".to_string(),
+                                toml::Value::String(hive_llm_types.display().to_string()),
+                            );
+                            table
+                        }),
+                    );
+                }
             }
         }
 
