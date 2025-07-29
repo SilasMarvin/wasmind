@@ -1494,7 +1494,10 @@ dependencies = [
  "etcetera",
  "futures",
  "hive",
+ "hive_actor_utils",
+ "hive_actor_utils_common_messages",
  "hive_config",
+ "hive_llm_types",
  "hive_macros",
  "image",
  "lazy-regex",
@@ -1502,7 +1505,10 @@ dependencies = [
  "minijinja",
  "rand 0.9.1",
  "ratatui",
+ "reqwest",
  "rmcp",
+ "serde",
+ "serde_json",
  "serde_yaml",
  "snafu",
  "tempfile",
@@ -1514,6 +1520,8 @@ dependencies = [
  "tui-textarea",
  "tuirealm",
  "url",
+ "wasmtime",
+ "wasmtime-wasi",
 ]
 
 [[package]]

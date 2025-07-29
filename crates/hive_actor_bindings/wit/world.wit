@@ -79,6 +79,19 @@ interface command {
     }
 }
 
+interface logger {
+    /// Log levels for structured logging
+    enum log-level {
+        debug,
+        info,
+        warn,
+        error,
+    }
+    
+    /// Log a message at the specified level
+    log: func(level: log-level, message: string);
+}
+
 interface http {
     /// Headers as a list of key-value pairs
     record headers {
@@ -132,6 +145,7 @@ world actor-world {
     import messaging;
     import command;
     import http;
+    import logger;
 
     // An actor must provide an implementation of the `actor` resource.
     export actor;

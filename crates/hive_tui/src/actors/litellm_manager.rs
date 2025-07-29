@@ -6,7 +6,7 @@ use tokio::process::Command;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, info, warn};
 
-use crate::config::{LiteLLMConfig, ParsedConfig};
+use crate::config::LiteLLMConfig;
 
 #[derive(Debug, Snafu)]
 pub enum LiteLLMError {
@@ -144,73 +144,60 @@ pub struct LiteLLMHealthResponse {
 }
 
 pub struct LiteLLMManager {
-    config: ParsedConfig,
+    config: LiteLLMConfig,
     container_id: Option<String>,
 }
 
+impl Drop for LiteLLMManager {
+    fn drop(&mut self) {
+        if let Some(container_id) = &self.container_id {
+            tracing::info!("Stopping LiteLLM container on Drop: {}", container_id);
+            // Use blocking command since we can't use async in Drop
+            match std::process::Command::new("docker")
+                .args(["stop", container_id])
+                .output()
+            {
+                Ok(output) => {
+                    if output.status.success() {
+                        tracing::info!("LiteLLM container stopped successfully on Drop");
+                    } else {
+                        tracing::warn!("Docker stop failed on Drop: {}", String::from_utf8_lossy(&output.stderr));
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to execute docker stop on Drop: {}", e);
+                }
+            }
+        } else {
+            tracing::debug!("LiteLLM Drop called but no container was running");
+        }
+    }
+}
+
 impl LiteLLMManager {
-    pub fn new(config: ParsedConfig) -> Self {
+    pub fn new(config: LiteLLMConfig) -> Self {
         Self {
             config,
             container_id: None,
         }
     }
 
-    /// Generate LiteLLM config from parsed config
-    pub fn generate_config(parsed_config: &ParsedConfig) -> Result<String, LiteLLMError> {
+    /// Generate LiteLLM config from the configuration
+    pub fn generate_config(litellm_config: &LiteLLMConfig) -> Result<String, LiteLLMError> {
         let mut model_list = Vec::new();
 
-        // Add main manager model
-        if !parsed_config.hive.main_manager_model.model_name.is_empty() {
-            model_list.push(LiteLLMModelEntry {
-                model_name: parsed_config.hive.main_manager_model.model_name.clone(),
-                litellm_params: parsed_config.hive.main_manager_model.litellm_params.clone(),
-            });
-        }
-
-        // Add sub manager model (if different)
-        if !parsed_config.hive.sub_manager_model.model_name.is_empty()
-            && parsed_config.hive.sub_manager_model.model_name
-                != parsed_config.hive.main_manager_model.model_name
-        {
-            model_list.push(LiteLLMModelEntry {
-                model_name: parsed_config.hive.sub_manager_model.model_name.clone(),
-                litellm_params: parsed_config.hive.sub_manager_model.litellm_params.clone(),
-            });
-        }
-
-        // Add worker model (if different)
-        if !parsed_config.hive.worker_model.model_name.is_empty()
-            && parsed_config.hive.worker_model.model_name
-                != parsed_config.hive.main_manager_model.model_name
-            && parsed_config.hive.worker_model.model_name
-                != parsed_config.hive.sub_manager_model.model_name
-        {
-            model_list.push(LiteLLMModelEntry {
-                model_name: parsed_config.hive.worker_model.model_name.clone(),
-                litellm_params: parsed_config.hive.worker_model.litellm_params.clone(),
-            });
-        }
-
-        // Add temporal check_health model (if exists and different)
-        if !parsed_config
-            .hive
-            .temporal
-            .check_health
-            .model_name
-            .is_empty()
-            && !model_list
+        // Convert all model definitions to LiteLLM entries
+        for model_def in &litellm_config.models {
+            // Convert toml::Value to serde_json::Value for each parameter
+            let litellm_params: HashMap<String, serde_json::Value> = model_def
+                .litellm_params
                 .iter()
-                .any(|m| m.model_name == parsed_config.hive.temporal.check_health.model_name)
-        {
+                .map(|(k, v)| (k.clone(), Self::convert_toml_to_json(v.clone())))
+                .collect();
+
             model_list.push(LiteLLMModelEntry {
-                model_name: parsed_config.hive.temporal.check_health.model_name.clone(),
-                litellm_params: parsed_config
-                    .hive
-                    .temporal
-                    .check_health
-                    .litellm_params
-                    .clone(),
+                model_name: model_def.model_name.clone(),
+                litellm_params,
             });
         }
 
@@ -221,13 +208,37 @@ impl LiteLLMManager {
             });
         }
 
+        let model_count = model_list.len();
         let config_file = LiteLLMConfigFile { model_list };
         let yaml_content = serde_yaml::to_string(&config_file).context(ConfigSerializationSnafu)?;
 
-        info!("Generated LiteLLM config");
+        info!("Generated LiteLLM config for {} models", model_count);
         debug!("Config content: {}", yaml_content);
 
         Ok(yaml_content)
+    }
+
+    fn convert_toml_to_json(toml: toml::Value) -> serde_json::Value {
+        match toml {
+            toml::Value::String(s) => serde_json::Value::String(s),
+            toml::Value::Integer(i) => serde_json::Value::Number(i.into()),
+            toml::Value::Float(f) => {
+                let n =
+                    serde_json::Number::from_f64(f).expect("float infinite and nan not allowed");
+                serde_json::Value::Number(n)
+            }
+            toml::Value::Boolean(b) => serde_json::Value::Bool(b),
+            toml::Value::Array(arr) => {
+                serde_json::Value::Array(arr.into_iter().map(Self::convert_toml_to_json).collect())
+            }
+            toml::Value::Table(table) => serde_json::Value::Object(
+                table
+                    .into_iter()
+                    .map(|(k, v)| (k, Self::convert_toml_to_json(v)))
+                    .collect(),
+            ),
+            toml::Value::Datetime(dt) => serde_json::Value::String(dt.to_string()),
+        }
     }
 
     pub async fn start(&mut self) -> Result<(), LiteLLMError> {
@@ -237,21 +248,20 @@ impl LiteLLMManager {
         Self::check_docker_available().await?;
 
         // Stop any existing container with our name
-        Self::cleanup_existing_container(&self.config.hive.litellm.container_name).await?;
+        Self::cleanup_existing_container(&self.config.container_name).await?;
 
         // Generate config content
         let config_content = Self::generate_config(&self.config)?;
 
         // Collect environment variables
-        let env_vars = Self::collect_env_vars(&self.config.hive.litellm.env_overrides);
+        let env_vars = Self::collect_env_vars(&self.config.env_overrides);
 
         // Start the container
-        let container_id =
-            Self::start_container(&self.config.hive.litellm, &config_content, env_vars).await?;
+        let container_id = Self::start_container(&self.config, &config_content, env_vars).await?;
         self.container_id = Some(container_id);
 
         // Start streaming container logs in background for debugging
-        let container_name_for_logs = self.config.hive.litellm.container_name.clone();
+        let container_name_for_logs = self.config.container_name.clone();
         tokio::spawn(async move {
             if let Err(e) = Self::stream_container_logs(&container_name_for_logs).await {
                 warn!("Container log streaming failed: {}", e);
@@ -259,8 +269,8 @@ impl LiteLLMManager {
         });
 
         info!(
-            "LiteLLM container started successfully at http://localhost:{}",
-            self.config.hive.litellm.port
+            "LiteLLM container started successfully at {}",
+            self.config.get_base_url()
         );
 
         self.wait_for_health().await?;
@@ -382,7 +392,7 @@ impl LiteLLMManager {
     }
 
     pub async fn wait_for_health(&self) -> Result<(), LiteLLMError> {
-        let base_url = format!("http://localhost:{}", self.config.hive.litellm.port);
+        let base_url = self.config.get_base_url();
         let client = reqwest::Client::new();
         let health_url = format!("{}/health", base_url);
         let max_attempts = 30;
@@ -465,7 +475,7 @@ impl LiteLLMManager {
     }
 
     pub fn get_base_url(&self) -> String {
-        format!("http://localhost:{}", self.config.hive.litellm.port)
+        self.config.get_base_url()
     }
 
     async fn stream_container_logs(
@@ -510,106 +520,92 @@ impl LiteLLMManager {
 
         Ok(())
     }
-
-    /// Stop the LiteLLM container if it's running
-    pub async fn stop(&mut self) -> Result<(), LiteLLMError> {
-        if let Some(container_id) = self.container_id.take() {
-            info!("Stopping LiteLLM container: {}", container_id);
-
-            // Try to stop the container with timeout
-            Command::new("docker")
-                .args(["stop".to_string(), container_id])
-                .output()
-                .await
-                .context(DockerCommandSnafu)
-                .map(|_| ())
-        } else {
-            Ok(())
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{
-        ParsedChatConfig, ParsedConfig, ParsedDashboardConfig, ParsedGraphConfig, ParsedHiveConfig,
-        ParsedModelConfig, ParsedTemporalConfig, ParsedTuiConfig,
-    };
-    use hive_llm_types::types::{AssistantChatMessage, ChatMessage, Tool, ToolFunctionDefinition};
-    
-    // TODO: Replace with HTTP interface - temporary client implementation
-    use reqwest;
-    use serde_json;
+    use crate::config::ModelDefinition;
     use serde_json::json;
-    use std::{collections::HashMap, env};
+    use std::collections::HashMap;
 
-    fn create_test_model_config(
-        model_name: &str,
-        litellm_params: HashMap<String, serde_json::Value>,
-    ) -> ParsedModelConfig {
-        ParsedModelConfig {
-            model_name: model_name.to_string(),
-            system_prompt: "You are a helpful assistant.".to_string(),
-            litellm_params,
-            base_url: "http://localhost:4000".to_string(),
-        }
-    }
+    fn create_test_litellm_config() -> LiteLLMConfig {
+        let mut models = Vec::new();
 
-    fn create_test_parsed_config() -> ParsedConfig {
-        let mut main_manager_params = HashMap::new();
-        main_manager_params.insert("model".to_string(), json!("azure/gpt-4o"));
-        main_manager_params.insert("api_base".to_string(), json!("os.environ/AZURE_API_BASE"));
-        main_manager_params.insert("api_key".to_string(), json!("os.environ/AZURE_API_KEY"));
+        // Add gpt-4o model
+        let mut gpt4_params = HashMap::new();
+        gpt4_params.insert(
+            "model".to_string(),
+            toml::Value::String("azure/gpt-4o".to_string()),
+        );
+        gpt4_params.insert(
+            "api_base".to_string(),
+            toml::Value::String("os.environ/AZURE_API_BASE".to_string()),
+        );
+        gpt4_params.insert(
+            "api_key".to_string(),
+            toml::Value::String("os.environ/AZURE_API_KEY".to_string()),
+        );
 
-        let mut worker_params = HashMap::new();
-        worker_params.insert("model".to_string(), json!("openai/gpt-3.5-turbo"));
-        worker_params.insert("api_key".to_string(), json!("os.environ/OPENAI_API_KEY"));
+        models.push(ModelDefinition {
+            model_name: "gpt-4o".to_string(),
+            litellm_params: gpt4_params,
+        });
 
-        let mut temporal_params = HashMap::new();
-        temporal_params.insert("model".to_string(), json!("anthropic/claude-3-sonnet"));
-        temporal_params.insert("api_key".to_string(), json!("os.environ/ANTHROPIC_API_KEY"));
+        // Add gpt-3.5-turbo model
+        let mut gpt35_params = HashMap::new();
+        gpt35_params.insert(
+            "model".to_string(),
+            toml::Value::String("openai/gpt-3.5-turbo".to_string()),
+        );
+        gpt35_params.insert(
+            "api_key".to_string(),
+            toml::Value::String("os.environ/OPENAI_API_KEY".to_string()),
+        );
 
-        ParsedConfig {
-            tui: ParsedTuiConfig {
-                dashboard: ParsedDashboardConfig {
-                    key_bindings: HashMap::new(),
-                },
-                chat: ParsedChatConfig {
-                    key_bindings: HashMap::new(),
-                },
-                graph: ParsedGraphConfig {
-                    key_bindings: HashMap::new(),
-                },
-            },
-            mcp_servers: HashMap::new(),
-            whitelisted_commands: vec![],
-            auto_approve_commands: false,
-            hive: ParsedHiveConfig {
-                main_manager_model: create_test_model_config("gpt-4o", main_manager_params),
-                sub_manager_model: create_test_model_config("gpt-4o", HashMap::new()), // Same as main manager
-                worker_model: create_test_model_config("gpt-3.5-turbo", worker_params),
-                temporal: ParsedTemporalConfig {
-                    check_health: create_test_model_config("claude-3-sonnet", temporal_params),
-                },
-                litellm: crate::config::LiteLLMConfig::default(),
-            },
+        models.push(ModelDefinition {
+            model_name: "gpt-3.5-turbo".to_string(),
+            litellm_params: gpt35_params,
+        });
+
+        // Add claude model
+        let mut claude_params = HashMap::new();
+        claude_params.insert(
+            "model".to_string(),
+            toml::Value::String("anthropic/claude-3-sonnet".to_string()),
+        );
+        claude_params.insert(
+            "api_key".to_string(),
+            toml::Value::String("os.environ/ANTHROPIC_API_KEY".to_string()),
+        );
+
+        models.push(ModelDefinition {
+            model_name: "claude-3-sonnet".to_string(),
+            litellm_params: claude_params,
+        });
+
+        LiteLLMConfig {
+            image: "ghcr.io/berriai/litellm:main-latest".to_string(),
+            port: 4000,
+            container_name: "hive-litellm-test".to_string(),
+            env_overrides: HashMap::new(),
+            models,
         }
     }
 
     #[test]
     fn test_generate_config() {
-        let parsed_config = create_test_parsed_config();
+        let litellm_config = create_test_litellm_config();
 
         let config_content =
-            LiteLLMManager::generate_config(&parsed_config).expect("Should generate config");
+            LiteLLMManager::generate_config(&litellm_config).expect("Should generate config");
 
         // Parse the generated YAML
         let config_file: LiteLLMConfigFile =
             serde_yaml::from_str(&config_content).expect("Should parse YAML");
 
-        // Verify we have the expected models (should deduplicate)
-        assert_eq!(config_file.model_list.len(), 3); // gpt-4o, gpt-3.5-turbo, claude-3-sonnet
+        // Verify we have the expected models
+        assert_eq!(config_file.model_list.len(), 3);
 
         // Find each model and verify their parameters
         let gpt4_model = config_file
@@ -651,46 +647,16 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_config_deduplication() {
-        let mut parsed_config = create_test_parsed_config();
-
-        // Make all models the same
-        let same_params = {
-            let mut params = HashMap::new();
-            params.insert("model".to_string(), json!("openai/gpt-4"));
-            params.insert("api_key".to_string(), json!("os.environ/OPENAI_API_KEY"));
-            params
+    fn test_generate_config_empty_models() {
+        let litellm_config = LiteLLMConfig {
+            image: "ghcr.io/berriai/litellm:main-latest".to_string(),
+            port: 4000,
+            container_name: "hive-litellm-test".to_string(),
+            env_overrides: HashMap::new(),
+            models: Vec::new(),
         };
 
-        let same_model = create_test_model_config("gpt-4", same_params);
-
-        parsed_config.hive.main_manager_model = same_model.clone();
-        parsed_config.hive.sub_manager_model = same_model.clone();
-        parsed_config.hive.worker_model = same_model.clone();
-        parsed_config.hive.temporal.check_health = same_model;
-
-        let config_content =
-            LiteLLMManager::generate_config(&parsed_config).expect("Should generate config");
-
-        let config_file: LiteLLMConfigFile =
-            serde_yaml::from_str(&config_content).expect("Should parse YAML");
-
-        // Should only have one model due to deduplication
-        assert_eq!(config_file.model_list.len(), 1);
-        assert_eq!(config_file.model_list[0].model_name, "gpt-4");
-    }
-
-    #[test]
-    fn test_generate_config_empty_models() {
-        let mut parsed_config = create_test_parsed_config();
-
-        // Set all model names to empty
-        parsed_config.hive.main_manager_model.model_name = "".to_string();
-        parsed_config.hive.sub_manager_model.model_name = "".to_string();
-        parsed_config.hive.worker_model.model_name = "".to_string();
-        parsed_config.hive.temporal.check_health.model_name = "".to_string();
-
-        let result = LiteLLMManager::generate_config(&parsed_config);
+        let result = LiteLLMManager::generate_config(&litellm_config);
 
         // Should fail with no models configured
         assert!(result.is_err());
@@ -699,160 +665,6 @@ mod tests {
                 assert_eq!(message, "No models configured");
             }
             _ => panic!("Expected ConfigFileCreation error"),
-        }
-    }
-
-    #[tokio::test]
-    #[ignore] // Skip by default - requires Docker and API keys
-    async fn test_integration_docker_container_with_llm_client() {
-        // Initialize tracing for this test to see debug output
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::from_default_env()
-                    .add_directive("hive=info".parse().unwrap()),
-            )
-            .try_init();
-
-        // Skip if no API key is available
-        if env::var("OPENAI_API_KEY").is_err() {
-            println!("❌ Skipping integration test - OPENAI_API_KEY not set");
-            return;
-        }
-
-        let mut parsed_config = create_test_parsed_config_with_openai();
-        parsed_config.hive.litellm.port = 4001;
-
-        let mut litellm_manager = LiteLLMManager::new(parsed_config.clone());
-        litellm_manager.start().await.unwrap();
-
-        // Start streaming container logs in background
-        let container_name = parsed_config.hive.litellm.container_name.clone();
-        tokio::spawn(async move {
-            if let Err(e) = LiteLLMManager::stream_container_logs(&container_name).await {
-                warn!("Container log streaming failed: {}", e);
-            }
-        });
-
-        // Create LLM client pointing to our container
-        let base_url = litellm_manager.get_base_url();
-        // TODO: Replace with HTTP interface
-        // let client = LLMClient::new(base_url);
-
-        // Make a simple chat request
-        let messages = vec![ChatMessage::user(
-            "What's the weather like in San Francisco",
-        )];
-
-        let tools = vec![Tool {
-            tool_type: "function".to_string(),
-            function: ToolFunctionDefinition {
-                name: "get_current_weather".to_string(),
-                description: "Get the current weather in a given location".to_string(),
-                parameters: serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "location": {
-                            "type": "string",
-                            "description": "The city and state, e.g. San Francisco, CA",
-                        },
-                        "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
-                    },
-                    "required": ["location"],
-                }),
-            },
-        }];
-
-        let response = client
-            .chat(
-                "gpt-4o",
-                "Use your tools to answer the users questions",
-                messages,
-                Some(tools),
-            )
-            .await
-            .expect("Should get response from LiteLLM");
-
-        // Verify we got a response
-        assert!(
-            !response.choices.is_empty(),
-            "Should have at least one choice"
-        );
-
-        let message = &response.choices[0].message;
-        match message {
-            ChatMessage::Assistant(AssistantChatMessage {
-                content: Some(content),
-                tool_calls: Some(tool_calls),
-                ..
-            }) => {
-                assert!(!content.is_empty(), "Response content should not be empty");
-                assert!(
-                    !tool_calls.is_empty(),
-                    "Tool calls content should not be empty"
-                );
-            }
-            _ => panic!("Expected assistant message with content"),
-        }
-
-        litellm_manager.stop().await.unwrap();
-
-        info!("Integration test completed successfully");
-    }
-
-    fn create_test_parsed_config_with_openai() -> ParsedConfig {
-        let mut openai_params = HashMap::new();
-        openai_params.insert("model".to_string(), json!("openai/gpt-4o"));
-        openai_params.insert("api_key".to_string(), json!("os.environ/OPENAI_API_KEY"));
-
-        ParsedConfig {
-            tui: ParsedTuiConfig {
-                dashboard: ParsedDashboardConfig {
-                    key_bindings: HashMap::new(),
-                },
-                chat: ParsedChatConfig {
-                    key_bindings: HashMap::new(),
-                },
-                graph: ParsedGraphConfig {
-                    key_bindings: HashMap::new(),
-                },
-            },
-            mcp_servers: HashMap::new(),
-            whitelisted_commands: vec![],
-            auto_approve_commands: false,
-            hive: ParsedHiveConfig {
-                main_manager_model: ParsedModelConfig {
-                    model_name: "gpt-4o".to_string(),
-                    system_prompt: "You are a helpful assistant.".to_string(),
-                    litellm_params: openai_params.clone(),
-                    base_url: "http://localhost:4001".to_string(),
-                },
-                sub_manager_model: ParsedModelConfig {
-                    model_name: "gpt-4o".to_string(),
-                    system_prompt: "You are a helpful assistant.".to_string(),
-                    litellm_params: openai_params.clone(),
-                    base_url: "http://localhost:4001".to_string(),
-                },
-                worker_model: ParsedModelConfig {
-                    model_name: "gpt-4o".to_string(),
-                    system_prompt: "You are a helpful assistant.".to_string(),
-                    litellm_params: openai_params.clone(),
-                    base_url: "http://localhost:4001".to_string(),
-                },
-                temporal: ParsedTemporalConfig {
-                    check_health: ParsedModelConfig {
-                        model_name: "gpt-4o".to_string(),
-                        system_prompt: "You are a helpful assistant.".to_string(),
-                        litellm_params: openai_params.clone(),
-                        base_url: "http://localhost:4001".to_string(),
-                    },
-                },
-                litellm: crate::config::LiteLLMConfig {
-                    port: 4001,
-                    image: "ghcr.io/berriai/litellm:main-latest".to_string(),
-                    container_name: "hive-litellm-integration-test".to_string(),
-                    env_overrides: HashMap::new(),
-                },
-            },
         }
     }
 
@@ -909,5 +721,30 @@ mod tests {
                 .unwrap(),
             &json!("2025-01-01-preview")
         );
+    }
+
+    #[test]
+    fn test_convert_toml_to_json() {
+        // Test string conversion
+        let toml_str = toml::Value::String("test".to_string());
+        let json_str = LiteLLMManager::convert_toml_to_json(toml_str);
+        assert_eq!(json_str, json!("test"));
+
+        // Test integer conversion
+        let toml_int = toml::Value::Integer(42);
+        let json_int = LiteLLMManager::convert_toml_to_json(toml_int);
+        assert_eq!(json_int, json!(42));
+
+        // Test boolean conversion
+        let toml_bool = toml::Value::Boolean(true);
+        let json_bool = LiteLLMManager::convert_toml_to_json(toml_bool);
+        assert_eq!(json_bool, json!(true));
+
+        // Test table conversion
+        let mut toml_table = toml::Table::new();
+        toml_table.insert("key".to_string(), toml::Value::String("value".to_string()));
+        let toml_table_val = toml::Value::Table(toml_table);
+        let json_table = LiteLLMManager::convert_toml_to_json(toml_table_val);
+        assert_eq!(json_table, json!({"key": "value"}));
     }
 }

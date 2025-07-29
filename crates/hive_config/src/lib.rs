@@ -1,5 +1,5 @@
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 use snafu::{Location, ResultExt, Snafu};
 use std::path::{Path, PathBuf};
 use url::Url;
@@ -67,17 +67,51 @@ pub struct Actor {
     pub config: Option<toml::Table>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct Config {
+    raw_config: toml::Table,
     pub actors: Vec<Actor>,
+    pub starting_actors: Vec<String>,
+}
+
+impl Config {
+    pub fn parse_section<T: DeserializeOwned>(&self, section_name: &str) -> Result<Option<T>, Error> {
+        if let Some(section) = self.raw_config.get(section_name) {
+            let value: T = section.clone().try_into().context(TomlParseSnafu)?;
+            Ok(Some(value))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn get_raw_table(&self, section_name: &str) -> Option<&toml::Table> {
+        self.raw_config.get(section_name)?.as_table()
+    }
 }
 
 pub fn load_from_path<P: AsRef<Path> + ToOwned<Owned = PathBuf>>(path: P) -> Result<Config, Error> {
     let content = std::fs::read_to_string(&path).context(ReadingFileSnafu {
         file: path.to_owned(),
     })?;
-    let config: Config = toml::from_str(&content).context(TomlParseSnafu)?;
-    Ok(config)
+    let raw_config: toml::Table = toml::from_str(&content).context(TomlParseSnafu)?;
+    
+    let actors = if let Some(actors_section) = raw_config.get("actors") {
+        actors_section.clone().try_into().context(TomlParseSnafu)?
+    } else {
+        Vec::new()
+    };
+    
+    let starting_actors = if let Some(starting_actors_section) = raw_config.get("starting_actors") {
+        starting_actors_section.clone().try_into().context(TomlParseSnafu)?
+    } else {
+        Vec::new()
+    };
+    
+    Ok(Config {
+        raw_config,
+        actors,
+        starting_actors,
+    })
 }
 
 pub fn load_default_config() -> Result<Config, Error> {

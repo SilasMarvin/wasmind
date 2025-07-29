@@ -15,6 +15,11 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 hive = { path = "../hive" }
 hive_config = { path = "../hive_config" }
+hive_actor_utils = { path = "../hive_actor_utils" }
+hive_actor_utils_common_messages = { path = "../hive_actor_utils_common_messages" }
+hive_llm_types = { path = "../hive_llm_types" }
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
 
 rand = "0.9"
 throbber-widgets-tui = "0.8"
@@ -24,6 +29,9 @@ base64 = "0.22.1"
 etcetera = "0.10.0"
 image = "0.25.6"
 toml = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 futures = "0.3.31"
@@ -35,6 +43,6 @@ minijinja = { version = "2.6", features = ["builtins"] }
 clap = { version = "4.0", features = ["derive"] }
 async-trait = "0.1"
 tuirealm = { version = "3", default-features = false, features = [ "derive", "crossterm", "async-ports"]}
-serde_yaml = "0.9"
+serde_yaml = { workspace = true }
 tempfile = "3"
 tui-textarea = "^0.7"

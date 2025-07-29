@@ -49,9 +49,14 @@ impl http::HostRequest for ActorState {
         key: String,
         value: String,
     ) -> Resource<HttpRequestResource> {
-        let req = self.table.get_mut(&self_).unwrap();
+        // WASM Component Model Resource Ownership:
+        // When a WIT method takes a resource by value and returns a resource,
+        // it must consume the input resource and create a new one. Returning
+        // the same resource handle violates ownership semantics and causes
+        // "cannot lower a `borrow` resource into an `own`" errors.
+        let mut req = self.table.delete(self_).unwrap(); 
         req.builder = req.builder.try_clone().unwrap().header(key, value);
-        self_
+        self.table.push(req).unwrap()
     }
 
     async fn headers(
@@ -59,7 +64,7 @@ impl http::HostRequest for ActorState {
         self_: Resource<HttpRequestResource>,
         headers: http::Headers,
     ) -> Resource<HttpRequestResource> {
-        let req = self.table.get_mut(&self_).unwrap();
+        let mut req = self.table.delete(self_).unwrap();
         let mut builder = req.builder.try_clone().unwrap();
         
         for (key, value) in headers.headers {
@@ -67,7 +72,7 @@ impl http::HostRequest for ActorState {
         }
         
         req.builder = builder;
-        self_
+        self.table.push(req).unwrap()
     }
 
     async fn body(
@@ -75,9 +80,9 @@ impl http::HostRequest for ActorState {
         self_: Resource<HttpRequestResource>,
         body: Vec<u8>,
     ) -> Resource<HttpRequestResource> {
-        let req = self.table.get_mut(&self_).unwrap();
+        let mut req = self.table.delete(self_).unwrap();
         req.builder = req.builder.try_clone().unwrap().body(body);
-        self_
+        self.table.push(req).unwrap()
     }
 
     async fn timeout(
@@ -85,16 +90,16 @@ impl http::HostRequest for ActorState {
         self_: Resource<HttpRequestResource>,
         seconds: u32,
     ) -> Resource<HttpRequestResource> {
-        let req = self.table.get_mut(&self_).unwrap();
+        let mut req = self.table.delete(self_).unwrap();
         req.timeout_seconds = Some(seconds);
-        self_
+        self.table.push(req).unwrap()
     }
 
     async fn send(
         &mut self,
         self_: Resource<HttpRequestResource>,
     ) -> Result<http::Response, http::RequestError> {
-        let req_resource = self.table.get_mut(&self_).map_err(|e| {
+        let req_resource = self.table.delete(self_).map_err(|e| {
             http::RequestError::BuilderError(e.to_string())
         })?;
         

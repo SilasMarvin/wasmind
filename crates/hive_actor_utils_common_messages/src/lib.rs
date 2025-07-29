@@ -46,7 +46,7 @@ pub mod assistant {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum WaitReason {
         WaitingForUserInput,
-        WaitForSystem {
+        WaitingForSystemOrUser {
             tool_name: Option<String>,
             tool_call_id: String,
             required_scope_id: Option<String>,
@@ -54,6 +54,7 @@ pub mod assistant {
         WaitingForTools {
             tool_calls: HashMap<String, PendingToolCall>,
         },
+        WaitingForLiteLLM,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,5 +223,21 @@ pub mod tools {
 
     impl Message for ToolCallStatusUpdate {
         const MESSAGE_TYPE: &str = "hive.common.tools.ToolCallStatusUpdate";
+    }
+}
+
+pub mod litellm {
+    use super::Message;
+    use serde::{Deserialize, Serialize};
+
+    // hive.common.litellm.BaseUrlUpdate
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct BaseUrlUpdate {
+        pub base_url: String,
+        pub models_available: Vec<String>,
+    }
+
+    impl Message for BaseUrlUpdate {
+        const MESSAGE_TYPE: &str = "hive.common.litellm.BaseUrlUpdate";
     }
 }

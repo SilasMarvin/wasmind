@@ -9,6 +9,7 @@ use crate::{actors::MessageEnvelope, scope::Scope};
 
 pub mod command;
 pub mod http;
+pub mod logger;
 pub mod messaging;
 
 pub struct ActorState {

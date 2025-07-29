@@ -16,6 +16,10 @@ pub struct CommandResource {
 impl command::Host for ActorState {}
 
 impl command::HostCmd for ActorState {
+    // WASM Component Model Resource Ownership:
+    // All builder methods (env, args, timeout, etc.) must consume the input resource
+    // and create a new one. Returning the same resource handle violates ownership
+    // semantics and causes "cannot lower a `borrow` resource into an `own`" errors.
     async fn new(&mut self, command: String) -> wasmtime::component::Resource<CommandResource> {
         let command_resource = CommandResource {
             command: Command::new(command),
@@ -31,15 +35,15 @@ impl command::HostCmd for ActorState {
         key: String,
         value: String,
     ) -> wasmtime::component::Resource<CommandResource> {
-        let cmd = self.table.get_mut(&self_).unwrap();
+        let mut cmd = self.table.delete(self_).unwrap();
         cmd.command.env(key, value);
-        self_
+        self.table.push(cmd).unwrap()
     }
 
     async fn env_clear(&mut self, self_: Resource<CommandResource>) -> Resource<CommandResource> {
-        let cmd = self.table.get_mut(&self_).unwrap();
+        let mut cmd = self.table.delete(self_).unwrap();
         cmd.command.env_clear();
-        self_
+        self.table.push(cmd).unwrap()
     }
 
     async fn args(
@@ -47,9 +51,9 @@ impl command::HostCmd for ActorState {
         self_: Resource<CommandResource>,
         args: Vec<String>,
     ) -> Resource<CommandResource> {
-        let cmd = self.table.get_mut(&self_).unwrap();
+        let mut cmd = self.table.delete(self_).unwrap();
         cmd.command.args(args);
-        self_
+        self.table.push(cmd).unwrap()
     }
 
     async fn current_dir(
@@ -57,9 +61,9 @@ impl command::HostCmd for ActorState {
         self_: Resource<CommandResource>,
         dir: String,
     ) -> Resource<CommandResource> {
-        let cmd = self.table.get_mut(&self_).unwrap();
+        let mut cmd = self.table.delete(self_).unwrap();
         cmd.command.current_dir(dir);
-        self_
+        self.table.push(cmd).unwrap()
     }
 
     async fn timeout(
@@ -67,16 +71,16 @@ impl command::HostCmd for ActorState {
         self_: Resource<CommandResource>,
         seconds: u32,
     ) -> Resource<CommandResource> {
-        let cmd = self.table.get_mut(&self_).unwrap();
+        let mut cmd = self.table.delete(self_).unwrap();
         cmd.timeout_seconds = Some(seconds);
-        self_
+        self.table.push(cmd).unwrap()
     }
 
     async fn run(
         &mut self,
         self_: Resource<CommandResource>,
     ) -> std::result::Result<command::CommandOutput, String> {
-        let cmd_resource = self.table.get_mut(&self_).map_err(|e| e.to_string())?;
+        let mut cmd_resource = self.table.delete(self_).map_err(|e| e.to_string())?;
 
         let child = match cmd_resource.command.spawn() {
             Ok(child) => child,

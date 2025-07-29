@@ -18,6 +18,7 @@ serde = { version = "1" }
 wasmtime = { version = "34", features = ["async"] }
 wasmtime-wasi = "34"
 serde_json = "1.0.140"
+serde_yaml = "0.9"
 reqwest = { version = "0.12", features = ["json"] }
 wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }
 snafu = "0.8"

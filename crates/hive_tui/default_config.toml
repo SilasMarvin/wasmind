@@ -9,10 +9,21 @@ name = "assistant"
 source = { Path = "/Users/silasmarvin/github/hive/actors/assistant" }
 
 [actors.config]
-model_name = "gpt-4"
+model_name = "gpt-4o"
 system_prompt = "You are a helpful assistant."
-base_url = "http://localhost:4000"
-litellm_params = {}
+
+# LiteLLM configuration
+[litellm]
+image = "ghcr.io/berriai/litellm:main-latest"
+port = 4000
+container_name = "hive-litellm"
+
+# Model definitions for LiteLLM
+[[litellm.models]]
+model_name = "gpt-4o"
+[litellm.models.litellm_params]
+model = "openai/gpt-4o"
+api_key = "os.environ/OPENAI_API_KEY"
 
 # # Automatically approve non-whitelisted commands (default: false)
 # # When false, non-whitelisted commands require user confirmation

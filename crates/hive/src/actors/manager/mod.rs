@@ -1,4 +1,4 @@
-use hive::actor::{command, http, messaging};
+use hive::actor::{command, http, logger, messaging};
 use hive_actor_utils_common_messages::{Message, actors};
 use tokio::sync::broadcast;
 use wasmtime::{
@@ -57,13 +57,16 @@ impl Manager {
         messaging::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
         command::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
         http::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
+        logger::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
 
         let actor_world = ActorWorld::instantiate_async(&mut store, &component, &linker)
             .await
             .unwrap();
 
-        let config_str = actor_config.map(|c| toml::to_string(&c).unwrap_or_default()).unwrap_or_default();
-        
+        let config_str = actor_config
+            .map(|c| toml::to_string(&c).unwrap_or_default())
+            .unwrap_or_default();
+
         let actor_resource = actor_world
             .hive_actor_actor()
             .actor()
