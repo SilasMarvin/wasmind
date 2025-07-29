@@ -10,17 +10,14 @@ async fn main() -> HiveResult<()> {
     hive::init_test_logger();
 
     let cli = cli::Cli::parse();
-    
+
     // Load configuration
     let config = if let Some(config_path) = cli.config {
-        hive_config::load_from_path(config_path)
+        hive_config::load_from_path(config_path)?
     } else {
-        hive_config::load_default_config()
-    }.map_err(|e| hive::Error::Whatever { 
-        message: format!("Failed to load config: {}", e),
-        source: None 
-    })?;
-    
+        hive_config::load_default_config()?
+    };
+
     let starting_actors = vec!["execute_bash", "assistant"];
     let loaded_actors = hive::load_actors(config.actors).await?;
 

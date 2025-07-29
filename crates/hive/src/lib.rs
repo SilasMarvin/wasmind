@@ -11,7 +11,7 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Config Error"))]
+    #[snafu(transparent)]
     Config {
         #[snafu(source)]
         source: hive_config::Error,
