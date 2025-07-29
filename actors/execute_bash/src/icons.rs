@@ -1,5 +1,4 @@
 // Command execution icons
-pub const GEAR_ICON: &'static str = "⚙";
 pub const SUCCESS_ICON: &'static str = "✓";
 pub const FAILED_ICON: &'static str = "✗";
 pub const TIMEOUT_ICON: &'static str = "◐";

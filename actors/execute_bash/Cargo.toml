@@ -18,5 +18,8 @@ serde_json = "1"
 
 hive_actor_utils = { path = "../../crates/hive_actor_utils", features = ["macros"] }
 
+[dev-dependencies]
+hive_llm_types = { path = "../../crates/hive_llm_types" }
+
 [package.metadata.component.target.dependencies]
 "hive:actor" = { path = "../../crates/hive_actor_bindings/wit" }
