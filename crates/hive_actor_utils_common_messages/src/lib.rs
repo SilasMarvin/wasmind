@@ -46,10 +46,15 @@ pub mod assistant {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum WaitReason {
         WaitingForUserInput,
-        WaitingForSystemOrUser {
-            tool_name: Option<String>,
-            tool_call_id: String,
-            required_scope_id: Option<String>,
+        WaitingForSystemInput { 
+            required_scope: Option<String>,
+            interruptible_by_user: bool 
+        },
+        WaitingForAgentCoordination {
+            coordinating_tool_call_id: String,
+            coordinating_tool_name: String,
+            target_agent_scope: Option<String>,
+            user_can_interrupt: bool,
         },
         WaitingForTools {
             tool_calls: HashMap<String, PendingToolCall>,

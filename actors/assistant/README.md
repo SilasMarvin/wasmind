@@ -124,10 +124,25 @@ Notifies other actors of state changes (future implementation).
 
 The Assistant Actor maintains a state machine with the following states:
 
-### `WaitingForSystemOrUser`
-**Initial state** - Ready to receive user input or system messages.
-- **Triggers**: User message, system message, or initialization
-- **Transitions to**: `Processing` when submitting to LLM
+### `WaitingForSystemInput`
+**Initial state** - Waiting for system messages, with optional user interruption.
+- **Fields**: 
+  - `required_scope: Option<String>` - Only accept messages from specific scope if set
+  - `interruptible_by_user: bool` - Whether user messages can interrupt this wait
+- **Triggers**: System message (from required scope if specified), user message (if interruptible)
+- **Transitions to**: `Processing` when valid input received
+- **Use cases**: Conversation compaction, base URL waiting, general system coordination
+
+### `WaitingForAgentCoordination`
+Waiting for agent-to-agent communication to complete via tool coordination.
+- **Fields**:
+  - `coordinating_tool_call_id: String` - Tool call that initiated the coordination
+  - `coordinating_tool_name: String` - Name of the coordinating tool
+  - `target_agent_scope: Option<String>` - Specific agent to wait for (if any)
+  - `user_can_interrupt: bool` - Whether user input can interrupt coordination
+- **Triggers**: Tool requests coordination, target agent responds, user interrupts (if allowed)
+- **Transitions to**: Tool completion when agent responds
+- **Use cases**: Inter-agent messaging, agent queries, coordinated operations
 
 ### `WaitingForUserInput`
 Specifically waiting for user interaction.
@@ -137,7 +152,7 @@ Specifically waiting for user interaction.
 ### `WaitingForLiteLLM`
 Waiting for LiteLLM base URL to become available.
 - **Triggers**: No base URL available
-- **Transitions to**: `WaitingForSystemOrUser` when base URL received
+- **Transitions to**: `WaitingForSystemInput` when base URL received
 
 ### `Processing`
 Actively processing a request with the LLM.
@@ -145,12 +160,14 @@ Actively processing a request with the LLM.
 - **Transitions to**: 
   - `WaitingForTools` if LLM response contains tool calls
   - `WaitingForUserInput` if response is complete
-  - `WaitingForSystemOrUser` on error
+  - `WaitingForSystemInput` on error
 
 ### `WaitingForTools`
 Waiting for tool execution to complete.
 - **Triggers**: LLM response with tool calls
-- **Transitions to**: `Processing` when all tools complete
+- **Transitions to**: 
+  - `Processing` when all tools complete
+  - `WaitingForAgentCoordination` when tool requests agent coordination
 
 ## System Prompt Rendering
 

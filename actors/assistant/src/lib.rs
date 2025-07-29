@@ -159,10 +159,9 @@ impl Assistant {
                     );
                     self.set_status(
                         Status::Wait {
-                            reason: WaitReason::WaitingForSystemOrUser {
-                                tool_name: None,
-                                tool_call_id: "no_base_url".to_string(),
-                                required_scope_id: None,
+                            reason: WaitReason::WaitingForSystemInput {
+                                required_scope: None,
+                                interruptible_by_user: true,
                             },
                         },
                         true,
@@ -335,13 +334,13 @@ impl Assistant {
                 }
                 Status::Wait {
                     reason:
-                        WaitReason::WaitingForSystemOrUser {
-                            tool_name,
-                            tool_call_id,
+                        WaitReason::WaitingForAgentCoordination {
+                            coordinating_tool_call_id,
+                            coordinating_tool_name,
                             ..
                         },
                 } => {
-                    if tool_call_id != &update.id {
+                    if coordinating_tool_call_id != &update.id {
                         return;
                     }
 
@@ -351,7 +350,7 @@ impl Assistant {
 
                     self.add_chat_messages([ChatMessage::tool(
                         update.id,
-                        tool_name.clone().unwrap_or("system_tool".to_string()),
+                        coordinating_tool_name.clone(),
                         content,
                     )]);
                 }
@@ -371,10 +370,9 @@ impl GeneratedActorTrait for Assistant {
         // Always start waiting for system or user input
         // Base URL will be provided either through config or broadcast
         let initial_status = Status::Wait {
-            reason: WaitReason::WaitingForSystemOrUser {
-                tool_name: None,
-                tool_call_id: "initial".to_string(),
-                required_scope_id: None,
+            reason: WaitReason::WaitingForSystemInput {
+                required_scope: None,
+                interruptible_by_user: true,
             },
         };
         let base_url = config.base_url.clone();
@@ -492,10 +490,9 @@ impl GeneratedActorTrait for Assistant {
             ) {
                 self.set_status(
                     Status::Wait {
-                        reason: WaitReason::WaitingForSystemOrUser {
-                            tool_name: None,
-                            tool_call_id: "base_url_received".to_string(),
-                            required_scope_id: None,
+                        reason: WaitReason::WaitingForSystemInput {
+                            required_scope: None,
+                            interruptible_by_user: true,
                         },
                     },
                     true,
@@ -514,34 +511,57 @@ impl GeneratedActorTrait for Assistant {
                     // Submit the message immediately if:
                     // 1. We are waiting for a SystemMessage from a specific scope and the message is from that scope
                     // 2. We are waiting for a SystemMessage from no specific scope
-                    if let Status::Wait {
-                        reason:
-                            WaitReason::WaitingForSystemOrUser {
-                                required_scope_id, ..
+                    match &self.status {
+                        Status::Wait {
+                            reason: WaitReason::WaitingForSystemInput {
+                                required_scope, ..
                             },
-                    } = &self.status
-                    {
-                        if required_scope_id.is_some() {
-                            if required_scope_id.as_ref().unwrap() == &self.scope {
+                        } => {
+                            if let Some(required_scope) = required_scope {
+                                if required_scope == &message.from_scope {
+                                    self.submit(false);
+                                }
+                            } else {
                                 self.submit(false);
                             }
-                        } else {
-                            self.submit(false);
                         }
+                        Status::Wait {
+                            reason: WaitReason::WaitingForAgentCoordination {
+                                target_agent_scope, ..
+                            },
+                        } => {
+                            if let Some(target_scope) = target_agent_scope {
+                                if target_scope == &message.from_scope {
+                                    self.submit(false);
+                                }
+                            } else {
+                                self.submit(false);
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 // Submit the message immediately if:
                 // 1. We are waiting for UserInput
-                // 2. We are waiting for SystemOrUser
-                // NOTE: This means a UserMessage essentially overrides the WaitingForSystemOrUser state
+                // 2. We are waiting for SystemInput with interruptible_by_user = true
+                // 3. We are waiting for AgentCoordination with user_can_interrupt = true
                 ChatMessage::User(user_chat_message) => {
                     self.pending_message.set_user_message(user_chat_message);
                     match self.status {
                         Status::Wait {
                             reason: WaitReason::WaitingForUserInput,
-                        }
-                        | Status::Wait {
-                            reason: WaitReason::WaitingForSystemOrUser { .. },
+                        } => self.submit(false),
+                        Status::Wait {
+                            reason: WaitReason::WaitingForSystemInput {
+                                interruptible_by_user: true,
+                                ..
+                            },
+                        } => self.submit(false),
+                        Status::Wait {
+                            reason: WaitReason::WaitingForAgentCoordination {
+                                user_can_interrupt: true,
+                                ..
+                            },
                         } => self.submit(false),
                         _ => (),
                     }
