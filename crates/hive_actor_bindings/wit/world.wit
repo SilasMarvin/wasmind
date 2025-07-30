@@ -139,7 +139,7 @@ interface http {
 interface agent {
     /// Spawn a new agent with the specified actors
     /// Returns the scope ID of the newly created agent
-    spawn-agent: func(actor-ids: list<string>) -> result<string, string>;
+    spawn-agent: func(actor-ids: list<string>, agent-name: string) -> result<string, string>;
 }
 
 // =================================================================

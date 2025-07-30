@@ -33,6 +33,19 @@ pub mod actors {
     impl Message for AllActorsReady {
         const MESSAGE_TYPE: &str = "hive.common.actors.AllActorsReady";
     }
+
+    // hive.common.actors.AgentSpawned
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct AgentSpawned {
+        pub agent_id: String,           // The scope UUID
+        pub name: String,               // "Root Agent", "Code Reviewer", etc.
+        pub parent_agent: Option<String>, // Parent scope UUID if spawned
+        pub actors: Vec<String>,        // ["assistant", "execute_bash"]
+    }
+
+    impl Message for AgentSpawned {
+        const MESSAGE_TYPE: &str = "hive.common.actors.AgentSpawned";
+    }
 }
 
 pub mod assistant {

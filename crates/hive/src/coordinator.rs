@@ -151,16 +151,9 @@ impl HiveCoordinator {
                 message: "Failed to serialize message for broadcast",
             })?,
         };
-
         if replayable {
             self.replayable.push(message_envelope.clone());
         }
-
-        self.context
-            .tx
-            .send(message_envelope)
-            .map_err(|_| crate::Error::Broadcast)?;
-
-        Ok(())
+        self.context.broadcast(message_envelope)
     }
 }

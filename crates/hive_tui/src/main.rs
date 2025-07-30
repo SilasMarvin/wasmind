@@ -96,7 +96,7 @@ async fn main() -> TuiResult<()> {
         // Start the hive
         let starting_actors: Vec<&str> =
             config.starting_actors.iter().map(|s| s.as_str()).collect();
-        let mut coordinator = hive::hive::start_hive(&starting_actors, loaded_actors).await?;
+        let mut coordinator = hive::hive::start_hive(&starting_actors, loaded_actors, "Root Agent".to_string()).await?;
 
         // Broadcast the LiteLLM base URL to all actors
         let base_url_update = BaseUrlUpdate {

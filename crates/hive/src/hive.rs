@@ -11,6 +11,7 @@ pub const STARTING_SCOPE: Scope =
 pub async fn start_hive(
     starting_actors: &[&str],
     loaded_actors: Vec<LoadedActor>,
+    root_agent_name: String,
 ) -> HiveResult<HiveCoordinator> {
     // Create broadcast channel
     let (tx, _) = broadcast::channel(1024);
@@ -23,7 +24,7 @@ pub async fn start_hive(
 
     // Start initial actors in the starting scope
     context
-        .spawn_agent_in_scope(starting_actors, STARTING_SCOPE)
+        .spawn_agent_in_scope(starting_actors, STARTING_SCOPE, root_agent_name, None)
         .await?;
 
     Ok(coordinator)
