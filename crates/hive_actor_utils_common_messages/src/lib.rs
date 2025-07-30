@@ -25,6 +25,14 @@ pub mod actors {
     impl Message for Exit {
         const MESSAGE_TYPE: &str = "hive.common.actors.Exit";
     }
+
+    // hive.common.actors.AllActorsReady
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct AllActorsReady;
+
+    impl Message for AllActorsReady {
+        const MESSAGE_TYPE: &str = "hive.common.actors.AllActorsReady";
+    }
 }
 
 pub mod assistant {
@@ -45,6 +53,7 @@ pub mod assistant {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum WaitReason {
+        WaitingForAllActorsReady,
         WaitingForUserInput,
         WaitingForSystemInput { 
             required_scope: Option<String>,

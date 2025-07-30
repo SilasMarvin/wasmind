@@ -124,8 +124,16 @@ Notifies other actors of state changes (future implementation).
 
 The Assistant Actor maintains a state machine with the following states:
 
+### `WaitingForAllActorsReady`
+**Initial state** - Waiting for all actors in the scope to be ready before accepting any input.
+- **Triggers**: `AllActorsReady` broadcast message from the system
+- **Transitions to**: 
+  - `WaitingForSystemInput` if LiteLLM base URL is available
+  - `WaitingForLiteLLM` if no base URL is available
+- **Use cases**: System startup coordination, ensuring all actors are initialized
+
 ### `WaitingForSystemInput`
-**Initial state** - Waiting for system messages, with optional user interruption.
+Waiting for system messages, with optional user interruption.
 - **Fields**: 
   - `required_scope: Option<String>` - Only accept messages from specific scope if set
   - `interruptible_by_user: bool` - Whether user messages can interrupt this wait
@@ -151,7 +159,7 @@ Specifically waiting for user interaction.
 
 ### `WaitingForLiteLLM`
 Waiting for LiteLLM base URL to become available.
-- **Triggers**: No base URL available
+- **Triggers**: No base URL available after `AllActorsReady`, or base URL lost during operation
 - **Transitions to**: `WaitingForSystemInput` when base URL received
 
 ### `Processing`
@@ -168,6 +176,23 @@ Waiting for tool execution to complete.
 - **Transitions to**: 
   - `Processing` when all tools complete
   - `WaitingForAgentCoordination` when tool requests agent coordination
+
+## Startup Coordination Flow
+
+The Assistant Actor uses a sophisticated startup coordination mechanism to ensure all actors are ready before beginning operations:
+
+1. **Initial State**: `WaitingForAllActorsReady`
+   - Assistant starts in this state and ignores all input
+   - Waits for system to broadcast `AllActorsReady` message
+
+2. **All Actors Ready**: When `AllActorsReady` is received
+   - **If LiteLLM available**: Transitions to `WaitingForSystemInput` (ready for operation)
+   - **If no LiteLLM**: Transitions to `WaitingForLiteLLM` (wait for LiteLLM startup)
+
+3. **LiteLLM Ready**: When `BaseUrlUpdate` is received while in `WaitingForLiteLLM`
+   - Transitions to `WaitingForSystemInput` (now fully ready)
+
+This ensures the assistant doesn't attempt to process requests before all necessary actors and services are available, providing clean system startup coordination.
 
 ## System Prompt Rendering
 

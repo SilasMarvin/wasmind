@@ -1,5 +1,6 @@
 use hive_actor_utils::{
     common_messages::{
+        actors,
         assistant::{self, Status, SystemPromptContribution, WaitReason},
         litellm,
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
@@ -9,7 +10,6 @@ use hive_actor_utils::{
     },
 };
 use serde::Deserialize;
-use std::collections::HashMap;
 
 #[allow(warnings)]
 mod bindings;
@@ -367,13 +367,10 @@ impl GeneratedActorTrait for Assistant {
         let config: AssistantConfig =
             toml::from_str(&config_str).expect("Failed to parse assistant config");
 
-        // Always start waiting for system or user input
-        // Base URL will be provided either through config or broadcast
+        // Start waiting for all actors to be ready before accepting any input
+        // Once all actors are ready, transition based on LiteLLM availability
         let initial_status = Status::Wait {
-            reason: WaitReason::WaitingForSystemInput {
-                required_scope: None,
-                interruptible_by_user: true,
-            },
+            reason: WaitReason::WaitingForAllActorsReady,
         };
         let base_url = config.base_url.clone();
 
@@ -567,6 +564,33 @@ impl GeneratedActorTrait for Assistant {
                     }
                 }
                 _ => (), // For right now we don't support adding any message besides a User or System
+            }
+        }
+
+        // Handle AllActorsReady coordination message
+        if let Some(_all_actors_ready) = Self::parse_as::<actors::AllActorsReady>(&message) {
+            if matches!(self.status, Status::Wait { reason: WaitReason::WaitingForAllActorsReady }) {
+                // Transition based on LiteLLM availability
+                if self.base_url.is_some() {
+                    // LiteLLM is available, ready for system or user input
+                    self.set_status(
+                        Status::Wait {
+                            reason: WaitReason::WaitingForSystemInput {
+                                required_scope: None,
+                                interruptible_by_user: true,
+                            },
+                        },
+                        true,
+                    );
+                } else {
+                    // No LiteLLM base URL, wait for it
+                    self.set_status(
+                        Status::Wait {
+                            reason: WaitReason::WaitingForLiteLLM,
+                        },
+                        true,
+                    );
+                }
             }
         }
 
