@@ -1,0 +1,18 @@
+[package]
+name = "test_spawner"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+hive_actor_bindings = { path = "../../crates/hive_actor_bindings" }
+hive_actor_utils = { path = "../../crates/hive_actor_utils" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[package.metadata.component]
+package = "hive:testspawner"
+
+[package.metadata.component.dependencies]

@@ -1,0 +1,154 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use tokio::sync::broadcast;
+
+use hive_actor_utils_common_messages::{Message, actors};
+
+use crate::SerializationSnafu;
+use crate::{
+    HiveResult, InvalidScopeSnafu, actors::MessageEnvelope, context::HiveContext,
+    hive::STARTING_SCOPE, scope::Scope,
+};
+use snafu::ResultExt;
+
+/// Coordinator that monitors actor lifecycle and system exit
+pub struct HiveCoordinator {
+    /// Receiver for monitoring messages
+    rx: broadcast::Receiver<MessageEnvelope>,
+
+    /// Reference to context for scope tracking info
+    context: Arc<HiveContext>,
+
+    /// Track which actors have sent ActorReady per scope
+    ready_actors: HashMap<Scope, HashSet<String>>,
+}
+
+impl HiveCoordinator {
+    pub fn new(context: Arc<HiveContext>) -> Self {
+        let rx = context.tx.subscribe();
+        Self {
+            rx,
+            context,
+            ready_actors: HashMap::new(),
+        }
+    }
+
+    /// Run the coordinator until system exit
+    pub async fn run(mut self) -> HiveResult<()> {
+        loop {
+            match self.rx.recv().await {
+                Ok(msg) => {
+                    let message_json =
+                        if let Ok(json_string) = String::from_utf8(msg.payload.clone()) {
+                            json_string
+                        } else {
+                            "na".to_string()
+                        };
+                    tracing::debug!(
+                        name = "hive_coordinator_received_message",
+                        actor_id = msg.from_actor_id,
+                        message_type = msg.message_type,
+                        message = %message_json
+                    );
+
+                    match msg.message_type.as_str() {
+                        actors::ActorReady::MESSAGE_TYPE => {
+                            self.handle_actor_ready(msg)?;
+                        }
+                        actors::Exit::MESSAGE_TYPE => {
+                            // Check if it's the STARTING_SCOPE exiting
+                            if msg.from_scope == STARTING_SCOPE.to_string() {
+                                tracing::info!("Starting scope exited, shutting down system");
+                                return Ok(());
+                            }
+                            // Otherwise it's just a scoped shutdown
+                            tracing::info!("Scope {} is shutting down", msg.from_scope);
+                        }
+                        _ => {}
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::error!("Coordinator receiver lagged by {} messages", n);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::error!("Channel closed");
+                    return Err(crate::Error::ChannelClosed);
+                }
+            }
+        }
+    }
+
+    fn handle_actor_ready(&mut self, msg: MessageEnvelope) -> HiveResult<()> {
+        // Parse scope from message
+        let scope = msg
+            .from_scope
+            .parse::<Scope>()
+            .with_context(|_| InvalidScopeSnafu {
+                scope: msg.from_scope.clone(),
+            })?;
+
+        // Track this actor as ready
+        self.ready_actors
+            .entry(scope.clone())
+            .or_insert_with(HashSet::new)
+            .insert(msg.from_actor_id.clone());
+
+        // Check if all actors for this scope are ready
+        if let Some(expected_actors) = self.context.scope_tracking.lock().unwrap().get(&scope) {
+            let ready_count = self.ready_actors.get(&scope).map(|s| s.len()).unwrap_or(0);
+            let expected_count = expected_actors.len();
+
+            tracing::debug!(
+                "Scope {} has {}/{} actors ready",
+                scope,
+                ready_count,
+                expected_count
+            );
+
+            if ready_count == expected_count {
+                // All actors for this scope are ready
+                tracing::info!("All actors ready for scope {}", scope);
+
+                // Broadcast AllActorsReady for this scope
+                let all_ready_msg = MessageEnvelope {
+                    message_type: actors::AllActorsReady::MESSAGE_TYPE.to_string(),
+                    from_actor_id: "hive_coordinator".to_string(),
+                    from_scope: scope.to_string(),
+                    payload: serde_json::to_string(&actors::AllActorsReady)
+                        .unwrap()
+                        .into_bytes(),
+                };
+
+                if let Err(e) = self.context.tx.send(all_ready_msg) {
+                    tracing::error!("Failed to broadcast AllActorsReady: {}", e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn broadcast_common_message<T>(&self, message: T) -> HiveResult<()>
+    where
+        T: hive_actor_utils_common_messages::Message,
+    {
+        use snafu::ResultExt;
+
+        let message_envelope = MessageEnvelope {
+            from_actor_id: "hive__coordinator".to_string(),
+            from_scope: crate::hive::STARTING_SCOPE.to_string(),
+            message_type: T::MESSAGE_TYPE.to_string(),
+            payload: serde_json::to_vec(&message).context(SerializationSnafu {
+                message: "Failed to serialize message for broadcast",
+            })?,
+        };
+
+        self.context
+            .tx
+            .send(message_envelope)
+            .map_err(|_| crate::Error::Broadcast)?;
+
+        Ok(())
+    }
+}
+

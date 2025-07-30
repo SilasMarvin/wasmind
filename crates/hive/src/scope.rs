@@ -64,6 +64,14 @@ impl TryFrom<&str> for Scope {
     }
 }
 
+impl std::str::FromStr for Scope {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(Uuid::from_str(s)?))
+    }
+}
+
 impl From<Uuid> for Scope {
     fn from(uuid: Uuid) -> Self {
         Self(uuid)

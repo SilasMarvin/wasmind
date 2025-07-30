@@ -1,52 +1,30 @@
-use hive_actor_utils_common_messages::{Message, actors};
+use hive_actor_loader::LoadedActor;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 
-use crate::{
-    HiveResult,
-    actors::{ActorExecutor, MessageEnvelope},
-    scope::Scope,
-};
+use crate::{HiveResult, context::HiveContext, coordinator::HiveCoordinator, scope::Scope};
 
 pub const STARTING_SCOPE: Scope =
     Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-000000000000"));
 
-/// Start the HIVE multi-agent system and return the broadcast sender
-pub async fn start_hive<T: ActorExecutor + Clone>(
+/// Start the HIVE multi-agent system
+pub async fn start_hive(
     starting_actors: &[&str],
-    actors: Vec<T>,
-) -> HiveResult<broadcast::Sender<MessageEnvelope>> {
-    let (tx, _) = broadcast::channel::<MessageEnvelope>(1024);
+    loaded_actors: Vec<LoadedActor>,
+) -> HiveResult<HiveCoordinator> {
+    // Create broadcast channel
+    let (tx, _) = broadcast::channel(1024);
 
-    // Start the starting actors
-    for actor in actors.clone().into_iter().filter(|actor| {
-        starting_actors
-            .iter()
-            .find(|sa| actor.actor_id() == **sa)
-            .is_some()
-    }) {
-        actor.run(STARTING_SCOPE.clone(), tx.clone()).await;
-    }
+    // Create shared context
+    let context = Arc::new(HiveContext::new(tx, loaded_actors));
 
-    Ok(tx)
-}
+    // Create and run coordinator
+    let coordinator = HiveCoordinator::new(context.clone());
 
-/// Wait for the HIVE system to exit
-pub async fn wait_for_exit(tx: broadcast::Sender<MessageEnvelope>) -> HiveResult<()> {
-    let mut rx = tx.subscribe();
+    // Start initial actors in the starting scope
+    context
+        .spawn_agent_in_scope(starting_actors, STARTING_SCOPE)
+        .await?;
 
-    // Listen for messages
-    loop {
-        let msg = rx.recv().await;
-        let msg = msg.expect("Error receiving in hive");
-        let message_json = if let Ok(json_string) = String::from_utf8(msg.payload) {
-            json_string
-        } else {
-            "na".to_string()
-        };
-        tracing::debug!(name = "hive_received_message", actor_id = msg.from_actor_id, message_type = msg.message_type, message = %message_json);
-
-        if msg.message_type == actors::Exit::MESSAGE_TYPE {
-            return Ok(());
-        }
-    }
+    Ok(coordinator)
 }

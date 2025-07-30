@@ -136,6 +136,12 @@ interface http {
     }
 }
 
+interface agent {
+    /// Spawn a new agent with the specified actors
+    /// Returns the scope ID of the newly created agent
+    spawn-agent: func(actor-ids: list<string>) -> result<string, string>;
+}
+
 // =================================================================
 // WORLD: Definition
 // This world assembles the required imports and exports to define
@@ -146,6 +152,7 @@ world actor-world {
     import command;
     import http;
     import logger;
+    import agent;
 
     // An actor must provide an implementation of the `actor` resource.
     export actor;

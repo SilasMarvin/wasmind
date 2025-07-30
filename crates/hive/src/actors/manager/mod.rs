@@ -1,4 +1,5 @@
-use hive::actor::{command, http, logger, messaging};
+use std::sync::Arc;
+use hive::actor::{agent, command, http, logger, messaging};
 use hive_actor_utils_common_messages::{Message, actors};
 use tokio::sync::broadcast;
 use wasmtime::{
@@ -6,7 +7,7 @@ use wasmtime::{
     component::{Component, HasSelf, Linker, ResourceAny, bindgen},
 };
 
-use crate::scope::Scope;
+use crate::{context::HiveContext, scope::Scope};
 
 pub mod actor_state;
 pub use actor_state::{ActorState, command::CommandResource};
@@ -39,6 +40,7 @@ impl Manager {
         wasm: &[u8],
         scope: Scope,
         tx: broadcast::Sender<MessageEnvelope>,
+        context: Arc<HiveContext>,
         actor_config: Option<toml::Table>,
     ) -> Self {
         let mut config = Config::new();
@@ -49,7 +51,7 @@ impl Manager {
 
         let mut store = Store::new(
             &engine,
-            ActorState::new(actor_id.clone(), scope.clone(), tx.clone()),
+            ActorState::new(actor_id.clone(), scope.clone(), tx.clone(), context),
         );
 
         let mut linker = Linker::new(&engine);
@@ -58,6 +60,7 @@ impl Manager {
         command::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
         http::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
         logger::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
+        agent::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
 
         let actor_world = ActorWorld::instantiate_async(&mut store, &component, &linker)
             .await

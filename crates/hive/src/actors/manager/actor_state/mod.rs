@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use wasmtime_wasi::{
     ResourceTable,
@@ -5,8 +6,9 @@ use wasmtime_wasi::{
 };
 
 use super::ActorId;
-use crate::{actors::MessageEnvelope, scope::Scope};
+use crate::{actors::MessageEnvelope, context::HiveContext, scope::Scope};
 
+pub mod agent;
 pub mod command;
 pub mod http;
 pub mod logger;
@@ -18,6 +20,7 @@ pub struct ActorState {
     pub table: ResourceTable,
     pub tx: broadcast::Sender<MessageEnvelope>,
     pub scope: Scope,
+    pub context: Arc<HiveContext>,
 }
 
 impl IoView for ActorState {
@@ -33,12 +36,18 @@ impl WasiView for ActorState {
 }
 
 impl ActorState {
-    pub fn new(actor_id: ActorId, scope: Scope, tx: broadcast::Sender<MessageEnvelope>) -> Self {
+    pub fn new(
+        actor_id: ActorId,
+        scope: Scope,
+        tx: broadcast::Sender<MessageEnvelope>,
+        context: Arc<HiveContext>,
+    ) -> Self {
         let mut builder = WasiCtxBuilder::new();
         ActorState {
             actor_id,
             tx,
             scope,
+            context,
             ctx: builder.build(),
             table: ResourceTable::new(),
         }

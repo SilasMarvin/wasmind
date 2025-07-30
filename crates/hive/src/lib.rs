@@ -1,4 +1,6 @@
 pub mod actors;
+pub mod context;
+pub mod coordinator;
 pub mod hive;
 pub mod scope;
 
@@ -29,9 +31,17 @@ pub enum Error {
         source: serde_json::Error,
     },
 
-    #[snafu(display("Broadcast error: {message}"))]
-    Broadcast {
-        message: String,
+    #[snafu(display("Failed to broadcast message"))]
+    Broadcast,
+
+    #[snafu(display("Channel closed"))]
+    ChannelClosed,
+
+    #[snafu(display("Invalid scope format: {scope}"))]
+    InvalidScope {
+        scope: String,
+        #[snafu(source)]
+        source: uuid::Error,
     },
 }
 
@@ -80,53 +90,4 @@ pub async fn load_actors(actors: Vec<hive_config::Actor>) -> HiveResult<Vec<Load
     let temp_cache = PathBuf::from("/tmp/hive_cache");
     let actor_loader = ActorLoader::new(Some(temp_cache))?;
     Ok(actor_loader.load_actors(actors).await?)
-}
-
-/// Broadcast a common message to all actors in the root scope
-///
-/// This utility function simplifies broadcasting messages that implement the Message trait
-/// from hive_actor_utils_common_messages.
-///
-/// # Arguments
-/// * `from_actor_id` - The ID of the actor sending the message
-/// * `message` - Any message type that implements the Message trait
-/// * `tx` - The message sender from the hive system
-///
-/// # Example
-/// ```rust
-/// use hive_actor_utils_common_messages::litellm::BaseUrlUpdate;
-///
-/// let base_url_update = BaseUrlUpdate {
-///     base_url: "http://localhost:4000".to_string(),
-///     models_available: vec!["gpt-4".to_string()],
-/// };
-///
-/// broadcast_common_message("litellm_manager", base_url_update, &tx)
-///     .expect("Failed to broadcast base URL update");
-/// ```
-pub fn broadcast_common_message<T>(
-    from_actor_id: impl Into<String>,
-    message: T,
-    tx: &tokio::sync::broadcast::Sender<actors::MessageEnvelope>,
-) -> HiveResult<()>
-where
-    T: hive_actor_utils_common_messages::Message,
-{
-    use snafu::ResultExt;
-
-    let message_envelope = actors::MessageEnvelope {
-        from_actor_id: from_actor_id.into(),
-        from_scope: hive::STARTING_SCOPE.to_string(),
-        message_type: T::MESSAGE_TYPE.to_string(),
-        payload: serde_json::to_vec(&message).context(SerializationSnafu {
-            message: "Failed to serialize message for broadcast",
-        })?,
-    };
-
-    tx.send(message_envelope)
-        .map_err(|_| Error::Broadcast {
-            message: "Failed to send message - no receivers".to_string(),
-        })?;
-
-    Ok(())
 }

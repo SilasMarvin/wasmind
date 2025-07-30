@@ -1,9 +1,14 @@
 use clap::Parser;
-use snafu::{ResultExt, Snafu, whatever};
+use snafu::{Snafu, whatever};
 
-use hive_actor_utils_common_messages::litellm::BaseUrlUpdate;
 use hive_actor_utils_common_messages::assistant::AddMessage;
+use hive_actor_utils_common_messages::litellm::BaseUrlUpdate;
 use hive_llm_types::types::ChatMessage;
+
+mod actors;
+mod cli;
+mod config;
+mod litellm_manager;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -28,7 +33,7 @@ pub enum Error {
     #[snafu(transparent)]
     LiteLLM {
         #[snafu(source)]
-        source: actors::litellm_manager::LiteLLMError,
+        source: litellm_manager::LiteLLMError,
     },
 
     #[snafu(whatever, display("{message}"))]
@@ -40,10 +45,6 @@ pub enum Error {
 }
 
 pub type TuiResult<T> = Result<T, Error>;
-
-mod actors;
-mod cli;
-mod config;
 
 #[tokio::main]
 async fn main() -> TuiResult<()> {
@@ -73,7 +74,7 @@ async fn main() -> TuiResult<()> {
 
     // Create LiteLLM manager first so it's available for the entire scope
     tracing::info!("Starting LiteLLM manager...");
-    let mut litellm_manager = actors::litellm_manager::LiteLLMManager::new(litellm_config.clone());
+    let mut litellm_manager = litellm_manager::LiteLLMManager::new(litellm_config.clone());
 
     // Set up the full startup with signal handling to ensure cleanup during any phase
     let result = async {
@@ -95,7 +96,7 @@ async fn main() -> TuiResult<()> {
         // Start the hive
         let starting_actors: Vec<&str> =
             config.starting_actors.iter().map(|s| s.as_str()).collect();
-        let tx = hive::hive::start_hive(&starting_actors, loaded_actors).await?;
+        let coordinator = hive::hive::start_hive(&starting_actors, loaded_actors).await?;
 
         // Broadcast the LiteLLM base URL to all actors
         let base_url_update = BaseUrlUpdate {
@@ -106,9 +107,7 @@ async fn main() -> TuiResult<()> {
                 .cloned()
                 .collect(),
         };
-        hive::broadcast_common_message("litellm_manager", base_url_update, &tx)
-            .expect("Failed to broadcast LiteLLM base URL - this should never fail");
-        tracing::info!("Broadcasted LiteLLM base URL to all actors");
+        coordinator.broadcast_common_message(base_url_update)?;
 
         // Broadcast initial user prompt if provided
         if let Some(prompt) = &cli.prompt {
@@ -116,13 +115,11 @@ async fn main() -> TuiResult<()> {
                 agent: hive::hive::STARTING_SCOPE.to_string(),
                 message: ChatMessage::user(prompt),
             };
-            hive::broadcast_common_message("hive_tui", add_message, &tx)
-                .expect("Failed to broadcast initial user prompt - this should never fail");
-            tracing::info!("Broadcasted initial user prompt to assistant");
+            coordinator.broadcast_common_message(add_message)?;
         }
 
         // Wait for the hive to exit
-        Ok(hive::hive::wait_for_exit(tx).await?)
+        Ok(coordinator.run().await?)
     };
 
     // Explicitly handling the ctrl+c ensures drop is being called correctly on the litellm_manager
