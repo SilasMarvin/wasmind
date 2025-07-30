@@ -96,7 +96,7 @@ async fn main() -> TuiResult<()> {
         // Start the hive
         let starting_actors: Vec<&str> =
             config.starting_actors.iter().map(|s| s.as_str()).collect();
-        let coordinator = hive::hive::start_hive(&starting_actors, loaded_actors).await?;
+        let mut coordinator = hive::hive::start_hive(&starting_actors, loaded_actors).await?;
 
         // Broadcast the LiteLLM base URL to all actors
         let base_url_update = BaseUrlUpdate {
@@ -107,7 +107,7 @@ async fn main() -> TuiResult<()> {
                 .cloned()
                 .collect(),
         };
-        coordinator.broadcast_common_message(base_url_update)?;
+        coordinator.broadcast_common_message(base_url_update, true)?;
 
         // Broadcast initial user prompt if provided
         if let Some(prompt) = &cli.prompt {
@@ -115,7 +115,7 @@ async fn main() -> TuiResult<()> {
                 agent: hive::hive::STARTING_SCOPE.to_string(),
                 message: ChatMessage::user(prompt),
             };
-            coordinator.broadcast_common_message(add_message)?;
+            coordinator.broadcast_common_message(add_message, false)?;
         }
 
         // Wait for the hive to exit

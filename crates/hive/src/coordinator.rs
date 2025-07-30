@@ -1,3 +1,4 @@
+use snafu::ResultExt;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -9,7 +10,6 @@ use crate::{
     HiveResult, InvalidScopeSnafu, actors::MessageEnvelope, context::HiveContext,
     hive::STARTING_SCOPE, scope::Scope,
 };
-use snafu::ResultExt;
 
 /// Coordinator that monitors actor lifecycle and system exit
 pub struct HiveCoordinator {
@@ -21,6 +21,9 @@ pub struct HiveCoordinator {
 
     /// Track which actors have sent ActorReady per scope
     ready_actors: HashMap<Scope, HashSet<String>>,
+
+    /// Replayable messages which are broadcasted everytime a new agent is spawned
+    replayable: Vec<MessageEnvelope>,
 }
 
 impl HiveCoordinator {
@@ -30,6 +33,7 @@ impl HiveCoordinator {
             rx,
             context,
             ready_actors: HashMap::new(),
+            replayable: vec![],
         }
     }
 
@@ -122,18 +126,23 @@ impl HiveCoordinator {
                 if let Err(e) = self.context.tx.send(all_ready_msg) {
                     tracing::error!("Failed to broadcast AllActorsReady: {}", e);
                 }
+
+                // Broadcast replyable messages
+                for message in &self.replayable {
+                    if let Err(e) = self.context.tx.send(message.clone()) {
+                        tracing::error!("Failed to broadcast Replayable Message: {}", e);
+                    }
+                }
             }
         }
 
         Ok(())
     }
 
-    pub fn broadcast_common_message<T>(&self, message: T) -> HiveResult<()>
+    pub fn broadcast_common_message<T>(&mut self, message: T, replayable: bool) -> HiveResult<()>
     where
-        T: hive_actor_utils_common_messages::Message,
+        T: hive_actor_utils_common_messages::Message + Clone,
     {
-        use snafu::ResultExt;
-
         let message_envelope = MessageEnvelope {
             from_actor_id: "hive__coordinator".to_string(),
             from_scope: crate::hive::STARTING_SCOPE.to_string(),
@@ -143,6 +152,10 @@ impl HiveCoordinator {
             })?,
         };
 
+        if replayable {
+            self.replayable.push(message_envelope.clone());
+        }
+
         self.context
             .tx
             .send(message_envelope)
@@ -151,4 +164,3 @@ impl HiveCoordinator {
         Ok(())
     }
 }
-
