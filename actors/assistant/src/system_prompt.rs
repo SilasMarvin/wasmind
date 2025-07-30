@@ -7,17 +7,18 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct SystemPromptConfig {
     /// Base template for the overall system prompt structure
+    #[serde(default = "default_base_template")]
     pub base_template: String,
     /// User-defined template overrides for specific contribution keys
+    #[serde(default)]
     pub overrides: HashMap<String, String>,
     /// List of contribution keys to exclude from the prompt
+    #[serde(default)]
     pub exclude: Vec<String>,
 }
 
-impl Default for SystemPromptConfig {
-    fn default() -> Self {
-        Self {
-            base_template: r#"{% for section_name, contributions in sections -%}
+fn default_base_template() -> String {
+    r#"{% for section_name, contributions in sections -%}
 ## {{ section_name | title }}
 
 {% for contribution in contributions -%}
@@ -25,7 +26,13 @@ impl Default for SystemPromptConfig {
 
 {% endfor -%}
 {% endfor -%}"#
-                .to_string(),
+        .to_string()
+}
+
+impl Default for SystemPromptConfig {
+    fn default() -> Self {
+        Self {
+            base_template: default_base_template(),
             overrides: HashMap::new(),
             exclude: Vec::new(),
         }

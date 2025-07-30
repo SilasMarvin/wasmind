@@ -453,6 +453,69 @@ pub mod hive {
                 }
             }
         }
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod logger {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            /// Log levels for structured logging
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum LogLevel {
+                Debug,
+                Info,
+                Warn,
+                Error,
+            }
+            impl ::core::fmt::Debug for LogLevel {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        LogLevel::Debug => f.debug_tuple("LogLevel::Debug").finish(),
+                        LogLevel::Info => f.debug_tuple("LogLevel::Info").finish(),
+                        LogLevel::Warn => f.debug_tuple("LogLevel::Warn").finish(),
+                        LogLevel::Error => f.debug_tuple("LogLevel::Error").finish(),
+                    }
+                }
+            }
+            impl LogLevel {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> LogLevel {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+                    match val {
+                        0 => LogLevel::Debug,
+                        1 => LogLevel::Info,
+                        2 => LogLevel::Warn,
+                        3 => LogLevel::Error,
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Log a message at the specified level
+            pub fn log(level: LogLevel, message: &str) -> () {
+                unsafe {
+                    let vec0 = message;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "hive:actor/logger@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "log"]
+                        fn wit_import1(_: i32, _: *mut u8, _: usize);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i32, _: *mut u8, _: usize) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(level.clone() as i32, ptr0.cast_mut(), len0) };
+                }
+            }
+        }
     }
 }
 #[rustfmt::skip]
@@ -977,9 +1040,9 @@ pub(crate) use __export_actor_world_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 972] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xca\x06\x01A\x02\x01\
-A\x06\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1072] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xae\x07\x01A\x02\x01\
+A\x08\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
 cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x18\x01q\x04\x06exit\
 ed\x01}\0\x08signaled\x01}\0\x0ffailed-to-start\x01s\0\x0ftimeout-expired\0\0\x04\
 \0\x0bexit-status\x03\0\0\x01p}\x01r\x03\x06stdout\x02\x06stderr\x02\x06status\x01\
@@ -990,15 +1053,17 @@ s\0\x06\x04\0\x17[method]cmd.current-dir\x01\x0b\x01@\x02\x04self\x08\x07seconds
 y\0\x06\x04\0\x13[method]cmd.timeout\x01\x0c\x01@\x03\x04self\x08\x03keys\x05val\
 ues\0\x06\x04\0\x0f[method]cmd.env\x01\x0d\x01@\x01\x04self\x08\0\x06\x04\0\x15[\
 method]cmd.env-clear\x01\x0e\x01j\x01\x04\x01s\x01@\x01\x04self\x08\0\x0f\x04\0\x0f\
-[method]cmd.run\x01\x10\x03\0\x18hive:actor/command@0.1.0\x05\x01\x01B\x0c\x01p}\
-\x01r\x04\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scopes\x07payload\0\x04\0\x10\
-message-envelope\x03\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01@\x02\x05scopes\x06\
-configs\0\x04\x04\0\x12[constructor]actor\x01\x05\x01h\x03\x01@\x02\x04self\x06\x07\
-message\x02\x01\0\x04\0\x1c[method]actor.handle-message\x01\x07\x01@\x01\x04self\
-\x06\x01\0\x04\0\x18[method]actor.destructor\x01\x08\x04\0\x16hive:actor/actor@0\
-.1.0\x05\x02\x04\0$execute-bash:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0ba\
-ctor-world\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070\
-.227.1\x10wit-bindgen-rust\x060.41.0";
+[method]cmd.run\x01\x10\x03\0\x18hive:actor/command@0.1.0\x05\x01\x01B\x04\x01m\x04\
+\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\
+\x07messages\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x02\
+\x01B\x0c\x01p}\x01r\x04\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scopes\x07pa\
+yload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01@\
+\x02\x05scopes\x06configs\0\x04\x04\0\x12[constructor]actor\x01\x05\x01h\x03\x01\
+@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handle-message\x01\
+\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\x08\x04\0\x16\
+hive:actor/actor@0.1.0\x05\x03\x04\0$execute-bash:actor/actor-world@0.1.0\x04\0\x0b\
+\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit\
+-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

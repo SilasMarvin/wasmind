@@ -58,6 +58,15 @@ pub fn actor_derive(input: TokenStream) -> TokenStream {
 
         impl crate::bindings::exports::hive::actor::actor::GuestActor for #actor_name {
             fn new(scope: String, config: String) -> Self {
+                // Set up panic hook to log errors before WASM trap
+                std::panic::set_hook(Box::new(|panic_info| {
+                    let msg = panic_info.to_string();
+                    crate::bindings::hive::actor::logger::log(
+                        crate::bindings::hive::actor::logger::LogLevel::Error,
+                        &format!("Actor panic: {}", msg)
+                    );
+                }));
+                
                 let actor = <#name as GeneratedActorTrait>::new(scope, config);
                 Self {
                     actor: std::cell::RefCell::new(actor)
@@ -128,6 +137,15 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
 
         impl crate::bindings::exports::hive::actor::actor::GuestActor for #actor_name {
             fn new(scope: String, config: String) -> Self {
+                // Set up panic hook to log errors before WASM trap
+                std::panic::set_hook(Box::new(|panic_info| {
+                    let msg = panic_info.to_string();
+                    crate::bindings::hive::actor::logger::log(
+                        crate::bindings::hive::actor::logger::LogLevel::Error,
+                        &format!("Tool panic: {}", msg)
+                    );
+                }));
+                
                 let s = Self {
                     scope: scope.clone(),
                     tool: std::cell::RefCell::new(<#name as ::hive_actor_utils::tools::Tool>::new(config))

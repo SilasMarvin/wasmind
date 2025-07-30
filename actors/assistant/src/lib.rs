@@ -20,19 +20,10 @@ use system_prompt::{SystemPromptConfig, SystemPromptRenderer};
 #[derive(Debug, Clone, Deserialize)]
 pub struct AssistantConfig {
     pub model_name: String,
+    #[serde(default)]
     pub system_prompt: SystemPromptConfig,
     #[serde(default)]
     pub base_url: Option<String>,
-}
-
-impl Default for AssistantConfig {
-    fn default() -> Self {
-        Self {
-            model_name: "gpt-4".to_string(),
-            system_prompt: SystemPromptConfig::default(),
-            base_url: None,
-        }
-    }
 }
 
 /// Pending message that accumulates user input and system messages to be submitted to the LLM when appropriate
@@ -485,15 +476,19 @@ impl GeneratedActorTrait for Assistant {
                     reason: WaitReason::WaitingForLiteLLM
                 }
             ) {
-                self.set_status(
-                    Status::Wait {
-                        reason: WaitReason::WaitingForSystemInput {
-                            required_scope: None,
-                            interruptible_by_user: true,
+                if self.pending_message.has_content() {
+                    self.submit(false);
+                } else {
+                    self.set_status(
+                        Status::Wait {
+                            reason: WaitReason::WaitingForSystemInput {
+                                required_scope: None,
+                                interruptible_by_user: true,
+                            },
                         },
-                    },
-                    true,
-                );
+                        true,
+                    );
+                }
             }
         }
 
@@ -510,9 +505,7 @@ impl GeneratedActorTrait for Assistant {
                     // 2. We are waiting for a SystemMessage from no specific scope
                     match &self.status {
                         Status::Wait {
-                            reason: WaitReason::WaitingForSystemInput {
-                                required_scope, ..
-                            },
+                            reason: WaitReason::WaitingForSystemInput { required_scope, .. },
                         } => {
                             if let Some(required_scope) = required_scope {
                                 if required_scope == &message.from_scope {
@@ -523,9 +516,10 @@ impl GeneratedActorTrait for Assistant {
                             }
                         }
                         Status::Wait {
-                            reason: WaitReason::WaitingForAgentCoordination {
-                                target_agent_scope, ..
-                            },
+                            reason:
+                                WaitReason::WaitingForAgentCoordination {
+                                    target_agent_scope, ..
+                                },
                         } => {
                             if let Some(target_scope) = target_agent_scope {
                                 if target_scope == &message.from_scope {
@@ -549,16 +543,18 @@ impl GeneratedActorTrait for Assistant {
                             reason: WaitReason::WaitingForUserInput,
                         } => self.submit(false),
                         Status::Wait {
-                            reason: WaitReason::WaitingForSystemInput {
-                                interruptible_by_user: true,
-                                ..
-                            },
+                            reason:
+                                WaitReason::WaitingForSystemInput {
+                                    interruptible_by_user: true,
+                                    ..
+                                },
                         } => self.submit(false),
                         Status::Wait {
-                            reason: WaitReason::WaitingForAgentCoordination {
-                                user_can_interrupt: true,
-                                ..
-                            },
+                            reason:
+                                WaitReason::WaitingForAgentCoordination {
+                                    user_can_interrupt: true,
+                                    ..
+                                },
                         } => self.submit(false),
                         _ => (),
                     }
@@ -569,19 +565,27 @@ impl GeneratedActorTrait for Assistant {
 
         // Handle AllActorsReady coordination message
         if let Some(_all_actors_ready) = Self::parse_as::<actors::AllActorsReady>(&message) {
-            if matches!(self.status, Status::Wait { reason: WaitReason::WaitingForAllActorsReady }) {
+            if matches!(
+                self.status,
+                Status::Wait {
+                    reason: WaitReason::WaitingForAllActorsReady
+                }
+            ) {
                 // Transition based on LiteLLM availability
                 if self.base_url.is_some() {
-                    // LiteLLM is available, ready for system or user input
-                    self.set_status(
-                        Status::Wait {
-                            reason: WaitReason::WaitingForSystemInput {
-                                required_scope: None,
-                                interruptible_by_user: true,
+                    if self.pending_message.has_content() {
+                        self.submit(false);
+                    } else {
+                        self.set_status(
+                            Status::Wait {
+                                reason: WaitReason::WaitingForSystemInput {
+                                    required_scope: None,
+                                    interruptible_by_user: true,
+                                },
                             },
-                        },
-                        true,
-                    );
+                            true,
+                        );
+                    }
                 } else {
                     // No LiteLLM base URL, wait for it
                     self.set_status(

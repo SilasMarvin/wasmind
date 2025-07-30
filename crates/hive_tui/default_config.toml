@@ -10,7 +10,6 @@ source = { Path = "/Users/silasmarvin/github/hive/actors/assistant" }
 
 [actors.config]
 model_name = "gpt-4o"
-system_prompt = "You are a helpful assistant."
 
 # LiteLLM configuration
 [litellm]
