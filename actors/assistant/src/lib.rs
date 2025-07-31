@@ -1,7 +1,10 @@
 use hive_actor_utils::{
     common_messages::{
         actors,
-        assistant::{self, Status, SystemPromptContribution, WaitReason},
+        assistant::{
+            self, ChatState, ChatStateUpdated, Request, Status, SystemPromptContribution,
+            WaitReason,
+        },
         litellm,
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
     },
@@ -126,7 +129,7 @@ impl Assistant {
                             self.add_chat_messages([choice.message.clone()]);
 
                             // Broadcast the response for other actors to handle
-                            Self::broadcast(assistant::Response {
+                            Self::broadcast_common_message(assistant::Response {
                                 request_id,
                                 message: assistant_msg.clone(),
                             })
@@ -174,8 +177,7 @@ impl Assistant {
         // Exponential backoff: delay = base_delay * 2^attempt
         let delay_ms = base_delay_ms * (2_u64.pow(attempt.saturating_sub(1)));
 
-        // TODO: In a real system, we'd schedule this with a timer
-        // For now, we'll just retry immediately (you could implement a timer actor)
+        // TODO: Sleep
         tracing::info!("Scheduling retry {} after {}ms", attempt + 1, delay_ms);
 
         // For immediate retry (would be better with actual scheduling):
@@ -192,6 +194,18 @@ impl Assistant {
         let base_url = self.base_url.as_ref().ok_or_else(|| {
             "No LiteLLM base URL available - waiting for LiteLLM manager to start".to_string()
         })?;
+
+        Self::broadcast_common_message(Request {
+            chat_state: ChatState {
+                system: SystemChatMessage {
+                    content: system_prompt.to_string(),
+                },
+                tools: self.available_tools.clone(),
+                messages: self.chat_history.clone(),
+            },
+        })
+        .unwrap();
+
         // Build the request
         let mut all_messages = vec![ChatMessage::system(system_prompt)];
         all_messages.extend_from_slice(messages);
@@ -244,13 +258,15 @@ impl Assistant {
     fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessage>) {
         self.chat_history.extend(messages);
 
-        // TODO: Broadcast the system state
-        // let system_prompt = self.render_system_prompt();
-        // self.broadcast(Message::AssistantChatUpdated(AssistantChatState {
-        //     system: system_prompt,
-        //     tools: self.available_tools.clone(),
-        //     messages: self.chat_history.clone(),
-        // }));
+        Self::broadcast_common_message(ChatStateUpdated {
+            chat_state: ChatState {
+                system: SystemChatMessage {
+                    content: self.render_system_prompt(),
+                },
+                tools: self.available_tools.clone(),
+                messages: self.chat_history.clone(),
+            },
+        });
     }
 
     fn set_status(&mut self, new_status: Status, broadcast_change: bool) {
@@ -442,7 +458,7 @@ impl GeneratedActorTrait for Assistant {
 
                             // Broadcast tool calls for execution
                             for tool_call in tool_calls {
-                                Self::broadcast(tools::ExecuteTool {
+                                Self::broadcast_common_message(tools::ExecuteTool {
                                     tool_call: tool_call.clone(),
                                 })
                                 .unwrap();

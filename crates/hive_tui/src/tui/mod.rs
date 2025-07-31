@@ -1,0 +1,98 @@
+use hive::actors::MessageEnvelope;
+use model::Model;
+use ratatui::crossterm::{
+    event::{KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags},
+    execute,
+};
+use std::{io::stdout, thread};
+use tokio::sync::broadcast::{Receiver, Sender};
+use tuirealm::{PollStrategy, Update, terminal::CrosstermTerminalAdapter};
+
+pub mod components;
+pub mod icons;
+mod model;
+mod throbber_in_title_ext;
+mod utils;
+
+use crate::config::ParsedTuiConfig;
+
+pub struct Tui {
+    tui_config: ParsedTuiConfig,
+    tx: Sender<MessageEnvelope>,
+    rx: Receiver<MessageEnvelope>,
+    initial_prompt: Option<String>,
+}
+
+impl Tui {
+    pub fn new(
+        tui_config: ParsedTuiConfig,
+        tx: Sender<MessageEnvelope>,
+        initial_prompt: Option<String>,
+    ) -> Self {
+        Self {
+            tui_config,
+            rx: tx.subscribe(),
+            tx,
+            initial_prompt,
+        }
+    }
+
+    pub fn run(self) {
+        thread::spawn(|| start_model(self.tui_config, self.tx, self.rx, self.initial_prompt));
+    }
+}
+
+fn start_model(
+    config: ParsedTuiConfig,
+    tx: Sender<MessageEnvelope>,
+    rx: Receiver<MessageEnvelope>,
+    initial_prompt: Option<String>,
+) {
+    let mut stdout = stdout();
+    if let Err(e) = execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    ) {
+        tracing::error!(
+            "Error enabling the Kitty Keyboard Protocol - some key bindings may not work as expected. See: https://sw.kovidgoyal.net/kitty/keyboard-protocol Error: {e:?}"
+        );
+    }
+
+    // Setup model
+    let mut model = Model::new(config, tx, rx, initial_prompt);
+    // Enter alternate screen
+    let _ = model.terminal.enter_alternate_screen();
+    let _ = model.terminal.enable_raw_mode();
+    // Main loop
+    // NOTE: loop until quit; quit is set in update if AppClose is received from counter
+    while !model.quit {
+        // Tick
+        match model.app.tick(PollStrategy::Once) {
+            Err(err) => {
+                tracing::error!("{err:?}");
+            }
+            Ok(messages) if !messages.is_empty() => {
+                // NOTE: redraw if at least one msg has been processed
+                model.redraw = true;
+                for msg in messages {
+                    let mut msg = Some(msg);
+                    while msg.is_some() {
+                        msg = model.update(msg);
+                    }
+                }
+            }
+            _ => {}
+        }
+        // Redraw
+        if model.redraw {
+            model.view();
+            model.redraw = false;
+        }
+    }
+    // Terminate terminal
+    let _ = model.terminal.leave_alternate_screen();
+    let _ = model.terminal.disable_raw_mode();
+    let _ = model.terminal.clear_screen();
+
+    execute!(stdout, PopKeyboardEnhancementFlags).ok();
+}

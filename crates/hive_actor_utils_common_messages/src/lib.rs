@@ -37,10 +37,10 @@ pub mod actors {
     // hive.common.actors.AgentSpawned
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct AgentSpawned {
-        pub agent_id: String,           // The scope UUID
-        pub name: String,               // "Root Agent", "Code Reviewer", etc.
+        pub agent_id: String,             // The scope UUID
+        pub name: String,                 // "Root Agent", "Code Reviewer", etc.
         pub parent_agent: Option<String>, // Parent scope UUID if spawned
-        pub actors: Vec<String>,        // ["assistant", "execute_bash"]
+        pub actors: Vec<String>,          // ["assistant", "execute_bash"]
     }
 
     impl Message for AgentSpawned {
@@ -68,9 +68,9 @@ pub mod assistant {
     pub enum WaitReason {
         WaitingForAllActorsReady,
         WaitingForUserInput,
-        WaitingForSystemInput { 
+        WaitingForSystemInput {
             required_scope: Option<String>,
-            interruptible_by_user: bool 
+            interruptible_by_user: bool,
         },
         WaitingForAgentCoordination {
             coordinating_tool_call_id: String,
@@ -157,7 +157,7 @@ pub mod assistant {
     // hive.common.assistant.Request
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Request {
-        chat_state: ChatState,
+        pub chat_state: ChatState,
     }
 
     impl Message for Request {
@@ -178,7 +178,7 @@ pub mod assistant {
     // hive.common.assistant.ChatStateUpdated
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ChatStateUpdated {
-        chat_state: ChatState,
+        pub chat_state: ChatState,
     }
 
     impl Message for ChatStateUpdated {

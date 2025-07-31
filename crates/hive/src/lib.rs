@@ -3,6 +3,7 @@ pub mod context;
 pub mod coordinator;
 pub mod hive;
 pub mod scope;
+pub mod utils;
 
 use hive_actor_loader::{ActorLoader, LoadedActor};
 

@@ -1,4 +1,5 @@
 use clap::Parser;
+use hive::coordinator::HiveCoordinator;
 use snafu::{Snafu, whatever};
 
 use hive_actor_utils_common_messages::assistant::AddMessage;
@@ -9,6 +10,8 @@ mod actors;
 mod cli;
 mod config;
 mod litellm_manager;
+mod tui;
+mod utils;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -90,13 +93,28 @@ async fn main() -> TuiResult<()> {
             whatever!("No starting actors configured - at least one starting actor is required");
         }
 
+        // Load TUI configuration
+        let tui_config = crate::config::TuiConfig::from_config(&config)?.parse()?;
+
         // Load the actors
         let loaded_actors = hive::load_actors(config.actors).await?;
+
+        // Create the context
+        let context = hive::context::HiveContext::new(loaded_actors);
+        let mut coordinator: HiveCoordinator = context.into();
+
+        // Create the TUI struct making it subscribe to messages before starting hive
+        let tui = crate::tui::Tui::new(tui_config, coordinator.get_sender(), cli.prompt.clone());
 
         // Start the hive
         let starting_actors: Vec<&str> =
             config.starting_actors.iter().map(|s| s.as_str()).collect();
-        let mut coordinator = hive::hive::start_hive(&starting_actors, loaded_actors, "Root Agent".to_string()).await?;
+        coordinator
+            .start_hive(&starting_actors, "Root Agent".to_string())
+            .await?;
+
+        // Start the TUI
+        tui.run();
 
         // Broadcast the LiteLLM base URL to all actors
         let base_url_update = BaseUrlUpdate {

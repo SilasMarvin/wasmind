@@ -26,6 +26,12 @@ pub struct HiveCoordinator {
     replayable: Vec<MessageEnvelope>,
 }
 
+impl From<HiveContext> for HiveCoordinator {
+    fn from(value: HiveContext) -> Self {
+        HiveCoordinator::new(Arc::new(value))
+    }
+}
+
 impl HiveCoordinator {
     pub fn new(context: Arc<HiveContext>) -> Self {
         let rx = context.tx.subscribe();
@@ -35,6 +41,16 @@ impl HiveCoordinator {
             ready_actors: HashMap::new(),
             replayable: vec![],
         }
+    }
+
+    pub async fn start_hive(
+        &self,
+        starting_actors: &[&str],
+        root_agent_name: String,
+    ) -> HiveResult<Scope> {
+        self.context
+            .spawn_agent_in_scope(starting_actors, STARTING_SCOPE, root_agent_name, None)
+            .await
     }
 
     /// Run the coordinator until system exit
@@ -155,5 +171,10 @@ impl HiveCoordinator {
             self.replayable.push(message_envelope.clone());
         }
         self.context.broadcast(message_envelope)
+    }
+
+    /// Get the broadcast sender for sending messages to the system
+    pub fn get_sender(&self) -> broadcast::Sender<MessageEnvelope> {
+        self.context.tx.clone()
     }
 }

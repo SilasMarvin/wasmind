@@ -23,7 +23,9 @@ pub struct HiveContext {
 }
 
 impl HiveContext {
-    pub fn new(tx: broadcast::Sender<MessageEnvelope>, loaded_actors: Vec<LoadedActor>) -> Self {
+    pub fn new(loaded_actors: Vec<LoadedActor>) -> Self {
+        let (tx, _) = broadcast::channel(1024);
+
         let actor_registry = loaded_actors
             .into_iter()
             .map(|actor| (actor.id.clone(), actor))

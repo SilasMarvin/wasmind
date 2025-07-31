@@ -13,7 +13,7 @@ pub fn generate_actor_trait(_input: TokenStream) -> TokenStream {
             fn destructor(&mut self) {}
 
 
-            fn broadcast<S: ::hive_actor_utils::actors::macros::__private::serde::ser::Serialize + ::hive_actor_utils::messages::Message>(payload: S) -> Result<(), ::hive_actor_utils::actors::macros::__private::serde_json::Error> {
+            fn broadcast_common_message<S: ::hive_actor_utils::actors::macros::__private::serde::ser::Serialize + ::hive_actor_utils::messages::Message>(payload: S) -> Result<(), ::hive_actor_utils::actors::macros::__private::serde_json::Error> {
                 use ::hive_actor_utils::messages::Message;
                 Ok(crate::bindings::hive::actor::messaging::broadcast(
                     S::MESSAGE_TYPE,
@@ -66,7 +66,7 @@ pub fn actor_derive(input: TokenStream) -> TokenStream {
                         &format!("Actor panic: {}", msg)
                     );
                 }));
-                
+
                 let actor = <#name as GeneratedActorTrait>::new(scope, config);
                 Self {
                     actor: std::cell::RefCell::new(actor)
@@ -145,7 +145,7 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
                         &format!("Tool panic: {}", msg)
                     );
                 }));
-                
+
                 let s = Self {
                     scope: scope.clone(),
                     tool: std::cell::RefCell::new(<#name as ::hive_actor_utils::tools::Tool>::new(config))

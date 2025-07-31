@@ -1520,6 +1520,7 @@ dependencies = [
  "tui-textarea",
  "tuirealm",
  "url",
+ "uuid",
  "wasmtime",
  "wasmtime-wasi",
 ]

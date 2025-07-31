@@ -12,6 +12,7 @@ license.workspace = true
 snafu = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+uuid = { workspace = true }
 
 hive = { path = "../hive" }
 hive_config = { path = "../hive_config" }

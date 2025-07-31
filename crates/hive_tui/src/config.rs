@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use snafu::{ResultExt, Snafu};
+use tuirealm::event::KeyEvent;
+
+use crate::tui::components::{
+    dashboard::DashboardUserAction,
+    chat::ChatUserAction,
+    graph::GraphUserAction,
+};
 
 #[derive(Debug, Snafu)]
 pub enum ConfigError {
@@ -23,6 +30,9 @@ pub enum ConfigError {
     
     #[snafu(display("LiteLLM configuration section is required"))]
     MissingLiteLLMConfig,
+    
+    #[snafu(display("Invalid key binding '{binding}' - are you sure this is a valid binding?"))]
+    InvalidBinding { binding: String },
 }
 
 /// LiteLLM configuration
@@ -93,5 +103,146 @@ impl LiteLLMConfig {
     
     pub fn list_model_names(&self) -> Vec<&String> {
         self.models.iter().map(|model| &model.model_name).collect()
+    }
+}
+
+/// TUI configuration section
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct TuiConfig {
+    /// Dashboard configuration
+    #[serde(default)]
+    pub dashboard: DashboardConfig,
+    
+    /// Chat configuration
+    #[serde(default)]
+    pub chat: ChatConfig,
+    
+    /// Graph configuration
+    #[serde(default)]
+    pub graph: GraphConfig,
+}
+
+/// Dashboard configuration
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct DashboardConfig {
+    /// Clear default key bindings
+    #[serde(default)]
+    pub clear_defaults: bool,
+    
+    /// Custom key bindings
+    #[serde(default)]
+    pub key_bindings: HashMap<String, String>,
+}
+
+/// Chat configuration
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct ChatConfig {
+    /// Clear default key bindings
+    #[serde(default)]
+    pub clear_defaults: bool,
+    
+    /// Custom key bindings
+    #[serde(default)]
+    pub key_bindings: HashMap<String, String>,
+}
+
+/// Graph configuration
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct GraphConfig {
+    /// Clear default key bindings
+    #[serde(default)]
+    pub clear_defaults: bool,
+    
+    /// Custom key bindings
+    #[serde(default)]
+    pub key_bindings: HashMap<String, String>,
+}
+
+/// Parsed TUI configuration
+#[derive(Debug, Clone)]
+pub struct ParsedTuiConfig {
+    pub dashboard: ParsedDashboardConfig,
+    pub chat: ParsedChatConfig,
+    pub graph: ParsedGraphConfig,
+}
+
+/// Parsed dashboard configuration
+#[derive(Debug, Clone)]
+pub struct ParsedDashboardConfig {
+    pub key_bindings: HashMap<KeyEvent, DashboardUserAction>,
+}
+
+/// Parsed chat configuration
+#[derive(Debug, Clone)]
+pub struct ParsedChatConfig {
+    pub key_bindings: HashMap<KeyEvent, ChatUserAction>,
+}
+
+/// Parsed graph configuration
+#[derive(Debug, Clone)]
+pub struct ParsedGraphConfig {
+    pub key_bindings: HashMap<KeyEvent, GraphUserAction>,
+}
+
+impl TuiConfig {
+    pub fn from_config(config: &hive_config::Config) -> Result<Self, ConfigError> {
+        Ok(config.parse_section::<TuiConfig>("tui")
+            .context(ConfigParseSnafu)?
+            .unwrap_or_default())
+    }
+    
+    pub fn parse(self) -> Result<ParsedTuiConfig, ConfigError> {
+        use crate::utils::parse_key_combination;
+        
+        let dashboard_key_bindings = self.dashboard.key_bindings
+            .into_iter()
+            .map(|(binding, action)| {
+                let Some(parsed_binding) = parse_key_combination(&binding) else {
+                    return Err(ConfigError::InvalidBinding { binding });
+                };
+                let Ok(action) = DashboardUserAction::try_from(action.as_str()) else {
+                    return Err(ConfigError::InvalidBinding { binding });
+                };
+                Ok((parsed_binding, action))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+            
+        let chat_key_bindings = self.chat.key_bindings
+            .into_iter()
+            .map(|(binding, action)| {
+                let Some(parsed_binding) = parse_key_combination(&binding) else {
+                    return Err(ConfigError::InvalidBinding { binding });
+                };
+                let Ok(action) = ChatUserAction::try_from(action.as_str()) else {
+                    return Err(ConfigError::InvalidBinding { binding });
+                };
+                Ok((parsed_binding, action))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+            
+        let graph_key_bindings = self.graph.key_bindings
+            .into_iter()
+            .map(|(binding, action)| {
+                let Some(parsed_binding) = parse_key_combination(&binding) else {
+                    return Err(ConfigError::InvalidBinding { binding });
+                };
+                let Ok(action) = GraphUserAction::try_from(action.as_str()) else {
+                    return Err(ConfigError::InvalidBinding { binding });
+                };
+                Ok((parsed_binding, action))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        
+        Ok(ParsedTuiConfig {
+            dashboard: ParsedDashboardConfig {
+                key_bindings: dashboard_key_bindings,
+            },
+            chat: ParsedChatConfig {
+                key_bindings: chat_key_bindings,
+            },
+            graph: ParsedGraphConfig {
+                key_bindings: graph_key_bindings,
+            },
+        })
     }
 }

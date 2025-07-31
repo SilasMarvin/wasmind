@@ -1,7 +1,7 @@
 [workspace]
 members = ["crates/*"]
 # It seems we can't use wildcards in the exclude array
-exclude = ["actors/execute_bash", "actors/assistant", "actors/test_spawner"]
+exclude = ["actors/execute_bash", "actors/assistant", "actors/test_spawner", "actors/delegation_network"]
 resolver = "2"
 
 [workspace.package]

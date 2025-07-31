@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use hive::actor::{agent, command, http, logger, messaging};
 use hive_actor_utils_common_messages::{Message, actors};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use wasmtime::{
     Config, Engine, Store,
@@ -24,6 +24,22 @@ bindgen!({
     },
     path: "../hive_actor_bindings/wit/world.wit"
 });
+
+// TODO: Implement equality
+impl PartialEq for MessageEnvelope {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
+}
+
+// TODO: Implement order
+impl PartialOrd for MessageEnvelope {
+    fn partial_cmp(&self, _other: &Self) -> Option<std::cmp::Ordering> {
+        None
+    }
+}
+
+impl Eq for MessageEnvelope {}
 
 pub struct Manager {
     actor_id: ActorId,

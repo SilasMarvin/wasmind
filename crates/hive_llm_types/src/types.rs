@@ -65,7 +65,7 @@ impl AssistantChatMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserChatMessage {
-    content: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,7 +77,7 @@ pub struct ToolChatMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemChatMessage {
-    content: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

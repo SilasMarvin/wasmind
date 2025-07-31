@@ -1,5 +1,15 @@
 starting_actors = ["assistant", "execute_bash"]
 
+[tui.dashboard.key_bindings]
+"ctrl-c" = "Exit"
+
+[tui.chat.key_bindings]
+"ctrl-a" = "Assist"
+
+[tui.graph.key_bindings]
+"shift-down" = "SelectDown"
+"shift-up" = "SelectUp"
+
 [[actors]]
 name = "execute_bash"
 source = { Path = "/Users/silasmarvin/github/hive/actors/execute_bash" }
