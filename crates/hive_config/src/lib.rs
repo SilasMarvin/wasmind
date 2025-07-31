@@ -48,14 +48,22 @@ pub enum GitRef {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct Repository {
-    pub url: Url,
-    pub git_ref: Option<GitRef>,
+pub struct PathSource {
+    pub path: String,
+    pub package: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct Repository {
+    pub url: Url,
+    pub git_ref: Option<GitRef>,
+    pub package: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
 pub enum ActorSource {
-    Path(String),
+    Path(PathSource),
     Git(Repository),
 }
 
@@ -65,6 +73,8 @@ pub struct Actor {
     pub source: ActorSource,
     #[serde(default)]
     pub config: Option<toml::Table>,
+    #[serde(default)]
+    pub auto_spawn: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -75,7 +85,10 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn parse_section<T: DeserializeOwned>(&self, section_name: &str) -> Result<Option<T>, Error> {
+    pub fn parse_section<T: DeserializeOwned>(
+        &self,
+        section_name: &str,
+    ) -> Result<Option<T>, Error> {
         if let Some(section) = self.raw_config.get(section_name) {
             let value: T = section.clone().try_into().context(TomlParseSnafu)?;
             Ok(Some(value))
@@ -94,19 +107,22 @@ pub fn load_from_path<P: AsRef<Path> + ToOwned<Owned = PathBuf>>(path: P) -> Res
         file: path.to_owned(),
     })?;
     let raw_config: toml::Table = toml::from_str(&content).context(TomlParseSnafu)?;
-    
+
     let actors = if let Some(actors_section) = raw_config.get("actors") {
         actors_section.clone().try_into().context(TomlParseSnafu)?
     } else {
         Vec::new()
     };
-    
+
     let starting_actors = if let Some(starting_actors_section) = raw_config.get("starting_actors") {
-        starting_actors_section.clone().try_into().context(TomlParseSnafu)?
+        starting_actors_section
+            .clone()
+            .try_into()
+            .context(TomlParseSnafu)?
     } else {
         Vec::new()
     };
-    
+
     Ok(Config {
         raw_config,
         actors,

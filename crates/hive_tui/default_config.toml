@@ -1,4 +1,8 @@
-starting_actors = ["assistant", "execute_bash"]
+starting_actors = []
+
+##############################
+# TUI Specific Config ########
+##############################
 
 [tui.dashboard.key_bindings]
 "ctrl-c" = "Exit"
@@ -10,26 +14,39 @@ starting_actors = ["assistant", "execute_bash"]
 "shift-down" = "SelectDown"
 "shift-up" = "SelectUp"
 
+##############################
+# Actors Config ##############
+##############################
+
 [[actors]]
-name = "execute_bash"
-source = { Path = "/Users/silasmarvin/github/hive/actors/execute_bash" }
+name = "delegation_network_coordinator"
+source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", package = "delegation_network_coordinator" }
+auto_spawn = true
 
 [[actors]]
 name = "assistant"
-source = { Path = "/Users/silasmarvin/github/hive/actors/assistant" }
+source = { path = "/Users/silasmarvin/github/hive/actors/assistant" }
+auto_spawn = true
+
+[[actors]]
+name = "execute_bash"
+source = { path = "/Users/silasmarvin/github/hive/actors/execute_bash" }
 
 [actors.config]
 model_name = "gpt-4o"
 
-# LiteLLM configuration
+##############################
+# LiteLLM Config #############
+##############################
+
 [litellm]
 image = "ghcr.io/berriai/litellm:main-latest"
 port = 4000
 container_name = "hive-litellm"
 
-# Model definitions for LiteLLM
 [[litellm.models]]
 model_name = "gpt-4o"
+
 [litellm.models.litellm_params]
 model = "openai/gpt-4o"
 api_key = "os.environ/OPENAI_API_KEY"

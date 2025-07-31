@@ -1,25 +1,28 @@
+use tokio::sync::broadcast;
+
 pub mod agent;
 mod manager;
 
-use std::sync::Arc;
 use hive_actor_loader::LoadedActor;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 // Re-exports for convenience
 pub use manager::exports::hive::actor::actor::MessageEnvelope;
-use tokio::sync::broadcast;
 
 use crate::{context::HiveContext, scope::Scope};
 
-pub trait ActorExecutor {
+pub trait ActorExecutor: Send + Sync {
     fn actor_id(&self) -> &str;
 
+    fn auto_spawn(&self) -> bool;
+
     fn run(
-        self,
+        &self,
         scope: Scope,
         tx: broadcast::Sender<MessageEnvelope>,
         context: Arc<HiveContext>,
-    ) -> impl std::future::Future<Output = ()> + Send
-    where
-        Self: Sized;
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>>;
 }
 
 impl ActorExecutor for LoadedActor {
@@ -27,11 +30,23 @@ impl ActorExecutor for LoadedActor {
         &self.id
     }
 
-    async fn run(self, scope: Scope, tx: broadcast::Sender<MessageEnvelope>, context: Arc<HiveContext>)
-    where
-        Self: Sized,
-    {
-        let manager = manager::Manager::new(self.id, &self.wasm, scope, tx, context, self.config).await;
-        manager.run();
+    fn auto_spawn(&self) -> bool {
+        self.auto_spawn
+    }
+
+    fn run(
+        &self,
+        scope: Scope,
+        tx: broadcast::Sender<MessageEnvelope>,
+        context: Arc<HiveContext>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        let id = self.id.clone();
+        let wasm = self.wasm.clone();
+        let config = self.config.clone();
+
+        Box::pin(async move {
+            let manager = manager::Manager::new(id, &wasm, scope, tx, context, config).await;
+            manager.run();
+        })
     }
 }

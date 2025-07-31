@@ -1,8 +1,8 @@
+use crate::actors::ActorExecutor;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 
-use hive_actor_loader::LoadedActor;
 use hive_actor_utils_common_messages::actors::AgentSpawned;
 
 use crate::{HiveResult, SerializationSnafu, actors::MessageEnvelope, scope::Scope};
@@ -15,7 +15,7 @@ pub struct HiveContext {
     pub tx: broadcast::Sender<MessageEnvelope>,
 
     /// Registry of available actors (can be cloned to spawn)
-    pub actor_registry: HashMap<String, LoadedActor>,
+    pub actor_executors: Vec<Arc<dyn ActorExecutor + 'static>>,
 
     /// Track which actors are expected in each scope
     /// Arc<Mutex<>> for concurrent access from spawn_agent calls
@@ -23,19 +23,30 @@ pub struct HiveContext {
 }
 
 impl HiveContext {
-    pub fn new(loaded_actors: Vec<LoadedActor>) -> Self {
+    pub fn new<T>(actors: Vec<T>) -> Self
+    where
+        T: ActorExecutor + 'static,
+    {
         let (tx, _) = broadcast::channel(1024);
 
-        let actor_registry = loaded_actors
+        let actor_executors = actors
             .into_iter()
-            .map(|actor| (actor.id.clone(), actor))
+            .map(|actor| Arc::new(actor) as Arc<dyn ActorExecutor>)
             .collect();
 
         Self {
             tx,
-            actor_registry,
+            actor_executors,
             scope_tracking: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Add an individual actor of any type that implements ActorExecutor
+    pub fn add_actor<T>(&mut self, actor: T)
+    where
+        T: ActorExecutor + 'static,
+    {
+        self.actor_executors.push(Arc::new(actor));
     }
 
     /// Spawn a new agent with the specified actors in a new scope
@@ -68,16 +79,13 @@ impl HiveContext {
         }
 
         // Clone and run the actors with the new scope
-        for actor_id in actor_ids {
-            if let Some(loaded_actor) = self.actor_registry.get(*actor_id) {
-                use crate::actors::ActorExecutor;
+        for actor in &self.actor_executors {
+            if actor.auto_spawn() || actor_ids.contains(&actor.actor_id()) {
                 let context = Arc::new(self.clone());
-                loaded_actor
+                actor
                     .clone()
                     .run(scope.clone(), self.tx.clone(), context)
                     .await;
-            } else {
-                tracing::warn!("Actor '{}' not found in registry", actor_id);
             }
         }
 
