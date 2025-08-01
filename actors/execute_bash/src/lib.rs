@@ -44,11 +44,13 @@ const TRUNCATION_TAIL_CHARS: usize = 4_000; // Keep last 4k chars
     "required": ["command"]
 }"#
 )]
-struct CommandTool {}
+struct CommandTool {
+    scope: String,
+}
 
 impl tools::Tool for CommandTool {
-    fn new(_config: String) -> Self {
-        Self {}
+    fn new(scope: String, _config: String) -> Self {
+        Self { scope }
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {

@@ -1,7 +1,7 @@
 use hive_actor_utils_common_messages::tools::ExecuteTool;
 
 pub trait Tool: Sized {
-    fn new(config: String) -> Self;
+    fn new(scope: String, config: String) -> Self;
 
     fn handle_call(&mut self, input: ExecuteTool);
 }

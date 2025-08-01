@@ -135,6 +135,16 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
             tool: std::cell::RefCell<#name>
         }
 
+        impl #name {
+            fn broadcast_common_message<S: serde::ser::Serialize + ::hive_actor_utils::messages::Message>(payload: S) -> Result<(), serde_json::Error> {
+                use ::hive_actor_utils::messages::Message;
+                Ok(crate::bindings::hive::actor::messaging::broadcast(
+                    S::MESSAGE_TYPE,
+                    &serde_json::to_string(&payload)?.into_bytes()
+                ))
+            }
+        }
+
         impl crate::bindings::exports::hive::actor::actor::GuestActor for #actor_name {
             fn new(scope: String, config: String) -> Self {
                 // Set up panic hook to log errors before WASM trap
@@ -148,7 +158,7 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
 
                 let s = Self {
                     scope: scope.clone(),
-                    tool: std::cell::RefCell::new(<#name as ::hive_actor_utils::tools::Tool>::new(config))
+                    tool: std::cell::RefCell::new(<#name as ::hive_actor_utils::tools::Tool>::new(scope.clone(), config))
                 };
 
                 use ::hive_actor_utils::messages::Message;

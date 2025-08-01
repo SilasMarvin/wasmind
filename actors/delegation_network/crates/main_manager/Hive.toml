@@ -1,0 +1,13 @@
+actor_id = "hive:main_manager"
+
+[dependencies.spawn_agent]
+source = { path = "../../", package = "spawn_agent" }
+
+[dependencies.send_message]
+source = { path = "../../", package = "send_message" }
+
+[dependencies.planner]
+source = { path = "../../", package = "planner" }
+
+[dependencies.wait]
+source = { path = "../../", package = "wait" }

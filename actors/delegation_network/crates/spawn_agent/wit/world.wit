@@ -1,0 +1,5 @@
+package hive:spawn-agent@0.1.0;
+
+world spawn-agent {
+    include hive:actor/actor-world@0.1.0;
+}

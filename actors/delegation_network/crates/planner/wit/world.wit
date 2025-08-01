@@ -1,0 +1,5 @@
+package hive:planner@0.1.0;
+
+world planner {
+    include hive:actor/actor-world@0.1.0;
+}

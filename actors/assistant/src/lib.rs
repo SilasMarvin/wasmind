@@ -1,3 +1,4 @@
+use bindings::hive::actor::logger;
 use hive_actor_utils::{
     common_messages::{
         actors,
@@ -258,7 +259,7 @@ impl Assistant {
     fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessage>) {
         self.chat_history.extend(messages);
 
-        Self::broadcast_common_message(ChatStateUpdated {
+        let _ = Self::broadcast_common_message(ChatStateUpdated {
             chat_state: ChatState {
                 system: SystemChatMessage {
                     content: self.render_system_prompt(),
@@ -402,6 +403,40 @@ impl GeneratedActorTrait for Assistant {
     ) -> () {
         // Messages where it matters if they are from our own scope
         if message.from_scope == self.scope {
+            if let Some(_all_actors_ready) = Self::parse_as::<actors::AllActorsReady>(&message) {
+                if matches!(
+                    self.status,
+                    Status::Wait {
+                        reason: WaitReason::WaitingForAllActorsReady
+                    }
+                ) {
+                    // Transition based on LiteLLM availability
+                    if self.base_url.is_some() {
+                        if self.pending_message.has_content() {
+                            self.submit(false);
+                        } else {
+                            self.set_status(
+                                Status::Wait {
+                                    reason: WaitReason::WaitingForSystemInput {
+                                        required_scope: None,
+                                        interruptible_by_user: true,
+                                    },
+                                },
+                                true,
+                            );
+                        }
+                    } else {
+                        // No LiteLLM base URL, wait for it
+                        self.set_status(
+                            Status::Wait {
+                                reason: WaitReason::WaitingForLiteLLM,
+                            },
+                            true,
+                        );
+                    }
+                }
+            }
+
             // Update our tools
             if let Some(mut available_tools) = Self::parse_as::<tools::ToolsAvailable>(&message) {
                 self.available_tools.append(&mut available_tools.tools);
@@ -579,45 +614,13 @@ impl GeneratedActorTrait for Assistant {
             }
         }
 
-        // Handle AllActorsReady coordination message
-        if let Some(_all_actors_ready) = Self::parse_as::<actors::AllActorsReady>(&message) {
-            if matches!(
-                self.status,
-                Status::Wait {
-                    reason: WaitReason::WaitingForAllActorsReady
-                }
-            ) {
-                // Transition based on LiteLLM availability
-                if self.base_url.is_some() {
-                    if self.pending_message.has_content() {
-                        self.submit(false);
-                    } else {
-                        self.set_status(
-                            Status::Wait {
-                                reason: WaitReason::WaitingForSystemInput {
-                                    required_scope: None,
-                                    interruptible_by_user: true,
-                                },
-                            },
-                            true,
-                        );
-                    }
-                } else {
-                    // No LiteLLM base URL, wait for it
-                    self.set_status(
-                        Status::Wait {
-                            reason: WaitReason::WaitingForLiteLLM,
-                        },
-                        true,
-                    );
-                }
-            }
-        }
-
         // Handle system prompt contributions from any actor
         if let Some(contribution) = Self::parse_as::<SystemPromptContribution>(&message) {
             if let Err(e) = self.system_prompt_renderer.add_contribution(contribution) {
-                tracing::error!("Failed to add system prompt contribution: {}", e);
+                logger::log(
+                    logger::LogLevel::Error,
+                    &format!("Failed to add system prompt contribution: {}", e),
+                );
             }
         }
     }

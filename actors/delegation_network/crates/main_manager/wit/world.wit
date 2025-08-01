@@ -1,0 +1,5 @@
+package hive:main-manager@0.1.0;
+
+world main-manager {
+    include hive:actor/actor-world@0.1.0;
+}

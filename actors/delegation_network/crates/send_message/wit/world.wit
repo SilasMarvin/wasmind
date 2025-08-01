@@ -1,0 +1,5 @@
+package hive:send-message@0.1.0;
+
+world send-message {
+    include hive:actor/actor-world@0.1.0;
+}

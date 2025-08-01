@@ -1,0 +1,5 @@
+package hive:wait@0.1.0;
+
+world wait {
+    include hive:actor/actor-world@0.1.0;
+}

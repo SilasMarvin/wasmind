@@ -2,6 +2,7 @@ use hive_actor_utils::common_messages::assistant::{SystemPromptContent, SystemPr
 use minijinja::{Environment, context};
 use regex::Regex;
 use std::collections::HashMap;
+use chrono::{Local, Utc};
 
 /// Configuration for system prompt template rendering
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -58,12 +59,60 @@ pub struct SystemPromptRenderer {
 
 impl SystemPromptRenderer {
     pub fn new(config: SystemPromptConfig, agent_scope: String) -> Self {
-        Self {
+        let mut renderer = Self {
             config,
             contributions: HashMap::new(),
-            key_validation_regex: Regex::new(r"^[a-z0-9_-]+\.[a-z0-9_-]+$").unwrap(),
+            key_validation_regex: Regex::new(r"^[a-z0-9_:-]+:[a-z0-9_:-]+$").unwrap(),
             agent_scope,
+        };
+        
+        // Automatically add system context variables
+        renderer.add_system_context();
+        
+        renderer
+    }
+    
+    /// Adds default system context variables that are always available
+    fn add_system_context(&mut self) {
+        // Current working directory
+        if let Ok(cwd) = std::env::current_dir() {
+            let _ = self.add_contribution_internal(SystemPromptContribution {
+                agent: self.agent_scope.clone(),
+                key: "system:current_directory".to_string(),
+                content: SystemPromptContent::Text(format!("Current working directory: {}", cwd.display())),
+                priority: 0, // Low priority so it appears at the end
+                section: Some("SYSTEM_CONTEXT".to_string()),
+            });
         }
+        
+        // Current date and time
+        let now = Utc::now();
+        let local_time = Local::now();
+        let _ = self.add_contribution_internal(SystemPromptContribution {
+            agent: self.agent_scope.clone(),
+            key: "system:datetime".to_string(),
+            content: SystemPromptContent::Text(format!(
+                "Current date and time: {} UTC (Local: {})",
+                now.format("%Y-%m-%d %H:%M:%S"),
+                local_time.format("%Y-%m-%d %H:%M:%S %Z")
+            )),
+            priority: 0,
+            section: Some("SYSTEM_CONTEXT".to_string()),
+        });
+        
+        // Operating system information
+        let os_info = format!(
+            "Operating system: {} {}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        );
+        let _ = self.add_contribution_internal(SystemPromptContribution {
+            agent: self.agent_scope.clone(),
+            key: "system:os_info".to_string(),
+            content: SystemPromptContent::Text(os_info),
+            priority: 0,
+            section: Some("SYSTEM_CONTEXT".to_string()),
+        });
     }
 
     /// Validates a contribution key format
@@ -72,7 +121,7 @@ impl SystemPromptRenderer {
             Ok(())
         } else {
             Err(format!(
-                "Invalid key format '{}'. Must be 'actor_type.contribution_name' using only lowercase alphanumeric, hyphens, and underscores",
+                "Invalid key format '{}'. Must contain exactly one colon (:) in the format 'actor_type:contribution_name'. Only lowercase letters, numbers, hyphens (-), and underscores (_) are allowed. Example: 'main_manager:identity'",
                 key
             ))
         }
@@ -96,6 +145,13 @@ impl SystemPromptRenderer {
             return Ok(()); // Silently ignore excluded contributions
         }
 
+        self.contributions
+            .insert(contribution.key.clone(), contribution);
+        Ok(())
+    }
+
+    /// Internal method to add contributions without validation (used for system context)
+    fn add_contribution_internal(&mut self, contribution: SystemPromptContribution) -> Result<(), String> {
         self.contributions
             .insert(contribution.key.clone(), contribution);
         Ok(())
@@ -234,16 +290,16 @@ mod tests {
         let renderer = SystemPromptRenderer::new(SystemPromptConfig::default(), test_agent_scope());
 
         // Valid keys
-        assert!(renderer.validate_key("file_reader.open_files").is_ok());
-        assert!(renderer.validate_key("git-status.branch_info").is_ok());
-        assert!(renderer.validate_key("shell.current_directory").is_ok());
-        assert!(renderer.validate_key("actor123.data-1").is_ok());
+        assert!(renderer.validate_key("file_reader:open_files").is_ok());
+        assert!(renderer.validate_key("git-status:branch_info").is_ok());
+        assert!(renderer.validate_key("shell:current_directory").is_ok());
+        assert!(renderer.validate_key("actor123:data-1").is_ok());
 
         // Invalid keys
-        assert!(renderer.validate_key("FileReader.OpenFiles").is_err()); // camelCase
-        assert!(renderer.validate_key("file_reader").is_err()); // missing dot
-        assert!(renderer.validate_key("file_reader..data").is_err()); // double dot
-        assert!(renderer.validate_key("file@reader.data").is_err()); // special char
+        assert!(renderer.validate_key("FileReader:OpenFiles").is_err()); // camelCase
+        assert!(renderer.validate_key("file_reader").is_err()); // missing colon
+        assert!(renderer.validate_key("file_reader::data").is_err()); // double colon
+        assert!(renderer.validate_key("file@reader:data").is_err()); // special char
         assert!(renderer.validate_key("").is_err()); // empty
     }
 
@@ -254,7 +310,7 @@ mod tests {
 
         let contribution = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "shell.cwd".to_string(),
+            key: "shell:cwd".to_string(),
             content: SystemPromptContent::Text("Current directory: /home/user/project".to_string()),
             priority: 100,
             section: Some("context".to_string()),
@@ -274,7 +330,7 @@ mod tests {
 
         let contribution = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "file_reader.files".to_string(),
+            key: "file_reader:files".to_string(),
             content: SystemPromptContent::Data {
                 data: json!({
                     "files": [
@@ -304,7 +360,7 @@ mod tests {
     fn test_template_override() {
         let mut config = SystemPromptConfig::default();
         config.overrides.insert(
-            "file_reader.files".to_string(),
+            "file_reader:files".to_string(),
             "Custom template: {{ data.files | length }} files".to_string(),
         );
 
@@ -312,7 +368,7 @@ mod tests {
 
         let contribution = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "file_reader.files".to_string(),
+            key: "file_reader:files".to_string(),
             content: SystemPromptContent::Data {
                 data: json!({"files": [1, 2, 3]}),
                 default_template: "Default template".to_string(),
@@ -331,13 +387,13 @@ mod tests {
     #[test]
     fn test_contribution_exclusion() {
         let mut config = SystemPromptConfig::default();
-        config.exclude.push("excluded.item".to_string());
+        config.exclude.push("excluded:item".to_string());
 
         let mut renderer = SystemPromptRenderer::new(config, test_agent_scope());
 
         let included = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "included.item".to_string(),
+            key: "included:item".to_string(),
             content: SystemPromptContent::Text("This should appear".to_string()),
             priority: 100,
             section: Some("context".to_string()),
@@ -345,7 +401,7 @@ mod tests {
 
         let excluded = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "excluded.item".to_string(),
+            key: "excluded:item".to_string(),
             content: SystemPromptContent::Text("This should NOT appear".to_string()),
             priority: 100,
             section: Some("context".to_string()),
@@ -367,7 +423,7 @@ mod tests {
 
         let low_priority = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "test.low".to_string(),
+            key: "test:low".to_string(),
             content: SystemPromptContent::Text("Low priority item".to_string()),
             priority: 10,
             section: Some("context".to_string()),
@@ -375,7 +431,7 @@ mod tests {
 
         let high_priority = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "test.high".to_string(),
+            key: "test:high".to_string(),
             content: SystemPromptContent::Text("High priority item".to_string()),
             priority: 100,
             section: Some("context".to_string()),
@@ -399,7 +455,7 @@ mod tests {
 
         let context_item = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "test.context".to_string(),
+            key: "test:context".to_string(),
             content: SystemPromptContent::Text("Context item".to_string()),
             priority: 100,
             section: Some("context".to_string()),
@@ -407,7 +463,7 @@ mod tests {
 
         let tools_item = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "test.tools".to_string(),
+            key: "test:tools".to_string(),
             content: SystemPromptContent::Text("Tools item".to_string()),
             priority: 100,
             section: Some("tools".to_string()),
@@ -431,7 +487,7 @@ mod tests {
 
         let contribution = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "test.item".to_string(),
+            key: "test:item".to_string(),
             content: SystemPromptContent::Text("No section specified".to_string()),
             priority: 100,
             section: None, // No section specified
@@ -451,7 +507,7 @@ mod tests {
 
         let for_this_agent = SystemPromptContribution {
             agent: test_agent_scope(),
-            key: "test.correct".to_string(),
+            key: "test:correct".to_string(),
             content: SystemPromptContent::Text("For this agent".to_string()),
             priority: 100,
             section: Some("context".to_string()),
@@ -459,7 +515,7 @@ mod tests {
 
         let for_other_agent = SystemPromptContribution {
             agent: "other-agent-scope".to_string(),
-            key: "test.wrong".to_string(),
+            key: "test:wrong".to_string(),
             content: SystemPromptContent::Text("For other agent".to_string()),
             priority: 100,
             section: Some("context".to_string()),
@@ -472,6 +528,24 @@ mod tests {
 
         assert!(result.contains("For this agent"));
         assert!(!result.contains("For other agent"));
+    }
+
+    #[test]
+    fn test_system_context_variables() {
+        let renderer = SystemPromptRenderer::new(SystemPromptConfig::default(), test_agent_scope());
+        let result = renderer.render().unwrap();
+
+
+        // Check that system context variables are included
+        assert!(result.contains("## System_Context")); // Matches actual output with underscore
+        assert!(result.contains("Current working directory:"));
+        assert!(result.contains("Current date and time:"));
+        assert!(result.contains("Operating system:"));
+        
+        // Verify the system context keys are in the contributions
+        assert!(renderer.contributions.contains_key("system:current_directory"));
+        assert!(renderer.contributions.contains_key("system:datetime"));
+        assert!(renderer.contributions.contains_key("system:os_info"));
     }
 }
 

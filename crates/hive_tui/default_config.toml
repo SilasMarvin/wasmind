@@ -1,4 +1,4 @@
-starting_actors = []
+starting_actors = ["delegation_network_main_manager", "spawn_agent"]
 
 ##############################
 # TUI Specific Config ########
@@ -18,9 +18,8 @@ starting_actors = []
 # Actors Config ##############
 ##############################
 
-[actors.delegation_network_coordinator]
-source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", package = "delegation_network_coordinator" }
-auto_spawn = true
+[actors.delegation_network_main_manager]
+source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", package = "main_manager" }
 
 [actors.assistant]
 source = { path = "/Users/silasmarvin/github/hive/actors/assistant" }
@@ -28,9 +27,6 @@ auto_spawn = true
 
 [actors.assistant.config]
 model_name = "gpt-4o"
-
-[actors.execute_bash]
-source = { path = "/Users/silasmarvin/github/hive/actors/execute_bash" }
 
 ##############################
 # LiteLLM Config #############
