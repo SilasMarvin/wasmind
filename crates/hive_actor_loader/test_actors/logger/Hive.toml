@@ -1,0 +1,3 @@
+actor_id = "test:logger"
+
+# Logger has no dependencies

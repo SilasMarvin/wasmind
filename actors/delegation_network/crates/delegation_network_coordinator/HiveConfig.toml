@@ -1,6 +1,0 @@
-# Define the actors we rely on
-
-# [[actors]]
-# name = "delegation_network_spawn_agent"
-# path = ""
-# always_spawn = true

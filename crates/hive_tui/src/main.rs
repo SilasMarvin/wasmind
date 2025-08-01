@@ -76,12 +76,14 @@ async fn main() -> TuiResult<()> {
     }
 
     // Create LiteLLM manager first so it's available for the entire scope
+    println!("Starting LiteLLM...");
     tracing::info!("Starting LiteLLM manager...");
     let mut litellm_manager = litellm_manager::LiteLLMManager::new(litellm_config.clone());
 
     // Set up the full startup with signal handling to ensure cleanup during any phase
     let result = async {
         litellm_manager.start().await?;
+        println!("✓ LiteLLM started at {}", litellm_config.get_base_url());
         tracing::info!(
             "LiteLLM manager started successfully at {}",
             litellm_config.get_base_url()
@@ -90,7 +92,11 @@ async fn main() -> TuiResult<()> {
 
         // Error if no starting actors are configured
         if config.starting_actors.is_empty() {
-            whatever!("No starting actors configured - at least one starting actor is required");
+            if !config.actors.iter().any(|actor| actor.auto_spawn) {
+                whatever!(
+                    "No starting actors and no auto spawning actors configured - at least one starting actor or auto spawning actor is required"
+                );
+            }
         }
 
         // Load TUI configuration

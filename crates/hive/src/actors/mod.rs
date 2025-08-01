@@ -15,12 +15,15 @@ use crate::{context::HiveContext, scope::Scope};
 pub trait ActorExecutor: Send + Sync {
     fn actor_id(&self) -> &str;
 
+    fn logical_name(&self) -> &str;
+
     fn auto_spawn(&self) -> bool;
 
     fn run(
         &self,
         scope: Scope,
         tx: broadcast::Sender<MessageEnvelope>,
+        rx: broadcast::Receiver<MessageEnvelope>,
         context: Arc<HiveContext>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send>>;
 }
@@ -28,6 +31,10 @@ pub trait ActorExecutor: Send + Sync {
 impl ActorExecutor for LoadedActor {
     fn actor_id(&self) -> &str {
         &self.id
+    }
+
+    fn logical_name(&self) -> &str {
+        &self.name
     }
 
     fn auto_spawn(&self) -> bool {
@@ -38,6 +45,7 @@ impl ActorExecutor for LoadedActor {
         &self,
         scope: Scope,
         tx: broadcast::Sender<MessageEnvelope>,
+        rx: broadcast::Receiver<MessageEnvelope>,
         context: Arc<HiveContext>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let id = self.id.clone();
@@ -45,7 +53,7 @@ impl ActorExecutor for LoadedActor {
         let config = self.config.clone();
 
         Box::pin(async move {
-            let manager = manager::Manager::new(id, &wasm, scope, tx, context, config).await;
+            let manager = manager::Manager::new(id, &wasm, scope, tx, rx, context, config).await;
             manager.run();
         })
     }

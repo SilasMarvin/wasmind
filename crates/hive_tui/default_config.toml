@@ -18,22 +18,19 @@ starting_actors = []
 # Actors Config ##############
 ##############################
 
-[[actors]]
-name = "delegation_network_coordinator"
+[actors.delegation_network_coordinator]
 source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", package = "delegation_network_coordinator" }
 auto_spawn = true
 
-[[actors]]
-name = "assistant"
+[actors.assistant]
 source = { path = "/Users/silasmarvin/github/hive/actors/assistant" }
 auto_spawn = true
 
-[[actors]]
-name = "execute_bash"
-source = { path = "/Users/silasmarvin/github/hive/actors/execute_bash" }
-
-[actors.config]
+[actors.assistant.config]
 model_name = "gpt-4o"
+
+[actors.execute_bash]
+source = { path = "/Users/silasmarvin/github/hive/actors/execute_bash" }
 
 ##############################
 # LiteLLM Config #############

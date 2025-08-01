@@ -14,8 +14,8 @@ pub struct HiveContext {
     /// Broadcast channel for all messages
     pub tx: broadcast::Sender<MessageEnvelope>,
 
-    /// Registry of available actors (can be cloned to spawn)
-    pub actor_executors: Vec<Arc<dyn ActorExecutor + 'static>>,
+    /// Registry of available actors mapped by logical name
+    pub actor_executors: HashMap<String, Arc<dyn ActorExecutor + 'static>>,
 
     /// Track which actors are expected in each scope
     /// Arc<Mutex<>> for concurrent access from spawn_agent calls
@@ -29,10 +29,11 @@ impl HiveContext {
     {
         let (tx, _) = broadcast::channel(1024);
 
-        let actor_executors = actors
-            .into_iter()
-            .map(|actor| Arc::new(actor) as Arc<dyn ActorExecutor>)
-            .collect();
+        let mut actor_executors = HashMap::new();
+        for actor in actors {
+            let logical_name = actor.logical_name().to_string();
+            actor_executors.insert(logical_name, Arc::new(actor) as Arc<dyn ActorExecutor>);
+        }
 
         Self {
             tx,
@@ -46,7 +47,8 @@ impl HiveContext {
     where
         T: ActorExecutor + 'static,
     {
-        self.actor_executors.push(Arc::new(actor));
+        let logical_name = actor.logical_name().to_string();
+        self.actor_executors.insert(logical_name, Arc::new(actor));
     }
 
     /// Spawn a new agent with the specified actors in a new scope
@@ -64,29 +66,39 @@ impl HiveContext {
     /// Spawn a new agent with the specified actors in a specific scope
     pub async fn spawn_agent_in_scope(
         &self,
-        actor_ids: &[&str],
+        actor_names: &[&str],
         scope: Scope,
         agent_name: String,
         parent_scope: Option<Scope>,
     ) -> HiveResult<Scope> {
-        // Track what actors we're spawning in this scope
-        {
-            let mut tracking = self.scope_tracking.lock().unwrap();
-            tracking.insert(
-                scope.clone(),
-                actor_ids.iter().map(|s| s.to_string()).collect(),
-            );
+        let actors_to_spawn = self
+            .actor_executors
+            .iter()
+            .filter_map(|(logical_name, actor)| {
+                if actor.auto_spawn() || actor_names.contains(&logical_name.as_str()) {
+                    Some(actor.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<Arc<dyn ActorExecutor + 'static>>>();
+        let rxs: Vec<_> = (0..actors_to_spawn.len())
+            .map(|_| self.tx.subscribe())
+            .collect();
+
+        let mut actors_spawned = HashSet::new();
+        for (actor, rx) in actors_to_spawn.into_iter().zip(rxs) {
+            let context = Arc::new(self.clone());
+            actors_spawned.insert(actor.actor_id().to_string());
+            actor
+                .clone()
+                .run(scope.clone(), self.tx.clone(), rx, context)
+                .await;
         }
 
-        // Clone and run the actors with the new scope
-        for actor in &self.actor_executors {
-            if actor.auto_spawn() || actor_ids.contains(&actor.actor_id()) {
-                let context = Arc::new(self.clone());
-                actor
-                    .clone()
-                    .run(scope.clone(), self.tx.clone(), context)
-                    .await;
-            }
+        {
+            let mut tracking = self.scope_tracking.lock().unwrap();
+            tracking.insert(scope.clone(), actors_spawned);
         }
 
         // Broadcast AgentSpawned message
@@ -94,7 +106,7 @@ impl HiveContext {
             agent_id: scope.to_string(),
             name: agent_name,
             parent_agent: parent_scope.map(|s| s.to_string()),
-            actors: actor_ids.iter().map(|s| s.to_string()).collect(),
+            actors: actor_names.iter().map(|s| s.to_string()).collect(),
         };
 
         self.broadcast_common_message(agent_spawned)?;

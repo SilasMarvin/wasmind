@@ -34,9 +34,7 @@ impl GeneratedActorTrait for DelegationNetworkCoordinator {
         Self { scope }
     }
 
-    fn handle_message(&mut self, message: MessageEnvelope) {
-        todo!()
-    }
+    fn handle_message(&mut self, message: MessageEnvelope) {}
 
     fn destructor(&mut self) {}
 }

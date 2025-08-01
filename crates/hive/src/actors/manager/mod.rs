@@ -47,6 +47,7 @@ pub struct Manager {
     actor_resource: ResourceAny,
     store: Store<ActorState>,
     tx: broadcast::Sender<MessageEnvelope>,
+    rx: broadcast::Receiver<MessageEnvelope>,
     scope: Scope,
 }
 
@@ -56,6 +57,7 @@ impl Manager {
         wasm: &[u8],
         scope: Scope,
         tx: broadcast::Sender<MessageEnvelope>,
+        rx: broadcast::Receiver<MessageEnvelope>,
         context: Arc<HiveContext>,
         actor_config: Option<toml::Table>,
     ) -> Self {
@@ -99,12 +101,12 @@ impl Manager {
             actor_resource,
             actor_world,
             tx,
+            rx,
             scope,
         }
     }
 
     pub fn run(mut self) {
-        let mut rx = self.tx.subscribe();
         tracing::info_span!("actor_lifecycle", actor_id = self.actor_id).in_scope(move || {
             tokio::spawn(async move {
                 let _ = self.tx.send(MessageEnvelope {
@@ -117,7 +119,7 @@ impl Manager {
                 });
 
                 loop {
-                    match rx.recv().await {
+                    match self.rx.recv().await {
                         Ok(msg) => {
                             // This message doesn't hold anything so we just need to check if the message_type matches
                             if msg.message_type == actors::Exit::MESSAGE_TYPE {

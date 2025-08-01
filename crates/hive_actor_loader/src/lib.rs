@@ -1,3 +1,5 @@
+pub mod dependency_resolver;
+
 use cargo_metadata::MetadataCommand;
 use futures::future::join_all;
 use sha2::{Digest, Sha256};
@@ -22,7 +24,7 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display("Failed to deserialize content: {text}"))]
+    #[snafu(display("Failed to deserialize TOML content: {text}"))]
     TomlDeserialize {
         source: toml::de::Error,
         text: String,
@@ -30,7 +32,7 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display("Failed to deserialize content: {text}"))]
+    #[snafu(display("Failed to deserialize JSON content: {text}"))]
     Serde {
         source: serde_json::Error,
         text: String,
@@ -52,9 +54,11 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display("Command failed with status: {}", status))]
+    #[snafu(display("Build failed for actor '{actor_name}' with exit code {status}. {stderr}"))]
     CommandFailed {
+        actor_name: String,
         status: std::process::ExitStatus,
+        stderr: String,
         #[snafu(implicit)]
         location: Location,
     },
@@ -66,16 +70,20 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display("Failed to find package {} in cargo metadata", name))]
+    #[snafu(display("Failed to load actor '{actor_name}'. Package '{package_name}' not found in workspace at '{workspace_path}'."))]
     PackageNotFound {
-        name: String,
+        actor_name: String,
+        package_name: String,
+        workspace_path: String,
         #[snafu(implicit)]
         location: Location,
     },
 
-    #[snafu(display("Failed to find wasm file for actor {}", name))]
+    #[snafu(display("Failed to load actor '{actor_name}'. WASM file '{expected_wasm}' not found in target directory '{target_dir}'. Ensure the actor builds successfully."))]
     WasmNotFound {
-        name: String,
+        actor_name: String,
+        expected_wasm: String,
+        target_dir: String,
         #[snafu(implicit)]
         location: Location,
     },
@@ -87,8 +95,9 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display("Invalid path: {}", path))]
+    #[snafu(display("Failed to load actor '{actor_name}'. Source path '{path}' not found."))]
     InvalidPath {
+        actor_name: String,
         path: String,
         #[snafu(implicit)]
         location: Location,
@@ -105,14 +114,22 @@ pub enum Error {
         #[snafu(implicit)]
         location: Location,
     },
+
+    #[snafu(display("Dependency resolution failed"))]
+    DependencyResolution {
+        #[snafu(source)]
+        source: dependency_resolver::Error,
+        #[snafu(implicit)]
+        location: Location,
+    },
 }
 
 type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
 pub struct LoadedActor {
-    pub id: String,
-    pub name: String,
+    pub id: String,  // This will be the actor_id from manifest
+    pub name: String,  // This is the logical name
     pub version: String,
     pub wasm: Vec<u8>,
     pub config: Option<toml::Table>,
@@ -145,16 +162,35 @@ impl ActorLoader {
         // Check for required tools
         self.check_required_tools().await?;
 
-        // Load all actors in parallel
-        let tasks: Vec<_> = actors
+        // Phase 1: Resolve all dependencies
+        println!("Resolving actor dependencies...");
+        let resolver = dependency_resolver::DependencyResolver::new();
+        let resolved_actors = resolver
+            .resolve_all(actors)
+            .context(DependencyResolutionSnafu)?;
+
+        // Phase 2: Load all resolved actors in parallel
+        println!("Loading {} actors...", resolved_actors.len());
+        let tasks: Vec<_> = resolved_actors
             .into_iter()
-            .map(|actor| self.load_single_actor(actor))
+            .map(|(logical_name, resolved)| {
+                let actor = Actor {
+                    name: logical_name,
+                    source: resolved.source,
+                    config: resolved.config,
+                    auto_spawn: resolved.auto_spawn,
+                };
+                self.load_single_actor(actor, resolved.actor_id.clone())
+            })
             .collect();
 
         let results = join_all(tasks).await;
 
         // Collect results, propagating any errors
-        results.into_iter().collect::<Result<Vec<_>>>()
+        let loaded_actors = results.into_iter().collect::<Result<Vec<_>>>()?;
+        
+        println!("✓ Actor loading complete");
+        Ok(loaded_actors)
     }
 
     async fn check_required_tools(&self) -> Result<()> {
@@ -175,14 +211,16 @@ impl ActorLoader {
         Ok(())
     }
 
-    async fn load_single_actor(&self, actor: Actor) -> Result<LoadedActor> {
-        info!("Loading actor: {}", actor.name);
+    async fn load_single_actor(&self, actor: Actor, actor_id: String) -> Result<LoadedActor> {
+        println!("  Loading {}", actor.name);
+        info!("Loading actor: {} (id: {})", actor.name, actor_id);
 
         let is_dev_mode = std::env::var("DEV_MODE").is_ok();
 
         // Check if actor is already cached (skip cache in dev mode)
         if !is_dev_mode {
-            if let Some(cached) = self.check_cache(&actor).await? {
+            if let Some(cached) = self.check_cache(&actor, &actor_id).await? {
+                println!("  ✓ {} (cached)", actor.name);
                 info!("Using cached actor: {}", actor.name);
                 return Ok(cached);
             }
@@ -206,7 +244,7 @@ impl ActorLoader {
         // Clone or copy the actor source
         match &actor.source {
             ActorSource::Path(path_source) => {
-                self.copy_local_actor(&path_source.path, &build_path).await?;
+                self.copy_local_actor(&path_source.path, &build_path, &actor.name).await?;
             }
             ActorSource::Git(repository) => {
                 self.clone_git_actor(&repository.url, &build_path, repository.git_ref.as_ref())
@@ -216,11 +254,11 @@ impl ActorLoader {
 
         // Handle local development mode
         if is_dev_mode {
-            self.setup_local_dependencies(&build_path, package_name).await?;
+            self.setup_local_dependencies(&build_path, package_name, &actor.name).await?;
         }
 
         // Build the actor
-        let wasm_path = self.build_actor(&build_path, package_name).await?;
+        let wasm_path = self.build_actor(&build_path, package_name, &actor.name).await?;
 
         // Read the built wasm
         let wasm = fs::read(&wasm_path).await.context(IoSnafu {
@@ -228,24 +266,26 @@ impl ActorLoader {
         })?;
 
         // Get metadata
-        let (crate_name, version) = self.get_actor_metadata(&build_path, package_name).await?;
+        let (_, version) = self.get_actor_metadata(&build_path, package_name, &actor.name).await?;
 
         // Cache the built actor (skip in dev mode)
         if !is_dev_mode {
-            self.cache_actor(&actor, &version, &wasm).await?;
+            self.cache_actor(&actor, &actor_id, &version, &wasm).await?;
         }
 
+        println!("  ✓ {} (built)", actor.name);
+        
         Ok(LoadedActor {
             name: actor.name.clone(),
             version,
-            id: crate_name,
+            id: actor_id,
             wasm,
             config: actor.config,
             auto_spawn: actor.auto_spawn,
         })
     }
 
-    async fn check_cache(&self, actor: &Actor) -> Result<Option<LoadedActor>> {
+    async fn check_cache(&self, actor: &Actor, actor_id: &str) -> Result<Option<LoadedActor>> {
         let actor_hash = self.compute_actor_hash(actor);
         let cache_path = self.cache_dir.join(&actor.name).join(&actor_hash);
         let metadata_path = cache_path.join("metadata.json");
@@ -261,9 +301,9 @@ impl ActorLoader {
                     text: metadata_content,
                 })?;
 
-            let crate_name = metadata["crate_name"]
+            let cached_actor_id = metadata["actor_id"]
                 .as_str()
-                .unwrap_or(&actor.name)
+                .unwrap_or(actor_id)
                 .to_string();
             let version = metadata["version"].as_str().unwrap_or("0.0.0").to_string();
 
@@ -275,7 +315,7 @@ impl ActorLoader {
             return Ok(Some(LoadedActor {
                 name: actor.name.clone(),
                 version,
-                id: crate_name,
+                id: cached_actor_id,
                 wasm,
                 config: actor.config.clone(),
                 auto_spawn: actor.auto_spawn,
@@ -285,7 +325,7 @@ impl ActorLoader {
         Ok(None)
     }
 
-    async fn cache_actor(&self, actor: &Actor, version: &str, wasm: &[u8]) -> Result<()> {
+    async fn cache_actor(&self, actor: &Actor, actor_id: &str, version: &str, wasm: &[u8]) -> Result<()> {
         let actor_hash = self.compute_actor_hash(actor);
         let cache_path = self.cache_dir.join(&actor.name).join(&actor_hash);
 
@@ -302,7 +342,8 @@ impl ActorLoader {
 
         // Write metadata
         let metadata = serde_json::json!({
-            "crate_name": &actor.name,
+            "actor_id": actor_id,
+            "logical_name": &actor.name,
             "version": version,
             "cached_at": chrono::Utc::now().to_rfc3339(),
         });
@@ -331,12 +372,12 @@ impl ActorLoader {
             }
             ActorSource::Git(repo) => {
                 hasher.update("git:");
-                hasher.update(&repo.url.as_str());
+                hasher.update(repo.url.as_str());
                 if let Some(git_ref) = &repo.git_ref {
                     match git_ref {
-                        GitRef::Branch(branch) => hasher.update(&format!("branch:{branch}")),
-                        GitRef::Tag(tag) => hasher.update(&format!("tag:{tag}")),
-                        GitRef::Rev(rev) => hasher.update(&format!("rev:{rev}")),
+                        GitRef::Branch(branch) => hasher.update(format!("branch:{branch}")),
+                        GitRef::Tag(tag) => hasher.update(format!("tag:{tag}")),
+                        GitRef::Rev(rev) => hasher.update(format!("rev:{rev}")),
                     }
                 }
                 if let Some(package) = &repo.package {
@@ -348,13 +389,14 @@ impl ActorLoader {
         hex::encode(hasher.finalize())
     }
 
-    async fn copy_local_actor(&self, source: &str, dest: &Path) -> Result<()> {
+    async fn copy_local_actor(&self, source: &str, dest: &Path, actor_name: &str) -> Result<()> {
         info!("Copying local actor from {} to {:?}", source, dest);
 
         let source_path = Path::new(source);
         ensure!(
             source_path.exists(),
             InvalidPathSnafu {
+                actor_name: actor_name.to_string(),
                 path: source.to_string()
             }
         );
@@ -413,7 +455,14 @@ impl ActorLoader {
         cmd.arg("clone").arg(url.as_str()).arg(dest);
 
         let status = cmd.status().await.context(CommandSnafu)?;
-        ensure!(status.success(), CommandFailedSnafu { status });
+        if !status.success() {
+            return Err(Error::CommandFailed {
+                actor_name: "<git-clone>".to_string(),
+                status,
+                stderr: "Git clone failed".to_string(),
+                location: location!(),
+            });
+        }
 
         // Checkout specific branch/tag/rev if specified
         if let Some(spec) = specifier {
@@ -433,18 +482,20 @@ impl ActorLoader {
             }
 
             let checkout_status = checkout_cmd.status().await.context(CommandSnafu)?;
-            ensure!(
-                checkout_status.success(),
-                CommandFailedSnafu {
-                    status: checkout_status
-                }
-            );
+            if !checkout_status.success() {
+                return Err(Error::CommandFailed {
+                    actor_name: "<git-checkout>".to_string(),
+                    status: checkout_status,
+                    stderr: "Git checkout failed".to_string(),
+                    location: location!(),
+                });
+            }
         }
 
         Ok(())
     }
 
-    async fn setup_local_dependencies(&self, actor_path: &Path, package_name: Option<&str>) -> Result<()> {
+    async fn setup_local_dependencies(&self, actor_path: &Path, package_name: Option<&str>, actor_name: &str) -> Result<()> {
         info!("Setting up local dependencies for development mode");
 
         // Find the workspace root and construct absolute paths
@@ -457,12 +508,14 @@ impl ActorLoader {
         ensure!(
             hive_actor_utils_path.exists(),
             InvalidPathSnafu {
+                actor_name: actor_name.to_string(),
                 path: hive_actor_utils_path.display().to_string()
             }
         );
         ensure!(
             hive_actor_bindings_path.exists(),
             InvalidPathSnafu {
+                actor_name: actor_name.to_string(),
                 path: hive_actor_bindings_path.display().to_string()
             }
         );
@@ -476,7 +529,9 @@ impl ActorLoader {
                     package_path
                 } else {
                     return Err(Error::PackageNotFound {
-                        name: format!("{} (looked in crates/ directory only)", package),
+                        actor_name: actor_name.to_string(),
+                        package_name: package.to_string(),
+                        workspace_path: actor_path.display().to_string(),
                         location: location!(),
                     });
                 }
@@ -538,14 +593,10 @@ impl ActorLoader {
         // Update the component WIT
         if let Some(dependencies) = cargo_toml
             .get_mut("package")
-            .map(|x| x.get_mut("metadata"))
-            .flatten()
-            .map(|x| x.get_mut("component"))
-            .flatten()
-            .map(|x| x.get_mut("target"))
-            .flatten()
-            .map(|x| x.get_mut("dependencies"))
-            .flatten()
+            .and_then(|x| x.get_mut("metadata"))
+            .and_then(|x| x.get_mut("component"))
+            .and_then(|x| x.get_mut("target"))
+            .and_then(|x| x.get_mut("dependencies"))
             .and_then(|x| x.as_table_mut())
         {
             if dependencies.contains_key("hive:actor") {
@@ -577,7 +628,7 @@ impl ActorLoader {
         Ok(())
     }
 
-    async fn build_actor(&self, actor_path: &Path, package_name: Option<&str>) -> Result<PathBuf> {
+    async fn build_actor(&self, actor_path: &Path, package_name: Option<&str>, actor_name: &str) -> Result<PathBuf> {
         info!("Building actor at {:?}", actor_path);
 
         let mut cmd = Command::new("cargo-component");
@@ -600,7 +651,9 @@ impl ActorLoader {
             let stderr = String::from_utf8_lossy(&output.stderr);
             warn!("Build failed with stderr: {}", stderr);
             return Err(Error::CommandFailed {
+                actor_name: actor_name.to_string(),
                 status: output.status,
+                stderr: stderr.into_owned(),
                 location: location!(),
             });
         }
@@ -626,11 +679,9 @@ impl ActorLoader {
                     }
                 }
                 return Err(Error::WasmNotFound {
-                    name: actor_path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string(),
+                    actor_name: actor_name.to_string(),
+                    expected_wasm: "<any .wasm file>".to_string(),
+                    target_dir: target_dir.display().to_string(),
                     location: location!(),
                 });
             }
@@ -642,13 +693,15 @@ impl ActorLoader {
             Ok(wasm_path)
         } else {
             Err(Error::WasmNotFound {
-                name: package_name.unwrap_or("unknown").to_string(),
+                actor_name: actor_name.to_string(),
+                expected_wasm: expected_wasm_name,
+                target_dir: target_dir.display().to_string(),
                 location: location!(),
             })
         }
     }
 
-    async fn get_actor_metadata(&self, actor_path: &Path, package_name: Option<&str>) -> Result<(String, String)> {
+    async fn get_actor_metadata(&self, actor_path: &Path, package_name: Option<&str>, actor_name: &str) -> Result<(String, String)> {
         let metadata = MetadataCommand::new()
             .current_dir(actor_path)
             .exec()
@@ -662,7 +715,9 @@ impl ActorLoader {
                     .iter()
                     .find(|p| p.name == name)
                     .ok_or_else(|| Error::PackageNotFound {
-                        name: name.to_string(),
+                        actor_name: actor_name.to_string(),
+                        package_name: name.to_string(),
+                        workspace_path: actor_path.display().to_string(),
                         location: location!(),
                     })?
             }
@@ -673,7 +728,9 @@ impl ActorLoader {
                     .iter()
                     .find(|p| p.source.is_none())
                     .ok_or_else(|| Error::PackageNotFound {
-                        name: "root package".to_string(),
+                        actor_name: actor_name.to_string(),
+                        package_name: "root package".to_string(),
+                        workspace_path: actor_path.display().to_string(),
                         location: location!(),
                     })?
             }
