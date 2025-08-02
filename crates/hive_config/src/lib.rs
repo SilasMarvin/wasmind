@@ -78,12 +78,29 @@ pub struct Actor {
     pub config: Option<toml::Table>,
     #[serde(default)]
     pub auto_spawn: bool,
+    #[serde(default)]
+    pub required_spawn_with: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ActorOverride {
+    #[serde(skip)]
+    pub name: String,
+    #[serde(default)]
+    pub source: Option<ActorSource>,
+    #[serde(default)]
+    pub config: Option<toml::Table>,
+    #[serde(default)]
+    pub auto_spawn: Option<bool>,
+    #[serde(default)]
+    pub required_spawn_with: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Config {
     raw_config: toml::Table,
     pub actors: Vec<Actor>,
+    pub actor_overrides: Vec<ActorOverride>,
     pub starting_actors: Vec<String>,
 }
 
@@ -137,9 +154,59 @@ pub fn load_from_path<P: AsRef<Path> + ToOwned<Owned = PathBuf>>(path: P) -> Res
         Vec::new()
     };
 
+    // Parse actor_overrides section
+    let actor_overrides = if let Some(overrides_section) = raw_config.get("actor_overrides") {
+        if let Some(overrides_table) = overrides_section.as_table() {
+            let mut overrides_vec = Vec::new();
+            for (name, value) in overrides_table {
+                // Handle both flat overrides and nested config overrides
+                if name.ends_with(".config") {
+                    // This is a config-only override like "actor_name.config"
+                    let actor_name = name.strip_suffix(".config").unwrap();
+                    
+                    // Check if we already have an override for this actor
+                    if let Some(existing_override) = overrides_vec.iter_mut().find(|o: &&mut ActorOverride| o.name == actor_name) {
+                        // Merge the config
+                        existing_override.config = Some(value.as_table().unwrap().clone());
+                    } else {
+                        // Create new override with just config
+                        let mut override_entry = ActorOverride {
+                            name: actor_name.to_string(),
+                            source: None,
+                            config: Some(value.as_table().unwrap().clone()),
+                            auto_spawn: None,
+                            required_spawn_with: None,
+                        };
+                        overrides_vec.push(override_entry);
+                    }
+                } else {
+                    // This is a regular override that might contain multiple fields
+                    let mut actor_override: ActorOverride = value.clone().try_into().context(TomlParseSnafu)?;
+                    actor_override.name.clone_from(name);
+                    
+                    // Check if there's also a .config section for this actor
+                    let config_key = format!("{}.config", name);
+                    if let Some(config_value) = overrides_table.get(&config_key) {
+                        if let Some(config_table) = config_value.as_table() {
+                            actor_override.config = Some(config_table.clone());
+                        }
+                    }
+                    
+                    overrides_vec.push(actor_override);
+                }
+            }
+            overrides_vec
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
     Ok(Config {
         raw_config,
         actors,
+        actor_overrides,
         starting_actors,
     })
 }
@@ -175,6 +242,8 @@ pub struct DependencyConfig {
     pub auto_spawn: Option<bool>,
     #[serde(default)]
     pub config: Option<toml::Table>,
+    #[serde(default)]
+    pub required_spawn_with: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -182,6 +251,8 @@ pub struct ActorManifest {
     pub actor_id: String,
     #[serde(default)]
     pub dependencies: HashMap<String, DependencyConfig>,
+    #[serde(default)]
+    pub required_spawn_with: Vec<String>,
 }
 
 impl ActorManifest {

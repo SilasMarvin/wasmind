@@ -16,11 +16,12 @@ fn test_simple_actor_resolution() {
             }),
             config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
         }
     ];
 
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -43,11 +44,12 @@ fn test_actor_without_manifest_fails() {
             }),
             config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
         }
     ];
 
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     
     // Should fail because Hive.toml is required
     assert!(result.is_err());
@@ -73,11 +75,12 @@ fn test_dependency_resolution() {
             }),
             config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
         }
     ];
 
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -98,38 +101,44 @@ fn test_dependency_resolution() {
 }
 
 #[test]
-fn test_configuration_merging() {
+fn test_global_configuration_override() {
     use toml::Table;
     
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("test_actors");
     
-    // Create user config with dependency override
-    let mut user_config = Table::new();
-    let mut dependencies = Table::new();
-    let mut logger_override = Table::new();
+    // Create global override for logger actor
     let mut logger_config = Table::new();
-    
     logger_config.insert("level".to_string(), toml::Value::String("debug".to_string()));
     logger_config.insert("output".to_string(), toml::Value::String("stdout".to_string()));
-    logger_override.insert("config".to_string(), toml::Value::Table(logger_config));
-    dependencies.insert("logger".to_string(), toml::Value::Table(logger_override));
-    user_config.insert("dependencies".to_string(), toml::Value::Table(dependencies));
     
     let actors = vec![
+        // Define the coordinator
         Actor {
             name: "my_coordinator".to_string(),
             source: ActorSource::Path(PathSource {
                 path: test_actors_path.join("coordinator").to_str().unwrap().to_string(),
                 package: None,
             }),
-            config: Some(user_config),
+            config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
+        },
+        // Global override for logger
+        Actor {
+            name: "logger".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: test_actors_path.join("logger").to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: Some(logger_config),
+            auto_spawn: false,
+            required_spawn_with: vec![],
         }
     ];
 
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -137,126 +146,61 @@ fn test_configuration_merging() {
     let logger = &resolved["logger"];
     let logger_config = logger.config.as_ref().unwrap();
     
-    // Should have merged config: manifest default (format=json) + user override (level=debug, output=stdout)
-    assert_eq!(logger_config.get("level").unwrap().as_str().unwrap(), "debug"); // User override
-    assert_eq!(logger_config.get("format").unwrap().as_str().unwrap(), "json"); // Manifest default
-    assert_eq!(logger_config.get("output").unwrap().as_str().unwrap(), "stdout"); // User addition
+    // Should have global override config (level=debug, output=stdout) + manifest default (format=json)
+    assert_eq!(logger_config.get("level").unwrap().as_str().unwrap(), "debug"); // Global override
+    assert_eq!(logger_config.get("output").unwrap().as_str().unwrap(), "stdout"); // Global override
+    // Note: The dependency's default config is not merged with global overrides
 }
 
 #[test]
-fn test_dependency_source_and_auto_spawn_overrides() {
-    use toml::Table;
-    
+fn test_global_source_and_auto_spawn_overrides() {
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("test_actors");
     
-    // Create user config with dependency source and auto_spawn overrides
-    let mut user_config = Table::new();
-    let mut dependencies = Table::new();
-    let mut logger_override = Table::new();
-    
-    // Override the source to use a different path
-    let alternative_logger_path = test_actors_path.join("logger").to_str().unwrap().to_string();
-    logger_override.insert("source".to_string(), toml::Value::Table({
-        let mut source_table = Table::new();
-        source_table.insert("path".to_string(), toml::Value::String(alternative_logger_path));
-        source_table
-    }));
-    
-    // Override auto_spawn to false (manifest has it as true)
-    logger_override.insert("auto_spawn".to_string(), toml::Value::Boolean(false));
-    
-    dependencies.insert("logger".to_string(), toml::Value::Table(logger_override));
-    user_config.insert("dependencies".to_string(), toml::Value::Table(dependencies));
-    
     let actors = vec![
+        // Define the coordinator
         Actor {
             name: "my_coordinator".to_string(),
             source: ActorSource::Path(PathSource {
                 path: test_actors_path.join("coordinator").to_str().unwrap().to_string(),
                 package: None,
             }),
-            config: Some(user_config),
+            config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
+        },
+        // Global override for logger with different source and auto_spawn
+        Actor {
+            name: "logger".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: test_actors_path.join("simple_actor").to_str().unwrap().to_string(), // Different path
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false, // Override to false (manifest default is true)
+            required_spawn_with: vec![],
         }
     ];
 
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     
     assert!(result.is_ok());
     let resolved = result.unwrap();
     
+    // Logger should be resolved with the global override
     let logger = &resolved["logger"];
     
-    // Source should be overridden to the user-specified path
+    // Source should be the globally overridden path
     match &logger.source {
         ActorSource::Path(path_source) => {
-            assert!(path_source.path.ends_with("test_actors/logger"));
+            assert!(path_source.path.ends_with("test_actors/simple_actor"));
         }
         _ => panic!("Expected path source"),
     }
     
-    // auto_spawn should be overridden to false (manifest default is true)
+    // auto_spawn should be globally overridden to false
     assert_eq!(logger.auto_spawn, false);
-    
-    // Config should still have the manifest defaults since we didn't override them
-    let logger_config = logger.config.as_ref().unwrap();
-    assert_eq!(logger_config.get("level").unwrap().as_str().unwrap(), "info"); // Manifest default
-    assert_eq!(logger_config.get("format").unwrap().as_str().unwrap(), "json"); // Manifest default
 }
 
-#[test]
-fn test_orphaned_dependency_configuration_warning() {
-    use toml::Table;
-    
-    let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("test_actors");
-    
-    // Create user config with an orphaned dependency (non-existent in manifest)
-    let mut user_config = Table::new();
-    let mut dependencies = Table::new();
-    let mut orphaned_dep = Table::new();
-    
-    orphaned_dep.insert("auto_spawn".to_string(), toml::Value::Boolean(true));
-    dependencies.insert("nonexistent_dependency".to_string(), toml::Value::Table(orphaned_dep));
-    
-    // Also add a valid dependency configuration
-    let mut valid_dep = Table::new();
-    valid_dep.insert("auto_spawn".to_string(), toml::Value::Boolean(false));
-    dependencies.insert("logger".to_string(), toml::Value::Table(valid_dep));
-    
-    user_config.insert("dependencies".to_string(), toml::Value::Table(dependencies));
-    
-    let actors = vec![
-        Actor {
-            name: "my_coordinator".to_string(),
-            source: ActorSource::Path(PathSource {
-                path: test_actors_path.join("coordinator").to_str().unwrap().to_string(),
-                package: None,
-            }),
-            config: Some(user_config),
-            auto_spawn: false,
-        }
-    ];
-
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
-    
-    // Resolution should still succeed despite orphaned config
-    assert!(result.is_ok());
-    let resolved = result.unwrap();
-    
-    // Should still resolve both coordinator and logger (ignoring orphaned config)
-    assert_eq!(resolved.len(), 2);
-    assert!(resolved.contains_key("my_coordinator"));
-    assert!(resolved.contains_key("logger"));
-    
-    // Logger should use the valid override (auto_spawn = false instead of manifest default true)
-    let logger = &resolved["logger"];
-    assert_eq!(logger.auto_spawn, false);
-    
-    // Note: The warning for "nonexistent_dependency" would be logged but we can't easily test
-    // the log output in a unit test. In a real scenario, users would see:
-    // "Configuration for unknown dependency 'nonexistent_dependency' in actor 'my_coordinator' will be ignored."
-}
+// Test removed - orphaned dependency configurations are no longer a concept with global overrides

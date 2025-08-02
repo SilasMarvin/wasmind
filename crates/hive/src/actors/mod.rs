@@ -19,6 +19,8 @@ pub trait ActorExecutor: Send + Sync {
 
     fn auto_spawn(&self) -> bool;
 
+    fn required_spawn_with(&self) -> &[&str];
+
     fn run(
         &self,
         scope: Scope,
@@ -39,6 +41,10 @@ impl ActorExecutor for LoadedActor {
 
     fn auto_spawn(&self) -> bool {
         self.auto_spawn
+    }
+
+    fn required_spawn_with(&self) -> &[&str] {
+        self.required_spawn_with.as_slice()
     }
 
     fn run(

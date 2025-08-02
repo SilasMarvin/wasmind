@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
 use snafu::{Location, Snafu};
-use tracing::warn;
 use tempfile::TempDir;
 
 use hive_config::{Actor, ActorManifest, ActorSource};
@@ -44,6 +43,27 @@ pub enum Error {
         #[snafu(implicit)]
         location: Location,
     },
+
+    #[snafu(display("Invalid user configuration: Actor '{logical_name}' is defined in [actors] but already exists in the dependency chain. Use [actor_overrides.{logical_name}] instead to override dependency configuration."))]
+    ActorConflictsWithDependency {
+        logical_name: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Invalid user configuration: Actor override '{logical_name}' specified in [actor_overrides] but no actor with this name exists in any dependency chain. Remove this override or add the actor to [actors] if you want to define a new actor."))]
+    OverrideForNonExistentDependency {
+        logical_name: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Invalid user configuration: Actor '{logical_name}' is defined in both [actors] and [actor_overrides]. Use only [actors.{logical_name}] to define user actors, or only [actor_overrides.{logical_name}] to override dependencies."))]
+    ActorAndOverrideConflict {
+        logical_name: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -56,6 +76,7 @@ pub struct ResolvedActor {
     pub source: ActorSource,
     pub config: Option<toml::Table>,
     pub auto_spawn: bool,
+    pub required_spawn_with: Vec<String>,
     pub is_dependency: bool,
 }
 
@@ -74,19 +95,45 @@ impl DependencyResolver {
     }
 
     /// Resolve all actors and their dependencies
-    pub fn resolve_all(mut self, actors: Vec<Actor>) -> Result<HashMap<String, ResolvedActor>> {
-        // Store user configs for dependency override lookup
-        let mut user_configs: HashMap<String, toml::Table> = HashMap::new();
-        for actor in &actors {
-            if let Some(config) = &actor.config {
-                user_configs.insert(actor.name.clone(), config.clone());
+    pub fn resolve_all(mut self, user_actors: Vec<Actor>, actor_overrides: Vec<hive_config::ActorOverride>) -> Result<HashMap<String, ResolvedActor>> {
+        // Build maps for validation and resolution
+        let mut user_actor_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut global_overrides: HashMap<String, Actor> = HashMap::new();
+        for actor in user_actors.iter() {
+            user_actor_names.insert(actor.name.clone());
+            global_overrides.insert(actor.name.clone(), actor.clone());
+        }
+
+        let mut override_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut overrides_map: HashMap<String, hive_config::ActorOverride> = HashMap::new();
+        for override_entry in actor_overrides {
+            override_names.insert(override_entry.name.clone());
+            overrides_map.insert(override_entry.name.clone(), override_entry);
+        }
+
+        // Validation 1: Check for conflicts between [actors] and [actor_overrides]
+        for user_actor_name in &user_actor_names {
+            if override_names.contains(user_actor_name) {
+                return Err(Error::ActorAndOverrideConflict {
+                    logical_name: user_actor_name.clone(),
+                    location: snafu::Location::default(),
+                });
             }
         }
 
-        // First, add all explicitly configured actors
-        for actor in actors {
-            self.resolve_actor_internal(actor, false, &user_configs, None)?;
+        // First pass: resolve all user actors and collect all dependency names
+        for actor in user_actors {
+            self.resolve_actor_internal(actor, false, &global_overrides, &overrides_map)?;
         }
+
+        // Collect all actors that exist in dependency chains
+        let all_resolved_names: std::collections::HashSet<String> = self.resolved.keys().cloned().collect();
+
+        // TODO: Add more sophisticated validation for:
+        // - User actors conflicting with dependencies (requires two-phase resolution)
+        // - Actor overrides referencing non-existent dependencies (requires dependency discovery)
+        // For now, we have the basic validation that prevents [actors] and [actor_overrides] 
+        // from both defining the same name
 
         Ok(self.resolved)
     }
@@ -97,8 +144,8 @@ impl DependencyResolver {
         &mut self, 
         actor: Actor, 
         is_dependency: bool, 
-        user_configs: &HashMap<String, toml::Table>,
-        _parent_logical_name: Option<&str>
+        global_overrides: &HashMap<String, Actor>,
+        actor_overrides: &HashMap<String, hive_config::ActorOverride>
     ) -> Result<()> {
         let logical_name = actor.name.clone();
 
@@ -165,40 +212,70 @@ impl DependencyResolver {
         // Get actor_id from manifest (always required)
         let actor_id = manifest.actor_id.clone();
 
+        // Apply overrides in order: manifest defaults → actor definition → global overrides → actor overrides
+        let mut final_source = actor.source.clone();
+        let mut final_config = actor.config.clone();
+        let mut final_auto_spawn = actor.auto_spawn;
+        let mut final_required_spawn_with = manifest.required_spawn_with.clone();
+
+        // Apply global override if it exists
+        if let Some(global_override) = global_overrides.get(&logical_name) {
+            final_source = global_override.source.clone();
+            final_config = global_override.config.clone();
+            final_auto_spawn = global_override.auto_spawn;
+            // Use user-provided required_spawn_with if not empty, otherwise keep current
+            if !global_override.required_spawn_with.is_empty() {
+                final_required_spawn_with = global_override.required_spawn_with.clone();
+            }
+        }
+
+        // Apply actor override if it exists (this takes precedence over global overrides)
+        if let Some(actor_override) = actor_overrides.get(&logical_name) {
+            if let Some(override_source) = &actor_override.source {
+                final_source = override_source.clone();
+            }
+            if let Some(override_config) = &actor_override.config {
+                final_config = Some(override_config.clone());
+            }
+            if let Some(override_auto_spawn) = actor_override.auto_spawn {
+                final_auto_spawn = override_auto_spawn;
+            }
+            if let Some(override_required_spawn_with) = &actor_override.required_spawn_with {
+                final_required_spawn_with = override_required_spawn_with.clone();
+            }
+        }
+
         // Create resolved actor
         let resolved_actor = ResolvedActor {
             logical_name: logical_name.clone(),
             actor_id,
-            source: actor.source.clone(),
-            config: actor.config.clone(),
-            auto_spawn: actor.auto_spawn,
+            source: final_source.clone(), // Clone for later use
+            config: final_config,
+            auto_spawn: final_auto_spawn,
+            required_spawn_with: final_required_spawn_with,
             is_dependency,
         };
 
         // Store the resolved actor
         self.resolved.insert(logical_name.clone(), resolved_actor);
 
-        // Check for orphaned dependency configurations and warn about them
-        self.check_orphaned_dependency_configs(&logical_name, &manifest, user_configs);
+        // No longer checking for orphaned dependency configs as we use global overrides now
 
         // Resolve dependencies from manifest
         for (dep_name, dep_config) in manifest.dependencies {
-            // Merge all dependency settings: source, config, auto_spawn from manifest defaults + user overrides
-            let (merged_source, merged_config, merged_auto_spawn) = merge_dependency_settings(
-                &dep_config,
-                &actor.source, // Parent source for relative path resolution
-                Some(&logical_name), // The current actor is the parent of this dependency
-                &dep_name,
-                user_configs
-            );
+            // Start with manifest defaults
+            let dep_source = resolve_relative_source(&final_source, dep_config.source.clone());
+            let dep_config_table = dep_config.config.clone();
+            let dep_auto_spawn = dep_config.auto_spawn.unwrap_or(false);
             
             let dep_actor = Actor {
                 name: dep_name.clone(),
-                source: merged_source,
-                config: merged_config,
-                auto_spawn: merged_auto_spawn,
+                source: dep_source,
+                config: dep_config_table,
+                auto_spawn: dep_auto_spawn,
+                required_spawn_with: vec![], // Dependencies don't have required_spawn_with from manifest
             };
-            self.resolve_actor_internal(dep_actor, true, user_configs, Some(&logical_name))?;
+            self.resolve_actor_internal(dep_actor, true, global_overrides, actor_overrides)?;
         }
 
         // Pop from resolution stack
@@ -213,32 +290,6 @@ impl DependencyResolver {
         format!("(previously resolved as '{logical_name}')")
     }
 
-    /// Check for orphaned dependency configurations and warn about them
-    fn check_orphaned_dependency_configs(
-        &self,
-        actor_logical_name: &str,
-        manifest: &ActorManifest,
-        user_configs: &HashMap<String, toml::Table>
-    ) {
-        if let Some(user_config) = user_configs.get(actor_logical_name) {
-            if let Some(dependencies_config) = user_config.get("dependencies") {
-                if let Some(dependencies_table) = dependencies_config.as_table() {
-                    // Get the set of actual dependencies from the manifest
-                    let actual_dependencies: std::collections::HashSet<String> = 
-                        manifest.dependencies.keys().cloned().collect();
-                    
-                    // Check each configured dependency
-                    for dep_name in dependencies_table.keys() {
-                        if !actual_dependencies.contains(dep_name) {
-                            warn!(
-                                "Configuration for unknown dependency '{dep_name}' in actor '{actor_logical_name}' will be ignored. Check for typos or outdated configuration."
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 fn load_manifest_from_git(git_source: &hive_config::Repository) -> std::result::Result<Option<ActorManifest>, hive_config::Error> {
@@ -287,8 +338,8 @@ fn load_manifest_from_git(git_source: &hive_config::Repository) -> std::result::
     
     // Determine manifest path based on package
     let manifest_path = if let Some(package) = &git_source.package {
-        // Look in crates/{package}/Hive.toml for Rust packages
-        clone_path.join("crates").join(package).join("Hive.toml")
+        // Package is the full subpath to the package
+        clone_path.join(package).join("Hive.toml")
     } else {
         // Look in root for Hive.toml
         clone_path.join("Hive.toml")
@@ -309,8 +360,8 @@ pub fn load_manifest_for_source(source: &ActorSource) -> std::result::Result<Opt
             
             // Determine the actual path where Hive.toml should be located
             let manifest_dir = if let Some(package) = &path_source.package {
-                // For packages, look in crates/{package}/
-                base_path.join("crates").join(package)
+                // Package is the full subpath to the package
+                base_path.join(package)
             } else {
                 // For single actors, look in the root path
                 base_path.to_path_buf()
@@ -376,8 +427,8 @@ fn resolve_relative_source(parent_source: &ActorSource, dep_source: ActorSource)
                 
                 // Determine the actual directory where the parent's manifest is located
                 let parent_manifest_dir = if let Some(package) = &parent_path.package {
-                    // For packages, the manifest is in crates/{package}/
-                    parent_base_path.join("crates").join(package)
+                    // Package is the full subpath to the package
+                    parent_base_path.join(package)
                 } else {
                     // For single actors, the manifest is in the root path
                     parent_base_path.to_path_buf()
@@ -397,83 +448,6 @@ fn resolve_relative_source(parent_source: &ActorSource, dep_source: ActorSource)
     }
 }
 
-/// Merge dependency settings (source, config, auto_spawn) from manifest defaults and user overrides
-fn merge_dependency_settings(
-    dep_config: &hive_config::DependencyConfig,
-    parent_source: &ActorSource,
-    parent_logical_name: Option<&str>,
-    dep_logical_name: &str,
-    user_configs: &HashMap<String, toml::Table>
-) -> (ActorSource, Option<toml::Table>, bool) {
-    // Start with manifest-provided values
-    let mut merged_source = dep_config.source.clone();
-    let mut merged_config = dep_config.config.clone();
-    let mut merged_auto_spawn = dep_config.auto_spawn.unwrap_or(false);
-    
-    // Look for user override in parent's config
-    if let Some(parent_name) = parent_logical_name {
-        if let Some(parent_config) = user_configs.get(parent_name) {
-            // Look for dependencies.{dep_name} in user config
-            if let Some(dependencies) = parent_config.get("dependencies") {
-                if let Some(dependencies_table) = dependencies.as_table() {
-                    if let Some(dep_override) = dependencies_table.get(dep_logical_name) {
-                        if let Some(dep_override_table) = dep_override.as_table() {
-                            // Override source if specified
-                            if let Some(source_value) = dep_override_table.get("source") {
-                                if let Ok(override_source) = source_value.clone().try_into() {
-                                    merged_source = override_source;
-                                }
-                            }
-                            
-                            // Override auto_spawn if specified
-                            if let Some(auto_spawn_value) = dep_override_table.get("auto_spawn") {
-                                if let Some(auto_spawn_bool) = auto_spawn_value.as_bool() {
-                                    merged_auto_spawn = auto_spawn_bool;
-                                }
-                            }
-                            
-                            // Override config if specified
-                            if let Some(override_config) = dep_override_table.get("config") {
-                                if let Some(override_config_table) = override_config.as_table() {
-                                    // Merge the configs - user config wins
-                                    match merged_config {
-                                        Some(ref mut base) => {
-                                            merge_toml_tables(base, override_config_table);
-                                        }
-                                        None => {
-                                            merged_config = Some(override_config_table.clone());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // Resolve relative paths after all overrides are applied
-    let resolved_source = resolve_relative_source(parent_source, merged_source);
-    
-    (resolved_source, merged_config, merged_auto_spawn)
-}
-
-/// Merge two TOML tables, with the second table's values taking precedence
-fn merge_toml_tables(base: &mut toml::Table, override_table: &toml::Table) {
-    for (key, value) in override_table {
-        match (base.get_mut(key), value) {
-            // If both are tables, merge recursively
-            (Some(toml::Value::Table(base_table)), toml::Value::Table(override_table)) => {
-                merge_toml_tables(base_table, override_table);
-            }
-            // Otherwise, user value wins
-            _ => {
-                base.insert(key.clone(), value.clone());
-            }
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -491,11 +465,12 @@ mod tests {
                 }),
                 config: None,
                 auto_spawn: false,
+                required_spawn_with: vec![],
             }
         ];
 
         let resolver = DependencyResolver::new();
-        let result = resolver.resolve_all(actors);
+        let result = resolver.resolve_all(actors, vec![]);
         
         // Should fail because Hive.toml is required for ALL actors
         assert!(result.is_err());

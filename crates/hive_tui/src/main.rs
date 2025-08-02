@@ -103,7 +103,7 @@ async fn main() -> TuiResult<()> {
         let tui_config = crate::config::TuiConfig::from_config(&config)?.parse()?;
 
         // Load the actors
-        let loaded_actors = hive::load_actors(config.actors).await?;
+        let loaded_actors = hive::load_actors(config.actors, config.actor_overrides).await?;
 
         // Create the context
         let context = hive::context::HiveContext::new(loaded_actors);

@@ -70,7 +70,7 @@ impl Context {
             .get_text()
             .map_err(|e| format!("Failed to get clipboard text: {}", e))?;
         Ok(text)
-    }
+
     async fn handle_capture_window(&mut self) {
         match Self::capture_screen() {
             Ok(image) => {

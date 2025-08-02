@@ -3,8 +3,8 @@ use hive_actor_utils::{
     common_messages::{
         actors,
         assistant::{
-            self, ChatState, ChatStateUpdated, Request, Status, SystemPromptContribution,
-            WaitReason,
+            self, ChatState, ChatStateUpdated, Request, Status, StatusUpdate,
+            SystemPromptContribution, WaitReason,
         },
         litellm,
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
@@ -274,7 +274,9 @@ impl Assistant {
         self.status = new_status;
 
         if broadcast_change {
-            // TODO: Broadcast state change
+            let _ = Self::broadcast_common_message(StatusUpdate {
+                status: self.status.clone(),
+            });
         }
     }
 
@@ -401,6 +403,37 @@ impl GeneratedActorTrait for Assistant {
         &mut self,
         message: bindings::exports::hive::actor::actor::MessageEnvelope,
     ) -> () {
+        // Handle LiteLLM base URL updates
+        if let Some(base_url_update) = Self::parse_as::<litellm::BaseUrlUpdate>(&message) {
+            tracing::info!(
+                "Received LiteLLM base URL update: {}",
+                base_url_update.base_url
+            );
+            self.base_url = Some(base_url_update.base_url);
+
+            // If we were waiting for LiteLLM, transition to waiting for system or user input
+            if matches!(
+                self.status,
+                Status::Wait {
+                    reason: WaitReason::WaitingForLiteLLM
+                }
+            ) {
+                if self.pending_message.has_content() {
+                    self.submit(false);
+                } else {
+                    self.set_status(
+                        Status::Wait {
+                            reason: WaitReason::WaitingForSystemInput {
+                                required_scope: None,
+                                interruptible_by_user: true,
+                            },
+                        },
+                        true,
+                    );
+                }
+            }
+        }
+
         // Messages where it matters if they are from our own scope
         if message.from_scope == self.scope {
             if let Some(_all_actors_ready) = Self::parse_as::<actors::AllActorsReady>(&message) {
@@ -512,38 +545,26 @@ impl GeneratedActorTrait for Assistant {
             }
         }
 
-        // Handle LiteLLM base URL updates
-        if let Some(base_url_update) = Self::parse_as::<litellm::BaseUrlUpdate>(&message) {
-            tracing::info!(
-                "Received LiteLLM base URL update: {}",
-                base_url_update.base_url
-            );
-            self.base_url = Some(base_url_update.base_url);
-
-            // If we were waiting for LiteLLM, transition to waiting for system or user input
-            if matches!(
-                self.status,
+        // We currently only accept status update requests if we are waiting on the tool that submits it
+        if let Some(request_status_update) =
+            Self::parse_as::<assistant::RequestStatusUpdate>(&message)
+        {
+            match &self.status {
                 Status::Wait {
-                    reason: WaitReason::WaitingForLiteLLM
+                    reason: WaitReason::WaitingForTools { tool_calls },
+                } => {
+                    if let Some(tool_call_id) = request_status_update.tool_call_id
+                        && tool_calls.contains_key(&tool_call_id)
+                    {
+                        self.set_status(request_status_update.status, true);
+                    }
                 }
-            ) {
-                if self.pending_message.has_content() {
-                    self.submit(false);
-                } else {
-                    self.set_status(
-                        Status::Wait {
-                            reason: WaitReason::WaitingForSystemInput {
-                                required_scope: None,
-                                interruptible_by_user: true,
-                            },
-                        },
-                        true,
-                    );
-                }
+                _ => (),
             }
         }
 
-        // Messages where it does not matter if they are from our own scope
+        // TODO: Support interrupt
+
         if let Some(add_message) = Self::parse_as::<assistant::AddMessage>(&message)
             && add_message.agent == self.scope
         {

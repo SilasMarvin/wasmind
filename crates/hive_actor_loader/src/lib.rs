@@ -79,6 +79,14 @@ pub enum Error {
         location: Location,
     },
 
+    #[snafu(display("Missing required field '{field}' in Cargo.toml for actor '{actor_name}'."))]
+    MissingRequiredField {
+        actor_name: String,
+        field: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
     #[snafu(display("Failed to load actor '{actor_name}'. WASM file '{expected_wasm}' not found in target directory '{target_dir}'. Ensure the actor builds successfully."))]
     WasmNotFound {
         actor_name: String,
@@ -134,6 +142,7 @@ pub struct LoadedActor {
     pub wasm: Vec<u8>,
     pub config: Option<toml::Table>,
     pub auto_spawn: bool,
+    pub required_spawn_with: Vec<String>,
 }
 
 pub struct ActorLoader {
@@ -153,7 +162,7 @@ impl ActorLoader {
         }
     }
 
-    pub async fn load_actors(&self, actors: Vec<Actor>) -> Result<Vec<LoadedActor>> {
+    pub async fn load_actors(&self, actors: Vec<Actor>, actor_overrides: Vec<hive_config::ActorOverride>) -> Result<Vec<LoadedActor>> {
         // Ensure cache directory exists
         fs::create_dir_all(&self.cache_dir)
             .await
@@ -166,7 +175,7 @@ impl ActorLoader {
         println!("Resolving actor dependencies...");
         let resolver = dependency_resolver::DependencyResolver::new();
         let resolved_actors = resolver
-            .resolve_all(actors)
+            .resolve_all(actors, actor_overrides)
             .context(DependencyResolutionSnafu)?;
 
         // Phase 2: Load all resolved actors in parallel
@@ -179,8 +188,9 @@ impl ActorLoader {
                     source: resolved.source,
                     config: resolved.config,
                     auto_spawn: resolved.auto_spawn,
+                    required_spawn_with: resolved.required_spawn_with.clone(),
                 };
-                self.load_single_actor(actor, resolved.actor_id.clone())
+                self.load_single_actor(actor, resolved.actor_id.clone(), resolved.required_spawn_with)
             })
             .collect();
 
@@ -211,7 +221,7 @@ impl ActorLoader {
         Ok(())
     }
 
-    async fn load_single_actor(&self, actor: Actor, actor_id: String) -> Result<LoadedActor> {
+    async fn load_single_actor(&self, actor: Actor, actor_id: String, required_spawn_with: Vec<String>) -> Result<LoadedActor> {
         println!("  Loading {}", actor.name);
         info!("Loading actor: {} (id: {})", actor.name, actor_id);
 
@@ -219,7 +229,7 @@ impl ActorLoader {
 
         // Check if actor is already cached (skip cache in dev mode)
         if !is_dev_mode {
-            if let Some(cached) = self.check_cache(&actor, &actor_id).await? {
+            if let Some(cached) = self.check_cache(&actor, &actor_id, &required_spawn_with).await? {
                 println!("  ✓ {} (cached)", actor.name);
                 info!("Using cached actor: {}", actor.name);
                 return Ok(cached);
@@ -265,8 +275,8 @@ impl ActorLoader {
             path: Some(wasm_path),
         })?;
 
-        // Get metadata
-        let (_, version) = self.get_actor_metadata(&build_path, package_name, &actor.name).await?;
+        // Get version
+        let version = self.get_actor_version(&build_path, package_name, &actor.name).await?;
 
         // Cache the built actor (skip in dev mode)
         if !is_dev_mode {
@@ -282,10 +292,11 @@ impl ActorLoader {
             wasm,
             config: actor.config,
             auto_spawn: actor.auto_spawn,
+            required_spawn_with,
         })
     }
 
-    async fn check_cache(&self, actor: &Actor, actor_id: &str) -> Result<Option<LoadedActor>> {
+    async fn check_cache(&self, actor: &Actor, actor_id: &str, required_spawn_with: &[String]) -> Result<Option<LoadedActor>> {
         let actor_hash = self.compute_actor_hash(actor);
         let cache_path = self.cache_dir.join(&actor.name).join(&actor_hash);
         let metadata_path = cache_path.join("metadata.json");
@@ -319,6 +330,7 @@ impl ActorLoader {
                 wasm,
                 config: actor.config.clone(),
                 auto_spawn: actor.auto_spawn,
+                required_spawn_with: required_spawn_with.to_vec(),
             }));
         }
 
@@ -565,7 +577,8 @@ impl ActorLoader {
         // Determine the correct package Cargo.toml path
         let cargo_toml_path = match package_name {
             Some(package) => {
-                let package_path = actor_path.join("crates").join(package).join("Cargo.toml");
+                // Package is the full subpath to the package
+                let package_path = actor_path.join(package).join("Cargo.toml");
                 if package_path.exists() {
                     package_path
                 } else {
@@ -638,15 +651,22 @@ impl ActorLoader {
     async fn build_actor(&self, actor_path: &Path, package_name: Option<&str>, actor_name: &str) -> Result<PathBuf> {
         info!("Building actor at {:?}", actor_path);
 
+        // Determine the actual build directory
+        let build_dir = if let Some(package) = package_name {
+            // For packages, cd into the package directory
+            actor_path.join(package)
+        } else {
+            // For single actors, build in the root
+            actor_path.to_path_buf()
+        };
+
         let mut cmd = Command::new("cargo-component");
-        cmd.current_dir(actor_path)
+        cmd.current_dir(&build_dir)
             .arg("build")
             .arg("--release");
         
-        // If package name is specified, build only that package
-        if let Some(package) = package_name {
-            cmd.arg("-p").arg(package);
-            info!("Building specific package: {}", package);
+        if package_name.is_some() {
+            info!("Building in package directory: {:?}", build_dir);
         }
         
         cmd.stdout(Stdio::piped())
@@ -666,84 +686,131 @@ impl ActorLoader {
         }
 
         // Find the built wasm file
-        let target_dir = actor_path
-            .join("target")
-            .join("wasm32-wasip1")
-            .join("release");
+        // When building in a package directory, the target directory is usually at the workspace root
+        let target_dir = if package_name.is_some() {
+            // For packages, check if there's a workspace target directory at the actor_path root
+            let workspace_target = actor_path
+                .join("target")
+                .join("wasm32-wasip1")
+                .join("release");
+            
+            if workspace_target.exists() {
+                workspace_target
+            } else {
+                // Fallback to package target directory
+                build_dir
+                    .join("target")
+                    .join("wasm32-wasip1")
+                    .join("release")
+            }
+        } else {
+            // For single actors, use the build directory target
+            build_dir
+                .join("target")
+                .join("wasm32-wasip1")
+                .join("release")
+        };
 
         let mut entries = fs::read_dir(&target_dir).await.context(IoSnafu {
             path: Some(target_dir.to_path_buf()),
         })?;
         
-        let expected_wasm_name = match package_name {
-            Some(package) => format!("{}.wasm", package.replace('-', "_")),
-            None => {
-                // For single package, find any .wasm file
-                while let Some(entry) = entries.next_entry().await.context(IoSnafu { path: None })? {
-                    let path = entry.path();
-                    if path.extension().and_then(|s| s.to_str()) == Some("wasm") {
-                        return Ok(path);
+        // When building in a package directory, we need to find the package name from Cargo.toml
+        let expected_wasm_name = if package_name.is_some() {
+            // Get the actual package name from the Cargo.toml in the package directory
+            let package_cargo_toml = build_dir.join("Cargo.toml");
+            if let Ok(content) = fs::read_to_string(&package_cargo_toml).await {
+                if let Ok(cargo_toml) = toml::from_str::<toml::Value>(&content) {
+                    if let Some(package_name) = cargo_toml.get("package")
+                        .and_then(|p| p.get("name"))
+                        .and_then(|n| n.as_str()) {
+                        format!("{}.wasm", package_name.replace('-', "_"))
+                    } else {
+                        // Fallback - try to find any .wasm file
+                        String::new()
                     }
+                } else {
+                    String::new()
                 }
-                return Err(Error::WasmNotFound {
-                    actor_name: actor_name.to_string(),
-                    expected_wasm: "<any .wasm file>".to_string(),
-                    target_dir: target_dir.display().to_string(),
-                    location: location!(),
-                });
+            } else {
+                String::new()
             }
+        } else {
+            String::new()
         };
 
-        // Look for the specific package's wasm file
-        let wasm_path = target_dir.join(&expected_wasm_name);
-        if wasm_path.exists() {
-            Ok(wasm_path)
-        } else {
-            Err(Error::WasmNotFound {
-                actor_name: actor_name.to_string(),
-                expected_wasm: expected_wasm_name,
-                target_dir: target_dir.display().to_string(),
-                location: location!(),
-            })
+        if !expected_wasm_name.is_empty() {
+            // Look for the specific wasm file
+            let wasm_path = target_dir.join(&expected_wasm_name);
+            if wasm_path.exists() {
+                return Ok(wasm_path);
+            }
         }
+
+        // Fallback: find any .wasm file
+        while let Some(entry) = entries.next_entry().await.context(IoSnafu { path: None })? {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("wasm") {
+                return Ok(path);
+            }
+        }
+        
+        Err(Error::WasmNotFound {
+            actor_name: actor_name.to_string(),
+            expected_wasm: if expected_wasm_name.is_empty() { 
+                "<any .wasm file>".to_string() 
+            } else { 
+                expected_wasm_name 
+            },
+            target_dir: target_dir.display().to_string(),
+            location: location!(),
+        })
     }
 
-    async fn get_actor_metadata(&self, actor_path: &Path, package_name: Option<&str>, actor_name: &str) -> Result<(String, String)> {
-        let metadata = MetadataCommand::new()
-            .current_dir(actor_path)
-            .exec()
-            .context(CargoMetadataSnafu)?;
+    async fn get_actor_version(&self, actor_path: &Path, package_name: Option<&str>, actor_name: &str) -> Result<String> {
+        // Since we only need the version (actor_id comes from Hive.toml now),
+        // we can read the Cargo.toml directly for packages to avoid metadata complexity
+        if let Some(package_path) = package_name {
+            // For packages, read the package's Cargo.toml directly
+            let package_cargo_toml = actor_path.join(package_path).join("Cargo.toml");
+            let cargo_content = fs::read_to_string(&package_cargo_toml)
+                .await
+                .context(IoSnafu { path: Some(package_cargo_toml) })?;
+            
+            let cargo_toml: toml::Value = toml::from_str(&cargo_content)
+                .context(TomlDeserializeSnafu { text: cargo_content })?;
+            
+            let version = cargo_toml
+                .get("package")
+                .and_then(|p| p.get("version"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| Error::MissingRequiredField {
+                    actor_name: actor_name.to_string(),
+                    field: "version".to_string(),
+                    location: location!(),
+                })?;
+                
+            Ok(version.to_string())
+        } else {
+            // For single actors, use cargo metadata
+            let metadata = MetadataCommand::new()
+                .current_dir(actor_path)
+                .exec()
+                .context(CargoMetadataSnafu)?;
 
-        let package = match package_name {
-            Some(name) => {
-                // Find the specific package in the workspace
-                metadata
-                    .packages
-                    .iter()
-                    .find(|p| p.name == name)
-                    .ok_or_else(|| Error::PackageNotFound {
-                        actor_name: actor_name.to_string(),
-                        package_name: name.to_string(),
-                        workspace_path: actor_path.display().to_string(),
-                        location: location!(),
-                    })?
-            }
-            None => {
-                // Find the main package (no workspace or single package)
-                metadata
-                    .packages
-                    .iter()
-                    .find(|p| p.source.is_none())
-                    .ok_or_else(|| Error::PackageNotFound {
-                        actor_name: actor_name.to_string(),
-                        package_name: "root package".to_string(),
-                        workspace_path: actor_path.display().to_string(),
-                        location: location!(),
-                    })?
-            }
-        };
-
-        Ok((package.name.clone(), package.version.to_string()))
+            let package = metadata
+                .packages
+                .iter()
+                .find(|p| p.source.is_none())
+                .ok_or_else(|| Error::PackageNotFound {
+                    actor_name: actor_name.to_string(),
+                    package_name: "root package".to_string(),
+                    workspace_path: actor_path.display().to_string(),
+                    location: location!(),
+                })?;
+                
+            Ok(package.version.to_string())
+        }
     }
 }
 

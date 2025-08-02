@@ -1,13 +1,18 @@
 actor_id = "hive:main_manager"
 
+required_spawn_with = ["spawn_agent", "send_message", "planner", "wait", "main_manager_assistant"]
+
+[dependencies.main_manager_assistant]
+source = { path = "/Users/silasmarvin/github/hive/actors/assistant" }
+
 [dependencies.spawn_agent]
-source = { path = "../../", package = "spawn_agent" }
+source = { path = "../../", package = "crates/spawn_agent" }
 
 [dependencies.send_message]
-source = { path = "../../", package = "send_message" }
+source = { path = "../../", package = "crates/send_message" }
 
 [dependencies.planner]
-source = { path = "../../", package = "planner" }
+source = { path = "../../", package = "crates/planner" }
 
 [dependencies.wait]
-source = { path = "../../", package = "wait" }
+source = { path = "../../", package = "crates/wait" }

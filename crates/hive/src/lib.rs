@@ -87,8 +87,8 @@ pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
         .init();
 }
 
-pub async fn load_actors(actors: Vec<hive_config::Actor>) -> HiveResult<Vec<LoadedActor>> {
+pub async fn load_actors(actors: Vec<hive_config::Actor>, actor_overrides: Vec<hive_config::ActorOverride>) -> HiveResult<Vec<LoadedActor>> {
     let temp_cache = PathBuf::from("/tmp/hive_cache");
     let actor_loader = ActorLoader::new(Some(temp_cache))?;
-    Ok(actor_loader.load_actors(actors).await?)
+    Ok(actor_loader.load_actors(actors, actor_overrides).await?)
 }

@@ -1,0 +1,387 @@
+use hive_config::{Actor, ActorSource, PathSource, ActorOverride};
+use hive_actor_loader::dependency_resolver::DependencyResolver;
+use std::path::PathBuf;
+use std::fs;
+use tempfile::TempDir;
+
+#[test]
+fn test_required_spawn_with_basic_functionality() {
+    // Test that required_spawn_with from manifest propagates to LoadedActor
+    let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_actors");
+    
+    let actors = vec![
+        Actor {
+            name: "coordinator_instance".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: test_actors_path.join("coordinator").to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        }
+    ];
+
+    let resolver = DependencyResolver::new();
+    let result = resolver.resolve_all(actors, vec![]);
+    
+    assert!(result.is_ok(), "Resolution should succeed: {:?}", result);
+    let resolved = result.unwrap();
+    
+    // Should have coordinator + logger dependency
+    assert_eq!(resolved.len(), 2);
+    assert!(resolved.contains_key("coordinator_instance"));
+    assert!(resolved.contains_key("logger"));
+    
+    let coordinator = &resolved["coordinator_instance"];
+    let logger = &resolved["logger"];
+    
+    // Check that required_spawn_with is properly set from manifests
+    // Coordinator should have no required_spawn_with (empty in test manifest)
+    assert_eq!(coordinator.required_spawn_with, Vec::<String>::new());
+    
+    // Logger should have its required_spawn_with from manifest (if any)
+    // Based on test_actors/logger/Hive.toml structure
+    assert_eq!(logger.required_spawn_with, Vec::<String>::new());
+}
+
+#[test]
+fn test_required_spawn_with_global_override() {
+    // Test user can override required_spawn_with via global config
+    let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_actors");
+    
+    let actors = vec![
+        // Main actor
+        Actor {
+            name: "coordinator_instance".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: test_actors_path.join("coordinator").to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        },
+        // Global override for logger with required_spawn_with
+        Actor {
+            name: "logger".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: test_actors_path.join("logger").to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: true,
+            required_spawn_with: vec!["coordinator_instance".to_string()],
+        }
+    ];
+
+    let resolver = DependencyResolver::new();
+    let result = resolver.resolve_all(actors, vec![]);
+    
+    assert!(result.is_ok());
+    let resolved = result.unwrap();
+    
+    let logger = &resolved["logger"];
+    
+    // required_spawn_with should be from global override
+    assert_eq!(logger.required_spawn_with, vec!["coordinator_instance"]);
+}
+
+#[test]
+fn test_required_spawn_with_actor_override() {
+    // Test required_spawn_with can be overridden via actor_overrides
+    let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_actors");
+    
+    let actors = vec![
+        Actor {
+            name: "coordinator_instance".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: test_actors_path.join("coordinator").to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        }
+    ];
+
+    // Override required_spawn_with via actor_overrides
+    let actor_overrides = vec![
+        ActorOverride {
+            name: "logger".to_string(),
+            source: None,
+            config: None,
+            auto_spawn: None,
+            required_spawn_with: Some(vec!["coordinator_instance".to_string(), "some_other_actor".to_string()]),
+        }
+    ];
+
+    let resolver = DependencyResolver::new();
+    let result = resolver.resolve_all(actors, actor_overrides);
+    
+    assert!(result.is_ok());
+    let resolved = result.unwrap();
+    
+    let logger = &resolved["logger"];
+    
+    // required_spawn_with should be from actor_override
+    assert_eq!(logger.required_spawn_with, vec!["coordinator_instance", "some_other_actor"]);
+}
+
+#[test]
+fn test_required_spawn_with_empty_override() {
+    // Test overriding to empty list vs non-empty
+    let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_actors");
+    
+    let actors = vec![
+        // Main actor
+        Actor {
+            name: "coordinator_instance".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: test_actors_path.join("coordinator").to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        },
+        // Global override with non-empty required_spawn_with
+        Actor {
+            name: "logger".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: test_actors_path.join("logger").to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: true,
+            required_spawn_with: vec!["coordinator_instance".to_string()],
+        }
+    ];
+
+    // Override to empty list via actor_overrides
+    let actor_overrides = vec![
+        ActorOverride {
+            name: "logger".to_string(),
+            source: None,
+            config: None,
+            auto_spawn: None,
+            required_spawn_with: Some(vec![]), // Explicitly override to empty
+        }
+    ];
+
+    let resolver = DependencyResolver::new();
+    let result = resolver.resolve_all(actors, actor_overrides);
+    
+    assert!(result.is_ok());
+    let resolved = result.unwrap();
+    
+    let logger = &resolved["logger"];
+    
+    // required_spawn_with should be empty from actor_override
+    assert_eq!(logger.required_spawn_with, Vec::<String>::new());
+}
+
+#[test]
+fn test_required_spawn_with_precedence() {
+    // Test precedence: manifest < global actor < actor_override
+    let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("test_actors");
+    
+    let actors = vec![
+        // Main actor
+        Actor {
+            name: "coordinator_instance".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: test_actors_path.join("coordinator").to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec!["from_main".to_string()], // This should be used for coordinator
+        },
+        // Global override 
+        Actor {
+            name: "logger".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: test_actors_path.join("logger").to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: true,
+            required_spawn_with: vec!["from_global".to_string()], // This should be beaten by actor_override
+        }
+    ];
+
+    // Actor override should have highest precedence
+    let actor_overrides = vec![
+        ActorOverride {
+            name: "logger".to_string(),
+            source: None,
+            config: None,
+            auto_spawn: None,
+            required_spawn_with: Some(vec!["from_override".to_string()]),
+        }
+    ];
+
+    let resolver = DependencyResolver::new();
+    let result = resolver.resolve_all(actors, actor_overrides);
+    
+    assert!(result.is_ok());
+    let resolved = result.unwrap();
+    
+    let coordinator = &resolved["coordinator_instance"];
+    let logger = &resolved["logger"];
+    
+    // Coordinator should use its own required_spawn_with
+    assert_eq!(coordinator.required_spawn_with, vec!["from_main"]);
+    
+    // Logger should use actor_override value (highest precedence)
+    assert_eq!(logger.required_spawn_with, vec!["from_override"]);
+}
+
+#[test]
+fn test_required_spawn_with_with_complex_actor() {
+    // Test with an actor that has its own manifest-defined required_spawn_with
+    let temp_dir = TempDir::new().unwrap();
+    let workspace_path = temp_dir.path();
+    
+    // Create a test actor with required_spawn_with in its manifest
+    let package_dir = workspace_path.join("crates").join("test_package");
+    fs::create_dir_all(&package_dir).unwrap();
+    
+    let manifest_content = r#"
+actor_id = "test:package-actor"
+required_spawn_with = ["helper", "monitor"]
+
+[dependencies.helper]
+source = { path = "../helper_actor" }
+auto_spawn = true
+
+[dependencies.monitor]
+source = { path = "../monitor_actor" }
+auto_spawn = false
+"#;
+    
+    fs::write(package_dir.join("Hive.toml"), manifest_content).unwrap();
+    
+    // Create helper and monitor actors
+    let helper_dir = workspace_path.join("crates").join("helper_actor");
+    fs::create_dir_all(&helper_dir).unwrap();
+    fs::write(helper_dir.join("Hive.toml"), r#"actor_id = "test:helper""#).unwrap();
+    
+    let monitor_dir = workspace_path.join("crates").join("monitor_actor");
+    fs::create_dir_all(&monitor_dir).unwrap();
+    fs::write(monitor_dir.join("Hive.toml"), r#"actor_id = "test:monitor""#).unwrap();
+    
+    let actors = vec![
+        Actor {
+            name: "package_actor_instance".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: workspace_path.to_str().unwrap().to_string(),
+                package: Some("crates/test_package".to_string()),
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        }
+    ];
+    
+    let resolver = DependencyResolver::new();
+    let result = resolver.resolve_all(actors, vec![]);
+    
+    assert!(result.is_ok(), "Failed to resolve actor with manifest required_spawn_with: {:?}", result);
+    let resolved = result.unwrap();
+    
+    // Should have main actor + 2 dependencies
+    assert_eq!(resolved.len(), 3);
+    assert!(resolved.contains_key("package_actor_instance"));
+    assert!(resolved.contains_key("helper"));
+    assert!(resolved.contains_key("monitor"));
+    
+    let package_actor = &resolved["package_actor_instance"];
+    
+    // Should have required_spawn_with from manifest
+    assert_eq!(package_actor.required_spawn_with, vec!["helper", "monitor"]);
+    assert_eq!(package_actor.actor_id, "test:package-actor");
+}
+
+#[test]
+fn test_required_spawn_with_override_precedence_chain() {
+    // Test that required_spawn_with overrides work with both global actors and actor_overrides
+    let temp_dir = TempDir::new().unwrap();
+    let workspace_path = temp_dir.path();
+    
+    // Create test actor with manifest required_spawn_with
+    let package_dir = workspace_path.join("crates").join("main_actor");
+    fs::create_dir_all(&package_dir).unwrap();
+    
+    let manifest_content = r#"
+actor_id = "test:main-actor"
+required_spawn_with = ["from_manifest"]
+
+[dependencies.dep]
+source = { path = "../dep_actor" }
+"#;
+    
+    fs::write(package_dir.join("Hive.toml"), manifest_content).unwrap();
+    
+    // Create dependency actor
+    let dep_dir = workspace_path.join("crates").join("dep_actor");
+    fs::create_dir_all(&dep_dir).unwrap();
+    fs::write(dep_dir.join("Hive.toml"), r#"actor_id = "test:dep""#).unwrap();
+    
+    let actors = vec![
+        // Main actor - its required_spawn_with should not be overridden
+        Actor {
+            name: "main_instance".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: workspace_path.to_str().unwrap().to_string(),
+                package: Some("crates/main_actor".to_string()),
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec!["user_specified".to_string()], // This should override manifest
+        },
+        // Global override for dependency
+        Actor {
+            name: "dep".to_string(),
+            source: ActorSource::Path(PathSource {
+                path: workspace_path.to_str().unwrap().to_string(),
+                package: Some("crates/dep_actor".to_string()),
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec!["from_global".to_string()],
+        }
+    ];
+
+    // Actor override should beat global
+    let actor_overrides = vec![
+        ActorOverride {
+            name: "dep".to_string(),
+            source: None,
+            config: None,
+            auto_spawn: None,
+            required_spawn_with: Some(vec!["from_actor_override".to_string()]),
+        }
+    ];
+
+    let resolver = DependencyResolver::new();
+    let result = resolver.resolve_all(actors, actor_overrides);
+    
+    assert!(result.is_ok());
+    let resolved = result.unwrap();
+    
+    let main_instance = &resolved["main_instance"];
+    let dep = &resolved["dep"];
+    
+    // Main actor should use user-specified required_spawn_with (beats manifest)
+    assert_eq!(main_instance.required_spawn_with, vec!["user_specified"]);
+    
+    // Dependency should use actor_override (beats global and manifest)
+    assert_eq!(dep.required_spawn_with, vec!["from_actor_override"]);
+}

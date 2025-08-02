@@ -10,7 +10,7 @@ fn test_circular_dependency_error() {
     // This would require setting up test actors with circular dependencies
     // For now, we verify the resolver can handle non-circular cases
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(vec![]);
+    let result = resolver.resolve_all(vec![], vec![]);
     assert!(result.is_ok());
     assert!(result.unwrap().is_empty());
 }
@@ -26,11 +26,12 @@ fn test_invalid_path_error() {
             }),
             config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
         }
     ];
 
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     
     // Should fail because the path doesn't exist (and therefore no Hive.toml exists)
     assert!(result.is_err());
@@ -57,11 +58,12 @@ fn test_manifest_load_error() {
             }),
             config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
         }
     ];
 
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     assert!(result.is_ok());
 }
 
@@ -78,11 +80,12 @@ fn test_git_source_requires_manifest() {
             }),
             config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
         }
     ];
 
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     
     // Should fail - ALL actors now require Hive.toml manifests
     assert!(result.is_err());
@@ -109,6 +112,7 @@ fn test_dependency_resolution_with_path_sources() {
             }),
             config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
         },
         // Another path source without dependencies
         Actor {
@@ -119,11 +123,12 @@ fn test_dependency_resolution_with_path_sources() {
             }),
             config: None,
             auto_spawn: true,
+            required_spawn_with: vec![],
         }
     ];
 
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -177,15 +182,16 @@ auto_spawn = true
             name: "package_actor_instance".to_string(),
             source: ActorSource::Path(PathSource {
                 path: workspace_path.to_str().unwrap().to_string(),
-                package: Some("test_package".to_string()),
+                package: Some("crates/test_package".to_string()),
             }),
             config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
         }
     ];
     
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     
     assert!(result.is_ok(), "Failed to resolve package actor: {:?}", result);
     let resolved = result.unwrap();
@@ -217,15 +223,16 @@ fn test_package_manifest_not_found() {
             name: "missing_manifest_actor".to_string(),
             source: ActorSource::Path(PathSource {
                 path: workspace_path.to_str().unwrap().to_string(),
-                package: Some("missing_manifest_package".to_string()),
+                package: Some("crates/missing_manifest_package".to_string()),
             }),
             config: None,
             auto_spawn: false,
+            required_spawn_with: vec![],
         }
     ];
     
     let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors);
+    let result = resolver.resolve_all(actors, vec![]);
     
     // Should fail because Hive.toml is missing
     assert!(result.is_err());
@@ -249,7 +256,7 @@ fn test_load_manifest_for_source_directly() {
     
     let source_with_package = ActorSource::Path(PathSource {
         path: workspace_path.to_str().unwrap().to_string(),
-        package: Some("direct_test".to_string()),
+        package: Some("crates/direct_test".to_string()),
     });
     
     let result = load_manifest_for_source(&source_with_package).unwrap();
