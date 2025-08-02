@@ -195,7 +195,8 @@ impl tools::Tool for SpawnAgentTool {
                 "Worker" => vec![
                     "worker_assistant".to_string(), 
                     "worker_execute_bash".to_string(), 
-                    "worker_complete".to_string()
+                    "worker_complete".to_string(),
+                    "send_manager_message".to_string(),
                 ],
                 "Manager" => vec![
                     "main_manager_assistant".to_string(),
@@ -208,6 +209,7 @@ impl tools::Tool for SpawnAgentTool {
                     "sub_manager_assistant".to_string(),
                     "spawn_agent".to_string(),
                     "send_message".to_string(),
+                    "send_manager_message".to_string(),
                     "wait".to_string(),
                 ],
                 _ => unreachable!(), // Already validated above

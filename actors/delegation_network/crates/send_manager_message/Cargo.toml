@@ -1,5 +1,5 @@
 [package]
-name = "delegation_network_coordinator"
+name = "send_manager_message"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -13,12 +13,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 hive_actor_utils.workspace = true
-serde = { workspace = true, features = ["derive"] }
+serde.workspace = true
+serde_json = "1"
 toml.workspace = true
 wit-bindgen-rt.workspace = true
 
 [package.metadata.component.target.dependencies]
 "hive:actor" = { path = "../../../../crates/hive_actor_bindings/wit" }
-
-[profile.release]
-opt-level = "s"

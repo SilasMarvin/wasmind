@@ -163,9 +163,12 @@ pub fn load_from_path<P: AsRef<Path> + ToOwned<Owned = PathBuf>>(path: P) -> Res
                 if name.ends_with(".config") {
                     // This is a config-only override like "actor_name.config"
                     let actor_name = name.strip_suffix(".config").unwrap();
-                    
+
                     // Check if we already have an override for this actor
-                    if let Some(existing_override) = overrides_vec.iter_mut().find(|o: &&mut ActorOverride| o.name == actor_name) {
+                    if let Some(existing_override) = overrides_vec
+                        .iter_mut()
+                        .find(|o: &&mut ActorOverride| o.name == actor_name)
+                    {
                         // Merge the config
                         existing_override.config = Some(value.as_table().unwrap().clone());
                     } else {
@@ -181,9 +184,10 @@ pub fn load_from_path<P: AsRef<Path> + ToOwned<Owned = PathBuf>>(path: P) -> Res
                     }
                 } else {
                     // This is a regular override that might contain multiple fields
-                    let mut actor_override: ActorOverride = value.clone().try_into().context(TomlParseSnafu)?;
+                    let mut actor_override: ActorOverride =
+                        value.clone().try_into().context(TomlParseSnafu)?;
                     actor_override.name.clone_from(name);
-                    
+
                     // Check if there's also a .config section for this actor
                     let config_key = format!("{}.config", name);
                     if let Some(config_value) = overrides_table.get(&config_key) {
@@ -191,7 +195,7 @@ pub fn load_from_path<P: AsRef<Path> + ToOwned<Owned = PathBuf>>(path: P) -> Res
                             actor_override.config = Some(config_table.clone());
                         }
                     }
-                    
+
                     overrides_vec.push(actor_override);
                 }
             }
@@ -267,11 +271,11 @@ impl ActorManifest {
                 location: snafu::Location::default(),
             });
         }
-        
+
         let content = std::fs::read_to_string(&manifest_path).context(ReadingFileSnafu {
             file: manifest_path.clone(),
         })?;
-        
+
         let manifest: ActorManifest = toml::from_str(&content).context(TomlParseSnafu)?;
         Ok(manifest)
     }
@@ -300,18 +304,18 @@ format = "json"
 [dependencies.helper]
 source = { url = "https://github.com/test/helper", git_ref = { branch = "main" } }
 "#;
-        
+
         fs::write(temp_dir.path().join("Hive.toml"), manifest_content).unwrap();
-        
+
         let manifest = ActorManifest::from_path(temp_dir.path()).unwrap();
         assert_eq!(manifest.actor_id, "test-company:test-actor");
         assert_eq!(manifest.dependencies.len(), 2);
-        
+
         let logger_dep = &manifest.dependencies["logger"];
         assert!(matches!(logger_dep.source, ActorSource::Path(_)));
         assert_eq!(logger_dep.auto_spawn, Some(true));
         assert!(logger_dep.config.is_some());
-        
+
         let helper_dep = &manifest.dependencies["helper"];
         assert!(matches!(helper_dep.source, ActorSource::Git(_)));
     }
@@ -337,21 +341,29 @@ source = { url = "https://github.com/test/coordinator", git_ref = { tag = "v1.0.
 source = { path = "./actors/bash" }
 auto_spawn = false
 "#;
-        
+
         let config_path = temp_dir.path().join("config.toml");
         fs::write(&config_path, config_content).unwrap();
-        
+
         let config = load_from_path(config_path).unwrap();
         assert_eq!(config.starting_actors, vec!["assistant", "coordinator"]);
         assert_eq!(config.actors.len(), 3);
-        
+
         // Find actors by name
-        let assistant = config.actors.iter().find(|a| a.name == "assistant").unwrap();
+        let assistant = config
+            .actors
+            .iter()
+            .find(|a| a.name == "assistant")
+            .unwrap();
         assert!(assistant.auto_spawn);
         assert!(matches!(assistant.source, ActorSource::Path(_)));
         assert!(assistant.config.is_some());
-        
-        let coordinator = config.actors.iter().find(|a| a.name == "coordinator").unwrap();
+
+        let coordinator = config
+            .actors
+            .iter()
+            .find(|a| a.name == "coordinator")
+            .unwrap();
         assert!(matches!(coordinator.source, ActorSource::Git(_)));
         assert!(!coordinator.auto_spawn); // defaults to false
     }

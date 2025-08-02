@@ -46,7 +46,7 @@ impl command::HostCmd for ActorState {
         let mut inner = cmd.inner.lock().unwrap();
         inner.command.env(key, value);
         drop(inner);
-        
+
         // Create new resource with cloned Arc
         let new_resource = CommandResource {
             inner: Arc::clone(&cmd.inner),
@@ -59,7 +59,7 @@ impl command::HostCmd for ActorState {
         let mut inner = cmd.inner.lock().unwrap();
         inner.command.env_clear();
         drop(inner);
-        
+
         // Create new resource with cloned Arc
         let new_resource = CommandResource {
             inner: Arc::clone(&cmd.inner),
@@ -76,7 +76,7 @@ impl command::HostCmd for ActorState {
         let mut inner = cmd.inner.lock().unwrap();
         inner.command.args(args);
         drop(inner);
-        
+
         // Create new resource with cloned Arc
         let new_resource = CommandResource {
             inner: Arc::clone(&cmd.inner),
@@ -93,7 +93,7 @@ impl command::HostCmd for ActorState {
         let mut inner = cmd.inner.lock().unwrap();
         inner.command.current_dir(dir);
         drop(inner);
-        
+
         // Create new resource with cloned Arc
         let new_resource = CommandResource {
             inner: Arc::clone(&cmd.inner),
@@ -110,7 +110,7 @@ impl command::HostCmd for ActorState {
         let mut inner = cmd.inner.lock().unwrap();
         inner.timeout_seconds = Some(seconds);
         drop(inner);
-        
+
         // Create new resource with cloned Arc
         let new_resource = CommandResource {
             inner: Arc::clone(&cmd.inner),
@@ -123,45 +123,46 @@ impl command::HostCmd for ActorState {
         self_: Resource<CommandResource>,
     ) -> std::result::Result<command::CommandOutput, String> {
         let cmd_resource = self.table.get(&self_).map_err(|e| e.to_string())?;
-        
+
         // Extract all necessary data before spawning to avoid holding the lock
         let (mut new_command, timeout_seconds) = {
             let inner = cmd_resource.inner.lock().unwrap();
-            
+
             // We need to take ownership of the command to spawn it
             // Create a new command with the same configuration
             let program = inner.command.as_std().get_program();
             let mut new_command = Command::new(program);
-            
+
             // Copy args
             let args: Vec<_> = inner.command.as_std().get_args().collect();
             for arg in args {
                 new_command.arg(arg);
             }
-            
+
             // Copy environment variables
-            let envs: Vec<_> = inner.command.as_std().get_envs()
-                .filter_map(|(k, v)| {
-                    match (k.to_str(), v) {
-                        (Some(k), Some(v)) => v.to_str().map(|v| (k.to_string(), v.to_string())),
-                        _ => None,
-                    }
+            let envs: Vec<_> = inner
+                .command
+                .as_std()
+                .get_envs()
+                .filter_map(|(k, v)| match (k.to_str(), v) {
+                    (Some(k), Some(v)) => v.to_str().map(|v| (k.to_string(), v.to_string())),
+                    _ => None,
                 })
                 .collect();
             for (k, v) in envs {
                 new_command.env(k, v);
             }
-            
+
             // Copy current directory if set
             if let Some(dir) = inner.command.as_std().get_current_dir() {
                 new_command.current_dir(dir);
             }
-            
+
             // Explicitly set up pipes to capture output
             new_command.stdout(std::process::Stdio::piped());
             new_command.stderr(std::process::Stdio::piped());
             new_command.stdin(std::process::Stdio::null());
-            
+
             (new_command, inner.timeout_seconds)
         }; // Lock is dropped here
 

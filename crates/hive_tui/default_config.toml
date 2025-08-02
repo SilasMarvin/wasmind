@@ -18,17 +18,18 @@ starting_actors = ["main_manager_assistant", "spawn_agent", "send_message", "pla
 # Actors Config ##############
 ##############################
 
-[actors.delegation_network_main_manager]
+[actors.delegation_network_coordinator]
 source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", package = "crates/delegation_network_coordinator" }
+auto_spawn = true
 
 [actor_overrides.main_manager_assistant.config]
-model_name = "gpt-4o"
+model_name = "qwen3-480b"
 
 [actor_overrides.sub_manager_assistant.config]
-model_name = "gpt-4o"
+model_name = "qwen3-480b"
 
 [actor_overrides.worker_assistant.config]
-model_name = "gpt-4o"
+model_name = "qwen3-480b"
 
 ##############################
 # LiteLLM Config #############
@@ -45,3 +46,10 @@ model_name = "gpt-4o"
 [litellm.models.litellm_params]
 model = "openai/gpt-4o"
 api_key = "os.environ/OPENAI_API_KEY"
+
+[[litellm.models]]
+model_name = "qwen3-480b"
+
+[litellm.models.litellm_params]
+model = "cerebras/qwen-3-coder-480b"
+api_key = "os.environ/CEREBRAS_API_KEY"

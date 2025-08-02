@@ -1,51 +1,62 @@
-use std::i32;
+use std::{
+    collections::{HashMap, HashSet},
+    i32,
+};
 
 use bindings::exports::hive::actor::actor::MessageEnvelope;
-use hive_actor_utils::common_messages::assistant::{Section, SystemPromptContent, SystemPromptContribution};
-use serde::Deserialize;
+use hive_actor_utils::{common_messages, messages::Message};
+use serde::{Deserialize, Serialize};
 
 #[allow(warnings)]
 mod bindings;
 
-const DEFAULT_IDENTITY_PROMPT: &str = r#"You are the HIVE Delegation Network Coordinator. Your role is to facilitate the creation and management of a hierarchical agent network to accomplish complex tasks."#;
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct DelegationNetworkCoordinatorConfig {
-    /// Optional custom system prompt for this coordinator
-    pub system_prompt: Option<String>,
-}
-
 hive_actor_utils::actors::macros::generate_actor_trait!();
 
+#[derive(Clone, Copy, Deserialize, Serialize)]
+pub enum AgentType {
+    MainManager,
+    SubManager,
+    Worker,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub struct AgentSpawned {
+    agent_type: AgentType,
+    agent_spawned_message: common_messages::actors::AgentSpawned,
+}
+
+impl Message for AgentSpawned {
+    const MESSAGE_TYPE: &str = "delegation_network.delegation_network_coordinator.AgentSpawned";
+}
+
+struct StoredAgent {
+    agent_type: AgentType,
+    active_agents: HashSet<String>,
+}
+
 #[derive(hive_actor_utils::actors::macros::Actor)]
-struct DelegationNetworkCoordinator {}
+struct DelegationNetworkCoordinator {
+    active_agents: HashMap<String, StoredAgent>,
+}
 
 impl GeneratedActorTrait for DelegationNetworkCoordinator {
-    fn new(scope: String, config_str: String) -> Self {
-        let config: DelegationNetworkCoordinatorConfig =
-            toml::from_str(&config_str).unwrap_or_else(|_| DelegationNetworkCoordinatorConfig {
-                system_prompt: None,
-            });
-
-        // Set up the system prompt that defines the coordinator's role
-        let system_prompt = config
-            .system_prompt
-            .as_deref()
-            .unwrap_or(DEFAULT_IDENTITY_PROMPT);
-
-        Self::broadcast_common_message(SystemPromptContribution {
-            agent: scope.clone(),
-            key: "hive:delegation_network_coordinator:identity".to_string(),
-            content: SystemPromptContent::Text(system_prompt.to_string()),
-            priority: i32::MAX,
-            section: Some(Section::Identity),
-        })
-        .unwrap();
-
-        Self {}
+    fn new(_scope: String, _config_str: String) -> Self {
+        Self {
+            active_agents: HashMap::new(),
+        }
     }
 
-    fn handle_message(&mut self, _message: MessageEnvelope) {}
+    fn handle_message(&mut self, message: MessageEnvelope) {
+        if let Some(agent_spawned) = Self::parse_as::<AgentSpawned>(&message) {
+            self.active_agents.insert(
+                agent_spawned.agent_spawned_message.agent_id,
+                StoredAgent {
+                    agent_type: agent_spawned.agent_type,
+                    active_agents: HashSet::new(),
+                },
+            );
+        }
+    }
 
     fn destructor(&mut self) {}
 }

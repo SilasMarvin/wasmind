@@ -78,26 +78,38 @@ fn default_container_name() -> String {
 
 fn default_chat_key_bindings() -> HashMap<String, String> {
     use crate::tui::components::chat::ChatUserAction;
-    
+
     let mut bindings = HashMap::new();
-    bindings.insert("ctrl-a".to_string(), ChatUserAction::Assist.as_str().to_string());
+    bindings.insert(
+        "ctrl-a".to_string(),
+        ChatUserAction::Assist.as_str().to_string(),
+    );
     bindings
 }
 
 fn default_dashboard_key_bindings() -> HashMap<String, String> {
     use crate::tui::components::dashboard::DashboardUserAction;
-    
+
     let mut bindings = HashMap::new();
-    bindings.insert("ctrl-c".to_string(), DashboardUserAction::Exit.as_str().to_string());
+    bindings.insert(
+        "ctrl-c".to_string(),
+        DashboardUserAction::Exit.as_str().to_string(),
+    );
     bindings
 }
 
 fn default_graph_key_bindings() -> HashMap<String, String> {
     use crate::tui::components::graph::GraphUserAction;
-    
+
     let mut bindings = HashMap::new();
-    bindings.insert("shift-up".to_string(), GraphUserAction::SelectUp.as_str().to_string());
-    bindings.insert("shift-down".to_string(), GraphUserAction::SelectDown.as_str().to_string());
+    bindings.insert(
+        "shift-up".to_string(),
+        GraphUserAction::SelectUp.as_str().to_string(),
+    );
+    bindings.insert(
+        "shift-down".to_string(),
+        GraphUserAction::SelectDown.as_str().to_string(),
+    );
     bindings
 }
 
@@ -301,4 +313,3 @@ impl TuiConfig {
         })
     }
 }
-

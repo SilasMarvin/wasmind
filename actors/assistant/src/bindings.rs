@@ -364,6 +364,34 @@ pub mod hive {
             }
             impl Request {
                 #[allow(unused_unsafe, clippy::all)]
+                /// Configure automatic retry with exponential backoff
+                /// max-attempts: Total number of attempts (including initial request)
+                /// base-delay-ms: Base delay in milliseconds for exponential backoff
+                pub fn retry(&self, max_attempts: u32, base_delay_ms: u64) -> Request {
+                    unsafe {
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]request.retry"]
+                            fn wit_import0(_: i32, _: i32, _: i64) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import0(_: i32, _: i32, _: i64) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import0(
+                                (self).handle() as i32,
+                                _rt::as_i32(&max_attempts),
+                                _rt::as_i64(&base_delay_ms),
+                            )
+                        };
+                        unsafe { Request::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Request {
+                #[allow(unused_unsafe, clippy::all)]
                 /// Execute the request and return the response
                 pub fn send(&self) -> Result<Response, RequestError> {
                     unsafe {
@@ -1060,6 +1088,29 @@ mod _rt {
             self as i32
         }
     }
+    pub fn as_i64<T: AsI64>(t: T) -> i64 {
+        t.as_i64()
+    }
+    pub trait AsI64 {
+        fn as_i64(self) -> i64;
+    }
+    impl<'a, T: Copy + AsI64> AsI64 for &'a T {
+        fn as_i64(self) -> i64 {
+            (*self).as_i64()
+        }
+    }
+    impl AsI64 for i64 {
+        #[inline]
+        fn as_i64(self) -> i64 {
+            self as i64
+        }
+    }
+    impl AsI64 for u64 {
+        #[inline]
+        fn as_i64(self) -> i64 {
+            self as i64
+        }
+    }
     pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
         if cfg!(debug_assertions) {
             String::from_utf8(bytes).unwrap()
@@ -1124,10 +1175,10 @@ pub(crate) use __export_actor_world_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1090] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xc0\x07\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1156] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x82\x08\x01A\x02\x01\
 A\x08\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
-cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x19\x01o\x02ss\x01p\0\
+cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x1b\x01o\x02ss\x01p\0\
 \x01r\x01\x07headers\x01\x04\0\x07headers\x03\0\x02\x01q\x04\x0dnetwork-error\x01\
 s\0\x07timeout\0\0\x0binvalid-url\x01s\0\x0dbuilder-error\x01s\0\x04\0\x0dreques\
 t-error\x03\0\x04\x01p}\x01r\x03\x06status{\x07headers\x03\x04body\x06\x04\0\x08\
@@ -1136,19 +1187,20 @@ response\x03\0\x07\x04\0\x07request\x03\x01\x01i\x09\x01@\x02\x06methods\x03urls
 ys\x05values\0\x0a\x04\0\x16[method]request.header\x01\x0d\x01@\x02\x04self\x0c\x07\
 headers\x03\0\x0a\x04\0\x17[method]request.headers\x01\x0e\x01@\x02\x04self\x0c\x04\
 body\x06\0\x0a\x04\0\x14[method]request.body\x01\x0f\x01@\x02\x04self\x0c\x07sec\
-ondsy\0\x0a\x04\0\x17[method]request.timeout\x01\x10\x01j\x01\x08\x01\x05\x01@\x01\
-\x04self\x0c\0\x11\x04\0\x14[method]request.send\x01\x12\x03\0\x15hive:actor/htt\
-p@0.1.0\x05\x01\x01B\x04\x01m\x04\x05debug\x04info\x04warn\x05error\x04\0\x09log\
--level\x03\0\0\x01@\x02\x05level\x01\x07messages\x01\0\x04\0\x03log\x01\x02\x03\0\
-\x17hive:actor/logger@0.1.0\x05\x02\x01B\x0c\x01p}\x01r\x04\x0cmessage-types\x0d\
-from-actor-ids\x0afrom-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\
-\0\x05actor\x03\x01\x01i\x03\x01@\x02\x05scopes\x06configs\0\x04\x04\0\x12[const\
-ructor]actor\x01\x05\x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c\
-[method]actor.handle-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method\
-]actor.destructor\x01\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x03\x04\0!assistan\
-t:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09produ\
-cers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x06\
-0.41.0";
+ondsy\0\x0a\x04\0\x17[method]request.timeout\x01\x10\x01@\x03\x04self\x0c\x0cmax\
+-attemptsy\x0dbase-delay-msw\0\x0a\x04\0\x15[method]request.retry\x01\x11\x01j\x01\
+\x08\x01\x05\x01@\x01\x04self\x0c\0\x12\x04\0\x14[method]request.send\x01\x13\x03\
+\0\x15hive:actor/http@0.1.0\x05\x01\x01B\x04\x01m\x04\x05debug\x04info\x04warn\x05\
+error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07messages\x01\0\x04\0\x03\
+log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x02\x01B\x0c\x01p}\x01r\x04\x0c\
+message-types\x0dfrom-actor-ids\x0afrom-scopes\x07payload\0\x04\0\x10message-env\
+elope\x03\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01@\x02\x05scopes\x06configs\0\x04\
+\x04\0\x12[constructor]actor\x01\x05\x01h\x03\x01@\x02\x04self\x06\x07message\x02\
+\x01\0\x04\0\x1c[method]actor.handle-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\
+\0\x18[method]actor.destructor\x01\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x03\x04\
+\0!assistant:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0\
+G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
+n-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

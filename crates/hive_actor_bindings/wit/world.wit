@@ -131,6 +131,11 @@ interface http {
         /// Set request timeout in seconds
         timeout: func(seconds: u32) -> request;
         
+        /// Configure automatic retry with exponential backoff
+        /// max-attempts: Total number of attempts (including initial request)
+        /// base-delay-ms: Base delay in milliseconds for exponential backoff
+        retry: func(max-attempts: u32, base-delay-ms: u64) -> request;
+        
         /// Execute the request and return the response
         send: func() -> result<response, request-error>;
     }

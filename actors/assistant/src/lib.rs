@@ -97,25 +97,11 @@ pub struct Assistant {
 }
 
 impl Assistant {
-    fn submit_with_retry(&mut self, request_id: uuid::Uuid, attempt: u32) {
-        const MAX_ATTEMPTS: u32 = 3;
-        const BASE_DELAY_MS: u64 = 1000; // 1 second base delay
-
-        if attempt >= MAX_ATTEMPTS {
-            tracing::error!("Max retry attempts reached for completion request");
-            self.set_status(
-                Status::Wait {
-                    reason: WaitReason::WaitingForUserInput,
-                },
-                true,
-            );
-            return;
-        }
-
+    fn submit_and_process(&mut self, request_id: uuid::Uuid) {
         // Generate system prompt
         let system_prompt = self.render_system_prompt();
 
-        // Make the completion request
+        // Make the completion request with automatic retry
         match self.make_completion_request(
             &system_prompt,
             &self.chat_history,
@@ -137,13 +123,23 @@ impl Assistant {
                             .unwrap();
                         }
                         _ => {
-                            tracing::error!("Unexpected message type in LLM response, retrying...");
-                            self.schedule_retry(request_id, attempt + 1, BASE_DELAY_MS);
+                            tracing::error!("Unexpected message type in LLM response");
+                            self.set_status(
+                                Status::Wait {
+                                    reason: WaitReason::WaitingForUserInput,
+                                },
+                                true,
+                            );
                         }
                     }
                 } else {
-                    tracing::error!("No choices in LLM completion response, retrying...");
-                    self.schedule_retry(request_id, attempt + 1, BASE_DELAY_MS);
+                    tracing::error!("No choices in LLM completion response");
+                    self.set_status(
+                        Status::Wait {
+                            reason: WaitReason::WaitingForUserInput,
+                        },
+                        true,
+                    );
                 }
             }
             Err(e) => {
@@ -161,28 +157,17 @@ impl Assistant {
                         },
                         true,
                     );
-                    return;
+                } else {
+                    tracing::error!("LLM completion request failed after retries: {}", e);
+                    self.set_status(
+                        Status::Wait {
+                            reason: WaitReason::WaitingForUserInput,
+                        },
+                        true,
+                    );
                 }
-
-                tracing::error!(
-                    "LLM completion request failed (attempt {}): {}",
-                    attempt + 1,
-                    e
-                );
-                self.schedule_retry(request_id, attempt + 1, BASE_DELAY_MS);
             }
         }
-    }
-
-    fn schedule_retry(&mut self, request_id: uuid::Uuid, attempt: u32, base_delay_ms: u64) {
-        // Exponential backoff: delay = base_delay * 2^attempt
-        let delay_ms = base_delay_ms * (2_u64.pow(attempt.saturating_sub(1)));
-
-        // TODO: Sleep
-        tracing::info!("Scheduling retry {} after {}ms", attempt + 1, delay_ms);
-
-        // For immediate retry (would be better with actual scheduling):
-        self.submit_with_retry(request_id, attempt);
     }
 
     fn make_completion_request(
@@ -224,7 +209,7 @@ impl Assistant {
         let body = serde_json::to_vec(&request)
             .map_err(|e| format!("Failed to serialize request: {}", e))?;
 
-        // Make HTTP request using our interface
+        // Make HTTP request using our interface with automatic retry
         let request = bindings::hive::actor::http::Request::new(
             "POST",
             &format!("{}/v1/chat/completions", base_url),
@@ -233,6 +218,7 @@ impl Assistant {
         let response = request
             .header("Content-Type", "application/json")
             .body(&body)
+            .retry(3, 1000) // 3 attempts, 1 second base delay with exponential backoff
             .timeout(120) // 120 second timeout
             .send()
             .map_err(|e| format!("HTTP request failed: {:?}", e))?;
@@ -304,8 +290,8 @@ impl Assistant {
         // Set status to processing with the request ID
         self.set_status(Status::Processing { request_id }, true);
 
-        // Start the retry process with attempt 0
-        self.submit_with_retry(request_id, 0);
+        // Submit and process the request with automatic retry
+        self.submit_and_process(request_id);
     }
 
     fn handle_tool_call_update(&mut self, update: ToolCallStatusUpdate) {

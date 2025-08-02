@@ -5,7 +5,7 @@ use ratatui::crossterm::{
     event::{KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags},
     execute,
 };
-use std::{io::stdout, thread, sync::Arc};
+use std::{io::stdout, sync::Arc, thread};
 use tokio::sync::broadcast::{Receiver, Sender};
 use tuirealm::{PollStrategy, Update};
 
@@ -42,7 +42,15 @@ impl Tui {
     }
 
     pub fn run(self) {
-        thread::spawn(|| start_model(self.tui_config, self.tx, self.rx, self.initial_prompt, self.context));
+        thread::spawn(|| {
+            start_model(
+                self.tui_config,
+                self.tx,
+                self.rx,
+                self.initial_prompt,
+                self.context,
+            )
+        });
     }
 }
 

@@ -70,7 +70,9 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display("Failed to load actor '{actor_name}'. Package '{package_name}' not found in workspace at '{workspace_path}'."))]
+    #[snafu(display(
+        "Failed to load actor '{actor_name}'. Package '{package_name}' not found in workspace at '{workspace_path}'."
+    ))]
     PackageNotFound {
         actor_name: String,
         package_name: String,
@@ -87,7 +89,9 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display("Failed to load actor '{actor_name}'. WASM file '{expected_wasm}' not found in target directory '{target_dir}'. Ensure the actor builds successfully."))]
+    #[snafu(display(
+        "Failed to load actor '{actor_name}'. WASM file '{expected_wasm}' not found in target directory '{target_dir}'. Ensure the actor builds successfully."
+    ))]
     WasmNotFound {
         actor_name: String,
         expected_wasm: String,
@@ -136,8 +140,8 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
 pub struct LoadedActor {
-    pub id: String,  // This will be the actor_id from manifest
-    pub name: String,  // This is the logical name
+    pub id: String,   // This will be the actor_id from manifest
+    pub name: String, // This is the logical name
     pub version: String,
     pub wasm: Vec<u8>,
     pub config: Option<toml::Table>,
@@ -162,7 +166,11 @@ impl ActorLoader {
         }
     }
 
-    pub async fn load_actors(&self, actors: Vec<Actor>, actor_overrides: Vec<hive_config::ActorOverride>) -> Result<Vec<LoadedActor>> {
+    pub async fn load_actors(
+        &self,
+        actors: Vec<Actor>,
+        actor_overrides: Vec<hive_config::ActorOverride>,
+    ) -> Result<Vec<LoadedActor>> {
         // Ensure cache directory exists
         fs::create_dir_all(&self.cache_dir)
             .await
@@ -190,7 +198,11 @@ impl ActorLoader {
                     auto_spawn: resolved.auto_spawn,
                     required_spawn_with: resolved.required_spawn_with.clone(),
                 };
-                self.load_single_actor(actor, resolved.actor_id.clone(), resolved.required_spawn_with)
+                self.load_single_actor(
+                    actor,
+                    resolved.actor_id.clone(),
+                    resolved.required_spawn_with,
+                )
             })
             .collect();
 
@@ -198,7 +210,7 @@ impl ActorLoader {
 
         // Collect results, propagating any errors
         let loaded_actors = results.into_iter().collect::<Result<Vec<_>>>()?;
-        
+
         println!("✓ Actor loading complete");
         Ok(loaded_actors)
     }
@@ -221,7 +233,12 @@ impl ActorLoader {
         Ok(())
     }
 
-    async fn load_single_actor(&self, actor: Actor, actor_id: String, required_spawn_with: Vec<String>) -> Result<LoadedActor> {
+    async fn load_single_actor(
+        &self,
+        actor: Actor,
+        actor_id: String,
+        required_spawn_with: Vec<String>,
+    ) -> Result<LoadedActor> {
         println!("  Loading {}", actor.name);
         info!("Loading actor: {} (id: {})", actor.name, actor_id);
 
@@ -229,7 +246,10 @@ impl ActorLoader {
 
         // Check if actor is already cached (skip cache in dev mode)
         if !is_dev_mode {
-            if let Some(cached) = self.check_cache(&actor, &actor_id, &required_spawn_with).await? {
+            if let Some(cached) = self
+                .check_cache(&actor, &actor_id, &required_spawn_with)
+                .await?
+            {
                 println!("  ✓ {} (cached)", actor.name);
                 info!("Using cached actor: {}", actor.name);
                 return Ok(cached);
@@ -254,7 +274,8 @@ impl ActorLoader {
         // Clone or copy the actor source
         match &actor.source {
             ActorSource::Path(path_source) => {
-                self.copy_local_actor(&path_source.path, &build_path, &actor.name).await?;
+                self.copy_local_actor(&path_source.path, &build_path, &actor.name)
+                    .await?;
             }
             ActorSource::Git(repository) => {
                 self.clone_git_actor(&repository.url, &build_path, repository.git_ref.as_ref())
@@ -264,11 +285,14 @@ impl ActorLoader {
 
         // Handle local development mode
         if is_dev_mode {
-            self.setup_local_dependencies(&build_path, package_name, &actor.name).await?;
+            self.setup_local_dependencies(&build_path, package_name, &actor.name)
+                .await?;
         }
 
         // Build the actor
-        let wasm_path = self.build_actor(&build_path, package_name, &actor.name).await?;
+        let wasm_path = self
+            .build_actor(&build_path, package_name, &actor.name)
+            .await?;
 
         // Read the built wasm
         let wasm = fs::read(&wasm_path).await.context(IoSnafu {
@@ -276,7 +300,9 @@ impl ActorLoader {
         })?;
 
         // Get version
-        let version = self.get_actor_version(&build_path, package_name, &actor.name).await?;
+        let version = self
+            .get_actor_version(&build_path, package_name, &actor.name)
+            .await?;
 
         // Cache the built actor (skip in dev mode)
         if !is_dev_mode {
@@ -284,7 +310,7 @@ impl ActorLoader {
         }
 
         println!("  ✓ {} (built)", actor.name);
-        
+
         Ok(LoadedActor {
             name: actor.name.clone(),
             version,
@@ -296,7 +322,12 @@ impl ActorLoader {
         })
     }
 
-    pub async fn check_cache(&self, actor: &Actor, actor_id: &str, required_spawn_with: &[String]) -> Result<Option<LoadedActor>> {
+    pub async fn check_cache(
+        &self,
+        actor: &Actor,
+        actor_id: &str,
+        required_spawn_with: &[String],
+    ) -> Result<Option<LoadedActor>> {
         let actor_hash = self.compute_actor_hash(actor);
         let cache_path = self.cache_dir.join(&actor.name).join(&actor_hash);
         let metadata_path = cache_path.join("metadata.json");
@@ -337,7 +368,13 @@ impl ActorLoader {
         Ok(None)
     }
 
-    pub async fn cache_actor(&self, actor: &Actor, actor_id: &str, version: &str, wasm: &[u8]) -> Result<()> {
+    pub async fn cache_actor(
+        &self,
+        actor: &Actor,
+        actor_id: &str,
+        version: &str,
+        wasm: &[u8],
+    ) -> Result<()> {
         let actor_hash = self.compute_actor_hash(actor);
         let cache_path = self.cache_dir.join(&actor.name).join(&actor_hash);
 
@@ -507,7 +544,12 @@ impl ActorLoader {
         Ok(())
     }
 
-    async fn setup_local_dependencies(&self, actor_path: &Path, package_name: Option<&str>, actor_name: &str) -> Result<()> {
+    async fn setup_local_dependencies(
+        &self,
+        actor_path: &Path,
+        package_name: Option<&str>,
+        actor_name: &str,
+    ) -> Result<()> {
         info!("Setting up local dependencies for development mode");
 
         // Find the workspace root and construct absolute paths
@@ -534,19 +576,29 @@ impl ActorLoader {
 
         // Helper function to update hive dependencies in a TOML table
         let update_hive_deps = |deps: &mut toml::Table| {
-            self.update_hive_dependency(deps, "hive_actor_utils", &hive_actor_utils_path, Some(vec!["macros"]));
+            self.update_hive_dependency(
+                deps,
+                "hive_actor_utils",
+                &hive_actor_utils_path,
+                Some(vec!["macros"]),
+            );
             self.update_hive_dependency(deps, "hive_llm_types", &hive_llm_types, None);
         };
 
         // Fix workspace-level dependencies first if this is a workspace
         let workspace_cargo_toml = actor_path.join("Cargo.toml");
         if workspace_cargo_toml.exists() {
-            let workspace_content = fs::read_to_string(&workspace_cargo_toml)
-                .await
-                .context(IoSnafu { path: Some(workspace_cargo_toml.clone()) })?;
+            let workspace_content =
+                fs::read_to_string(&workspace_cargo_toml)
+                    .await
+                    .context(IoSnafu {
+                        path: Some(workspace_cargo_toml.clone()),
+                    })?;
 
-            let mut workspace_toml: toml::Value = toml::from_str(&workspace_content)
-                .context(TomlDeserializeSnafu { text: workspace_content })?;
+            let mut workspace_toml: toml::Value =
+                toml::from_str(&workspace_content).context(TomlDeserializeSnafu {
+                    text: workspace_content,
+                })?;
 
             // Update workspace dependencies
             if let Some(workspace_deps) = workspace_toml
@@ -561,7 +613,9 @@ impl ActorLoader {
             let updated_workspace_content = toml::to_string_pretty(&workspace_toml).unwrap();
             fs::write(&workspace_cargo_toml, updated_workspace_content)
                 .await
-                .context(IoSnafu { path: Some(workspace_cargo_toml) })?;
+                .context(IoSnafu {
+                    path: Some(workspace_cargo_toml),
+                })?;
         }
 
         // Determine the correct package Cargo.toml path
@@ -585,10 +639,14 @@ impl ActorLoader {
 
         let cargo_content = fs::read_to_string(&cargo_toml_path)
             .await
-            .context(IoSnafu { path: Some(cargo_toml_path.clone()) })?;
+            .context(IoSnafu {
+                path: Some(cargo_toml_path.clone()),
+            })?;
 
-        let mut cargo_toml: toml::Value = toml::from_str(&cargo_content)
-            .context(TomlDeserializeSnafu { text: cargo_content })?;
+        let mut cargo_toml: toml::Value =
+            toml::from_str(&cargo_content).context(TomlDeserializeSnafu {
+                text: cargo_content,
+            })?;
 
         // Update package dependencies
         for dependency_type in ["dependencies", "dev-dependencies"] {
@@ -638,7 +696,12 @@ impl ActorLoader {
         Ok(())
     }
 
-    async fn build_actor(&self, actor_path: &Path, package_name: Option<&str>, actor_name: &str) -> Result<PathBuf> {
+    async fn build_actor(
+        &self,
+        actor_path: &Path,
+        package_name: Option<&str>,
+        actor_name: &str,
+    ) -> Result<PathBuf> {
         info!("Building actor at {:?}", actor_path);
 
         // Determine the actual build directory
@@ -651,16 +714,13 @@ impl ActorLoader {
         };
 
         let mut cmd = Command::new("cargo-component");
-        cmd.current_dir(&build_dir)
-            .arg("build")
-            .arg("--release");
-        
+        cmd.current_dir(&build_dir).arg("build").arg("--release");
+
         if package_name.is_some() {
             info!("Building in package directory: {:?}", build_dir);
         }
-        
-        cmd.stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let output = cmd.output().await.context(CommandSnafu)?;
 
@@ -683,7 +743,7 @@ impl ActorLoader {
                 .join("target")
                 .join("wasm32-wasip1")
                 .join("release");
-            
+
             if workspace_target.exists() {
                 workspace_target
             } else {
@@ -704,7 +764,7 @@ impl ActorLoader {
         let mut entries = fs::read_dir(&target_dir).await.context(IoSnafu {
             path: Some(target_dir.to_path_buf()),
         })?;
-        
+
         // Try to find the expected WASM file name from package Cargo.toml
         if package_name.is_some() {
             if let Ok(expected_name) = self.get_expected_wasm_name(&build_dir).await {
@@ -722,7 +782,7 @@ impl ActorLoader {
                 return Ok(path);
             }
         }
-        
+
         Err(Error::WasmNotFound {
             actor_name: actor_name.to_string(),
             expected_wasm: "<any .wasm file>".to_string(),
@@ -731,30 +791,43 @@ impl ActorLoader {
         })
     }
 
-    fn update_hive_dependency(&self, deps: &mut toml::Table, dep_name: &str, path: &Path, features: Option<Vec<&str>>) {
+    fn update_hive_dependency(
+        &self,
+        deps: &mut toml::Table,
+        dep_name: &str,
+        path: &Path,
+        features: Option<Vec<&str>>,
+    ) {
         if deps.contains_key(dep_name) {
             let mut table = toml::Table::new();
-            table.insert("path".to_string(), toml::Value::String(path.display().to_string()));
-            
+            table.insert(
+                "path".to_string(),
+                toml::Value::String(path.display().to_string()),
+            );
+
             if let Some(features) = features {
-                let feature_values: Vec<toml::Value> = features.into_iter()
+                let feature_values: Vec<toml::Value> = features
+                    .into_iter()
                     .map(|f| toml::Value::String(f.to_string()))
                     .collect();
                 table.insert("features".to_string(), toml::Value::Array(feature_values));
             }
-            
+
             deps.insert(dep_name.to_string(), toml::Value::Table(table));
         }
     }
 
     async fn get_expected_wasm_name(&self, build_dir: &Path) -> Result<String> {
         let cargo_toml_path = build_dir.join("Cargo.toml");
-        let content = fs::read_to_string(&cargo_toml_path).await.context(IoSnafu {
-            path: Some(cargo_toml_path),
-        })?;
-        
-        let cargo_toml: toml::Value = toml::from_str(&content).context(TomlDeserializeSnafu { text: content })?;
-        
+        let content = fs::read_to_string(&cargo_toml_path)
+            .await
+            .context(IoSnafu {
+                path: Some(cargo_toml_path),
+            })?;
+
+        let cargo_toml: toml::Value =
+            toml::from_str(&content).context(TomlDeserializeSnafu { text: content })?;
+
         let package_name = cargo_toml
             .get("package")
             .and_then(|p| p.get("name"))
@@ -764,11 +837,16 @@ impl ActorLoader {
                 field: "name".to_string(),
                 location: location!(),
             })?;
-            
+
         Ok(format!("{}.wasm", package_name.replace('-', "_")))
     }
 
-    async fn get_actor_version(&self, actor_path: &Path, package_name: Option<&str>, actor_name: &str) -> Result<String> {
+    async fn get_actor_version(
+        &self,
+        actor_path: &Path,
+        package_name: Option<&str>,
+        actor_name: &str,
+    ) -> Result<String> {
         // Since we only need the version (actor_id comes from Hive.toml now),
         // we can read the Cargo.toml directly for packages to avoid metadata complexity
         if let Some(package_path) = package_name {
@@ -776,11 +854,15 @@ impl ActorLoader {
             let package_cargo_toml = actor_path.join(package_path).join("Cargo.toml");
             let cargo_content = fs::read_to_string(&package_cargo_toml)
                 .await
-                .context(IoSnafu { path: Some(package_cargo_toml) })?;
-            
-            let cargo_toml: toml::Value = toml::from_str(&cargo_content)
-                .context(TomlDeserializeSnafu { text: cargo_content })?;
-            
+                .context(IoSnafu {
+                    path: Some(package_cargo_toml),
+                })?;
+
+            let cargo_toml: toml::Value =
+                toml::from_str(&cargo_content).context(TomlDeserializeSnafu {
+                    text: cargo_content,
+                })?;
+
             let version = cargo_toml
                 .get("package")
                 .and_then(|p| p.get("version"))
@@ -790,7 +872,7 @@ impl ActorLoader {
                     field: "version".to_string(),
                     location: location!(),
                 })?;
-                
+
             Ok(version.to_string())
         } else {
             // For single actors, use cargo metadata
@@ -809,7 +891,7 @@ impl ActorLoader {
                     workspace_path: actor_path.display().to_string(),
                     location: location!(),
                 })?;
-                
+
             Ok(package.version.to_string())
         }
     }
@@ -818,8 +900,8 @@ impl ActorLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::path::PathBuf;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_actor_loader_creation() {
@@ -827,7 +909,7 @@ mod tests {
         assert!(loader.is_ok());
     }
 
-    #[tokio::test] 
+    #[tokio::test]
     async fn test_build_successful_actor() {
         let loader = ActorLoader::new(None).unwrap();
         let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -835,11 +917,21 @@ mod tests {
             .join("buildable_simple");
 
         // Should build successfully
-        let result = loader.build_actor(&test_actor_path, None, "buildable_simple").await;
-        assert!(result.is_ok(), "Failed to build buildable_simple: {:?}", result.err());
-        
+        let result = loader
+            .build_actor(&test_actor_path, None, "buildable_simple")
+            .await;
+        assert!(
+            result.is_ok(),
+            "Failed to build buildable_simple: {:?}",
+            result.err()
+        );
+
         let wasm_path = result.unwrap();
-        assert!(wasm_path.exists(), "Built wasm file should exist at {:?}", wasm_path);
+        assert!(
+            wasm_path.exists(),
+            "Built wasm file should exist at {:?}",
+            wasm_path
+        );
         assert_eq!(wasm_path.extension().unwrap(), "wasm");
     }
 
@@ -851,11 +943,18 @@ mod tests {
             .join("buildable_fail");
 
         // Should fail to build
-        let result = loader.build_actor(&test_actor_path, None, "buildable_fail").await;
-        assert!(result.is_err(), "buildable_fail should have failed to build");
-        
+        let result = loader
+            .build_actor(&test_actor_path, None, "buildable_fail")
+            .await;
+        assert!(
+            result.is_err(),
+            "buildable_fail should have failed to build"
+        );
+
         match result.err().unwrap() {
-            Error::CommandFailed { actor_name, stderr, .. } => {
+            Error::CommandFailed {
+                actor_name, stderr, ..
+            } => {
                 assert_eq!(actor_name, "buildable_fail");
                 assert!(!stderr.is_empty(), "Should have build error output");
             }
@@ -870,7 +969,9 @@ mod tests {
             .join("test_actors")
             .join("buildable_simple");
 
-        let result = loader.get_actor_version(&test_actor_path, None, "buildable_simple").await;
+        let result = loader
+            .get_actor_version(&test_actor_path, None, "buildable_simple")
+            .await;
         assert!(result.is_ok(), "Failed to get version: {:?}", result.err());
         assert_eq!(result.unwrap(), "0.1.0");
     }
@@ -880,7 +981,9 @@ mod tests {
         let loader = ActorLoader::new(None).unwrap();
         let nonexistent_path = PathBuf::from("/nonexistent/path");
 
-        let result = loader.get_actor_version(&nonexistent_path, None, "nonexistent").await;
+        let result = loader
+            .get_actor_version(&nonexistent_path, None, "nonexistent")
+            .await;
         assert!(result.is_err());
     }
 
@@ -888,7 +991,7 @@ mod tests {
     async fn test_cache_and_load_actor() {
         let temp_dir = TempDir::new().unwrap();
         let loader = ActorLoader::new(Some(temp_dir.path().to_path_buf())).unwrap();
-        
+
         let test_wasm = b"fake wasm content";
         let actor = Actor {
             name: "test_actor".to_string(),
@@ -900,14 +1003,17 @@ mod tests {
             auto_spawn: false,
             required_spawn_with: vec![],
         };
-        
+
         // Cache the actor
-        loader.cache_actor(&actor, "test:actor", "1.0.0", test_wasm).await.unwrap();
-        
+        loader
+            .cache_actor(&actor, "test:actor", "1.0.0", test_wasm)
+            .await
+            .unwrap();
+
         // Try to load from cache
         let cached = loader.check_cache(&actor, "test:actor", &[]).await.unwrap();
         assert!(cached.is_some());
-        
+
         let loaded_actor = cached.unwrap();
         assert_eq!(loaded_actor.name, "test_actor");
         assert_eq!(loaded_actor.version, "1.0.0");
@@ -923,8 +1029,13 @@ mod tests {
             .join("buildable_simple");
 
         // Build the actor first to ensure wasm file exists
-        let wasm_path = loader.build_actor(&test_actor_path, None, "buildable_simple").await;
-        assert!(wasm_path.is_ok(), "Build should succeed for file discovery test");
+        let wasm_path = loader
+            .build_actor(&test_actor_path, None, "buildable_simple")
+            .await;
+        assert!(
+            wasm_path.is_ok(),
+            "Build should succeed for file discovery test"
+        );
 
         let target_dir = test_actor_path
             .join("target")
@@ -937,10 +1048,10 @@ mod tests {
         assert!(wasm_file.starts_with(&target_dir));
     }
 
-    #[tokio::test] 
+    #[tokio::test]
     async fn test_actor_hash_computation() {
         let loader = ActorLoader::new(None).unwrap();
-        
+
         let actor1 = Actor {
             name: "test".to_string(),
             source: ActorSource::Path(hive_config::PathSource {
@@ -951,7 +1062,7 @@ mod tests {
             auto_spawn: false,
             required_spawn_with: vec![],
         };
-        
+
         let actor2 = Actor {
             name: "test".to_string(),
             source: ActorSource::Path(hive_config::PathSource {
@@ -962,13 +1073,13 @@ mod tests {
             auto_spawn: false,
             required_spawn_with: vec![],
         };
-        
+
         let hash1 = loader.compute_actor_hash(&actor1);
         let hash2 = loader.compute_actor_hash(&actor2);
-        
+
         // Different paths should produce different hashes
         assert_ne!(hash1, hash2);
-        
+
         // Same actor should produce same hash
         let hash1_again = loader.compute_actor_hash(&actor1);
         assert_eq!(hash1, hash1_again);
