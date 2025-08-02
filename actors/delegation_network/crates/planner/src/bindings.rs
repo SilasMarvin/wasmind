@@ -1210,6 +1210,63 @@ pub mod hive {
                     result6
                 }
             }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Get the parent scope of the specified scope
+            /// Returns None if the scope has no parent or if the scope is invalid
+            pub fn get_parent_scope_of(scope: &str) -> Option<_rt::String> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 3 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 3
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = scope;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "hive:actor/agent@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get-parent-scope-of"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result7 = match l3 {
+                        0 => None,
+                        1 => {
+                            let e = {
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr1
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len6 = l5;
+                                let bytes6 = _rt::Vec::from_raw_parts(
+                                    l4.cast(),
+                                    len6,
+                                    len6,
+                                );
+                                _rt::string_lift(bytes6)
+                            };
+                            Some(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result7
+                }
+            }
         }
     }
 }
@@ -1765,8 +1822,8 @@ pub(crate) use __export_planner_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1713] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xb3\x0c\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1749] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd7\x0c\x01A\x02\x01\
 A\x0c\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
 cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x18\x01q\x04\x06exit\
 ed\x01}\0\x08signaled\x01}\0\x0ffailed-to-start\x01s\0\x0ftimeout-expired\0\0\x04\
@@ -1792,17 +1849,18 @@ f\x0c\x0cmax-attemptsy\x0dbase-delay-msw\0\x0a\x04\0\x15[method]request.retry\x0
 \x11\x01j\x01\x08\x01\x05\x01@\x01\x04self\x0c\0\x12\x04\0\x14[method]request.se\
 nd\x01\x13\x03\0\x15hive:actor/http@0.1.0\x05\x02\x01B\x04\x01m\x04\x05debug\x04\
 info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07messag\
-es\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x03\x01B\x07\x01\
+es\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x03\x01B\x09\x01\
 ps\x01j\x01s\x01s\x01@\x02\x09actor-ids\0\x0aagent-names\0\x01\x04\0\x0bspawn-ag\
-ent\x01\x02\x01ks\x01@\0\0\x03\x04\0\x10get-parent-scope\x01\x04\x03\0\x16hive:a\
-ctor/agent@0.1.0\x05\x04\x01B\x0c\x01p}\x01r\x04\x0cmessage-types\x0dfrom-actor-\
-ids\x0afrom-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05act\
-or\x03\x01\x01i\x03\x01@\x02\x05scopes\x06configs\0\x04\x04\0\x12[constructor]ac\
-tor\x01\x05\x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]\
-actor.handle-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.d\
-estructor\x01\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x05\x04\0\x1ahive:planner/\
-planner@0.1.0\x04\0\x0b\x0d\x01\0\x07planner\x03\0\0\0G\x09producers\x01\x0cproc\
-essed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+ent\x01\x02\x01ks\x01@\0\0\x03\x04\0\x10get-parent-scope\x01\x04\x01@\x01\x05sco\
+pes\0\x03\x04\0\x13get-parent-scope-of\x01\x05\x03\0\x16hive:actor/agent@0.1.0\x05\
+\x04\x01B\x0c\x01p}\x01r\x04\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scopes\x07\
+payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01\
+@\x02\x05scopes\x06configs\0\x04\x04\0\x12[constructor]actor\x01\x05\x01h\x03\x01\
+@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handle-message\x01\
+\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\x08\x04\0\x16\
+hive:actor/actor@0.1.0\x05\x05\x04\0\x1ahive:planner/planner@0.1.0\x04\0\x0b\x0d\
+\x01\0\x07planner\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-compone\
+nt\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

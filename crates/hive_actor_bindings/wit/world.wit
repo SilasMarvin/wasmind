@@ -149,6 +149,10 @@ interface agent {
     /// Get the parent scope of the current actor
     /// Returns None if this is a root agent, Some(scope_id) if it has a parent
     get-parent-scope: func() -> option<string>;
+    
+    /// Get the parent scope of the specified scope
+    /// Returns None if the scope has no parent or if the scope is invalid
+    get-parent-scope-of: func(scope: string) -> option<string>;
 }
 
 // =================================================================

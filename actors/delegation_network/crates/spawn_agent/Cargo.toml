@@ -19,5 +19,7 @@ toml.workspace = true
 wit-bindgen-rt.workspace = true
 uuid.workspace = true
 
+delegation_network_coordinator = { path = "../delegation_network_coordinator" }
+
 [package.metadata.component.target.dependencies]
 "hive:actor" = { path = "../../../../crates/hive_actor_bindings/wit" }

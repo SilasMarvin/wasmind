@@ -1,8 +1,9 @@
+use delegation_network_coordinator::{AgentSpawned, AgentType};
 use hive_actor_utils::{
     common_messages::{
         assistant::{
-            AddMessage, RequestStatusUpdate, Section, Status, SystemPromptContent, SystemPromptContribution,
-            WaitReason,
+            AddMessage, RequestStatusUpdate, Section, Status, SystemPromptContent,
+            SystemPromptContribution, WaitReason,
         },
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
     },
@@ -69,7 +70,7 @@ Type: "SubManager"
 struct AgentDefinition {
     agent_role: String,
     task_description: String,
-    agent_type: String,
+    agent_type: AgentType,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -171,41 +172,15 @@ impl tools::Tool for SpawnAgentTool {
 
         // Process each agent to spawn
         for agent_def in &params.agents_to_spawn {
-            // Validate agent type
-            if agent_def.agent_type != "Worker" && agent_def.agent_type != "Manager" && agent_def.agent_type != "SubManager" {
-                let error_result = ToolCallResult {
-                    content: format!(
-                        "Invalid agent_type: '{}' for agent role '{}'. Must be 'Worker', 'Manager', or 'SubManager'.",
-                        agent_def.agent_type, agent_def.agent_role
-                    ),
-                    ui_display_info: UIDisplayInfo {
-                        collapsed: "Invalid agent type".to_string(),
-                        expanded: Some(format!(
-                            "Agent type '{}' is not supported",
-                            agent_def.agent_type
-                        )),
-                    },
-                };
-                self.send_error_result(&tool_call.tool_call.id, error_result);
-                return;
-            }
-
             // Determine actors based on agent type
-            let actors = match agent_def.agent_type.as_str() {
-                "Worker" => vec![
-                    "worker_assistant".to_string(), 
-                    "worker_execute_bash".to_string(), 
+            let actors = match agent_def.agent_type {
+                AgentType::Worker => vec![
+                    "worker_assistant".to_string(),
+                    "worker_execute_bash".to_string(),
                     "worker_complete".to_string(),
                     "send_manager_message".to_string(),
                 ],
-                "Manager" => vec![
-                    "main_manager_assistant".to_string(),
-                    "spawn_agent".to_string(),
-                    "planner".to_string(),
-                    "wait".to_string(),
-                    "send_message".to_string(),
-                ],
-                "SubManager" => vec![
+                AgentType::SubManager => vec![
                     "sub_manager_assistant".to_string(),
                     "spawn_agent".to_string(),
                     "send_message".to_string(),
@@ -258,6 +233,12 @@ impl tools::Tool for SpawnAgentTool {
 
             // Send the task message
             let _ = Self::broadcast_common_message(task_message);
+
+            // Broadcast the spawned agent message for the DelegationNetwork
+            let _ = Self::broadcast_common_message(AgentSpawned {
+                agent_type: agent_def.agent_type,
+                agent_id: agent_id.clone(),
+            });
 
             spawned_agents.push(format!(
                 "{} ({}) - ID: {}",
