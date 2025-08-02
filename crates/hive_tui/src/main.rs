@@ -8,7 +8,6 @@ use hive_actor_utils_common_messages::assistant::AddMessage;
 use hive_actor_utils_common_messages::litellm::BaseUrlUpdate;
 use hive_llm_types::types::ChatMessage;
 
-mod actors;
 mod cli;
 mod config;
 mod litellm_manager;
