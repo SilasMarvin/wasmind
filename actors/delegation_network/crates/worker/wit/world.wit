@@ -1,5 +1,0 @@
-package hive:worker@0.1.0;
-
-world worker {
-    include hive:actor/actor-world@0.1.0;
-}

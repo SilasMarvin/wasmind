@@ -1,0 +1,30 @@
+actor_id = "hive:delegation_network_coordinator"
+
+required_spawn_with = []
+
+[dependencies.spawn_agent]
+source = { path = "../spawn_agent" }
+
+[dependencies.send_message]
+source = { path = "../send_message" }
+
+[dependencies.planner]
+source = { path = "../planner" }
+
+[dependencies.wait]
+source = { path = "../wait" }
+
+[dependencies.main_manager_assistant]
+source = { path = "/Users/silasmarvin/github/hive/actors/assistant" }
+
+[dependencies.sub_manager_assistant]
+source = { path = "/Users/silasmarvin/github/hive/actors/assistant" }
+
+[dependencies.worker_assistant]
+source = { path = "/Users/silasmarvin/github/hive/actors/assistant" }
+
+[dependencies.worker_execute_bash]
+source = { path = "/Users/silasmarvin/github/hive/actors/execute_bash" }
+
+[dependencies.worker_complete]
+source = { path = "../complete" }

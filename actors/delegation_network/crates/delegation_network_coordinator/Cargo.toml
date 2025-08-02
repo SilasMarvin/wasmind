@@ -1,5 +1,5 @@
 [package]
-name = "main_manager"
+name = "delegation_network_coordinator"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -19,3 +19,6 @@ wit-bindgen-rt.workspace = true
 
 [package.metadata.component.target.dependencies]
 "hive:actor" = { path = "../../../../crates/hive_actor_bindings/wit" }
+
+[profile.release]
+opt-level = "s"

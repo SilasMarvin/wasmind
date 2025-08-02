@@ -56,6 +56,13 @@ Task: "Set up complete CI/CD pipeline for a Python Flask application. This inclu
 Type: "Manager"
 ```
 
+**SubManager Agent Example**:
+```
+Role: "Frontend Team Lead"
+Task: "Develop the user interface for the e-commerce platform. Manage the implementation of: 1) Product listing pages, 2) Shopping cart functionality, 3) Checkout flow, 4) User account pages. Coordinate with the main project manager and delegate specific UI components to workers."
+Type: "SubManager"
+```
+
 **Critical**: The more detailed your task description, the better results you'll get!"#;
 
 #[derive(Debug, serde::Deserialize)]
@@ -95,8 +102,8 @@ struct SpawnAgentsInput {
                         },
                         "agent_type": {
                             "type": "string",
-                            "enum": ["Worker", "Manager"],
-                            "description": "Specify 'Worker' if the agent should execute tasks directly. Specify 'Manager' if the agent should delegate or manage tasks, potentially by spawning other agents."
+                            "enum": ["Worker", "Manager", "SubManager"],
+                            "description": "Specify 'Worker' if the agent should execute tasks directly. Specify 'Manager' if the agent should delegate or manage tasks, potentially by spawning other agents. Specify 'SubManager' for mid-level management of specific project domains."
                         }
                     },
                     "required": ["agent_role", "task_description", "agent_type"]
@@ -165,10 +172,10 @@ impl tools::Tool for SpawnAgentTool {
         // Process each agent to spawn
         for agent_def in &params.agents_to_spawn {
             // Validate agent type
-            if agent_def.agent_type != "Worker" && agent_def.agent_type != "Manager" {
+            if agent_def.agent_type != "Worker" && agent_def.agent_type != "Manager" && agent_def.agent_type != "SubManager" {
                 let error_result = ToolCallResult {
                     content: format!(
-                        "Invalid agent_type: '{}' for agent role '{}'. Must be 'Worker' or 'Manager'.",
+                        "Invalid agent_type: '{}' for agent role '{}'. Must be 'Worker', 'Manager', or 'SubManager'.",
                         agent_def.agent_type, agent_def.agent_role
                     ),
                     ui_display_info: UIDisplayInfo {
@@ -185,13 +192,24 @@ impl tools::Tool for SpawnAgentTool {
 
             // Determine actors based on agent type
             let actors = match agent_def.agent_type.as_str() {
-                "Worker" => vec!["worker".to_string()],
-                // "Manager" => vec![
-                //     "spawn_agent".to_string(),
-                //     "planner".to_string(),
-                //     "wait".to_string(),
-                //     "send_message".to_string(),
-                // ],
+                "Worker" => vec![
+                    "worker_assistant".to_string(), 
+                    "worker_execute_bash".to_string(), 
+                    "worker_complete".to_string()
+                ],
+                "Manager" => vec![
+                    "main_manager_assistant".to_string(),
+                    "spawn_agent".to_string(),
+                    "planner".to_string(),
+                    "wait".to_string(),
+                    "send_message".to_string(),
+                ],
+                "SubManager" => vec![
+                    "sub_manager_assistant".to_string(),
+                    "spawn_agent".to_string(),
+                    "send_message".to_string(),
+                    "wait".to_string(),
+                ],
                 _ => unreachable!(), // Already validated above
             };
 
