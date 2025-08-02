@@ -157,6 +157,11 @@ impl command::HostCmd for ActorState {
                 new_command.current_dir(dir);
             }
             
+            // Explicitly set up pipes to capture output
+            new_command.stdout(std::process::Stdio::piped());
+            new_command.stderr(std::process::Stdio::piped());
+            new_command.stdin(std::process::Stdio::null());
+            
             (new_command, inner.timeout_seconds)
         }; // Lock is dropped here
 

@@ -185,7 +185,7 @@ impl tools::Tool for SpawnAgentTool {
 
             // Determine actors based on agent type
             let actors = match agent_def.agent_type.as_str() {
-                "Worker" => vec!["execute_bash".to_string(), "send_message".to_string()],
+                "Worker" => vec!["worker".to_string()],
                 // "Manager" => vec![
                 //     "spawn_agent".to_string(),
                 //     "planner".to_string(),

@@ -25,10 +25,7 @@ pub struct MainManagerConfig {
 hive_actor_utils::actors::macros::generate_actor_trait!();
 
 #[derive(hive_actor_utils::actors::macros::Actor)]
-struct MainManager {
-    scope: String,
-    config: MainManagerConfig,
-}
+struct MainManager {}
 
 impl GeneratedActorTrait for MainManager {
     fn new(scope: String, config_str: String) -> Self {
@@ -52,16 +49,10 @@ impl GeneratedActorTrait for MainManager {
         })
         .unwrap();
 
-        Self { scope, config }
+        Self {}
     }
 
-    fn handle_message(&mut self, _message: MessageEnvelope) {
-        // Main manager handles incoming messages from subordinates
-        // This could include status updates, questions, or completed task reports
-        // For now, we'll keep this simple and let the assistant handle message processing
-    }
+    fn handle_message(&mut self, _message: MessageEnvelope) {}
 
-    fn destructor(&mut self) {
-        // Clean up any resources when the main manager is destroyed
-    }
+    fn destructor(&mut self) {}
 }

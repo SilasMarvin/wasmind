@@ -59,8 +59,9 @@ impl HiveContext {
         parent_scope: Option<Scope>,
     ) -> HiveResult<Scope> {
         let scope = Scope::new();
-        self.spawn_agent_in_scope(actor_ids, scope, agent_name, parent_scope)
-            .await
+        self.spawn_agent_in_scope(actor_ids, scope.clone(), agent_name, parent_scope)
+            .await?;
+        Ok(scope)
     }
 
     /// Spawn a new agent with the specified actors in a specific scope
@@ -70,7 +71,7 @@ impl HiveContext {
         scope: Scope,
         agent_name: String,
         parent_scope: Option<Scope>,
-    ) -> HiveResult<Scope> {
+    ) -> HiveResult<()> {
         let logical_actors_to_spawn: Vec<&str> = self
             .actor_executors
             .iter()
@@ -133,7 +134,7 @@ impl HiveContext {
 
         self.broadcast_common_message(agent_spawned)?;
 
-        Ok(scope)
+        Ok(())
     }
 
     /// Broadcast a common message to all actors

@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
-use crate::tui::{icons, model::TuiMessage};
 use crate::tui::utils::{center_horizontal, create_block_with_title, offset_y};
+use crate::tui::{icons, model::TuiMessage};
 use hive::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
 use hive_actor_utils_common_messages::{
     actors::AgentSpawned,
-    assistant::{AddMessage, ChatStateUpdated, Request as AssistantRequest, ChatState},
-    tools::{ToolCallStatusUpdate, ToolCallStatus, UIDisplayInfo},
+    assistant::{AddMessage, ChatState, ChatStateUpdated, Request as AssistantRequest},
+    tools::{ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
 };
-use hive_llm_types::types::{ChatMessage, AssistantChatMessage, ToolCall};
+use hive_llm_types::types::{AssistantChatMessage, ChatMessage, ToolCall};
 use ratatui::layout::Alignment;
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{
@@ -94,7 +94,10 @@ fn create_tool_widget(
 
     let (title, content, expanded_content) = match status {
         ToolCallStatus::Received { display_info } => {
-            let (content, expanded_content) = (display_info.collapsed.clone(), display_info.expanded.clone());
+            let (content, expanded_content) = (
+                display_info.collapsed.clone(),
+                display_info.expanded.clone(),
+            );
             (
                 format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
                 content,
@@ -110,9 +113,17 @@ fn create_tool_widget(
             )
         }
         ToolCallStatus::Done { result } => {
-            let (content, expanded_content) = match result {
-                Ok(res) => ("Success".to_string(), Some(res.content.clone())),
-                Err(res) => ("Error".to_string(), Some(res.content.clone())),
+            let (succeeded, content, expanded_content) = match result {
+                Ok(res) => (
+                    true,
+                    res.ui_display_info.collapsed.clone(),
+                    res.ui_display_info.expanded.clone(),
+                ),
+                Err(res) => (
+                    false,
+                    res.ui_display_info.collapsed.clone(),
+                    res.ui_display_info.expanded.clone(),
+                ),
             };
 
             (
@@ -304,18 +315,14 @@ impl ChatHistoryComponent {
             AttrValue::String(STARTING_SCOPE.to_string()),
         );
 
-        let mut manager_assistant_info =
-            AssistantInfo::new(ROOT_AGENT_NAME.to_string(), None);
+        let mut manager_assistant_info = AssistantInfo::new(ROOT_AGENT_NAME.to_string(), None);
         manager_assistant_info.pending_user_message = initial_prompt;
 
         Self {
             component: ChatHistory {
                 props,
                 state: State::None,
-                chat_history_map: HashMap::from([(
-                    STARTING_SCOPE.clone(),
-                    manager_assistant_info,
-                )]),
+                chat_history_map: HashMap::from([(STARTING_SCOPE.clone(), manager_assistant_info)]),
                 last_content_height: None,
                 is_modified: false,
             },
@@ -397,8 +404,10 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                         }
                     }
                 }
-                // Handle ChatStateUpdated  
-                else if let Some(chat_updated) = parse_common_message_as::<ChatStateUpdated>(&envelope) {
+                // Handle ChatStateUpdated
+                else if let Some(chat_updated) =
+                    parse_common_message_as::<ChatStateUpdated>(&envelope)
+                {
                     if let Ok(scope) = envelope.from_scope.parse::<Scope>() {
                         if let Some(actor_info) = self.component.chat_history_map.get_mut(&scope) {
                             actor_info.chat_state = Some(chat_updated.chat_state);
@@ -408,22 +417,27 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                     }
                 }
                 // Handle ToolCallStatusUpdate
-                else if let Some(tool_update) = parse_common_message_as::<ToolCallStatusUpdate>(&envelope) {
+                else if let Some(tool_update) =
+                    parse_common_message_as::<ToolCallStatusUpdate>(&envelope)
+                {
                     if let Ok(scope) = envelope.from_scope.parse::<Scope>() {
                         if let Some(actor_info) = self.component.chat_history_map.get_mut(&scope) {
-                            actor_info.tool_call_updates.insert(tool_update.id, tool_update.status);
+                            actor_info
+                                .tool_call_updates
+                                .insert(tool_update.id, tool_update.status);
                             self.component.is_modified = true;
                             return Some(TuiMessage::Redraw);
                         }
                     }
                 }
                 // Handle AgentSpawned to track new agent creation
-                else if let Some(agent_spawned) = parse_common_message_as::<AgentSpawned>(&envelope) {
+                else if let Some(agent_spawned) =
+                    parse_common_message_as::<AgentSpawned>(&envelope)
+                {
                     if let Ok(agent_scope) = agent_spawned.agent_id.parse::<Scope>() {
-                        self.component.chat_history_map.insert(
-                            agent_scope,
-                            AssistantInfo::new(agent_spawned.name, None),
-                        );
+                        self.component
+                            .chat_history_map
+                            .insert(agent_scope, AssistantInfo::new(agent_spawned.name, None));
                         self.component.is_modified = true;
                         return Some(TuiMessage::Redraw);
                     }

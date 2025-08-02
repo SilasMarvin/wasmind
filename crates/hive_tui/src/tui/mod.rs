@@ -1,12 +1,13 @@
 use hive::actors::MessageEnvelope;
+use hive::context::HiveContext;
 use model::Model;
 use ratatui::crossterm::{
     event::{KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags},
     execute,
 };
-use std::{io::stdout, thread};
+use std::{io::stdout, thread, sync::Arc};
 use tokio::sync::broadcast::{Receiver, Sender};
-use tuirealm::{PollStrategy, Update, terminal::CrosstermTerminalAdapter};
+use tuirealm::{PollStrategy, Update};
 
 pub mod components;
 pub mod icons;
@@ -21,6 +22,7 @@ pub struct Tui {
     tx: Sender<MessageEnvelope>,
     rx: Receiver<MessageEnvelope>,
     initial_prompt: Option<String>,
+    context: Arc<HiveContext>,
 }
 
 impl Tui {
@@ -28,17 +30,19 @@ impl Tui {
         tui_config: ParsedTuiConfig,
         tx: Sender<MessageEnvelope>,
         initial_prompt: Option<String>,
+        context: Arc<HiveContext>,
     ) -> Self {
         Self {
             tui_config,
             rx: tx.subscribe(),
             tx,
             initial_prompt,
+            context,
         }
     }
 
     pub fn run(self) {
-        thread::spawn(|| start_model(self.tui_config, self.tx, self.rx, self.initial_prompt));
+        thread::spawn(|| start_model(self.tui_config, self.tx, self.rx, self.initial_prompt, self.context));
     }
 }
 
@@ -47,6 +51,7 @@ fn start_model(
     tx: Sender<MessageEnvelope>,
     rx: Receiver<MessageEnvelope>,
     initial_prompt: Option<String>,
+    context: Arc<HiveContext>,
 ) {
     let mut stdout = stdout();
     if let Err(e) = execute!(
@@ -59,7 +64,7 @@ fn start_model(
     }
 
     // Setup model
-    let mut model = Model::new(config, tx, rx, initial_prompt);
+    let mut model = Model::new(config, tx, rx, initial_prompt, context);
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
     let _ = model.terminal.enable_raw_mode();

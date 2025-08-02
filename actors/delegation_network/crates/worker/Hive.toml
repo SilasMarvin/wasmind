@@ -1,0 +1,9 @@
+actor_id = "hive:worker"
+
+required_spawn_with = ["worker_execute_bash", "worker_assistant"]
+
+[dependencies.worker_assistant]
+source = { path = "/Users/silasmarvin/github/hive/actors/assistant" }
+
+[dependencies.worker_execute_bash]
+source = { path = "/Users/silasmarvin/github/hive/actors/execute_bash" }

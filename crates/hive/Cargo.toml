@@ -13,6 +13,7 @@ name = "hive"
 
 [features]
 default = []
+test-utils = []
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
@@ -32,7 +33,6 @@ hive_actor_utils_common_messages = { path = "../hive_actor_utils_common_messages
 rand = "0.9"
 throbber-widgets-tui = "0.8"
 lazy-regex = "3.4.1"
-hive_macros = { path = "../hive_macros" }
 base64 = "0.22.1"
 etcetera = "0.10.0"
 image = "0.25.6"

@@ -1,3 +1,6 @@
+use hive::hive::STARTING_SCOPE;
+use hive::scope::Scope;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::{Receiver, Sender};
 use tuirealm::listener::{ListenerResult, Poll};
@@ -7,6 +10,10 @@ use tuirealm::{Application, AttrValue, Attribute, EventListenerCfg, ListenerErro
 use crate::config::ParsedTuiConfig;
 use crate::tui::components::dashboard::{DASHBOARD_SCOPE, DashboardComponent, SCOPE_ATTR};
 use hive::actors::MessageEnvelope;
+use hive::context::HiveContext;
+use hive_actor_utils_common_messages::actors::Exit;
+use hive_actor_utils_common_messages::assistant::AddMessage;
+use hive_llm_types::types::ChatMessage;
 
 use super::components::graph::GraphTuiMessage;
 
@@ -48,6 +55,8 @@ where
     pub redraw: bool,
     pub terminal: TerminalBridge<T>,
     tx: Sender<MessageEnvelope>,
+    context: Arc<HiveContext>,
+    active_scope: Scope,
 }
 
 impl Model<CrosstermTerminalAdapter> {
@@ -56,6 +65,7 @@ impl Model<CrosstermTerminalAdapter> {
         tx: Sender<MessageEnvelope>,
         rx: Receiver<MessageEnvelope>,
         initial_prompt: Option<String>,
+        context: Arc<HiveContext>,
     ) -> Self {
         Self {
             app: Self::init_app(config, rx, initial_prompt),
@@ -63,6 +73,8 @@ impl Model<CrosstermTerminalAdapter> {
             quit: false,
             redraw: true,
             terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
+            context,
+            active_scope: STARTING_SCOPE.clone(),
         }
     }
 }
@@ -127,16 +139,27 @@ where
                     }
                 }
                 TuiMessage::Exit => {
+                    // Broadcast exit message
+                    if let Err(e) = self.context.broadcast_common_message(Exit) {
+                        tracing::error!("Failed to broadcast exit message: {}", e);
+                    }
                     self.quit = true;
-                    // For now, just set quit - we'll implement proper exit messaging later
                 }
                 TuiMessage::UpdatedUserTypedLLMMessage(_) => (),
-                TuiMessage::SubmittedUserTypedLLMMessage(_message) => {
-                    // For now, just ignore - we'll implement proper message sending later
+                TuiMessage::SubmittedUserTypedLLMMessage(message) => {
+                    // Broadcast AddMessage from the user
+                    let add_message = AddMessage {
+                        agent: self.active_scope.to_string(),
+                        message: ChatMessage::user(&message),
+                    };
+                    if let Err(e) = self.context.broadcast_common_message(add_message) {
+                        tracing::error!("Failed to broadcast AddMessage: {}", e);
+                    }
                 }
                 TuiMessage::Redraw => (),
                 TuiMessage::Graph(graph_message) => match graph_message {
                     GraphTuiMessage::SelectedAgent(scope) => {
+                        self.active_scope = Scope::try_from(scope.as_str()).unwrap();
                         assert!(
                             self.app
                                 .attr(

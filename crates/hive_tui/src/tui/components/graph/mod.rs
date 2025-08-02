@@ -5,7 +5,8 @@ use crate::{
 use agent::{AgentComponent, AgentMetrics};
 use hive::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
 use hive_actor_utils_common_messages::{
-    actors::AgentSpawned, assistant::Request as AssistantRequest, assistant::Status as AgentStatus,
+    actors::AgentSpawned,
+    assistant::{self, Request as AssistantRequest, Status as AgentStatus, StatusUpdate},
     tools::ExecuteTool,
 };
 use ratatui::{
@@ -514,7 +515,7 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                             .component
                             .root_node
                             .as_mut()
-                            .map(|root| root.select_next())
+                            .map(|root| root.select_previous())
                             .flatten(),
                     };
 
@@ -571,7 +572,7 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                             agent_spawned.actors,
                             false,
                         );
-                        let node = AgentNode::new(agent_component);
+                        let mut node = AgentNode::new(agent_component);
 
                         if let Some(root) = &mut self.component.root_node
                             && let Some(parent_scope) = parent_scope
@@ -580,12 +581,28 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                             let _ = root.insert(&parent_scope, node);
                             self.component.stats.agents_spawned += 1;
                         } else {
+                            node.component.component.is_selected = true;
                             self.component.root_node = Some(node);
                         }
 
                         Some(TuiMessage::Redraw)
                     } else {
                         tracing::error!("Failed to parse agent scope: {}", agent_spawned.agent_id);
+                        None
+                    }
+                } else if let Some(agent_status_update) =
+                    parse_common_message_as::<StatusUpdate>(&envelope)
+                {
+                    if let Some(root) = &mut self.component.root_node
+                        && let Ok(agent_scope) = envelope.from_scope.parse::<Scope>()
+                    {
+                        if matches!(agent_status_update.status, assistant::Status::Done { .. }) {
+                            root.remove(&agent_scope);
+                        } else {
+                            root.set_status(&agent_scope, &agent_status_update.status);
+                        }
+                        Some(TuiMessage::Redraw)
+                    } else {
                         None
                     }
                 } else {

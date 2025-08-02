@@ -16,3 +16,6 @@ source = { path = "../../", package = "crates/planner" }
 
 [dependencies.wait]
 source = { path = "../../", package = "crates/wait" }
+
+[dependencies.worker]
+source = { path = "../../", package = "crates/worker" }

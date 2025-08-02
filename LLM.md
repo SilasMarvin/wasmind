@@ -54,7 +54,6 @@ Command-line interface and TUI application:
 ### Other Components
 - `hive_config/`: Configuration management
 - `hive_llm_client/`: LLM client abstractions
-- `hive_macros/`: Additional macro utilities
 
 ## Actor Capabilities
 Actors can import various capabilities:

@@ -24,6 +24,9 @@ source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", pa
 [actor_overrides.main_manager_assistant.config]
 model_name = "gpt-4o"
 
+[actor_overrides.worker_assistant.config]
+model_name = "gpt-4o"
+
 ##############################
 # LiteLLM Config #############
 ##############################

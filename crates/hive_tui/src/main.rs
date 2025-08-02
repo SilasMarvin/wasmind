@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use clap::Parser;
 use hive::coordinator::HiveCoordinator;
 use snafu::{Snafu, whatever};
@@ -106,11 +108,11 @@ async fn main() -> TuiResult<()> {
         let loaded_actors = hive::load_actors(config.actors, config.actor_overrides).await?;
 
         // Create the context
-        let context = hive::context::HiveContext::new(loaded_actors);
-        let mut coordinator: HiveCoordinator = context.into();
+        let context = Arc::new(hive::context::HiveContext::new(loaded_actors));
+        let mut coordinator: HiveCoordinator = HiveCoordinator::new(context.clone());
 
         // Create the TUI struct making it subscribe to messages before starting hive
-        let tui = crate::tui::Tui::new(tui_config, coordinator.get_sender(), cli.prompt.clone());
+        let tui = crate::tui::Tui::new(tui_config, coordinator.get_sender(), cli.prompt.clone(), context.clone());
 
         // Start the hive
         let starting_actors: Vec<&str> =

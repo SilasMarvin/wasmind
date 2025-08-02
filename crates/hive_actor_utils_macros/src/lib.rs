@@ -189,7 +189,9 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
                 if message.message_type == ::hive_actor_utils::messages::common_messages::tools::ExecuteTool::MESSAGE_TYPE {
                     if let Ok(json_string) = String::from_utf8(message.payload) {
                         if let Ok(execute_tool_call) = ::hive_actor_utils::tools::macros::__private::serde_json::from_str::<::hive_actor_utils::messages::common_messages::tools::ExecuteTool>(&json_string) {
-                            <#name as ::hive_actor_utils::tools::Tool>::handle_call(&mut *self.tool.borrow_mut(), execute_tool_call)
+                            if execute_tool_call.tool_call.function.name == #tool_name {
+                                <#name as ::hive_actor_utils::tools::Tool>::handle_call(&mut *self.tool.borrow_mut(), execute_tool_call)
+                            }
                         }
                     }
                 }

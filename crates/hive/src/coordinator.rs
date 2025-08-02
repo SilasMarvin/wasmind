@@ -26,12 +26,6 @@ pub struct HiveCoordinator {
     replayable: Vec<MessageEnvelope>,
 }
 
-impl From<HiveContext> for HiveCoordinator {
-    fn from(value: HiveContext) -> Self {
-        HiveCoordinator::new(Arc::new(value))
-    }
-}
-
 impl HiveCoordinator {
     pub fn new(context: Arc<HiveContext>) -> Self {
         let rx = context.tx.subscribe();
@@ -50,7 +44,8 @@ impl HiveCoordinator {
     ) -> HiveResult<Scope> {
         self.context
             .spawn_agent_in_scope(starting_actors, STARTING_SCOPE, root_agent_name, None)
-            .await
+            .await?;
+        Ok(STARTING_SCOPE.clone())
     }
 
     /// Run the coordinator until system exit

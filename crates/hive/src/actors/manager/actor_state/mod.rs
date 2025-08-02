@@ -43,6 +43,19 @@ impl ActorState {
         context: Arc<HiveContext>,
     ) -> Self {
         let mut builder = WasiCtxBuilder::new();
+
+        // If you need access to the current working directory:
+        // if let Ok(cwd) = std::env::current_dir() {
+        builder
+            .preopened_dir(
+                "/",
+                "/",
+                wasmtime_wasi::DirPerms::all(),
+                wasmtime_wasi::FilePerms::all(),
+            )
+            .unwrap();
+        // }
+
         ActorState {
             actor_id,
             tx,
