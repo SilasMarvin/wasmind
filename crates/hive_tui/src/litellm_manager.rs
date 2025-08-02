@@ -122,6 +122,8 @@ const LITELLM_ENV_VARS: &[&str] = &[
     "LITELLM_MASTER_KEY",
     "LITELLM_SALT_KEY",
     "LITELLM_LOG_LEVEL",
+    // Cerebras
+    "CEREBRAS_API_KEY",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,7 +163,10 @@ impl Drop for LiteLLMManager {
                     if output.status.success() {
                         tracing::info!("LiteLLM container stopped successfully on Drop");
                     } else {
-                        tracing::warn!("Docker stop failed on Drop: {}", String::from_utf8_lossy(&output.stderr));
+                        tracing::warn!(
+                            "Docker stop failed on Drop: {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        );
                     }
                 }
                 Err(e) => {

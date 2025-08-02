@@ -1,7 +1,7 @@
 use std::i32;
 
 use bindings::exports::hive::actor::actor::MessageEnvelope;
-use hive_actor_utils::common_messages::assistant::{SystemPromptContent, SystemPromptContribution};
+use hive_actor_utils::common_messages::assistant::{Section, SystemPromptContent, SystemPromptContribution};
 use serde::Deserialize;
 
 #[allow(warnings)]
@@ -38,7 +38,7 @@ impl GeneratedActorTrait for DelegationNetworkCoordinator {
             key: "hive:delegation_network_coordinator:identity".to_string(),
             content: SystemPromptContent::Text(system_prompt.to_string()),
             priority: i32::MAX,
-            section: Some("IDENTITY".to_string()),
+            section: Some(Section::Identity),
         })
         .unwrap();
 

@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
-mod command;
-mod edit_file;
+// mod command;
+// mod edit_file;
 mod graph;
 mod utils;
 
@@ -31,12 +31,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // Run the preview scenario
-    tokio::task::spawn_blocking(move || {
+    let _ = tokio::task::spawn_blocking(move || {
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             match args.scenario {
-                Scenario::Command => command::run().await,
+                Scenario::Command => todo!(),
                 Scenario::Graph => graph::run().await,
-                Scenario::EditFile => edit_file::run().await,
+                Scenario::EditFile => todo!(),
             }
         })
     })

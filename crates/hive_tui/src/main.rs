@@ -1,54 +1,15 @@
-use std::sync::Arc;
-
 use clap::Parser;
 use hive::coordinator::HiveCoordinator;
-use snafu::{Snafu, whatever};
+use snafu::whatever;
+use std::sync::Arc;
 
 use hive_actor_utils_common_messages::assistant::AddMessage;
 use hive_actor_utils_common_messages::litellm::BaseUrlUpdate;
 use hive_llm_types::types::ChatMessage;
 
+use hive_tui::{Error, TuiResult, config, litellm_manager, tui};
+
 mod cli;
-mod config;
-mod litellm_manager;
-mod tui;
-mod utils;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(transparent)]
-    Hive {
-        #[snafu(source)]
-        source: hive::Error,
-    },
-
-    #[snafu(transparent)]
-    Config {
-        #[snafu(source)]
-        source: hive_config::Error,
-    },
-
-    #[snafu(transparent)]
-    LiteLLMConfig {
-        #[snafu(source)]
-        source: config::ConfigError,
-    },
-
-    #[snafu(transparent)]
-    LiteLLM {
-        #[snafu(source)]
-        source: litellm_manager::LiteLLMError,
-    },
-
-    #[snafu(whatever, display("{message}"))]
-    Whatever {
-        message: String,
-        #[snafu(source(from(Box<dyn std::error::Error + Send + Sync>, Some)))]
-        source: Option<Box<dyn std::error::Error + Send + Sync>>,
-    },
-}
-
-pub type TuiResult<T> = Result<T, Error>;
 
 #[tokio::main]
 async fn main() -> TuiResult<()> {
@@ -111,7 +72,12 @@ async fn main() -> TuiResult<()> {
         let mut coordinator: HiveCoordinator = HiveCoordinator::new(context.clone());
 
         // Create the TUI struct making it subscribe to messages before starting hive
-        let tui = crate::tui::Tui::new(tui_config, coordinator.get_sender(), cli.prompt.clone(), context.clone());
+        let tui = tui::Tui::new(
+            tui_config,
+            coordinator.get_sender(),
+            cli.prompt.clone(),
+            context.clone(),
+        );
 
         // Start the hive
         let starting_actors: Vec<&str> =
@@ -161,56 +127,3 @@ async fn main() -> TuiResult<()> {
 
     shutdown_result
 }
-
-// use hive::{init_test_logger, run_headless_program, run_main_program, SResult};
-//
-// #[tokio::main]
-// async fn main() -> SResult<()> {
-//     use clap::Parser;
-//
-//     init_test_logger();
-//
-//     // Parse command line arguments
-//     let cli = hive::cli::Cli::parse();
-//
-//     match cli.command {
-//         None => {
-//             // No subcommand provided, use top-level prompt if any
-//             run_main_program(cli.prompt).await?;
-//         }
-//         Some(hive::cli::Commands::Headless {
-//             prompt,
-//             auto_approve_commands,
-//         }) => {
-//             run_headless_program(prompt, auto_approve_commands).await?;
-//         }
-//         Some(hive::cli::Commands::PromptPreview {
-//             all,
-//             empty,
-//             files,
-//             plan,
-//             agents,
-//             complete,
-//             full,
-//             agent_types,
-//             config,
-//         }) => {
-//             if let Err(e) = hive::prompt_preview::execute_demo(
-//                 all,
-//                 empty,
-//                 files,
-//                 plan,
-//                 agents,
-//                 complete,
-//                 full,
-//                 agent_types,
-//                 config,
-//             ) {
-//                 eprintln!("Prompt preview error: {}", e);
-//                 std::process::exit(1);
-//             }
-//         }
-//     }
-//
-//     Ok(())
-// }

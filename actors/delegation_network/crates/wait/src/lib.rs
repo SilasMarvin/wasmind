@@ -1,6 +1,6 @@
 use hive_actor_utils::{
     common_messages::{
-        assistant::{RequestStatusUpdate, Status, SystemPromptContent, SystemPromptContribution, WaitReason},
+        assistant::{RequestStatusUpdate, Section, Status, SystemPromptContent, SystemPromptContribution, WaitReason},
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
     },
     messages::Message,
@@ -71,7 +71,7 @@ impl tools::Tool for WaitTool {
             key: "wait:usage_guide".to_string(),
             content: SystemPromptContent::Text(WAIT_USAGE_GUIDE.to_string()),
             priority: 700,
-            section: Some("TOOLS".to_string()),
+            section: Some(Section::Tools),
         });
 
         Self { scope }

@@ -20,6 +20,14 @@ pub enum ChatUserAction {
     Assist,
 }
 
+impl ChatUserAction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ChatUserAction::Assist => "Assist",
+        }
+    }
+}
+
 impl TryFrom<&str> for ChatUserAction {
     type Error = ();
 

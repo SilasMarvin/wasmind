@@ -1484,6 +1484,7 @@ dependencies = [
  "etcetera",
  "futures",
  "hive",
+ "hive_actor_loader",
  "hive_actor_utils",
  "hive_actor_utils_common_messages",
  "hive_config",

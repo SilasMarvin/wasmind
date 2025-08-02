@@ -1,4 +1,4 @@
-starting_actors = ["delegation_network_main_manager"]
+starting_actors = ["main_manager_assistant", "spawn_agent", "send_message", "planner", "wait"]
 
 ##############################
 # TUI Specific Config ########
@@ -19,9 +19,12 @@ starting_actors = ["delegation_network_main_manager"]
 ##############################
 
 [actors.delegation_network_main_manager]
-source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", package = "crates/main_manager" }
+source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", package = "crates/delegation_network_coordinator" }
 
 [actor_overrides.main_manager_assistant.config]
+model_name = "gpt-4o"
+
+[actor_overrides.sub_manager_assistant.config]
 model_name = "gpt-4o"
 
 [actor_overrides.worker_assistant.config]

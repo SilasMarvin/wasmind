@@ -196,11 +196,14 @@ impl Assistant {
             "No LiteLLM base URL available - waiting for LiteLLM manager to start".to_string()
         })?;
 
+        let system_message = match ChatMessage::system(system_prompt) {
+            ChatMessage::System(msg) => msg,
+            _ => unreachable!(),
+        };
+        
         Self::broadcast_common_message(Request {
             chat_state: ChatState {
-                system: SystemChatMessage {
-                    content: system_prompt.to_string(),
-                },
+                system: system_message,
                 tools: self.available_tools.clone(),
                 messages: self.chat_history.clone(),
             },
@@ -259,11 +262,14 @@ impl Assistant {
     fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessage>) {
         self.chat_history.extend(messages);
 
+        let system_message = match ChatMessage::system(self.render_system_prompt()) {
+            ChatMessage::System(msg) => msg,
+            _ => unreachable!(),
+        };
+        
         let _ = Self::broadcast_common_message(ChatStateUpdated {
             chat_state: ChatState {
-                system: SystemChatMessage {
-                    content: self.render_system_prompt(),
-                },
+                system: system_message,
                 tools: self.available_tools.clone(),
                 messages: self.chat_history.clone(),
             },

@@ -25,6 +25,14 @@ pub enum DashboardUserAction {
     Exit,
 }
 
+impl DashboardUserAction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DashboardUserAction::Exit => "Exit",
+        }
+    }
+}
+
 impl TryFrom<&str> for DashboardUserAction {
     type Error = ();
 

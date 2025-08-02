@@ -1,4 +1,4 @@
-use hive_actor_utils::common_messages::assistant::{SystemPromptContent, SystemPromptContribution};
+use hive_actor_utils::common_messages::assistant::{Section, SystemPromptContent, SystemPromptContribution};
 use minijinja::{Environment, context};
 use regex::Regex;
 use std::collections::HashMap;
@@ -16,6 +16,9 @@ pub struct SystemPromptConfig {
     /// List of contribution keys to exclude from the prompt
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// Default content for specific sections
+    #[serde(default)]
+    pub defaults: Option<HashMap<String, String>>,
 }
 
 fn default_base_template() -> String {
@@ -36,6 +39,7 @@ impl Default for SystemPromptConfig {
             base_template: default_base_template(),
             overrides: HashMap::new(),
             exclude: Vec::new(),
+            defaults: None,
         }
     }
 }
@@ -46,7 +50,7 @@ pub struct RenderedContribution {
     pub key: String,
     pub content: String,
     pub priority: i32,
-    pub section: String,
+    pub section: Section,
 }
 
 /// System prompt template renderer
@@ -62,12 +66,15 @@ impl SystemPromptRenderer {
         let mut renderer = Self {
             config,
             contributions: HashMap::new(),
-            key_validation_regex: Regex::new(r"^[a-z0-9_:-]+:[a-z0-9_:-]+$").unwrap(),
+            key_validation_regex: Regex::new(r"^[a-z0-9_-]+:[a-z0-9_-]+$").unwrap(),
             agent_scope,
         };
         
         // Automatically add system context variables
         renderer.add_system_context();
+        
+        // Add default contributions
+        renderer.add_default_contributions();
         
         renderer
     }
@@ -81,7 +88,7 @@ impl SystemPromptRenderer {
                 key: "system:current_directory".to_string(),
                 content: SystemPromptContent::Text(format!("Current working directory: {}", cwd.display())),
                 priority: 0, // Low priority so it appears at the end
-                section: Some("SYSTEM_CONTEXT".to_string()),
+                section: Some(Section::SystemContext),
             });
         }
         
@@ -97,7 +104,7 @@ impl SystemPromptRenderer {
                 local_time.format("%Y-%m-%d %H:%M:%S %Z")
             )),
             priority: 0,
-            section: Some("SYSTEM_CONTEXT".to_string()),
+            section: Some(Section::SystemContext),
         });
         
         // Operating system information
@@ -111,8 +118,26 @@ impl SystemPromptRenderer {
             key: "system:os_info".to_string(),
             content: SystemPromptContent::Text(os_info),
             priority: 0,
-            section: Some("SYSTEM_CONTEXT".to_string()),
+            section: Some(Section::SystemContext),
         });
+    }
+
+    /// Adds default system prompt contributions from config
+    fn add_default_contributions(&mut self) {
+        if let Some(defaults) = self.config.defaults.clone() {
+            for (section_name, content) in defaults {
+                let section = Section::from(section_name.as_str());
+                let key = format!("config:{}", section_name);
+                
+                let _ = self.add_contribution_internal(SystemPromptContribution {
+                    agent: self.agent_scope.clone(),
+                    key,
+                    content: SystemPromptContent::Text(content),
+                    priority: 500, // Medium priority
+                    section: Some(section),
+                });
+            }
+        }
     }
 
     /// Validates a contribution key format
@@ -204,9 +229,8 @@ impl SystemPromptRenderer {
             let content = self.render_contribution(contribution)?;
             let section = contribution
                 .section
-                .as_deref()
-                .unwrap_or("default")
-                .to_string();
+                .clone()
+                .unwrap_or(Section::Custom("default".to_string()));
 
             rendered.push(RenderedContribution {
                 key: contribution.key.clone(),
@@ -232,7 +256,7 @@ impl SystemPromptRenderer {
         let rendered_contributions = self.organize_contributions()?;
 
         // Group contributions by section
-        let mut sections: HashMap<String, Vec<String>> = HashMap::new();
+        let mut sections: HashMap<Section, Vec<String>> = HashMap::new();
         for contribution in rendered_contributions {
             sections
                 .entry(contribution.section)
@@ -240,9 +264,14 @@ impl SystemPromptRenderer {
                 .push(contribution.content);
         }
 
-        // Sort sections alphabetically for consistent output
-        let mut sorted_sections: Vec<(String, Vec<String>)> = sections.into_iter().collect();
-        sorted_sections.sort_by(|a, b| a.0.cmp(&b.0));
+        // Sort sections by enum ordering (Identity, Context, etc., then Custom alphabetically)
+        let mut section_pairs: Vec<(Section, Vec<String>)> = sections.into_iter().collect();
+        section_pairs.sort_by(|a, b| a.0.cmp(&b.0));
+        
+        let sorted_sections: Vec<(String, Vec<String>)> = section_pairs
+            .into_iter()
+            .map(|(section, content)| (section.display_name(), content))
+            .collect();
 
         // Render the base template
         let env = Environment::new();
@@ -313,7 +342,7 @@ mod tests {
             key: "shell:cwd".to_string(),
             content: SystemPromptContent::Text("Current directory: /home/user/project".to_string()),
             priority: 100,
-            section: Some("context".to_string()),
+            section: Some(Section::Context),
         };
 
         renderer.add_contribution(contribution).unwrap();
@@ -345,7 +374,7 @@ mod tests {
                     .to_string(),
             },
             priority: 200,
-            section: Some("context".to_string()),
+            section: Some(Section::Context),
         };
 
         renderer.add_contribution(contribution).unwrap();
@@ -374,7 +403,7 @@ mod tests {
                 default_template: "Default template".to_string(),
             },
             priority: 100,
-            section: Some("context".to_string()),
+            section: Some(Section::Context),
         };
 
         renderer.add_contribution(contribution).unwrap();
@@ -396,7 +425,7 @@ mod tests {
             key: "included:item".to_string(),
             content: SystemPromptContent::Text("This should appear".to_string()),
             priority: 100,
-            section: Some("context".to_string()),
+            section: Some(Section::Context),
         };
 
         let excluded = SystemPromptContribution {
@@ -404,7 +433,7 @@ mod tests {
             key: "excluded:item".to_string(),
             content: SystemPromptContent::Text("This should NOT appear".to_string()),
             priority: 100,
-            section: Some("context".to_string()),
+            section: Some(Section::Context),
         };
 
         renderer.add_contribution(included).unwrap();
@@ -426,7 +455,7 @@ mod tests {
             key: "test:low".to_string(),
             content: SystemPromptContent::Text("Low priority item".to_string()),
             priority: 10,
-            section: Some("context".to_string()),
+            section: Some(Section::Context),
         };
 
         let high_priority = SystemPromptContribution {
@@ -434,7 +463,7 @@ mod tests {
             key: "test:high".to_string(),
             content: SystemPromptContent::Text("High priority item".to_string()),
             priority: 100,
-            section: Some("context".to_string()),
+            section: Some(Section::Context),
         };
 
         renderer.add_contribution(low_priority).unwrap();
@@ -458,7 +487,7 @@ mod tests {
             key: "test:context".to_string(),
             content: SystemPromptContent::Text("Context item".to_string()),
             priority: 100,
-            section: Some("context".to_string()),
+            section: Some(Section::Context),
         };
 
         let tools_item = SystemPromptContribution {
@@ -466,7 +495,7 @@ mod tests {
             key: "test:tools".to_string(),
             content: SystemPromptContent::Text("Tools item".to_string()),
             priority: 100,
-            section: Some("tools".to_string()),
+            section: Some(Section::Tools),
         };
 
         renderer.add_contribution(context_item).unwrap();
@@ -495,7 +524,7 @@ mod tests {
 
         renderer.add_contribution(contribution).unwrap();
         let result = renderer.render().unwrap();
-
+        
         assert!(result.contains("## Default"));
         assert!(result.contains("No section specified"));
     }
@@ -510,7 +539,7 @@ mod tests {
             key: "test:correct".to_string(),
             content: SystemPromptContent::Text("For this agent".to_string()),
             priority: 100,
-            section: Some("context".to_string()),
+            section: Some(Section::Context),
         };
 
         let for_other_agent = SystemPromptContribution {
@@ -518,7 +547,7 @@ mod tests {
             key: "test:wrong".to_string(),
             content: SystemPromptContent::Text("For other agent".to_string()),
             priority: 100,
-            section: Some("context".to_string()),
+            section: Some(Section::Context),
         };
 
         renderer.add_contribution(for_this_agent).unwrap();
@@ -537,7 +566,7 @@ mod tests {
 
 
         // Check that system context variables are included
-        assert!(result.contains("## System_Context")); // Matches actual output with underscore
+        assert!(result.contains("## System Context")); // Matches actual output with display name
         assert!(result.contains("Current working directory:"));
         assert!(result.contains("Current date and time:"));
         assert!(result.contains("Operating system:"));

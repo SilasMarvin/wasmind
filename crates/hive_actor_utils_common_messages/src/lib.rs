@@ -185,6 +185,89 @@ pub mod assistant {
         const MESSAGE_TYPE: &str = "hive.common.assistant.ChatStateUpdated";
     }
 
+    // System prompt section organization
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub enum Section {
+        Identity,
+        Context,
+        Capabilities,
+        Guidelines,
+        Tools,
+        Instructions,
+        SystemContext,
+        Custom(String),
+    }
+
+    impl Section {
+        pub fn display_name(&self) -> String {
+            match self {
+                Section::Identity => "Identity".to_string(),
+                Section::Context => "Context".to_string(),
+                Section::Capabilities => "Capabilities".to_string(),
+                Section::Guidelines => "Guidelines".to_string(),
+                Section::Tools => "Tools".to_string(),
+                Section::Instructions => "Instructions".to_string(),
+                Section::SystemContext => "System Context".to_string(),
+                Section::Custom(name) => name.clone(),
+            }
+        }
+    }
+
+    impl From<String> for Section {
+        fn from(s: String) -> Self {
+            match s.to_lowercase().as_str() {
+                "identity" => Section::Identity,
+                "context" => Section::Context,
+                "capabilities" => Section::Capabilities,
+                "guidelines" => Section::Guidelines,
+                "tools" => Section::Tools,
+                "instructions" => Section::Instructions,
+                "system_context" | "system-context" => Section::SystemContext,
+                _ => Section::Custom(s),
+            }
+        }
+    }
+
+    impl From<&str> for Section {
+        fn from(s: &str) -> Self {
+            Section::from(s.to_string())
+        }
+    }
+
+    impl ToString for Section {
+        fn to_string(&self) -> String {
+            match self {
+                Section::Identity => "identity".to_string(),
+                Section::Context => "context".to_string(),
+                Section::Capabilities => "capabilities".to_string(),
+                Section::Guidelines => "guidelines".to_string(),
+                Section::Tools => "tools".to_string(),
+                Section::Instructions => "instructions".to_string(),
+                Section::SystemContext => "system_context".to_string(),
+                Section::Custom(name) => name.clone(),
+            }
+        }
+    }
+
+    impl Serialize for Section {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            serializer.serialize_str(&self.to_string())
+        }
+    }
+
+    impl<'de> Deserialize<'de> for Section {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let s = String::deserialize(deserializer)?;
+            Ok(Section::from(s))
+        }
+    }
+
     // System prompt contribution system
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum SystemPromptContent {
@@ -208,8 +291,8 @@ pub mod assistant {
         pub content: SystemPromptContent,
         /// Priority for ordering within sections (higher = earlier)
         pub priority: i32,
-        /// Optional section this belongs to (e.g., "context", "tools", "instructions")
-        pub section: Option<String>,
+        /// Optional section this belongs to
+        pub section: Option<Section>,
     }
 
     impl Message for SystemPromptContribution {

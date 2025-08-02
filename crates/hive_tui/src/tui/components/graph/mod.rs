@@ -39,6 +39,15 @@ pub enum GraphUserAction {
     SelectUp,
 }
 
+impl GraphUserAction {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            GraphUserAction::SelectDown => "SelectDown",
+            GraphUserAction::SelectUp => "SelectUp",
+        }
+    }
+}
+
 impl TryFrom<&str> for GraphUserAction {
     type Error = ();
 
@@ -597,11 +606,17 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                         && let Ok(agent_scope) = envelope.from_scope.parse::<Scope>()
                     {
                         if matches!(agent_status_update.status, assistant::Status::Done { .. }) {
-                            root.remove(&agent_scope);
+                            if let Some(scope) = root.remove(&agent_scope) {
+                                Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
+                                    scope.to_string(),
+                                )))
+                            } else {
+                                None
+                            }
                         } else {
                             root.set_status(&agent_scope, &agent_status_update.status);
+                            Some(TuiMessage::Redraw)
                         }
-                        Some(TuiMessage::Redraw)
                     } else {
                         None
                     }

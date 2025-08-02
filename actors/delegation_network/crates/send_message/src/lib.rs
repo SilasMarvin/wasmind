@@ -1,6 +1,6 @@
 use hive_actor_utils::{
     common_messages::{
-        assistant::{AddMessage, RequestStatusUpdate, Status, SystemPromptContent, SystemPromptContribution, WaitReason},
+        assistant::{AddMessage, RequestStatusUpdate, Section, Status, SystemPromptContent, SystemPromptContribution, WaitReason},
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
     },
     llm_client_types::ChatMessage,
@@ -81,7 +81,7 @@ impl tools::Tool for SendMessageTool {
             key: "send_message:usage_guide".to_string(),
             content: SystemPromptContent::Text(SEND_MESSAGE_USAGE_GUIDE.to_string()),
             priority: 900,
-            section: Some("TOOLS".to_string()),
+            section: Some(Section::Tools),
         });
 
         Self { scope }

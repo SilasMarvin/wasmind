@@ -8,6 +8,8 @@ readme.workspace = true
 edition.workspace = true
 license.workspace = true
 
+default-run = "hive_tui"
+
 [dependencies]
 snafu = { workspace = true }
 url = { workspace = true }
@@ -19,6 +21,7 @@ hive_config = { path = "../hive_config" }
 hive_actor_utils = { path = "../hive_actor_utils" }
 hive_actor_utils_common_messages = { path = "../hive_actor_utils_common_messages" }
 hive_llm_types = { path = "../hive_llm_types" }
+hive_actor_loader = { path = "../hive_actor_loader" }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 

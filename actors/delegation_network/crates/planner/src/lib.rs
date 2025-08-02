@@ -1,6 +1,6 @@
 use hive_actor_utils::{
     common_messages::{
-        assistant::{SystemPromptContent, SystemPromptContribution},
+        assistant::{Section, SystemPromptContent, SystemPromptContribution},
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
     },
     messages::Message,
@@ -170,7 +170,7 @@ impl tools::Tool for PlannerTool {
             key: "planner:usage_guide".to_string(),
             content: SystemPromptContent::Text(PLANNER_USAGE_GUIDE.to_string()),
             priority: 800,
-            section: Some("TOOLS".to_string()),
+            section: Some(Section::Tools),
         });
 
         Self {

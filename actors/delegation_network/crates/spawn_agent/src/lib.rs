@@ -1,7 +1,7 @@
 use hive_actor_utils::{
     common_messages::{
         assistant::{
-            AddMessage, RequestStatusUpdate, Status, SystemPromptContent, SystemPromptContribution,
+            AddMessage, RequestStatusUpdate, Section, Status, SystemPromptContent, SystemPromptContribution,
             WaitReason,
         },
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
@@ -129,7 +129,7 @@ impl tools::Tool for SpawnAgentTool {
             key: "spawn_agent:usage_guide".to_string(),
             content: SystemPromptContent::Text(SPAWN_AGENT_USAGE_GUIDE.to_string()),
             priority: 1000,
-            section: Some("TOOLS".to_string()),
+            section: Some(Section::Tools),
         });
 
         Self { scope }
@@ -239,7 +239,7 @@ impl tools::Tool for SpawnAgentTool {
                     agent_def.task_description, agent_def.agent_role
                 )),
                 priority: 100, // High priority so it appears early in system prompt
-                section: Some("task".to_string()),
+                section: Some(Section::Instructions),
             };
 
             // Send system prompt contribution
