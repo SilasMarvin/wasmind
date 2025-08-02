@@ -127,7 +127,7 @@ impl DependencyResolver {
         }
 
         // Collect all actors that exist in dependency chains
-        let all_resolved_names: std::collections::HashSet<String> = self.resolved.keys().cloned().collect();
+        let _all_resolved_names: std::collections::HashSet<String> = self.resolved.keys().cloned().collect();
 
         // TODO: Add more sophisticated validation for:
         // - User actors conflicting with dependencies (requires two-phase resolution)

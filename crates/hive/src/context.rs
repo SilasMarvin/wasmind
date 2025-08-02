@@ -71,24 +71,46 @@ impl HiveContext {
         agent_name: String,
         parent_scope: Option<Scope>,
     ) -> HiveResult<Scope> {
-        let actors_to_spawn = self
+        let logical_actors_to_spawn: Vec<&str> = self
             .actor_executors
             .iter()
             .filter_map(|(logical_name, actor)| {
                 if actor.auto_spawn() || actor_names.contains(&logical_name.as_str()) {
-                    Some(actor.clone())
+                    let mut actors_to_spawn = actor.required_spawn_with();
+                    actors_to_spawn.push(logical_name.as_str());
+                    Some(actors_to_spawn)
                 } else {
                     None
                 }
             })
-            .collect::<Vec<Arc<dyn ActorExecutor + 'static>>>();
-        let rxs: Vec<_> = (0..actors_to_spawn.len())
+            .flatten()
+            .collect();
+
+        let mut set_of_logical_actors_to_spawn = HashSet::new();
+
+        for actor in logical_actors_to_spawn {
+            if set_of_logical_actors_to_spawn.contains(&actor) {
+                tracing::warn!(
+                    "Attempted to spawn: `{actor}` twice in the same scope. Second request was ignored and `{actor}` was only spawned once."
+                );
+            } else {
+                set_of_logical_actors_to_spawn.insert(actor);
+            }
+        }
+
+        let rxs: Vec<_> = (0..set_of_logical_actors_to_spawn.len())
             .map(|_| self.tx.subscribe())
             .collect();
 
         let mut actors_spawned = HashSet::new();
-        for (actor, rx) in actors_to_spawn.into_iter().zip(rxs) {
+        for (actor, rx) in set_of_logical_actors_to_spawn.into_iter().zip(rxs) {
             let context = Arc::new(self.clone());
+            let actor = self
+                .actor_executors
+                .get(actor)
+                .ok_or(crate::Error::NonExistentActor {
+                    actor: actor.to_string(),
+                })?;
             actors_spawned.insert(actor.actor_id().to_string());
             actor
                 .clone()

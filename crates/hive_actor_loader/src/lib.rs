@@ -296,7 +296,7 @@ impl ActorLoader {
         })
     }
 
-    async fn check_cache(&self, actor: &Actor, actor_id: &str, required_spawn_with: &[String]) -> Result<Option<LoadedActor>> {
+    pub async fn check_cache(&self, actor: &Actor, actor_id: &str, required_spawn_with: &[String]) -> Result<Option<LoadedActor>> {
         let actor_hash = self.compute_actor_hash(actor);
         let cache_path = self.cache_dir.join(&actor.name).join(&actor_hash);
         let metadata_path = cache_path.join("metadata.json");
@@ -337,7 +337,7 @@ impl ActorLoader {
         Ok(None)
     }
 
-    async fn cache_actor(&self, actor: &Actor, actor_id: &str, version: &str, wasm: &[u8]) -> Result<()> {
+    pub async fn cache_actor(&self, actor: &Actor, actor_id: &str, version: &str, wasm: &[u8]) -> Result<()> {
         let actor_hash = self.compute_actor_hash(actor);
         let cache_path = self.cache_dir.join(&actor.name).join(&actor_hash);
 
@@ -534,18 +534,8 @@ impl ActorLoader {
 
         // Helper function to update hive dependencies in a TOML table
         let update_hive_deps = |deps: &mut toml::Table| {
-            if deps.contains_key("hive_actor_utils") {
-                let mut table = toml::Table::new();
-                table.insert("path".to_string(), toml::Value::String(hive_actor_utils_path.display().to_string()));
-                table.insert("features".to_string(), toml::Value::Array(vec![toml::Value::String("macros".to_string())]));
-                deps.insert("hive_actor_utils".to_string(), toml::Value::Table(table));
-            }
-
-            if deps.contains_key("hive_llm_types") {
-                let mut table = toml::Table::new();
-                table.insert("path".to_string(), toml::Value::String(hive_llm_types.display().to_string()));
-                deps.insert("hive_llm_types".to_string(), toml::Value::Table(table));
-            }
+            self.update_hive_dependency(deps, "hive_actor_utils", &hive_actor_utils_path, Some(vec!["macros"]));
+            self.update_hive_dependency(deps, "hive_llm_types", &hive_llm_types, None);
         };
 
         // Fix workspace-level dependencies first if this is a workspace
@@ -715,35 +705,13 @@ impl ActorLoader {
             path: Some(target_dir.to_path_buf()),
         })?;
         
-        // When building in a package directory, we need to find the package name from Cargo.toml
-        let expected_wasm_name = if package_name.is_some() {
-            // Get the actual package name from the Cargo.toml in the package directory
-            let package_cargo_toml = build_dir.join("Cargo.toml");
-            if let Ok(content) = fs::read_to_string(&package_cargo_toml).await {
-                if let Ok(cargo_toml) = toml::from_str::<toml::Value>(&content) {
-                    if let Some(package_name) = cargo_toml.get("package")
-                        .and_then(|p| p.get("name"))
-                        .and_then(|n| n.as_str()) {
-                        format!("{}.wasm", package_name.replace('-', "_"))
-                    } else {
-                        // Fallback - try to find any .wasm file
-                        String::new()
-                    }
-                } else {
-                    String::new()
+        // Try to find the expected WASM file name from package Cargo.toml
+        if package_name.is_some() {
+            if let Ok(expected_name) = self.get_expected_wasm_name(&build_dir).await {
+                let wasm_path = target_dir.join(&expected_name);
+                if wasm_path.exists() {
+                    return Ok(wasm_path);
                 }
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
-        };
-
-        if !expected_wasm_name.is_empty() {
-            // Look for the specific wasm file
-            let wasm_path = target_dir.join(&expected_wasm_name);
-            if wasm_path.exists() {
-                return Ok(wasm_path);
             }
         }
 
@@ -757,14 +725,47 @@ impl ActorLoader {
         
         Err(Error::WasmNotFound {
             actor_name: actor_name.to_string(),
-            expected_wasm: if expected_wasm_name.is_empty() { 
-                "<any .wasm file>".to_string() 
-            } else { 
-                expected_wasm_name 
-            },
+            expected_wasm: "<any .wasm file>".to_string(),
             target_dir: target_dir.display().to_string(),
             location: location!(),
         })
+    }
+
+    fn update_hive_dependency(&self, deps: &mut toml::Table, dep_name: &str, path: &Path, features: Option<Vec<&str>>) {
+        if deps.contains_key(dep_name) {
+            let mut table = toml::Table::new();
+            table.insert("path".to_string(), toml::Value::String(path.display().to_string()));
+            
+            if let Some(features) = features {
+                let feature_values: Vec<toml::Value> = features.into_iter()
+                    .map(|f| toml::Value::String(f.to_string()))
+                    .collect();
+                table.insert("features".to_string(), toml::Value::Array(feature_values));
+            }
+            
+            deps.insert(dep_name.to_string(), toml::Value::Table(table));
+        }
+    }
+
+    async fn get_expected_wasm_name(&self, build_dir: &Path) -> Result<String> {
+        let cargo_toml_path = build_dir.join("Cargo.toml");
+        let content = fs::read_to_string(&cargo_toml_path).await.context(IoSnafu {
+            path: Some(cargo_toml_path),
+        })?;
+        
+        let cargo_toml: toml::Value = toml::from_str(&content).context(TomlDeserializeSnafu { text: content })?;
+        
+        let package_name = cargo_toml
+            .get("package")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .ok_or_else(|| Error::MissingRequiredField {
+                actor_name: "<package>".to_string(),
+                field: "name".to_string(),
+                location: location!(),
+            })?;
+            
+        Ok(format!("{}.wasm", package_name.replace('-', "_")))
     }
 
     async fn get_actor_version(&self, actor_path: &Path, package_name: Option<&str>, actor_name: &str) -> Result<String> {
@@ -817,10 +818,159 @@ impl ActorLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_actor_loader_creation() {
         let loader = ActorLoader::new(None);
         assert!(loader.is_ok());
+    }
+
+    #[tokio::test] 
+    async fn test_build_successful_actor() {
+        let loader = ActorLoader::new(None).unwrap();
+        let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_actors")
+            .join("buildable_simple");
+
+        // Should build successfully
+        let result = loader.build_actor(&test_actor_path, None, "buildable_simple").await;
+        assert!(result.is_ok(), "Failed to build buildable_simple: {:?}", result.err());
+        
+        let wasm_path = result.unwrap();
+        assert!(wasm_path.exists(), "Built wasm file should exist at {:?}", wasm_path);
+        assert_eq!(wasm_path.extension().unwrap(), "wasm");
+    }
+
+    #[tokio::test]
+    async fn test_build_failing_actor() {
+        let loader = ActorLoader::new(None).unwrap();
+        let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_actors")
+            .join("buildable_fail");
+
+        // Should fail to build
+        let result = loader.build_actor(&test_actor_path, None, "buildable_fail").await;
+        assert!(result.is_err(), "buildable_fail should have failed to build");
+        
+        match result.err().unwrap() {
+            Error::CommandFailed { actor_name, stderr, .. } => {
+                assert_eq!(actor_name, "buildable_fail");
+                assert!(!stderr.is_empty(), "Should have build error output");
+            }
+            other => panic!("Expected CommandFailed error, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_actor_version_success() {
+        let loader = ActorLoader::new(None).unwrap();
+        let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_actors")
+            .join("buildable_simple");
+
+        let result = loader.get_actor_version(&test_actor_path, None, "buildable_simple").await;
+        assert!(result.is_ok(), "Failed to get version: {:?}", result.err());
+        assert_eq!(result.unwrap(), "0.1.0");
+    }
+
+    #[tokio::test]
+    async fn test_get_actor_version_nonexistent() {
+        let loader = ActorLoader::new(None).unwrap();
+        let nonexistent_path = PathBuf::from("/nonexistent/path");
+
+        let result = loader.get_actor_version(&nonexistent_path, None, "nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_cache_and_load_actor() {
+        let temp_dir = TempDir::new().unwrap();
+        let loader = ActorLoader::new(Some(temp_dir.path().to_path_buf())).unwrap();
+        
+        let test_wasm = b"fake wasm content";
+        let actor = Actor {
+            name: "test_actor".to_string(),
+            source: ActorSource::Path(hive_config::PathSource {
+                path: "/test/path".to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        };
+        
+        // Cache the actor
+        loader.cache_actor(&actor, "test:actor", "1.0.0", test_wasm).await.unwrap();
+        
+        // Try to load from cache
+        let cached = loader.check_cache(&actor, "test:actor", &[]).await.unwrap();
+        assert!(cached.is_some());
+        
+        let loaded_actor = cached.unwrap();
+        assert_eq!(loaded_actor.name, "test_actor");
+        assert_eq!(loaded_actor.version, "1.0.0");
+        assert_eq!(loaded_actor.id, "test:actor");
+        assert_eq!(loaded_actor.wasm, test_wasm);
+    }
+
+    #[tokio::test]
+    async fn test_wasm_file_discovery() {
+        let loader = ActorLoader::new(None).unwrap();
+        let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_actors")
+            .join("buildable_simple");
+
+        // Build the actor first to ensure wasm file exists
+        let wasm_path = loader.build_actor(&test_actor_path, None, "buildable_simple").await;
+        assert!(wasm_path.is_ok(), "Build should succeed for file discovery test");
+
+        let target_dir = test_actor_path
+            .join("target")
+            .join("wasm32-wasip1")
+            .join("release");
+
+        // Verify the discovered wasm file actually exists
+        let wasm_file = wasm_path.unwrap();
+        assert!(wasm_file.exists());
+        assert!(wasm_file.starts_with(&target_dir));
+    }
+
+    #[tokio::test] 
+    async fn test_actor_hash_computation() {
+        let loader = ActorLoader::new(None).unwrap();
+        
+        let actor1 = Actor {
+            name: "test".to_string(),
+            source: ActorSource::Path(hive_config::PathSource {
+                path: "/path1".to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        };
+        
+        let actor2 = Actor {
+            name: "test".to_string(),
+            source: ActorSource::Path(hive_config::PathSource {
+                path: "/path2".to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        };
+        
+        let hash1 = loader.compute_actor_hash(&actor1);
+        let hash2 = loader.compute_actor_hash(&actor2);
+        
+        // Different paths should produce different hashes
+        assert_ne!(hash1, hash2);
+        
+        // Same actor should produce same hash
+        let hash1_again = loader.compute_actor_hash(&actor1);
+        assert_eq!(hash1, hash1_again);
     }
 }

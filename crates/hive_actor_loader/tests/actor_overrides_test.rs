@@ -1,8 +1,6 @@
 use hive_config::{Actor, ActorSource, PathSource, ActorOverride};
 use hive_actor_loader::dependency_resolver::DependencyResolver;
 use std::path::PathBuf;
-use std::fs;
-use tempfile::TempDir;
 
 #[test]
 fn test_actor_overrides_config_only() {

@@ -19,7 +19,7 @@ pub trait ActorExecutor: Send + Sync {
 
     fn auto_spawn(&self) -> bool;
 
-    fn required_spawn_with(&self) -> &[&str];
+    fn required_spawn_with(&self) -> Vec<&str>;
 
     fn run(
         &self,
@@ -43,8 +43,11 @@ impl ActorExecutor for LoadedActor {
         self.auto_spawn
     }
 
-    fn required_spawn_with(&self) -> &[&str] {
-        self.required_spawn_with.as_slice()
+    fn required_spawn_with(&self) -> Vec<&str> {
+        self.required_spawn_with
+            .iter()
+            .map(|x| x.as_str())
+            .collect()
     }
 
     fn run(

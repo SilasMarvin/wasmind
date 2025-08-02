@@ -170,7 +170,7 @@ pub fn load_from_path<P: AsRef<Path> + ToOwned<Owned = PathBuf>>(path: P) -> Res
                         existing_override.config = Some(value.as_table().unwrap().clone());
                     } else {
                         // Create new override with just config
-                        let mut override_entry = ActorOverride {
+                        let override_entry = ActorOverride {
                             name: actor_name.to_string(),
                             source: None,
                             config: Some(value.as_table().unwrap().clone()),

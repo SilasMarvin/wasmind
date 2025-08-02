@@ -1,4 +1,5 @@
 /target
+**/target/
 log.txt
 .claude
 test-logs/
