@@ -61,10 +61,9 @@ impl tools::Tool for CommandTool {
                 Err(e) => {
                     let error_msg = format!("Failed to parse command parameters: {}", e);
                     let ui_display = UIDisplayInfo {
-                        collapsed: format!("{} Parameter Error", icons::ERROR_ICON),
+                        collapsed: "Parameter Error".to_string(),
                         expanded: Some(format!(
-                            "{} Parameter Error:\n{}",
-                            icons::ERROR_ICON,
+                            "Parameter Error:\n{}",
                             error_msg
                         )),
                     };
@@ -143,25 +142,23 @@ fn smart_truncate(text: &str) -> String {
 fn format_command_outcome_for_ui_display(command: &str, outcome: CommandOutcome) -> UIDisplayInfo {
     let collapsed = match &outcome {
         CommandOutcome::Success { .. } => {
-            format!("{} Command succeeded:\n{}", icons::SUCCESS_ICON, command)
+            format!("Command:\n{}", command)
         }
         CommandOutcome::Failed { exit_code, .. } => {
             format!(
-                "{} Command failed (exit {}):\n{}",
-                icons::FAILED_ICON,
+                "Command failed (exit {}):\n{}",
                 exit_code,
                 command
             )
         }
         CommandOutcome::Timeout => {
-            format!("{} Command timed out:\n{}", icons::TIMEOUT_ICON, command)
+            format!("Command timed out:\n{}", command)
         }
         CommandOutcome::Signal => format!(
-            "{} Command terminated by signal:\n{}",
-            icons::SIGNAL_ICON,
+            "Command terminated by signal:\n{}",
             command
         ),
-        CommandOutcome::Error(_) => format!("{} Command error:\n{}", icons::ERROR_ICON, command),
+        CommandOutcome::Error(_) => format!("Command error:\n{}", command),
     };
 
     let expanded = match &outcome {

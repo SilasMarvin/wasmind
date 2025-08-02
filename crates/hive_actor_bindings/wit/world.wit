@@ -140,6 +140,10 @@ interface agent {
     /// Spawn a new agent with the specified actors
     /// Returns the scope ID of the newly created agent
     spawn-agent: func(actor-ids: list<string>, agent-name: string) -> result<string, string>;
+    
+    /// Get the parent scope of the current actor
+    /// Returns None if this is a root agent, Some(scope_id) if it has a parent
+    get-parent-scope: func() -> option<string>;
 }
 
 // =================================================================

@@ -1696,7 +1696,7 @@ mod _rt {
 /// ```
 #[allow(unused_macros)]
 #[doc(hidden)]
-macro_rules! __export_spawn_agent_impl {
+macro_rules! __export_complete_impl {
     ($ty:ident) => {
         self::export!($ty with_types_in self);
     };
@@ -1707,15 +1707,15 @@ macro_rules! __export_spawn_agent_impl {
     };
 }
 #[doc(inline)]
-pub(crate) use __export_spawn_agent_impl as export;
+pub(crate) use __export_complete_impl as export;
 #[cfg(target_arch = "wasm32")]
 #[unsafe(
-    link_section = "component-type:wit-bindgen:0.41.0:hive:spawn-agent@0.1.0:spawn-agent:encoded world"
+    link_section = "component-type:wit-bindgen:0.41.0:hive:complete@0.1.0:complete:encoded world"
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1659] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf9\x0b\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1650] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf3\x0b\x01A\x02\x01\
 A\x0c\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
 cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x18\x01q\x04\x06exit\
 ed\x01}\0\x08signaled\x01}\0\x0ffailed-to-start\x01s\0\x0ftimeout-expired\0\0\x04\
@@ -1748,9 +1748,9 @@ yload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01@
 \x02\x05scopes\x06configs\0\x04\x04\0\x12[constructor]actor\x01\x05\x01h\x03\x01\
 @\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handle-message\x01\
 \x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\x08\x04\0\x16\
-hive:actor/actor@0.1.0\x05\x05\x04\0\"hive:spawn-agent/spawn-agent@0.1.0\x04\0\x0b\
-\x11\x01\0\x0bspawn-agent\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit\
--component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+hive:actor/actor@0.1.0\x05\x05\x04\0\x1chive:complete/complete@0.1.0\x04\0\x0b\x0e\
+\x01\0\x08complete\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-compon\
+ent\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

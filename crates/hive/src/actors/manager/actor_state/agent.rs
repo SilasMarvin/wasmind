@@ -13,4 +13,9 @@ impl agent::Host for ActorState {
             Err(e) => Err(format!("Failed to spawn agent: {}", e)),
         }
     }
+
+    async fn get_parent_scope(&mut self) -> Option<String> {
+        // Get the parent scope for this actor's scope
+        self.context.get_parent_scope(self.scope).map(|scope| scope.to_string())
+    }
 }

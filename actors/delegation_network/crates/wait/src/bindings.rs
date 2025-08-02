@@ -1128,6 +1128,60 @@ pub mod hive {
                     result12
                 }
             }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Get the parent scope of the current actor
+            /// Returns None if this is a root agent, Some(scope_id) if it has a parent
+            pub fn get_parent_scope() -> Option<_rt::String> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 3 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 3
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "hive:actor/agent@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get-parent-scope"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result6 = match l2 {
+                        0 => None,
+                        1 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len5 = l4;
+                                let bytes5 = _rt::Vec::from_raw_parts(
+                                    l3.cast(),
+                                    len5,
+                                    len5,
+                                );
+                                _rt::string_lift(bytes5)
+                            };
+                            Some(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result6
+                }
+            }
         }
     }
 }
@@ -1660,8 +1714,8 @@ pub(crate) use __export_wait_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1609] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xce\x0b\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1638] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xeb\x0b\x01A\x02\x01\
 A\x0c\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
 cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x18\x01q\x04\x06exit\
 ed\x01}\0\x08signaled\x01}\0\x0ffailed-to-start\x01s\0\x0ftimeout-expired\0\0\x04\
@@ -1686,16 +1740,17 @@ f\x0c\x07secondsy\0\x0a\x04\0\x17[method]request.timeout\x01\x10\x01j\x01\x08\x0
 \x05\x01@\x01\x04self\x0c\0\x11\x04\0\x14[method]request.send\x01\x12\x03\0\x15h\
 ive:actor/http@0.1.0\x05\x02\x01B\x04\x01m\x04\x05debug\x04info\x04warn\x05error\
 \x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07messages\x01\0\x04\0\x03log\
-\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x03\x01B\x04\x01ps\x01j\x01s\x01s\x01\
-@\x02\x09actor-ids\0\x0aagent-names\0\x01\x04\0\x0bspawn-agent\x01\x02\x03\0\x16\
-hive:actor/agent@0.1.0\x05\x04\x01B\x0c\x01p}\x01r\x04\x0cmessage-types\x0dfrom-\
-actor-ids\x0afrom-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05\
-actor\x03\x01\x01i\x03\x01@\x02\x05scopes\x06configs\0\x04\x04\0\x12[constructor\
-]actor\x01\x05\x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[meth\
-od]actor.handle-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]acto\
-r.destructor\x01\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x05\x04\0\x14hive:wait/\
-wait@0.1.0\x04\0\x0b\x0a\x01\0\x04wait\x03\0\0\0G\x09producers\x01\x0cprocessed-\
-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x03\x01B\x07\x01ps\x01j\x01s\x01s\x01\
+@\x02\x09actor-ids\0\x0aagent-names\0\x01\x04\0\x0bspawn-agent\x01\x02\x01ks\x01\
+@\0\0\x03\x04\0\x10get-parent-scope\x01\x04\x03\0\x16hive:actor/agent@0.1.0\x05\x04\
+\x01B\x0c\x01p}\x01r\x04\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scopes\x07pa\
+yload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01@\
+\x02\x05scopes\x06configs\0\x04\x04\0\x12[constructor]actor\x01\x05\x01h\x03\x01\
+@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handle-message\x01\
+\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\x08\x04\0\x16\
+hive:actor/actor@0.1.0\x05\x05\x04\0\x14hive:wait/wait@0.1.0\x04\0\x0b\x0a\x01\0\
+\x04wait\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.2\
+27.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

@@ -20,6 +20,10 @@ pub struct HiveContext {
     /// Track which actors are expected in each scope
     /// Arc<Mutex<>> for concurrent access from spawn_agent calls
     pub scope_tracking: Arc<Mutex<HashMap<Scope, HashSet<String>>>>,
+
+    /// Track parent-child relationships between scopes
+    /// Arc<Mutex<>> for concurrent access from spawn_agent calls
+    pub scope_parents: Arc<Mutex<HashMap<Scope, Option<Scope>>>>,
 }
 
 impl HiveContext {
@@ -39,6 +43,7 @@ impl HiveContext {
             tx,
             actor_executors,
             scope_tracking: Arc::new(Mutex::new(HashMap::new())),
+            scope_parents: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -124,6 +129,12 @@ impl HiveContext {
             tracking.insert(scope.clone(), actors_spawned);
         }
 
+        // Store parent relationship
+        {
+            let mut parents = self.scope_parents.lock().unwrap();
+            parents.insert(scope.clone(), parent_scope);
+        }
+
         // Broadcast AgentSpawned message
         let agent_spawned = AgentSpawned {
             agent_id: scope.to_string(),
@@ -159,5 +170,12 @@ impl HiveContext {
             .send(message_envelope)
             .map_err(|_| crate::Error::Broadcast)?;
         Ok(())
+    }
+
+    /// Get the parent scope for a given scope
+    /// Returns None if the scope has no parent (root scope)
+    pub fn get_parent_scope(&self, scope: Scope) -> Option<Scope> {
+        let parents = self.scope_parents.lock().unwrap();
+        parents.get(&scope).copied().flatten()
     }
 }

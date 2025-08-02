@@ -279,7 +279,7 @@ impl tools::Tool for SpawnAgentTool {
             content: success_message.clone(),
             ui_display_info: UIDisplayInfo {
                 collapsed: format!(
-                    "✅ Spawned {} agent{}",
+                    "Spawned {} agent{}",
                     params.agents_to_spawn.len(),
                     if params.agents_to_spawn.len() == 1 {
                         ""

@@ -96,8 +96,8 @@ impl tools::Tool for SendMessageTool {
                 let error_result = ToolCallResult {
                     content: error_msg.clone(),
                     ui_display_info: UIDisplayInfo {
-                        collapsed: "❌ Parameter Error".to_string(),
-                        expanded: Some(format!("❌ Parameter Error:\n{}", error_msg)),
+                        collapsed: "Parameter Error".to_string(),
+                        expanded: Some(format!("Parameter Error:\n{}", error_msg)),
                     },
                 };
                 self.send_error_result(&tool_call.tool_call.id, error_result);
@@ -111,8 +111,8 @@ impl tools::Tool for SendMessageTool {
             let error_result = ToolCallResult {
                 content: error_msg.clone(),
                 ui_display_info: UIDisplayInfo {
-                    collapsed: "❌ Invalid Agent ID".to_string(),
-                    expanded: Some(format!("❌ Invalid Agent ID:\n{}", error_msg)),
+                    collapsed: "Invalid Agent ID".to_string(),
+                    expanded: Some(format!("Invalid Agent ID:\n{}", error_msg)),
                 },
             };
             self.send_error_result(&tool_call.tool_call.id, error_result);
@@ -155,8 +155,8 @@ impl tools::Tool for SendMessageTool {
         let result = ToolCallResult {
             content: success_message.clone(),
             ui_display_info: UIDisplayInfo {
-                collapsed: format!("✅ Message sent to {}", params.agent_id),
-                expanded: Some(format!("✅ Message sent to agent {}\n\nMessage: {}", params.agent_id, params.message)),
+                collapsed: format!("Message sent to {}", params.agent_id),
+                expanded: Some(format!("Message sent to agent {}\n\nMessage: {}", params.agent_id, params.message)),
             },
         };
 

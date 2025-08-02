@@ -107,8 +107,8 @@ impl tools::Tool for WaitTool {
         let result = ToolCallResult {
             content: "Waiting...".to_string(),
             ui_display_info: UIDisplayInfo {
-                collapsed: format!("⏸️ Waiting: {}", wait_reason),
-                expanded: Some(format!("⏸️ Waiting for system input\n\nReason: {}", wait_reason)),
+                collapsed: format!("Waiting: {}", wait_reason),
+                expanded: Some(format!("Waiting for system input\n\nReason: {}", wait_reason)),
             },
         };
 
