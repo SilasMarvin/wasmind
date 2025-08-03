@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 // mod command;
 // mod edit_file;
 mod graph;
+mod splash;
 mod utils;
 
 #[derive(Parser)]
@@ -15,9 +16,11 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Scenario {
-    /// Preview command execution flow with user approval
+    /// Preview the splash screen
+    Splash,
+    /// Preview commands
     Command,
-    /// Preview file editing workflow
+    /// Preview file edits
     EditFile,
     /// Preview the agent graph
     Graph,
@@ -34,6 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = tokio::task::spawn_blocking(move || {
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             match args.scenario {
+                Scenario::Splash => splash::run().await,
                 Scenario::Command => todo!(),
                 Scenario::Graph => graph::run().await,
                 Scenario::EditFile => todo!(),

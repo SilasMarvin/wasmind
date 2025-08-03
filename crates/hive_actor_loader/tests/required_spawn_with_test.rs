@@ -150,7 +150,7 @@ fn test_required_spawn_with_empty_override() {
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![
-        // Main actor
+        // Main actor that depends on logger
         Actor {
             name: "coordinator_instance".to_string(),
             source: ActorSource::Path(PathSource {
@@ -165,27 +165,12 @@ fn test_required_spawn_with_empty_override() {
             auto_spawn: false,
             required_spawn_with: vec![],
         },
-        // Global override with non-empty required_spawn_with
-        Actor {
-            name: "logger".to_string(),
-            source: ActorSource::Path(PathSource {
-                path: test_actors_path
-                    .join("logger")
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                package: None,
-            }),
-            config: None,
-            auto_spawn: true,
-            required_spawn_with: vec!["coordinator_instance".to_string()],
-        },
     ];
 
-    // Override to empty list via actor_overrides
+    // Override logger's required_spawn_with to empty list
     let actor_overrides = vec![ActorOverride {
         name: "logger".to_string(),
-        source: None,
+        source: None, // logger is a dependency, so it will get its source from the manifest dependency
         config: None,
         auto_spawn: None,
         required_spawn_with: Some(vec![]), // Explicitly override to empty
@@ -223,21 +208,6 @@ fn test_required_spawn_with_precedence() {
             config: None,
             auto_spawn: false,
             required_spawn_with: vec!["from_main".to_string()], // This should be used for coordinator
-        },
-        // Global override
-        Actor {
-            name: "logger".to_string(),
-            source: ActorSource::Path(PathSource {
-                path: test_actors_path
-                    .join("logger")
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                package: None,
-            }),
-            config: None,
-            auto_spawn: true,
-            required_spawn_with: vec!["from_global".to_string()], // This should be beaten by actor_override
         },
     ];
 
@@ -374,17 +344,6 @@ source = { path = "../dep_actor" }
             config: None,
             auto_spawn: false,
             required_spawn_with: vec!["user_specified".to_string()], // This should override manifest
-        },
-        // Global override for dependency
-        Actor {
-            name: "dep".to_string(),
-            source: ActorSource::Path(PathSource {
-                path: workspace_path.to_str().unwrap().to_string(),
-                package: Some("crates/dep_actor".to_string()),
-            }),
-            config: None,
-            auto_spawn: false,
-            required_spawn_with: vec!["from_global".to_string()],
         },
     ];
 

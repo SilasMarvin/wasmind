@@ -28,6 +28,9 @@ pub struct AssistantConfig {
     pub system_prompt: SystemPromptConfig,
     #[serde(default)]
     pub base_url: Option<String>,
+    /// Whether the LLM is required to respond with tool calls
+    #[serde(default)]
+    pub require_tool_call: bool,
 }
 
 /// Pending message that accumulates user input and system messages to be submitted to the LLM when appropriate
@@ -185,7 +188,7 @@ impl Assistant {
             ChatMessage::System(msg) => msg,
             _ => unreachable!(),
         };
-        
+
         Self::broadcast_common_message(Request {
             chat_state: ChatState {
                 system: system_message,
@@ -252,7 +255,7 @@ impl Assistant {
             ChatMessage::System(msg) => msg,
             _ => unreachable!(),
         };
-        
+
         let _ = Self::broadcast_common_message(ChatStateUpdated {
             chat_state: ChatState {
                 system: system_message,
@@ -355,6 +358,14 @@ impl Assistant {
                         coordinating_tool_name.clone(),
                         content,
                     )]);
+
+                    // This checks for the following scenario:
+                    // 1. We begin processing and will call the Wait tool: our state = Processing || AwaitingTools
+                    // 2. We receive a user / system message we add it to the pending messages but our state remains: Processing || AwaitingTools
+                    // 3. The wait too finishes
+                    if self.pending_message.has_content() {
+                        self.submit(false);
+                    }
                 }
                 _ => (),
             }
@@ -524,13 +535,17 @@ impl GeneratedActorTrait for Assistant {
                                 .unwrap();
                             }
                         } else {
-                            // No tool calls - we're done, wait for user input
-                            self.set_status(
-                                Status::Wait {
-                                    reason: WaitReason::WaitingForUserInput,
-                                },
-                                true,
-                            );
+                            if self.config.require_tool_call {
+                                self.pending_message.add_system_message(SystemChatMessage { content: "ERROR: It is required you respond with some kind of tool call! Review who you are and what you are doing and respond with a valid tool call".to_string() });
+                                self.submit(false);
+                            } else {
+                                self.set_status(
+                                    Status::Wait {
+                                        reason: WaitReason::WaitingForUserInput,
+                                    },
+                                    true,
+                                );
+                            }
                         }
                     }
                 }

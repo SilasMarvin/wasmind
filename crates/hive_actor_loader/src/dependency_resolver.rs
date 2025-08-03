@@ -146,16 +146,6 @@ impl DependencyResolver {
             self.resolve_actor_internal(actor, false, &global_overrides, &overrides_map)?;
         }
 
-        // Collect all actors that exist in dependency chains
-        let _all_resolved_names: std::collections::HashSet<String> =
-            self.resolved.keys().cloned().collect();
-
-        // TODO: Add more sophisticated validation for:
-        // - User actors conflicting with dependencies (requires two-phase resolution)
-        // - Actor overrides referencing non-existent dependencies (requires dependency discovery)
-        // For now, we have the basic validation that prevents [actors] and [actor_overrides]
-        // from both defining the same name
-
         Ok(self.resolved)
     }
 
@@ -244,7 +234,12 @@ impl DependencyResolver {
         // Apply global override if it exists
         if let Some(global_override) = global_overrides.get(&logical_name) {
             final_source = global_override.source.clone();
-            final_config = global_override.config.clone();
+            // Merge configs instead of replacing
+            final_config = match (final_config, &global_override.config) {
+                (Some(base), Some(override_cfg)) => Some(merge_toml_tables(&base, override_cfg)),
+                (None, Some(override_cfg)) => Some(override_cfg.clone()),
+                (base, None) => base,
+            };
             final_auto_spawn = global_override.auto_spawn;
             // Use user-provided required_spawn_with if not empty, otherwise keep current
             if !global_override.required_spawn_with.is_empty() {
@@ -258,7 +253,11 @@ impl DependencyResolver {
                 final_source = override_source.clone();
             }
             if let Some(override_config) = &actor_override.config {
-                final_config = Some(override_config.clone());
+                // Merge configs instead of replacing
+                final_config = match final_config {
+                    Some(base) => Some(merge_toml_tables(&base, override_config)),
+                    None => Some(override_config.clone()),
+                };
             }
             if let Some(override_auto_spawn) = actor_override.auto_spawn {
                 final_auto_spawn = override_auto_spawn;
@@ -342,10 +341,10 @@ fn load_manifest_from_git(
             hive_config::GitRef::Tag(tag) => {
                 cmd.arg("-b").arg(tag);
             }
-            hive_config::GitRef::Rev(rev) => {
-                // For specific revisions, we need to clone first then checkout
-                cmd.arg("-b").arg("main"); // Try main first, will handle rev after
-                let _ = rev; // TODO: Handle specific revision checkout
+            hive_config::GitRef::Rev(_rev) => {
+                // Note: Specific revision checkout is not currently supported
+                // We clone the default branch instead
+                cmd.arg("-b").arg("main");
             }
         }
     }
@@ -437,6 +436,27 @@ fn git_refs_match(ref1: &Option<hive_config::GitRef>, ref2: &Option<hive_config:
     }
 }
 
+/// Recursively merges two TOML tables, with values from `override_table` taking precedence
+fn merge_toml_tables(base: &toml::Table, override_table: &toml::Table) -> toml::Table {
+    let mut merged = base.clone();
+    
+    for (key, override_value) in override_table {
+        match (merged.get(key), override_value) {
+            // If both are tables, merge recursively
+            (Some(toml::Value::Table(base_table)), toml::Value::Table(override_table)) => {
+                let merged_subtable = merge_toml_tables(base_table, override_table);
+                merged.insert(key.clone(), toml::Value::Table(merged_subtable));
+            }
+            // Otherwise, override takes precedence
+            _ => {
+                merged.insert(key.clone(), override_value.clone());
+            }
+        }
+    }
+    
+    merged
+}
+
 fn source_to_string(source: &ActorSource) -> String {
     match source {
         ActorSource::Path(p) => format!("path: {}", p.path),
@@ -512,5 +532,161 @@ mod tests {
         // For now, we'll just test the basic structure
         let resolver = DependencyResolver::new();
         assert!(resolver.resolved.is_empty());
+    }
+
+    #[test]
+    fn test_merge_toml_tables() {
+        let mut base = toml::Table::new();
+        base.insert("model_name".to_string(), toml::Value::String("gpt-3.5".to_string()));
+        base.insert("require_tool_call".to_string(), toml::Value::Boolean(true));
+        
+        let mut system_prompt_base = toml::Table::new();
+        let mut defaults_base = toml::Table::new();
+        defaults_base.insert("identity".to_string(), toml::Value::String("You are a helpful assistant".to_string()));
+        defaults_base.insert("context".to_string(), toml::Value::String("Some context".to_string()));
+        system_prompt_base.insert("defaults".to_string(), toml::Value::Table(defaults_base));
+        base.insert("system_prompt".to_string(), toml::Value::Table(system_prompt_base));
+
+        let mut override_table = toml::Table::new();
+        override_table.insert("model_name".to_string(), toml::Value::String("gpt-4o".to_string()));
+        
+        let merged = merge_toml_tables(&base, &override_table);
+        
+        // Check that model_name was overridden
+        assert_eq!(merged.get("model_name").unwrap().as_str().unwrap(), "gpt-4o");
+        
+        // Check that require_tool_call was preserved
+        assert_eq!(merged.get("require_tool_call").unwrap().as_bool().unwrap(), true);
+        
+        // Check that system_prompt.defaults was preserved
+        let system_prompt = merged.get("system_prompt").unwrap().as_table().unwrap();
+        let defaults = system_prompt.get("defaults").unwrap().as_table().unwrap();
+        assert_eq!(defaults.get("identity").unwrap().as_str().unwrap(), "You are a helpful assistant");
+        assert_eq!(defaults.get("context").unwrap().as_str().unwrap(), "Some context");
+    }
+
+    #[test]
+    fn test_merge_toml_tables_nested_override() {
+        let mut base = toml::Table::new();
+        base.insert("model_name".to_string(), toml::Value::String("gpt-3.5".to_string()));
+        
+        let mut system_prompt_base = toml::Table::new();
+        let mut defaults_base = toml::Table::new();
+        defaults_base.insert("identity".to_string(), toml::Value::String("You are a helpful assistant".to_string()));
+        defaults_base.insert("context".to_string(), toml::Value::String("Some context".to_string()));
+        system_prompt_base.insert("defaults".to_string(), toml::Value::Table(defaults_base));
+        base.insert("system_prompt".to_string(), toml::Value::Table(system_prompt_base));
+
+        let mut override_table = toml::Table::new();
+        let mut system_prompt_override = toml::Table::new();
+        let mut defaults_override = toml::Table::new();
+        defaults_override.insert("identity".to_string(), toml::Value::String("You are a specialized assistant".to_string()));
+        system_prompt_override.insert("defaults".to_string(), toml::Value::Table(defaults_override));
+        override_table.insert("system_prompt".to_string(), toml::Value::Table(system_prompt_override));
+        
+        let merged = merge_toml_tables(&base, &override_table);
+        
+        // Check that model_name was preserved
+        assert_eq!(merged.get("model_name").unwrap().as_str().unwrap(), "gpt-3.5");
+        
+        // Check that system_prompt.defaults.identity was overridden
+        let system_prompt = merged.get("system_prompt").unwrap().as_table().unwrap();
+        let defaults = system_prompt.get("defaults").unwrap().as_table().unwrap();
+        assert_eq!(defaults.get("identity").unwrap().as_str().unwrap(), "You are a specialized assistant");
+        
+        // Check that system_prompt.defaults.context was preserved
+        assert_eq!(defaults.get("context").unwrap().as_str().unwrap(), "Some context");
+    }
+
+    #[test]
+    fn test_actor_override_config_merging_integration() {
+        use tempfile::TempDir;
+        
+        // Create a temporary test directory structure
+        let temp_dir = TempDir::new().unwrap();
+        let test_root = temp_dir.path();
+        
+        // Create dependency actor directory with Hive.toml
+        let dep_actor_dir = test_root.join("dep_actor");
+        std::fs::create_dir_all(&dep_actor_dir).unwrap();
+        
+        let hive_toml_content = r#"
+actor_id = "test:dependency_actor"
+required_spawn_with = []
+
+[dependencies.test_assistant]
+source = { path = "../assistant_actor" }
+
+[dependencies.test_assistant.config]
+model_name = "gpt-3.5-turbo"
+require_tool_call = true
+
+[dependencies.test_assistant.config.system_prompt.defaults]
+identity = "You are a helpful assistant"
+context = "You operate in a test environment"
+guidelines = "Follow all instructions carefully"
+"#;
+        std::fs::write(dep_actor_dir.join("Hive.toml"), hive_toml_content).unwrap();
+        
+        // Create assistant actor directory with Hive.toml
+        let assistant_actor_dir = test_root.join("assistant_actor");
+        std::fs::create_dir_all(&assistant_actor_dir).unwrap();
+        
+        let assistant_hive_toml = r#"
+actor_id = "test:assistant"
+required_spawn_with = []
+"#;
+        std::fs::write(assistant_actor_dir.join("Hive.toml"), assistant_hive_toml).unwrap();
+        
+        // Create user actor that depends on the dependency
+        let user_actors = vec![Actor {
+            name: "dependency_actor".to_string(),
+            source: ActorSource::Path(hive_config::PathSource {
+                path: dep_actor_dir.to_string_lossy().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        }];
+        
+        // Create actor override that only specifies model_name
+        let actor_overrides = vec![hive_config::ActorOverride {
+            name: "test_assistant".to_string(),
+            source: None,
+            config: Some({
+                let mut override_config = toml::Table::new();
+                override_config.insert("model_name".to_string(), toml::Value::String("gpt-4o".to_string()));
+                override_config
+            }),
+            auto_spawn: None,
+            required_spawn_with: None,
+        }];
+        
+        // Resolve all actors
+        let resolver = DependencyResolver::new();
+        let resolved = resolver.resolve_all(user_actors, actor_overrides).unwrap();
+        
+        // Verify that test_assistant was resolved with merged config
+        let assistant = resolved.get("test_assistant").unwrap();
+        let config = assistant.config.as_ref().unwrap();
+        
+        // Check that model_name was overridden
+        assert_eq!(config.get("model_name").unwrap().as_str().unwrap(), "gpt-4o");
+        
+        // Check that require_tool_call was preserved from dependency config
+        assert_eq!(config.get("require_tool_call").unwrap().as_bool().unwrap(), true);
+        
+        // Check that system_prompt.defaults were preserved
+        let system_prompt = config.get("system_prompt").unwrap().as_table().unwrap();
+        let defaults = system_prompt.get("defaults").unwrap().as_table().unwrap();
+        assert_eq!(defaults.get("identity").unwrap().as_str().unwrap(), "You are a helpful assistant");
+        assert_eq!(defaults.get("context").unwrap().as_str().unwrap(), "You operate in a test environment");
+        assert_eq!(defaults.get("guidelines").unwrap().as_str().unwrap(), "Follow all instructions carefully");
+        
+        // Verify that the assistant has the correct actor_id
+        assert_eq!(assistant.actor_id, "test:assistant");
+        assert_eq!(assistant.logical_name, "test_assistant");
+        assert!(assistant.is_dependency);
     }
 }

@@ -1,4 +1,4 @@
-use delegation_network_coordinator::{AgentSpawned, AgentType};
+use delegation_network_common_types::{AgentSpawned, AgentType};
 use hive_actor_utils::{
     common_messages::{
         assistant::{
@@ -66,14 +66,14 @@ Type: "SubManager"
 
 **Critical**: The more detailed your task description, the better results you'll get!"#;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 struct AgentDefinition {
     agent_role: String,
     task_description: String,
     agent_type: AgentType,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 struct SpawnAgentsInput {
     agents_to_spawn: Vec<AgentDefinition>,
     wait: Option<bool>,
@@ -241,7 +241,7 @@ impl tools::Tool for SpawnAgentTool {
             });
 
             spawned_agents.push(format!(
-                "{} ({}) - ID: {}",
+                "{} ({:?}) - ID: {}",
                 agent_def.agent_role, agent_def.agent_type, agent_id
             ));
         }

@@ -1,4 +1,4 @@
-starting_actors = ["main_manager_assistant", "spawn_agent", "send_message", "planner", "wait"]
+starting_actors = ["delegation_network_coordinator"]
 
 ##############################
 # TUI Specific Config ########
@@ -20,16 +20,15 @@ starting_actors = ["main_manager_assistant", "spawn_agent", "send_message", "pla
 
 [actors.delegation_network_coordinator]
 source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", package = "crates/delegation_network_coordinator" }
-auto_spawn = true
 
 [actor_overrides.main_manager_assistant.config]
-model_name = "qwen3-480b"
+model_name = "gpt-4o"
 
 [actor_overrides.sub_manager_assistant.config]
-model_name = "qwen3-480b"
+model_name = "gpt-4o"
 
 [actor_overrides.worker_assistant.config]
-model_name = "qwen3-480b"
+model_name = "gpt-4o"
 
 ##############################
 # LiteLLM Config #############
@@ -47,9 +46,9 @@ model_name = "gpt-4o"
 model = "openai/gpt-4o"
 api_key = "os.environ/OPENAI_API_KEY"
 
-[[litellm.models]]
-model_name = "qwen3-480b"
-
-[litellm.models.litellm_params]
-model = "cerebras/qwen-3-coder-480b"
-api_key = "os.environ/CEREBRAS_API_KEY"
+# [[litellm.models]]
+# model_name = "qwen3-480b"
+#
+# [litellm.models.litellm_params]
+# model = "cerebras/qwen-3-coder-480b"
+# api_key = "os.environ/CEREBRAS_API_KEY"

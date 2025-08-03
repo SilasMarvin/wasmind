@@ -109,11 +109,11 @@ impl HiveContext {
             .collect();
 
         let mut actors_spawned = HashSet::new();
-        for (actor, rx) in set_of_logical_actors_to_spawn.into_iter().zip(rxs) {
+        for (actor, rx) in set_of_logical_actors_to_spawn.iter().zip(rxs) {
             let context = Arc::new(self.clone());
             let actor = self
                 .actor_executors
-                .get(actor)
+                .get(*actor)
                 .ok_or(crate::Error::NonExistentActor {
                     actor: actor.to_string(),
                 })?;
@@ -140,7 +140,10 @@ impl HiveContext {
             agent_id: scope.to_string(),
             name: agent_name,
             parent_agent: parent_scope.map(|s| s.to_string()),
-            actors: actor_names.iter().map(|s| s.to_string()).collect(),
+            actors: set_of_logical_actors_to_spawn
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect(),
         };
 
         self.broadcast_common_message(agent_spawned)?;

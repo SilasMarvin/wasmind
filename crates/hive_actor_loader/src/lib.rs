@@ -261,48 +261,70 @@ impl ActorLoader {
             );
         }
 
-        // Create temporary directory for building
-        let temp_dir = TempDir::new().context(TempDirSnafu)?;
-        let build_path = temp_dir.path().join(&actor.name);
-
         // Get package name from source
         let package_name = match &actor.source {
             ActorSource::Path(path_source) => path_source.package.as_deref(),
             ActorSource::Git(repository) => repository.package.as_deref(),
         };
 
-        // Clone or copy the actor source
-        match &actor.source {
+        let (_build_path, wasm_path, version) = match &actor.source {
             ActorSource::Path(path_source) => {
-                self.copy_local_actor(&path_source.path, &build_path, &actor.name)
+                // For local path dependencies, build in-place using default target directory for speed
+                info!("Building local actor in-place: {}", path_source.path);
+                let source_path = Path::new(&path_source.path);
+                
+                // Verify source path exists
+                ensure!(
+                    source_path.exists(),
+                    InvalidPathSnafu {
+                        actor_name: actor.name.clone(),
+                        path: path_source.path.clone()
+                    }
+                );
+
+                // No dependency setup needed for in-place builds - they use their existing workspace dependencies
+
+                // Build using default target directory (faster - reuses build artifacts)
+                let wasm_path = self
+                    .build_actor(source_path, package_name, &actor.name)
                     .await?;
+
+                // Get version from original source
+                let version = self
+                    .get_actor_version(source_path, package_name, &actor.name)
+                    .await?;
+
+                (source_path.to_path_buf(), wasm_path, version)
             }
             ActorSource::Git(repository) => {
+                // For Git dependencies, continue copying to temp for isolation
+                info!("Copying Git actor to temp: {}", repository.url);
+                let temp_dir = TempDir::new().context(TempDirSnafu)?;
+                let build_path = temp_dir.path().join(&actor.name);
+                
                 self.clone_git_actor(&repository.url, &build_path, repository.git_ref.as_ref())
                     .await?;
+
+                // Git dependencies use their original dependencies as-is
+
+                // Build in temp directory
+                let wasm_path = self
+                    .build_actor(&build_path, package_name, &actor.name)
+                    .await?;
+
+                // Get version from temp copy
+                let version = self
+                    .get_actor_version(&build_path, package_name, &actor.name)
+                    .await?;
+
+                (build_path, wasm_path, version)
             }
-        }
-
-        // Handle local development mode
-        if is_dev_mode {
-            self.setup_local_dependencies(&build_path, package_name, &actor.name)
-                .await?;
-        }
-
-        // Build the actor
-        let wasm_path = self
-            .build_actor(&build_path, package_name, &actor.name)
-            .await?;
+        };
 
         // Read the built wasm
         let wasm = fs::read(&wasm_path).await.context(IoSnafu {
             path: Some(wasm_path),
         })?;
-
-        // Get version
-        let version = self
-            .get_actor_version(&build_path, package_name, &actor.name)
-            .await?;
 
         // Cache the built actor (skip in dev mode)
         if !is_dev_mode {
@@ -438,59 +460,6 @@ impl ActorLoader {
         hex::encode(hasher.finalize())
     }
 
-    async fn copy_local_actor(&self, source: &str, dest: &Path, actor_name: &str) -> Result<()> {
-        info!("Copying local actor from {} to {:?}", source, dest);
-
-        let source_path = Path::new(source);
-        ensure!(
-            source_path.exists(),
-            InvalidPathSnafu {
-                actor_name: actor_name.to_string(),
-                path: source.to_string()
-            }
-        );
-
-        // Copy directory recursively
-        self.copy_dir_recursive(source_path, dest).await?;
-
-        Ok(())
-    }
-
-    async fn copy_dir_recursive(&self, src: &Path, dst: &Path) -> Result<()> {
-        // Create destination directory
-        fs::create_dir_all(dst)
-            .await
-            .context(IoSnafu { path: None })?;
-
-        let mut entries = fs::read_dir(src).await.context(IoSnafu {
-            path: Some(dst.to_path_buf()),
-        })?;
-
-        while let Some(entry) = entries.next_entry().await.context(IoSnafu { path: None })? {
-            let src_path = entry.path();
-            let dst_path = dst.join(entry.file_name());
-
-            if entry
-                .file_type()
-                .await
-                .context(IoSnafu {
-                    path: Some(entry.path()),
-                })?
-                .is_dir()
-            {
-                fs::create_dir_all(&dst_path)
-                    .await
-                    .context(IoSnafu { path: None })?;
-                Box::pin(self.copy_dir_recursive(&src_path, &dst_path)).await?;
-            } else {
-                fs::copy(&src_path, &dst_path).await.context(IoSnafu {
-                    path: Some(src_path.to_path_buf()),
-                })?;
-            }
-        }
-
-        Ok(())
-    }
 
     async fn clone_git_actor(
         &self,
@@ -544,163 +513,23 @@ impl ActorLoader {
         Ok(())
     }
 
-    async fn setup_local_dependencies(
-        &self,
-        actor_path: &Path,
-        package_name: Option<&str>,
-        actor_name: &str,
-    ) -> Result<()> {
-        info!("Setting up local dependencies for development mode");
-
-        // Find the workspace root and construct absolute paths
-        let workspace_root = std::env::current_dir().context(IoSnafu { path: None })?;
-        let hive_actor_utils_path = workspace_root.join("crates").join("hive_actor_utils");
-        let hive_llm_types = workspace_root.join("crates").join("hive_llm_types");
-        let hive_actor_bindings_path = workspace_root.join("crates").join("hive_actor_bindings");
-
-        // Verify both paths exist
-        ensure!(
-            hive_actor_utils_path.exists(),
-            InvalidPathSnafu {
-                actor_name: actor_name.to_string(),
-                path: hive_actor_utils_path.display().to_string()
-            }
-        );
-        ensure!(
-            hive_actor_bindings_path.exists(),
-            InvalidPathSnafu {
-                actor_name: actor_name.to_string(),
-                path: hive_actor_bindings_path.display().to_string()
-            }
-        );
-
-        // Helper function to update hive dependencies in a TOML table
-        let update_hive_deps = |deps: &mut toml::Table| {
-            self.update_hive_dependency(
-                deps,
-                "hive_actor_utils",
-                &hive_actor_utils_path,
-                Some(vec!["macros"]),
-            );
-            self.update_hive_dependency(deps, "hive_llm_types", &hive_llm_types, None);
-        };
-
-        // Fix workspace-level dependencies first if this is a workspace
-        let workspace_cargo_toml = actor_path.join("Cargo.toml");
-        if workspace_cargo_toml.exists() {
-            let workspace_content =
-                fs::read_to_string(&workspace_cargo_toml)
-                    .await
-                    .context(IoSnafu {
-                        path: Some(workspace_cargo_toml.clone()),
-                    })?;
-
-            let mut workspace_toml: toml::Value =
-                toml::from_str(&workspace_content).context(TomlDeserializeSnafu {
-                    text: workspace_content,
-                })?;
-
-            // Update workspace dependencies
-            if let Some(workspace_deps) = workspace_toml
-                .get_mut("workspace")
-                .and_then(|w| w.get_mut("dependencies"))
-                .and_then(|d| d.as_table_mut())
-            {
-                update_hive_deps(workspace_deps);
-            }
-
-            // Write the updated workspace Cargo.toml
-            let updated_workspace_content = toml::to_string_pretty(&workspace_toml).unwrap();
-            fs::write(&workspace_cargo_toml, updated_workspace_content)
-                .await
-                .context(IoSnafu {
-                    path: Some(workspace_cargo_toml),
-                })?;
-        }
-
-        // Determine the correct package Cargo.toml path
-        let cargo_toml_path = match package_name {
-            Some(package) => {
-                // Package is the full subpath to the package
-                let package_path = actor_path.join(package).join("Cargo.toml");
-                if package_path.exists() {
-                    package_path
-                } else {
-                    return Err(Error::PackageNotFound {
-                        actor_name: actor_name.to_string(),
-                        package_name: package.to_string(),
-                        workspace_path: actor_path.display().to_string(),
-                        location: location!(),
-                    });
-                }
-            }
-            None => actor_path.join("Cargo.toml"),
-        };
-
-        let cargo_content = fs::read_to_string(&cargo_toml_path)
-            .await
-            .context(IoSnafu {
-                path: Some(cargo_toml_path.clone()),
-            })?;
-
-        let mut cargo_toml: toml::Value =
-            toml::from_str(&cargo_content).context(TomlDeserializeSnafu {
-                text: cargo_content,
-            })?;
-
-        // Update package dependencies
-        for dependency_type in ["dependencies", "dev-dependencies"] {
-            if let Some(dependencies) = cargo_toml
-                .get_mut(dependency_type)
-                .and_then(|d| d.as_table_mut())
-            {
-                update_hive_deps(dependencies);
-            }
-        }
-
-        // Update the component WIT
-        if let Some(dependencies) = cargo_toml
-            .get_mut("package")
-            .and_then(|x| x.get_mut("metadata"))
-            .and_then(|x| x.get_mut("component"))
-            .and_then(|x| x.get_mut("target"))
-            .and_then(|x| x.get_mut("dependencies"))
-            .and_then(|x| x.as_table_mut())
-        {
-            if dependencies.contains_key("hive:actor") {
-                dependencies.insert(
-                    "hive:actor".to_string(),
-                    toml::Value::Table({
-                        let mut table = toml::Table::new();
-                        table.insert(
-                            "path".to_string(),
-                            toml::Value::String(
-                                hive_actor_bindings_path.join("wit").display().to_string(),
-                            ),
-                        );
-                        table
-                    }),
-                );
-            }
-        }
-
-        // Write the updated Cargo.toml
-        let updated_content = toml::to_string_pretty(&cargo_toml).unwrap();
-
-        fs::write(&cargo_toml_path, updated_content)
-            .await
-            .context(IoSnafu {
-                path: Some(cargo_toml_path),
-            })?;
-
-        Ok(())
-    }
 
     async fn build_actor(
         &self,
         actor_path: &Path,
         package_name: Option<&str>,
         actor_name: &str,
+    ) -> Result<PathBuf> {
+        // Default behavior uses the default target directory
+        self.build_actor_internal(actor_path, package_name, actor_name, None).await
+    }
+
+    async fn build_actor_internal(
+        &self,
+        actor_path: &Path,
+        package_name: Option<&str>,
+        actor_name: &str,
+        custom_target_dir: Option<&Path>,
     ) -> Result<PathBuf> {
         info!("Building actor at {:?}", actor_path);
 
@@ -715,6 +544,11 @@ impl ActorLoader {
 
         let mut cmd = Command::new("cargo-component");
         cmd.current_dir(&build_dir).arg("build").arg("--release");
+
+        // Use custom target directory if provided
+        if let Some(target_dir) = custom_target_dir {
+            cmd.arg("--target-dir").arg(target_dir);
+        }
 
         if package_name.is_some() {
             info!("Building in package directory: {:?}", build_dir);
@@ -736,8 +570,10 @@ impl ActorLoader {
         }
 
         // Find the built wasm file
-        // When building in a package directory, the target directory is usually at the workspace root
-        let target_dir = if package_name.is_some() {
+        let target_dir = if let Some(custom_target) = custom_target_dir {
+            // Use the custom target directory
+            custom_target.join("wasm32-wasip1").join("release")
+        } else if package_name.is_some() {
             // For packages, check if there's a workspace target directory at the actor_path root
             let workspace_target = actor_path
                 .join("target")
@@ -791,31 +627,6 @@ impl ActorLoader {
         })
     }
 
-    fn update_hive_dependency(
-        &self,
-        deps: &mut toml::Table,
-        dep_name: &str,
-        path: &Path,
-        features: Option<Vec<&str>>,
-    ) {
-        if deps.contains_key(dep_name) {
-            let mut table = toml::Table::new();
-            table.insert(
-                "path".to_string(),
-                toml::Value::String(path.display().to_string()),
-            );
-
-            if let Some(features) = features {
-                let feature_values: Vec<toml::Value> = features
-                    .into_iter()
-                    .map(|f| toml::Value::String(f.to_string()))
-                    .collect();
-                table.insert("features".to_string(), toml::Value::Array(feature_values));
-            }
-
-            deps.insert(dep_name.to_string(), toml::Value::Table(table));
-        }
-    }
 
     async fn get_expected_wasm_name(&self, build_dir: &Path) -> Result<String> {
         let cargo_toml_path = build_dir.join("Cargo.toml");
@@ -1083,5 +894,104 @@ mod tests {
         // Same actor should produce same hash
         let hash1_again = loader.compute_actor_hash(&actor1);
         assert_eq!(hash1, hash1_again);
+    }
+
+    #[tokio::test]
+    async fn test_load_local_path_actor_builds_in_place() {
+        let temp_cache_dir = TempDir::new().unwrap();
+        let loader = ActorLoader::new(Some(temp_cache_dir.path().to_path_buf())).unwrap();
+        
+        let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_actors")
+            .join("buildable_simple");
+        
+        let actor = Actor {
+            name: "test_in_place".to_string(),
+            source: ActorSource::Path(hive_config::PathSource {
+                path: test_actor_path.to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        };
+
+        // Load the actor (should build in-place)
+        let result = loader
+            .load_single_actor(actor, "test:in-place".to_string(), vec![])
+            .await;
+
+        assert!(result.is_ok(), "Failed to load local path actor: {:?}", result.err());
+        
+        let loaded_actor = result.unwrap();
+        assert_eq!(loaded_actor.name, "test_in_place");
+        assert_eq!(loaded_actor.id, "test:in-place");
+        assert!(!loaded_actor.wasm.is_empty());
+    }
+
+    #[tokio::test] 
+    async fn test_git_vs_path_source_behavior() {
+        let temp_cache_dir = TempDir::new().unwrap();
+        let loader = ActorLoader::new(Some(temp_cache_dir.path().to_path_buf())).unwrap();
+        
+        let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_actors")
+            .join("buildable_simple");
+        
+        // Test path source (should build in-place)
+        let path_actor = Actor {
+            name: "path_actor".to_string(),
+            source: ActorSource::Path(hive_config::PathSource {
+                path: test_actor_path.to_str().unwrap().to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        };
+
+        // For this test, we just verify the different code paths are taken
+        // We can't easily test git without setting up a real git repo
+        let result = loader
+            .load_single_actor(path_actor, "test:path".to_string(), vec![])
+            .await;
+
+        assert!(result.is_ok(), "Path actor should load successfully");
+    }
+
+    #[tokio::test]
+    async fn test_hash_differs_for_path_vs_git_sources() {
+        use url::Url;
+        
+        let loader = ActorLoader::new(None).unwrap();
+
+        let path_actor = Actor {
+            name: "test".to_string(),
+            source: ActorSource::Path(hive_config::PathSource {
+                path: "/some/path".to_string(),
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        };
+
+        let git_actor = Actor {
+            name: "test".to_string(),
+            source: ActorSource::Git(hive_config::Repository {
+                url: Url::parse("https://github.com/example/repo").unwrap(),
+                git_ref: None,
+                package: None,
+            }),
+            config: None,
+            auto_spawn: false,
+            required_spawn_with: vec![],
+        };
+
+        let path_hash = loader.compute_actor_hash(&path_actor);
+        let git_hash = loader.compute_actor_hash(&git_actor);
+
+        // Different source types should produce different hashes
+        assert_ne!(path_hash, git_hash);
     }
 }

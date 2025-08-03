@@ -1,0 +1,13 @@
+[package]
+name = "delegation_network_common_types"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+readme.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+hive_actor_utils.workspace = true
