@@ -35,7 +35,7 @@ fn create_pending_user_message_widget(content: String, area: Rect) -> (Box<dyn W
         format!("[ {} You - PENDING ]", icons::USER_ICON),
         borders,
         false,
-        Some(Padding::uniform(1)),
+        Some(Padding::horizontal(1)),
     );
     let message_paragraph = Paragraph::new(content)
         .block(block)
@@ -53,7 +53,7 @@ fn create_user_widget(content: String, area: Rect) -> (Box<dyn WidgetRef>, u16) 
         format!("[ {} You ]", icons::USER_ICON),
         borders,
         false,
-        Some(Padding::uniform(1)),
+        Some(Padding::horizontal(1)),
     );
     let message_paragraph = Paragraph::new(content)
         .block(block)
@@ -71,7 +71,7 @@ fn create_system_widget(content: String, area: Rect) -> (Box<dyn WidgetRef>, u16
         format!("[ {} System ]", icons::USER_ICON),
         borders,
         false,
-        Some(Padding::uniform(1)),
+        Some(Padding::horizontal(1)),
     );
     let message_paragraph = Paragraph::new(content)
         .block(block)
@@ -145,7 +145,7 @@ fn create_tool_widget(
 
     let border_color = if errored { Color::Red } else { Color::Yellow };
     let borders = tuirealm::props::Borders::default().color(border_color);
-    let block = create_block_with_title(title, borders, false, Some(Padding::uniform(1)));
+    let block = create_block_with_title(title, borders, false, Some(Padding::horizontal(1)));
     let p = Paragraph::new(content)
         .block(block)
         .style(Style::new())
@@ -171,7 +171,7 @@ fn create_assistant_widgets(
             format!("[ {} Assistant ]", icons::LLM_ICON),
             borders,
             false,
-            Some(Padding::uniform(1)),
+            Some(Padding::horizontal(1)),
         );
         let p = Paragraph::new(text_content)
             .block(block)
@@ -234,7 +234,7 @@ impl AssistantInfo {
             let content = "It's quiet, too quiet...\n\nSend a message - don't be shy!".to_string();
             let block = Block::new()
                 .borders(Borders::ALL)
-                .padding(Padding::uniform(1));
+                .padding(Padding::horizontal(1));
             let paragraph = Paragraph::new(content)
                 .alignment(Alignment::Center)
                 .wrap(Wrap { trim: true })
