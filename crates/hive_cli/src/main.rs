@@ -7,7 +7,7 @@ use hive_actor_utils_common_messages::assistant::AddMessage;
 use hive_actor_utils_common_messages::litellm::BaseUrlUpdate;
 use hive_llm_types::types::ChatMessage;
 
-use hive_tui::{Error, TuiResult, config, litellm_manager, tui};
+use hive_cli::{Error, TuiResult, config, litellm_manager, tui};
 
 mod cli;
 
@@ -20,28 +20,28 @@ async fn main() -> TuiResult<()> {
     // Handle info, clean, and status commands before loading configuration
     match &cli.command {
         Some(cli::Commands::Info) => {
-            if let Err(e) = hive_tui::commands::show_info() {
+            if let Err(e) = hive_cli::commands::info::show_info() {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
             return Ok(());
         }
         Some(cli::Commands::Clean) => {
-            if let Err(e) = hive_tui::commands::clean_cache() {
+            if let Err(e) = hive_cli::commands::clean::clean_cache() {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
             return Ok(());
         }
         Some(cli::Commands::Check) => {
-            if let Err(e) = hive_tui::commands::show_status(cli.config.clone()) {
+            if let Err(e) = hive_cli::commands::check::show_status(cli.config.clone()) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
             return Ok(());
         }
         None => {
-            // Continue with TUI startup
+            // Continue with terminal interface startup
         }
     }
 
@@ -89,7 +89,7 @@ async fn main() -> TuiResult<()> {
             }
         }
 
-        // Load TUI configuration
+        // Load terminal interface configuration
         let tui_config = crate::config::TuiConfig::from_config(&config)?.parse()?;
 
         // Load the actors
@@ -99,7 +99,7 @@ async fn main() -> TuiResult<()> {
         let context = Arc::new(hive::context::HiveContext::new(loaded_actors));
         let mut coordinator: HiveCoordinator = HiveCoordinator::new(context.clone());
 
-        // Create the TUI struct making it subscribe to messages before starting hive
+        // Create the terminal interface making it subscribe to messages before starting hive
         let tui = tui::Tui::new(
             tui_config,
             coordinator.get_sender(),
@@ -114,7 +114,7 @@ async fn main() -> TuiResult<()> {
             .start_hive(&starting_actors, "Root Agent".to_string())
             .await?;
 
-        // Start the TUI
+        // Start the terminal interface
         tui.run();
 
         // Broadcast the LiteLLM base URL to all actors

@@ -13,54 +13,6 @@ struct StartupAnalysis {
     has_valid_startup: bool,
 }
 
-pub fn show_info() -> TuiResult<()> {
-    println!("Hive Configuration and Cache Information");
-    println!("======================================");
-    
-    // Show config directory
-    let config_dir = hive_config::get_config_dir()?;
-    println!("Config directory: {}", config_dir.display());
-    
-    let config_file = hive_config::get_config_file_path()?;
-    if config_file.exists() {
-        println!("Config file: {} (exists)", config_file.display());
-    } else {
-        println!("Config file: {} (not found)", config_file.display());
-    }
-    
-    // Show cache directory  
-    let cache_dir = hive_config::get_cache_dir()?;
-    println!("Cache directory: {}", cache_dir.display());
-    
-    let actors_cache_dir = hive_config::get_actors_cache_dir()?;
-    let cached_count = hive_config::count_cached_actors(&actors_cache_dir)?;
-    
-    if cached_count > 0 {
-        println!("Actor cache: {} (contains {} cached actors)", actors_cache_dir.display(), cached_count);
-    } else {
-        println!("Actor cache: {} (empty)", actors_cache_dir.display());
-    }
-    
-    Ok(())
-}
-
-pub fn clean_cache() -> TuiResult<()> {
-    let actors_cache_dir = hive_config::get_actors_cache_dir()?;
-    
-    if !actors_cache_dir.exists() {
-        println!("No actor cache found at {}", actors_cache_dir.display());
-        return Ok(());
-    }
-    
-    println!("Cleaning actor cache at {}...", actors_cache_dir.display());
-    
-    // Remove the entire actors cache directory
-    hive_config::remove_actors_cache(&actors_cache_dir)?;
-    
-    println!("✓ Actor cache cleaned successfully");
-    Ok(())
-}
-
 pub fn show_status(config_path: Option<PathBuf>) -> TuiResult<()> {
     println!("Hive Configuration Status");
     println!("========================");
@@ -181,7 +133,6 @@ fn format_config_compact(config: &toml::Table) -> String {
     format_toml_table_proper(config, String::new(), 0)
 }
 
-
 fn format_toml_table_proper(table: &toml::Table, section_prefix: String, _depth: usize) -> String {
     let mut result = Vec::new();
     
@@ -242,7 +193,7 @@ fn format_toml_value_for_display(value: &toml::Value) -> String {
     }
 }
 
-fn display_status(config: &Config, resolved_actors: &HashMap<String, ResolvedActor>, analysis: &StartupAnalysis) {
+fn display_status(_config: &Config, resolved_actors: &HashMap<String, ResolvedActor>, analysis: &StartupAnalysis) {
     // Display startup behavior
     println!("Startup Behavior:");
     if !analysis.starting_actors.is_empty() {

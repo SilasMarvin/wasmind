@@ -2,10 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use hive::coordinator::HiveCoordinator;
 use hive_actor_loader::LoadedActor;
-use hive_tui::{TuiResult, tui};
+use hive_cli::{TuiResult, tui};
 
 pub async fn run() -> TuiResult<()> {
-    let tui_config = hive_tui::config::TuiConfig::default().parse()?;
+    let tui_config = hive_cli::config::TuiConfig::default().parse()?;
 
     let context = Arc::new(hive::context::HiveContext::new::<LoadedActor>(vec![]));
     let coordinator: HiveCoordinator = HiveCoordinator::new(context.clone());

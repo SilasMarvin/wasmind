@@ -6,7 +6,7 @@ This document provides context for LLMs working on the Hive codebase.
 ## Overview
 Hive is a Rust library for orchestrating LLM agents using an actor model architecture. In this system:
 - **Core Library** (`/crates/hive`): Actor orchestration engine and platform
-- **TUI Binary** (`/crates/hive_tui`): Reference implementation and development interface
+- **CLI Binary** (`/crates/hive_cli`): Reference implementation and development interface
 - **Example Actors** (`/actors/`): Sample WASM components demonstrating various capabilities
 - **Actors** are WebAssembly (WASM) plugins that handle messages and execute specific tasks
 - **Agents** are groups of actors working together under a shared scope
@@ -61,8 +61,8 @@ Sample WASM actors demonstrating Hive's capabilities:
 - `hive_actor_utils/`: Common utilities, message types, and macros
 - `hive_actor_utils_macros/`: Procedural macros for actor generation
 
-### `/crates/hive_tui` - Reference Implementation
-Command-line interface and TUI application demonstrating Hive usage:
+### `/crates/hive_cli` - Reference Implementation
+Command-line interface and terminal application demonstrating Hive usage:
 - `main.rs`: Entry point that loads and starts actors
 - `default_config.toml`: Configuration for example actor setup
 - Serves as development interface and example of what's possible with Hive

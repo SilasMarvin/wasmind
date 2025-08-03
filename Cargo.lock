@@ -1454,27 +1454,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "hive_config"
-version = "0.1.0"
-dependencies = [
- "etcetera",
- "serde",
- "snafu",
- "tempfile",
- "toml",
- "url",
-]
-
-[[package]]
-name = "hive_llm_types"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "hive_tui"
+name = "hive_cli"
 version = "0.1.0"
 dependencies = [
  "async-trait",
@@ -1513,6 +1493,26 @@ dependencies = [
  "uuid",
  "wasmtime",
  "wasmtime-wasi",
+]
+
+[[package]]
+name = "hive_config"
+version = "0.1.0"
+dependencies = [
+ "etcetera",
+ "serde",
+ "snafu",
+ "tempfile",
+ "toml",
+ "url",
+]
+
+[[package]]
+name = "hive_llm_types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -2,8 +2,8 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "hive_tui")]
-#[command(about = "Hive Actor System TUI")]
+#[command(name = "hive_cli")]
+#[command(about = "Hive Actor System CLI")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
