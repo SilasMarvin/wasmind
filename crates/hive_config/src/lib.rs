@@ -232,6 +232,18 @@ pub fn get_config_dir() -> Result<PathBuf, Error> {
     .config_dir())
 }
 
+pub fn get_cache_dir() -> Result<PathBuf, Error> {
+    // On Linux/macOS, this will be: $HOME/.cache/hive/
+    // On Windows, this will typically be: %LOCALAPPDATA%\hive\
+    Ok(choose_app_strategy(AppStrategyArgs {
+        top_level_domain: "com".to_string(),
+        author: "hive".to_string(),
+        app_name: "hive".to_string(),
+    })
+    .context(ConfigSnafu)?
+    .cache_dir())
+}
+
 pub fn get_config_file_path() -> Result<PathBuf, Error> {
     // This returns the complete path to the config file "config.toml".
     // On Linux/macOS, this will be: $HOME/.config/hive/config.toml
@@ -279,6 +291,28 @@ impl ActorManifest {
         let manifest: ActorManifest = toml::from_str(&content).context(TomlParseSnafu)?;
         Ok(manifest)
     }
+}
+
+pub fn get_actors_cache_dir() -> Result<PathBuf, Error> {
+    Ok(get_cache_dir()?.join("actors"))
+}
+
+pub fn count_cached_actors(cache_dir: &Path) -> Result<usize, Error> {
+    if !cache_dir.exists() {
+        return Ok(0);
+    }
+    
+    let count = std::fs::read_dir(cache_dir)
+        .context(IoSnafu)?
+        .count();
+    Ok(count)
+}
+
+pub fn remove_actors_cache(cache_dir: &Path) -> Result<(), Error> {
+    if cache_dir.exists() {
+        std::fs::remove_dir_all(cache_dir).context(IoSnafu)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

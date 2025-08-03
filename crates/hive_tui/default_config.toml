@@ -22,13 +22,13 @@ starting_actors = ["delegation_network_coordinator"]
 source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", package = "crates/delegation_network_coordinator" }
 
 [actor_overrides.main_manager_assistant.config]
-model_name = "gpt-4o"
+model_name = "horizon-beta"
 
 [actor_overrides.sub_manager_assistant.config]
-model_name = "gpt-4o"
+model_name = "horizon-beta"
 
 [actor_overrides.worker_assistant.config]
-model_name = "gpt-4o"
+model_name = "horizon-beta"
 
 ##############################
 # LiteLLM Config #############
@@ -45,6 +45,14 @@ model_name = "gpt-4o"
 [litellm.models.litellm_params]
 model = "openai/gpt-4o"
 api_key = "os.environ/OPENAI_API_KEY"
+
+[[litellm.models]]
+model_name = "horizon-beta"
+
+[litellm.models.litellm_params]
+model = "openrouter/openrouter/horizon-beta"
+api_key = "os.environ/OPENROUTER_API_KEY"
+
 
 # [[litellm.models]]
 # model_name = "qwen3-480b"

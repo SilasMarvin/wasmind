@@ -124,6 +124,8 @@ const LITELLM_ENV_VARS: &[&str] = &[
     "LITELLM_LOG_LEVEL",
     // Cerebras
     "CEREBRAS_API_KEY",
+    // Open Router
+    "OPENROUTER_API_KEY",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

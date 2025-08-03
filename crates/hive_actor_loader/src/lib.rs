@@ -158,7 +158,7 @@ impl ActorLoader {
         match cache_dir {
             Some(cache_dir) => Ok(Self { cache_dir }),
             None => {
-                let cache_dir = hive_config::get_config_dir()
+                let cache_dir = hive_config::get_cache_dir()
                     .context(ConfigSnafu)?
                     .join("actors");
                 Ok(Self { cache_dir })

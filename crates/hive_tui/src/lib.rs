@@ -1,5 +1,6 @@
 use snafu::Snafu;
 
+pub mod commands;
 pub mod config;
 pub mod litellm_manager;
 pub mod tui;

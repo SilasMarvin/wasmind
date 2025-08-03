@@ -17,6 +17,34 @@ async fn main() -> TuiResult<()> {
 
     let cli = cli::Cli::parse();
 
+    // Handle info, clean, and status commands before loading configuration
+    match &cli.command {
+        Some(cli::Commands::Info) => {
+            if let Err(e) = hive_tui::commands::show_info() {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return Ok(());
+        }
+        Some(cli::Commands::Clean) => {
+            if let Err(e) = hive_tui::commands::clean_cache() {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return Ok(());
+        }
+        Some(cli::Commands::Check) => {
+            if let Err(e) = hive_tui::commands::show_status(cli.config.clone()) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return Ok(());
+        }
+        None => {
+            // Continue with TUI startup
+        }
+    }
+
     // Load configuration
     let config = if let Some(config_path) = cli.config {
         hive_config::load_from_path(config_path)?

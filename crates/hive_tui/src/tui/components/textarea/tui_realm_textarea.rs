@@ -145,6 +145,7 @@
 #[cfg(feature = "clipboard")]
 use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use ratatui::text::Span;
+use ratatui::widgets::Widget;
 use tui_textarea::{CursorMove, TextArea as TextAreaWidget};
 use tuirealm::command::{Cmd, CmdResult, Direction, Position};
 use tuirealm::props::{
@@ -387,12 +388,8 @@ impl<'a> TextArea<'a> {
 }
 
 impl MockComponent for TextArea<'_> {
-    fn view(&mut self, frame: &mut Frame, area: Rect) {
+    fn view(&mut self, frame: &mut Frame, mut area: Rect) {
         if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
-            // set block
-            if let Some(block) = self.get_block() {
-                self.widget.set_block(block);
-            }
             // Remove cursor if not in focus
             let focus = self
                 .props
@@ -412,7 +409,22 @@ impl MockComponent for TextArea<'_> {
             }
 
             // render widget
+            area.x += 3;
+            area.y += 1;
+            area.width -= 4;
+            self.widget.set_block(Block::new());
             frame.render_widget(&self.widget, area);
+
+            area.x -= 3;
+            let span = Span::raw(" > ");
+            span.render(area, frame.buffer_mut());
+
+            // set block
+            area.y -= 1;
+            area.width += 4;
+            if let Some(block) = self.get_block() {
+                block.render(area, frame.buffer_mut());
+            }
         }
     }
 

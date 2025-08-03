@@ -1,10 +1,13 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "hive_tui")]
 #[command(about = "Hive Actor System TUI")]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+
     /// Path to the configuration file
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,
@@ -12,4 +15,14 @@ pub struct Cli {
     /// Optional prompt to send as initial user message to assistant
     #[arg(short, long)]
     pub prompt: Option<String>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Show configuration and cache information
+    Info,
+    /// Clean the actor cache
+    Clean,
+    /// Validate and show configuration details
+    Check,
 }

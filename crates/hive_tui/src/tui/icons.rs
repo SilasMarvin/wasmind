@@ -22,3 +22,7 @@ pub const FAILED_ICON: &'static str = "✗";
 pub const TIMEOUT_ICON: &'static str = "◐";
 pub const SIGNAL_ICON: &'static str = "◆";
 pub const ERROR_ICON: &'static str = "!";
+
+// Actor type icons for check command
+pub const USER_ACTOR_ICON: &'static str = "▪";
+pub const DEPENDENCY_ACTOR_ICON: &'static str = "◦";

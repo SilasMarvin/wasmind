@@ -6,7 +6,7 @@ use ratatui::{
 use tui_realm_textarea::{
     INACTIVE_BORDERS, TEXTAREA_CMD_CLEAR, TEXTAREA_CMD_MOVE_WORD_BACK,
     TEXTAREA_CMD_MOVE_WORD_FORWARD, TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO,
-    TITLE_STYLE, TextArea,
+    TEXTAREA_CURSOR_LINE_STYLE, TITLE_STYLE, TextArea,
 };
 use tuirealm::{
     AttrValue, Attribute, Component, Event, MockComponent,
@@ -46,6 +46,10 @@ impl LLMTextAreaComponent {
         textarea.attr(
             Attribute::Custom(TITLE_STYLE),
             AttrValue::Style(Style::new().add_modifier(Modifier::BOLD)),
+        );
+        textarea.attr(
+            Attribute::Custom(TEXTAREA_CURSOR_LINE_STYLE),
+            AttrValue::Style(Style::new()),
         );
 
         Self {
