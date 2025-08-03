@@ -6,7 +6,7 @@ use hive::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as
 use hive_actor_utils_common_messages::{
     actors::AgentSpawned,
     assistant::{AddMessage, ChatState, ChatStateUpdated, Request as AssistantRequest},
-    tools::{ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
+    tools::{ToolCallStatus, ToolCallStatusUpdate},
 };
 use hive_llm_types::types::{AssistantChatMessage, ChatMessage, ToolCall};
 use ratatui::layout::Alignment;

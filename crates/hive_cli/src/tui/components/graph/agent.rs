@@ -1,7 +1,7 @@
 use crate::tui::{model::TuiMessage, throbber_in_title_ext::ThrobberInTitleExt, utils};
 use hive::{actors::MessageEnvelope, scope::Scope};
 use hive_actor_utils_common_messages::assistant::Status as AgentStatus;
-use ratatui::widgets::{Padding, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Paragraph, Widget, Wrap};
 use throbber_widgets_tui::{
     BLACK_CIRCLE, OGHAM_C, Throbber, ThrobberState, VERTICAL_BLOCK, symbols::throbber,
 };
