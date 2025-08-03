@@ -14,7 +14,7 @@ use tuirealm::{
 };
 
 pub const WIDGET_WIDTH: u16 = 50;
-pub const WIDGET_HEIGHT: u16 = 9;
+pub const WIDGET_HEIGHT: u16 = 8;
 
 #[derive(Default, Copy, Clone)]
 pub struct AgentMetrics {
@@ -139,8 +139,7 @@ impl MockComponent for Agent {
                 format!("[ {} ]", self.name)
             };
             let maybe_loc = title.chars().position(|c| c == '⌘');
-            let div =
-                utils::create_block_with_title(title, borders, false, Some(Padding::uniform(1)));
+            let div = utils::create_block_with_title(title, borders, false, None);
 
             if let Some(loc) = maybe_loc
                 && let Some(status) = &self.status
@@ -154,28 +153,22 @@ impl MockComponent for Agent {
             }
 
             // Render the Actors list
-            let actors_paragraph_chunk = Rect::new(area.x + 2, area.y + 2, area.width - 4, 2);
+            let actors_paragraph_chunk = Rect::new(area.x + 2, area.y + 1, area.width - 4, 2);
             let actors_text = if self.actors.is_empty() {
-                "Actors: (none)".to_string()
+                "Actors: []".to_string()
             } else {
-                format!("Actors: {}", self.actors.join(", "))
+                format!("Actors: [{}]", self.actors.join(", "))
             };
             let actors_paragraph = Paragraph::new(actors_text).wrap(Wrap { trim: true });
             actors_paragraph.render(actors_paragraph_chunk, frame.buffer_mut());
 
-            // Render basic info
-            let render_paragraph_chunk = Rect::new(area.x + 2, area.y + 4, area.width - 4, 2);
-            let info_text = format!("Agent: {}", self.name);
-            let render_paragraph = Paragraph::new(info_text).wrap(Wrap { trim: true });
-            render_paragraph.render(render_paragraph_chunk, frame.buffer_mut());
-
             // Context
-            let paragraph_chunk = Rect::new(area.x + 2, area.y + 6, area.width, 2);
+            let paragraph_chunk = Rect::new(area.x + 2, area.y + 5, area.width, 2);
             let paragraph = Paragraph::new(format!("Context\n{}", self.context_size));
             paragraph.render(paragraph_chunk, frame.buffer_mut());
 
             // Requests Made
-            let paragraph_chunk = Rect::new(area.x + 12, area.y + 6, area.width, 2);
+            let paragraph_chunk = Rect::new(area.x + 12, area.y + 5, area.width, 2);
             let paragraph = Paragraph::new(format!(
                 "Requests\n{}",
                 self.metrics.completion_requests_sent
@@ -183,12 +176,12 @@ impl MockComponent for Agent {
             paragraph.render(paragraph_chunk, frame.buffer_mut());
 
             // Tool Calls
-            let paragraph_chunk = Rect::new(area.x + 23, area.y + 6, area.width, 2);
+            let paragraph_chunk = Rect::new(area.x + 23, area.y + 5, area.width, 2);
             let paragraph = Paragraph::new(format!("Tool Calls\n{}", self.metrics.tools_called));
             paragraph.render(paragraph_chunk, frame.buffer_mut());
 
             // Tokens Used
-            let paragraph_chunk = Rect::new(area.x + 36, area.y + 6, area.width, 2);
+            let paragraph_chunk = Rect::new(area.x + 36, area.y + 5, area.width, 2);
             let paragraph =
                 Paragraph::new(format!("Tokens Used\n{}", self.metrics.total_tokens_used));
             paragraph.render(paragraph_chunk, frame.buffer_mut());

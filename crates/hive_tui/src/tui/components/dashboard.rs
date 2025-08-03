@@ -87,6 +87,7 @@ impl MockComponent for Dashboard {
                 let chunks = Layout::default()
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+                    .spacing(1)
                     .split(area);
                 self.graph_area_component.view(frame, chunks[0]);
                 self.chat_area_component.view(frame, chunks[1]);

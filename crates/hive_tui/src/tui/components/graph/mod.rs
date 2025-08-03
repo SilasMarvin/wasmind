@@ -455,7 +455,7 @@ impl MockComponent for GraphArea {
                     "[ System Stats ]",
                     Borders::default(),
                     false,
-                    Some(Padding::uniform(1)),
+                    Some(Padding::horizontal(1)),
                 );
                 let stats_paragraph = Paragraph::new(format!(
                     "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}",

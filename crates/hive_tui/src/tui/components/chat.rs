@@ -78,8 +78,8 @@ impl MockComponent for ChatArea {
             frame.render_widget(div, area);
 
             // Adjust the x for the border on the left
-            area.x += 1;
-            area.width -= 1;
+            area.x += 2;
+            area.width -= 2;
 
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
