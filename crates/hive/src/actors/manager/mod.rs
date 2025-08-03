@@ -1,4 +1,4 @@
-use hive::actor::{agent, command, http, logger, messaging};
+use hive::actor::{agent, command, host_info, http, logger, messaging};
 use hive_actor_utils_common_messages::{Message, actors};
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -79,6 +79,7 @@ impl Manager {
         http::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
         logger::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
         agent::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
+        host_info::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
 
         let actor_world = ActorWorld::instantiate_async(&mut store, &component, &linker)
             .await

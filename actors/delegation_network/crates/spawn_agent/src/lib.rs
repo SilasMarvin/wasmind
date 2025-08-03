@@ -10,6 +10,7 @@ use hive_actor_utils::{
     llm_client_types::ChatMessage,
     tools,
 };
+use serde::Deserialize;
 
 #[allow(warnings)]
 mod bindings;
@@ -66,6 +67,12 @@ Type: "SubManager"
 
 **Critical**: The more detailed your task description, the better results you'll get!"#;
 
+#[derive(Clone, Deserialize)]
+pub struct SpawnAgentConfig {
+    pub worker_actors: Vec<String>,
+    pub sub_manager_actors: Vec<String>,
+}
+
 #[derive(serde::Deserialize)]
 struct AgentDefinition {
     agent_role: String,
@@ -120,10 +127,11 @@ struct SpawnAgentsInput {
 )]
 struct SpawnAgentTool {
     scope: String,
+    config: SpawnAgentConfig,
 }
 
 impl tools::Tool for SpawnAgentTool {
-    fn new(scope: String, _config: String) -> Self {
+    fn new(scope: String, config: String) -> Self {
         // Broadcast detailed guidance about how to use the spawn_agent tool
         let _ = Self::broadcast_common_message(SystemPromptContribution {
             agent: scope.clone(),
@@ -133,7 +141,10 @@ impl tools::Tool for SpawnAgentTool {
             section: Some(Section::Tools),
         });
 
-        Self { scope }
+        Self {
+            scope,
+            config: toml::from_str(&config).expect("Error deserializing config"),
+        }
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
@@ -174,20 +185,9 @@ impl tools::Tool for SpawnAgentTool {
         for agent_def in &params.agents_to_spawn {
             // Determine actors based on agent type
             let actors = match agent_def.agent_type {
-                AgentType::Worker => vec![
-                    "worker_assistant".to_string(),
-                    "worker_execute_bash".to_string(),
-                    "worker_complete".to_string(),
-                    "send_manager_message".to_string(),
-                ],
-                AgentType::SubManager => vec![
-                    "sub_manager_assistant".to_string(),
-                    "spawn_agent".to_string(),
-                    "send_message".to_string(),
-                    "send_manager_message".to_string(),
-                    "wait".to_string(),
-                ],
-                _ => unreachable!(), // Already validated above
+                AgentType::Worker => self.config.worker_actors.clone(),
+                AgentType::SubManager => self.config.sub_manager_actors.clone(),
+                _ => unreachable!(),
             };
 
             // Use the host's spawn_agent function

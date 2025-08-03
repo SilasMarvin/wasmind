@@ -155,6 +155,22 @@ interface agent {
     get-parent-scope-of: func(scope: string) -> option<string>;
 }
 
+interface host-info {
+    /// Operating system information from the host
+    record os-info {
+        os: string,
+        arch: string,
+    }
+    
+    /// Get the actual working directory from the host system
+    /// This returns the real host working directory, not the WASM guest working directory
+    get-host-working-directory: func() -> string;
+    
+    /// Get the actual operating system information from the host
+    /// This returns the real host OS info, not "wasm32"
+    get-host-os-info: func() -> os-info;
+}
+
 // =================================================================
 // WORLD: Definition
 // This world assembles the required imports and exports to define
@@ -166,6 +182,7 @@ world actor-world {
     import http;
     import logger;
     import agent;
+    import host-info;
 
     // An actor must provide an implementation of the `actor` resource.
     export actor;

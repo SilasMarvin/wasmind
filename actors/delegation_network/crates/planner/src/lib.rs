@@ -15,16 +15,16 @@ const PLANNER_USAGE_GUIDE: &str = r#"## planner Tool - Strategic Planning and Pr
 **Purpose**: Create structured plans for complex multi-step tasks and track progress systematically.
 
 **When to Use**:
-- ✅ Complex projects with multiple sequential phases
-- ✅ Tasks requiring coordination of multiple parallel efforts  
-- ✅ Need to track progress across various components
-- ✅ Want to break down large objectives into manageable steps
-- ✅ Need formal planning before executing complex workflows
+- Complex projects with multiple sequential phases
+- Tasks requiring coordination of multiple parallel efforts  
+- Need to track progress across various components
+- Want to break down large objectives into manageable steps
+- Need formal planning before executing complex workflows
 
 **When to Skip**:
-- ❌ Simple, single-step tasks
-- ❌ When you already have a clear mental plan
-- ❌ Urgent tasks that need immediate action
+- Simple, single-step tasks
+- When you already have a clear mental plan
+- Urgent tasks that need immediate action
 
 **Planning Best Practices**:
 - Start with clear success criteria
@@ -36,7 +36,7 @@ const PLANNER_USAGE_GUIDE: &str = r#"## planner Tool - Strategic Planning and Pr
 
 **Example Plans**:
 
-📊 **Data Analysis Project**:
+**Data Analysis Project**:
 ```
 Title: "Customer Behavior Analysis Dashboard"
 Steps:
@@ -48,7 +48,7 @@ Steps:
 6. Deployment - Set up automated reporting
 ```
 
-🔧 **Software Development**:
+**Software Development**:
 ```
 Title: "E-commerce Payment Integration" 
 Steps:
@@ -188,8 +188,8 @@ impl tools::Tool for PlannerTool {
                 let error_result = ToolCallResult {
                     content: error_msg.clone(),
                     ui_display_info: UIDisplayInfo {
-                        collapsed: "❌ Parameter Error".to_string(),
-                        expanded: Some(format!("❌ Parameter Error:\n{}", error_msg)),
+                        collapsed: "Parameter Error".to_string(),
+                        expanded: Some(format!("Parameter Error:\n{}", error_msg)),
                     },
                 };
                 self.send_error_result(&tool_call.tool_call.id, error_result);
@@ -209,12 +209,65 @@ impl tools::Tool for PlannerTool {
 }
 
 impl PlannerTool {
+    /// Broadcast unified system prompt contribution for current plan state
+    fn update_plan_system_prompt(&self) {
+        let data = match &self.current_plan {
+            Some(plan) => {
+                let tasks: Vec<serde_json::Value> = plan.tasks.iter().enumerate().map(|(i, task)| {
+                    serde_json::json!({
+                        "number": i + 1,
+                        "description": task.description,
+                        "status": match task.status {
+                            TaskStatus::Pending => "pending",
+                            TaskStatus::InProgress => "inprogress", 
+                            TaskStatus::Completed => "completed",
+                            TaskStatus::Skipped => "skipped"
+                        },
+                        "icon": task.status.icon()
+                    })
+                }).collect();
+
+                serde_json::json!({
+                    "plan": {
+                        "title": plan.title,
+                        "tasks": tasks
+                    }
+                })
+            }
+            None => {
+                serde_json::json!({
+                    "plan": null
+                })
+            }
+        };
+
+        let default_template = r#"{% if data.plan -%}
+## Current Plan: {{ data.plan.title }}
+{% for task in data.plan.tasks -%}
+{{ task.number }}. {{ task.icon }} {{ task.description }}
+{% endfor -%}
+{% else -%}
+No active plan
+{% endif -%}"#.to_string();
+
+        let _ = Self::broadcast_common_message(SystemPromptContribution {
+            agent: self.scope.clone(),
+            key: "planner:current_plan".to_string(),
+            content: SystemPromptContent::Data {
+                data,
+                default_template,
+            },
+            priority: 600,
+            section: Some(Section::Custom("Current Plan".to_string())),
+        });
+    }
+
     fn handle_create_plan(&mut self, title: String, task_descriptions: Vec<String>, tool_call_id: &str) {
         if task_descriptions.is_empty() {
             let error_result = ToolCallResult {
                 content: "Task list cannot be empty".to_string(),
                 ui_display_info: UIDisplayInfo {
-                    collapsed: "❌ Empty task list".to_string(),
+                    collapsed: "Empty task list".to_string(),
                     expanded: Some("Task list cannot be empty".to_string()),
                 },
             };
@@ -235,11 +288,14 @@ impl PlannerTool {
         let plan_display = plan.format_for_display();
         self.current_plan = Some(plan);
 
+        // Update system prompt with new plan state
+        self.update_plan_system_prompt();
+
         let result = ToolCallResult {
             content: format!("Created task plan: {}", title),
             ui_display_info: UIDisplayInfo {
-                collapsed: format!("📋 Plan created: {}", title),
-                expanded: Some(format!("📋 Plan created: {}\n\n{}", title, plan_display)),
+                collapsed: format!("Plan created: {}", title),
+                expanded: Some(format!("Plan created: {}\n\n{}", title, plan_display)),
             },
         };
 
@@ -253,7 +309,7 @@ impl PlannerTool {
                 let error_result = ToolCallResult {
                     content: "No active task plan. Create a plan first.".to_string(),
                     ui_display_info: UIDisplayInfo {
-                        collapsed: "❌ No active plan".to_string(),
+                        collapsed: "No active plan".to_string(),
                         expanded: Some("No active task plan. Create a plan first.".to_string()),
                     },
                 };
@@ -269,7 +325,7 @@ impl PlannerTool {
                     plan.tasks.len()
                 ),
                 ui_display_info: UIDisplayInfo {
-                    collapsed: "❌ Invalid task number".to_string(),
+                    collapsed: "Invalid task number".to_string(),
                     expanded: Some(format!(
                         "Invalid task number {}. Must be between 1 and {}",
                         task_number,
@@ -293,11 +349,14 @@ impl PlannerTool {
 
         let plan_display = plan.format_for_display();
 
+        // Update system prompt with updated plan state
+        self.update_plan_system_prompt();
+
         let result = ToolCallResult {
             content: format!("Task {} {}", task_number, action_text),
             ui_display_info: UIDisplayInfo {
-                collapsed: format!("📋 Task {} {}", task_number, action_text),
-                expanded: Some(format!("📋 Task {} {}\n\n{}", task_number, action_text, plan_display)),
+                collapsed: format!("Task {} {}", task_number, action_text),
+                expanded: Some(format!("Task {} {}\n\n{}", task_number, action_text, plan_display)),
             },
         };
 

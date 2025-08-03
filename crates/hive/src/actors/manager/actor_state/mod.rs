@@ -10,6 +10,7 @@ use crate::{actors::MessageEnvelope, context::HiveContext, scope::Scope};
 
 pub mod agent;
 pub mod command;
+pub mod host_info;
 pub mod http;
 pub mod logger;
 pub mod messaging;

@@ -1,4 +1,5 @@
 use hive_actor_utils::common_messages::assistant::{Section, SystemPromptContent, SystemPromptContribution};
+use crate::bindings::hive::actor::host_info;
 use minijinja::{Environment, context};
 use regex::Regex;
 use std::collections::HashMap;
@@ -66,7 +67,7 @@ impl SystemPromptRenderer {
         let mut renderer = Self {
             config,
             contributions: HashMap::new(),
-            key_validation_regex: Regex::new(r"^[a-z0-9_-]+:[a-z0-9_-]+$").unwrap(),
+            key_validation_regex: Regex::new(r"^[a-z0-9_-]+:.+$").unwrap(),
             agent_scope,
         };
         
@@ -81,16 +82,15 @@ impl SystemPromptRenderer {
     
     /// Adds default system context variables that are always available
     fn add_system_context(&mut self) {
-        // Current working directory
-        if let Ok(cwd) = std::env::current_dir() {
-            let _ = self.add_contribution_internal(SystemPromptContribution {
-                agent: self.agent_scope.clone(),
-                key: "system:current_directory".to_string(),
-                content: SystemPromptContent::Text(format!("Current working directory: {}", cwd.display())),
-                priority: 0, // Low priority so it appears at the end
-                section: Some(Section::SystemContext),
-            });
-        }
+        // Current working directory - use host function to get real working directory
+        let cwd = host_info::get_host_working_directory();
+        let _ = self.add_contribution_internal(SystemPromptContribution {
+            agent: self.agent_scope.clone(),
+            key: "system:current_directory".to_string(),
+            content: SystemPromptContent::Text(format!("Current working directory: {}", cwd)),
+            priority: 0, // Low priority so it appears at the end
+            section: Some(Section::SystemContext),
+        });
         
         // Current date and time
         let now = Utc::now();
@@ -107,11 +107,12 @@ impl SystemPromptRenderer {
             section: Some(Section::SystemContext),
         });
         
-        // Operating system information
+        // Operating system information - use host function to get real OS info
+        let host_os_info = host_info::get_host_os_info();
         let os_info = format!(
             "Operating system: {} {}",
-            std::env::consts::OS,
-            std::env::consts::ARCH
+            host_os_info.os,
+            host_os_info.arch
         );
         let _ = self.add_contribution_internal(SystemPromptContribution {
             agent: self.agent_scope.clone(),
@@ -146,7 +147,7 @@ impl SystemPromptRenderer {
             Ok(())
         } else {
             Err(format!(
-                "Invalid key format '{}'. Must contain exactly one colon (:) in the format 'actor_type:contribution_name'. Only lowercase letters, numbers, hyphens (-), and underscores (_) are allowed. Example: 'main_manager:identity'",
+                "Invalid key format '{}'. Must contain exactly one colon (:) in the format 'actor_type:contribution_name'. The actor_type part must only contain lowercase letters, numbers, hyphens (-), and underscores (_), but the contribution_name part can contain any characters. Example: 'main_manager:identity' or 'file_interaction:/path/to/file.txt'",
                 key
             ))
         }

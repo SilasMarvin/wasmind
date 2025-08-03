@@ -53,7 +53,6 @@ model_name = "horizon-beta"
 model = "openrouter/openrouter/horizon-beta"
 api_key = "os.environ/OPENROUTER_API_KEY"
 
-
 # [[litellm.models]]
 # model_name = "qwen3-480b"
 #

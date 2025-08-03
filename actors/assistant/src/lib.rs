@@ -1,4 +1,4 @@
-use bindings::hive::actor::logger;
+use bindings::hive::actor::{host_info, logger};
 use hive_actor_utils::{
     common_messages::{
         actors,

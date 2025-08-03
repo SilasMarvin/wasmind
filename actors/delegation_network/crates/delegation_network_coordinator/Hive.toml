@@ -6,6 +6,10 @@ required_spawn_with = ["main_manager_assistant", "spawn_agent", "send_message", 
 [dependencies.spawn_agent]
 source = { path = "../../", package = "crates/spawn_agent" }
 
+[dependencies.spawn_agent.config]
+worker_actors = ["worker_assistant", "worker_execute_bash", "worker_file_interaction", "worker_complete", "send_manager_message"]
+sub_manager_actors = ["sub_manager_assistant", "spawn_agent", "send_message", "send_manager_message", "wait"]
+
 [dependencies.send_message]
 source = { path = "../../", package = "crates/send_message" }
 
@@ -182,6 +186,9 @@ You MUST follow this procedure for every objective you receive:
 
 [dependencies.worker_execute_bash]
 source = { path = "/Users/silasmarvin/github/hive/actors/execute_bash" }
+
+[dependencies.worker_file_interaction]
+source = { path = "/Users/silasmarvin/github/hive/actors/file_interaction" }
 
 [dependencies.worker_complete]
 source = { path = "../../", package = "crates/complete" }

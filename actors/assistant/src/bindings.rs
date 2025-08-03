@@ -5,6 +5,117 @@
 #[allow(dead_code, clippy::all)]
 pub mod hive {
     pub mod actor {
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod host_info {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            /// Operating system information from the host
+            #[derive(Clone)]
+            pub struct OsInfo {
+                pub os: _rt::String,
+                pub arch: _rt::String,
+            }
+            impl ::core::fmt::Debug for OsInfo {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("OsInfo")
+                        .field("os", &self.os)
+                        .field("arch", &self.arch)
+                        .finish()
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Get the actual working directory from the host system
+            /// This returns the real host working directory, not the WASM guest working directory
+            pub fn get_host_working_directory() -> _rt::String {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 2
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "hive:actor/host-info@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get-host-working-directory"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = *ptr0.add(0).cast::<*mut u8>();
+                    let l3 = *ptr0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len4 = l3;
+                    let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
+                    let result5 = _rt::string_lift(bytes4);
+                    result5
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Get the actual operating system information from the host
+            /// This returns the real host OS info, not "wasm32"
+            pub fn get_host_os_info() -> OsInfo {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "hive:actor/host-info@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get-host-os-info"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = *ptr0.add(0).cast::<*mut u8>();
+                    let l3 = *ptr0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len4 = l3;
+                    let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
+                    let l5 = *ptr0
+                        .add(2 * ::core::mem::size_of::<*const u8>())
+                        .cast::<*mut u8>();
+                    let l6 = *ptr0
+                        .add(3 * ::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len7 = l6;
+                    let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+                    let result8 = OsInfo {
+                        os: _rt::string_lift(bytes4),
+                        arch: _rt::string_lift(bytes7),
+                    };
+                    result8
+                }
+            }
+        }
         /// =================================================================
         /// CAPABILITY INTERFACES
         /// Each interface represents a distinct capability that can be
@@ -952,8 +1063,15 @@ pub mod exports {
 #[rustfmt::skip]
 mod _rt {
     #![allow(dead_code, clippy::all)]
-    pub use alloc_crate::vec::Vec;
     pub use alloc_crate::string::String;
+    pub use alloc_crate::vec::Vec;
+    pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
+        if cfg!(debug_assertions) {
+            String::from_utf8(bytes).unwrap()
+        } else {
+            String::from_utf8_unchecked(bytes)
+        }
+    }
     use core::fmt;
     use core::marker;
     use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
@@ -1111,13 +1229,6 @@ mod _rt {
             self as i64
         }
     }
-    pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
-        if cfg!(debug_assertions) {
-            String::from_utf8(bytes).unwrap()
-        } else {
-            String::from_utf8_unchecked(bytes)
-        }
-    }
     pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
         if size == 0 {
             return;
@@ -1175,32 +1286,34 @@ pub(crate) use __export_actor_world_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1156] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x82\x08\x01A\x02\x01\
-A\x08\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
-cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x1b\x01o\x02ss\x01p\0\
-\x01r\x01\x07headers\x01\x04\0\x07headers\x03\0\x02\x01q\x04\x0dnetwork-error\x01\
-s\0\x07timeout\0\0\x0binvalid-url\x01s\0\x0dbuilder-error\x01s\0\x04\0\x0dreques\
-t-error\x03\0\x04\x01p}\x01r\x03\x06status{\x07headers\x03\x04body\x06\x04\0\x08\
-response\x03\0\x07\x04\0\x07request\x03\x01\x01i\x09\x01@\x02\x06methods\x03urls\
-\0\x0a\x04\0\x14[constructor]request\x01\x0b\x01h\x09\x01@\x03\x04self\x0c\x03ke\
-ys\x05values\0\x0a\x04\0\x16[method]request.header\x01\x0d\x01@\x02\x04self\x0c\x07\
-headers\x03\0\x0a\x04\0\x17[method]request.headers\x01\x0e\x01@\x02\x04self\x0c\x04\
-body\x06\0\x0a\x04\0\x14[method]request.body\x01\x0f\x01@\x02\x04self\x0c\x07sec\
-ondsy\0\x0a\x04\0\x17[method]request.timeout\x01\x10\x01@\x03\x04self\x0c\x0cmax\
--attemptsy\x0dbase-delay-msw\0\x0a\x04\0\x15[method]request.retry\x01\x11\x01j\x01\
-\x08\x01\x05\x01@\x01\x04self\x0c\0\x12\x04\0\x14[method]request.send\x01\x13\x03\
-\0\x15hive:actor/http@0.1.0\x05\x01\x01B\x04\x01m\x04\x05debug\x04info\x04warn\x05\
-error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07messages\x01\0\x04\0\x03\
-log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x02\x01B\x0c\x01p}\x01r\x04\x0c\
-message-types\x0dfrom-actor-ids\x0afrom-scopes\x07payload\0\x04\0\x10message-env\
-elope\x03\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01@\x02\x05scopes\x06configs\0\x04\
-\x04\0\x12[constructor]actor\x01\x05\x01h\x03\x01@\x02\x04self\x06\x07message\x02\
-\x01\0\x04\0\x1c[method]actor.handle-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\
-\0\x18[method]actor.destructor\x01\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x03\x04\
-\0!assistant:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0\
-G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
-n-rust\x060.41.0";
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1278] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xfc\x08\x01A\x02\x01\
+A\x0a\x01B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\
+\x1aget-host-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\
+\x03\x03\0\x1ahive:actor/host-info@0.1.0\x05\0\x01B\x03\x01p}\x01@\x02\x0cmessag\
+e-types\x07payload\0\x01\0\x04\0\x09broadcast\x01\x01\x03\0\x1ahive:actor/messag\
+ing@0.1.0\x05\x01\x01B\x1b\x01o\x02ss\x01p\0\x01r\x01\x07headers\x01\x04\0\x07he\
+aders\x03\0\x02\x01q\x04\x0dnetwork-error\x01s\0\x07timeout\0\0\x0binvalid-url\x01\
+s\0\x0dbuilder-error\x01s\0\x04\0\x0drequest-error\x03\0\x04\x01p}\x01r\x03\x06s\
+tatus{\x07headers\x03\x04body\x06\x04\0\x08response\x03\0\x07\x04\0\x07request\x03\
+\x01\x01i\x09\x01@\x02\x06methods\x03urls\0\x0a\x04\0\x14[constructor]request\x01\
+\x0b\x01h\x09\x01@\x03\x04self\x0c\x03keys\x05values\0\x0a\x04\0\x16[method]requ\
+est.header\x01\x0d\x01@\x02\x04self\x0c\x07headers\x03\0\x0a\x04\0\x17[method]re\
+quest.headers\x01\x0e\x01@\x02\x04self\x0c\x04body\x06\0\x0a\x04\0\x14[method]re\
+quest.body\x01\x0f\x01@\x02\x04self\x0c\x07secondsy\0\x0a\x04\0\x17[method]reque\
+st.timeout\x01\x10\x01@\x03\x04self\x0c\x0cmax-attemptsy\x0dbase-delay-msw\0\x0a\
+\x04\0\x15[method]request.retry\x01\x11\x01j\x01\x08\x01\x05\x01@\x01\x04self\x0c\
+\0\x12\x04\0\x14[method]request.send\x01\x13\x03\0\x15hive:actor/http@0.1.0\x05\x02\
+\x01B\x04\x01m\x04\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01\
+@\x02\x05level\x01\x07messages\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/lo\
+gger@0.1.0\x05\x03\x01B\x0c\x01p}\x01r\x04\x0cmessage-types\x0dfrom-actor-ids\x0a\
+from-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05actor\x03\x01\
+\x01i\x03\x01@\x02\x05scopes\x06configs\0\x04\x04\0\x12[constructor]actor\x01\x05\
+\x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handl\
+e-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\
+\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x04\x04\0!assistant:actor/actor-world@0\
+.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\x0cprocessed\
+-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

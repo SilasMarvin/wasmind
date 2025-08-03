@@ -1268,6 +1268,117 @@ pub mod hive {
                 }
             }
         }
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod host_info {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            /// Operating system information from the host
+            #[derive(Clone)]
+            pub struct OsInfo {
+                pub os: _rt::String,
+                pub arch: _rt::String,
+            }
+            impl ::core::fmt::Debug for OsInfo {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("OsInfo")
+                        .field("os", &self.os)
+                        .field("arch", &self.arch)
+                        .finish()
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Get the actual working directory from the host system
+            /// This returns the real host working directory, not the WASM guest working directory
+            pub fn get_host_working_directory() -> _rt::String {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 2
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "hive:actor/host-info@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get-host-working-directory"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = *ptr0.add(0).cast::<*mut u8>();
+                    let l3 = *ptr0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len4 = l3;
+                    let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
+                    let result5 = _rt::string_lift(bytes4);
+                    result5
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Get the actual operating system information from the host
+            /// This returns the real host OS info, not "wasm32"
+            pub fn get_host_os_info() -> OsInfo {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "hive:actor/host-info@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get-host-os-info"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = *ptr0.add(0).cast::<*mut u8>();
+                    let l3 = *ptr0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len4 = l3;
+                    let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
+                    let l5 = *ptr0
+                        .add(2 * ::core::mem::size_of::<*const u8>())
+                        .cast::<*mut u8>();
+                    let l6 = *ptr0
+                        .add(3 * ::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len7 = l6;
+                    let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+                    let result8 = OsInfo {
+                        os: _rt::string_lift(bytes4),
+                        arch: _rt::string_lift(bytes7),
+                    };
+                    result8
+                }
+            }
+        }
     }
 }
 #[rustfmt::skip]
@@ -1822,9 +1933,9 @@ pub(crate) use __export_spawn_agent_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1761] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xdf\x0c\x01A\x02\x01\
-A\x0c\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1883] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd9\x0d\x01A\x02\x01\
+A\x0e\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
 cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x18\x01q\x04\x06exit\
 ed\x01}\0\x08signaled\x01}\0\x0ffailed-to-start\x01s\0\x0ftimeout-expired\0\0\x04\
 \0\x0bexit-status\x03\0\0\x01p}\x01r\x03\x06stdout\x02\x06stderr\x02\x06status\x01\
@@ -1853,14 +1964,17 @@ es\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x03\x01B\x09\
 ps\x01j\x01s\x01s\x01@\x02\x09actor-ids\0\x0aagent-names\0\x01\x04\0\x0bspawn-ag\
 ent\x01\x02\x01ks\x01@\0\0\x03\x04\0\x10get-parent-scope\x01\x04\x01@\x01\x05sco\
 pes\0\x03\x04\0\x13get-parent-scope-of\x01\x05\x03\0\x16hive:actor/agent@0.1.0\x05\
-\x04\x01B\x0c\x01p}\x01r\x04\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scopes\x07\
-payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01\
-@\x02\x05scopes\x06configs\0\x04\x04\0\x12[constructor]actor\x01\x05\x01h\x03\x01\
-@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handle-message\x01\
-\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\x08\x04\0\x16\
-hive:actor/actor@0.1.0\x05\x05\x04\0\"hive:spawn-agent/spawn-agent@0.1.0\x04\0\x0b\
-\x11\x01\0\x0bspawn-agent\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit\
--component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\x04\x01B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\x1a\
+get-host-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\x03\
+\x03\0\x1ahive:actor/host-info@0.1.0\x05\x05\x01B\x0c\x01p}\x01r\x04\x0cmessage-\
+types\x0dfrom-actor-ids\x0afrom-scopes\x07payload\0\x04\0\x10message-envelope\x03\
+\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01@\x02\x05scopes\x06configs\0\x04\x04\0\
+\x12[constructor]actor\x01\x05\x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\
+\x04\0\x1c[method]actor.handle-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18\
+[method]actor.destructor\x01\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x06\x04\0\"\
+hive:spawn-agent/spawn-agent@0.1.0\x04\0\x0b\x11\x01\0\x0bspawn-agent\x03\0\0\0G\
+\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen\
+-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

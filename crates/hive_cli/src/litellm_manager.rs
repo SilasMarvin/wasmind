@@ -357,6 +357,12 @@ impl LiteLLMManager {
             .arg("-p")
             .arg(format!("{}:4000", config.port));
 
+        info!(
+            "Starting LiteLLM container: {} with {} environment variables", 
+            config.container_name, env_vars.len()
+        );
+        debug!("Docker image: {}, port: {}", config.image, config.port);
+
         // Add environment variables
         for (key, value) in env_vars {
             cmd.arg("-e").arg(format!("{}={}", key, value));
@@ -372,8 +378,6 @@ impl LiteLLMManager {
                 "echo '{}' > /tmp/config.yaml && litellm --config /tmp/config.yaml",
                 config_content.replace("'", "'\"'\"'")
             ));
-
-        info!("Running docker command: {:?}", cmd);
 
         let output = cmd.output().await.context(DockerCommandSnafu)?;
 

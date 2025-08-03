@@ -92,13 +92,14 @@ fn create_tool_widget(
     let default_expanded_content = serde_json::to_string_pretty(&tool_call.function.arguments)
         .unwrap_or(tool_call.function.arguments);
 
-    let (title, content, expanded_content) = match status {
+    let (errored, title, content, expanded_content) = match status {
         ToolCallStatus::Received { display_info } => {
             let (content, expanded_content) = (
                 display_info.collapsed.clone(),
                 display_info.expanded.clone(),
             );
             (
+                false,
                 format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
                 content,
                 expanded_content,
@@ -107,26 +108,28 @@ fn create_tool_widget(
         ToolCallStatus::AwaitingSystem { details } => {
             let content = format!("Awaiting system: {}", details.ui_display_info.collapsed);
             (
+                false,
                 format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
                 content,
                 details.ui_display_info.expanded.clone(),
             )
         }
         ToolCallStatus::Done { result } => {
-            let (succeeded, content, expanded_content) = match result {
+            let (errored, content, expanded_content) = match result {
                 Ok(res) => (
-                    true,
+                    false,
                     res.ui_display_info.collapsed.clone(),
                     res.ui_display_info.expanded.clone(),
                 ),
                 Err(res) => (
-                    false,
+                    true,
                     res.ui_display_info.collapsed.clone(),
                     res.ui_display_info.expanded.clone(),
                 ),
             };
 
             (
+                errored,
                 format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
                 content,
                 expanded_content,
@@ -140,7 +143,8 @@ fn create_tool_widget(
         content
     };
 
-    let borders = tuirealm::props::Borders::default().color(Color::Yellow);
+    let border_color = if errored { Color::Red } else { Color::Yellow };
+    let borders = tuirealm::props::Borders::default().color(border_color);
     let block = create_block_with_title(title, borders, false, Some(Padding::uniform(1)));
     let p = Paragraph::new(content)
         .block(block)
