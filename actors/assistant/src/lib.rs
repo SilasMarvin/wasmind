@@ -3,8 +3,8 @@ use hive_actor_utils::{
     common_messages::{
         actors,
         assistant::{
-            self, ChatState, ChatStateUpdated, Request, Status, StatusUpdate,
-            SystemPromptContribution, WaitReason,
+            self, ChatState, ChatStateUpdated, InterruptAndForceWaitForSystemInput, Request,
+            Status, StatusUpdate, SystemPromptContribution, WaitReason,
         },
         litellm,
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
@@ -242,8 +242,7 @@ impl Assistant {
             Ok(rendered) => rendered,
             Err(e) => {
                 tracing::error!("Failed to render system prompt: {}", e);
-                // Fallback to a basic prompt if rendering fails
-                "You are a helpful AI assistant.".to_string()
+                "".to_string()
             }
         }
     }
@@ -255,7 +254,6 @@ impl Assistant {
             ChatMessage::System(msg) => msg,
             _ => unreachable!(),
         };
-
         let _ = Self::broadcast_common_message(ChatStateUpdated {
             chat_state: ChatState {
                 system: system_message,
@@ -570,8 +568,33 @@ impl GeneratedActorTrait for Assistant {
             }
         }
 
-        // TODO: Support interrupt
+        // Handle interrupt and force wait for system input
+        if let Some(interrupt) =
+            Self::parse_as::<assistant::InterruptAndForceWaitForSystemInput>(&message)
+            && interrupt.agent == self.scope
+        {
+            // Check if the last message in chat history is a tool call that needs to be removed
+            // This prevents errors when the manager sends a message after interruption
+            if let Some(ChatMessage::Assistant(msg)) = self.chat_history.last() {
+                if msg.tool_calls.is_some() {
+                    // Remove the tool call message since we won't have responses for it
+                    self.chat_history.pop();
+                }
+            }
 
+            // Force the agent to wait for system input from the specified scope
+            self.set_status(
+                Status::Wait {
+                    reason: WaitReason::WaitingForSystemInput {
+                        required_scope: interrupt.required_scope,
+                        interruptible_by_user: true,
+                    },
+                },
+                true,
+            );
+        }
+
+        // Handle add message
         if let Some(add_message) = Self::parse_as::<assistant::AddMessage>(&message)
             && add_message.agent == self.scope
         {

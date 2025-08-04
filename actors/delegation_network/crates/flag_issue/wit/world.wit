@@ -1,0 +1,5 @@
+package hive:flag-issue@0.1.0;
+
+world flag-issue {
+    include hive:actor/actor-world@0.1.0;
+}

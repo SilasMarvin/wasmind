@@ -1,0 +1,5 @@
+package hive:check-health@0.1.0;
+
+world check-health {
+    include hive:actor/actor-world@0.1.0;
+}

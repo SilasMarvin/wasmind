@@ -7,8 +7,8 @@ required_spawn_with = ["main_manager_assistant", "spawn_agent", "send_message", 
 source = { path = "../../", package = "crates/spawn_agent" }
 
 [dependencies.spawn_agent.config]
-worker_actors = ["worker_assistant", "worker_execute_bash", "worker_file_interaction", "worker_complete", "send_manager_message"]
-sub_manager_actors = ["sub_manager_assistant", "spawn_agent", "send_message", "send_manager_message", "wait"]
+worker_actors = ["worker_assistant", "worker_execute_bash", "worker_file_interaction", "worker_complete", "send_manager_message", "check_health"]
+sub_manager_actors = ["sub_manager_assistant", "spawn_agent", "send_message", "send_manager_message", "wait", "check_health"]
 
 [dependencies.send_message]
 source = { path = "../../", package = "crates/send_message" }
@@ -192,3 +192,9 @@ source = { path = "/Users/silasmarvin/github/hive/actors/file_interaction" }
 
 [dependencies.worker_complete]
 source = { path = "../../", package = "crates/complete" }
+
+[dependencies.check_health]
+source = { path = "../../", package = "crates/check_health" }
+
+[dependencies.check_health.config]
+check_interval = 0

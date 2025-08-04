@@ -30,6 +30,9 @@ model_name = "horizon-beta"
 [actor_overrides.worker_assistant.config]
 model_name = "horizon-beta"
 
+[actor_overrides.check_health_assistant.config]
+model_name = "horizon-beta"
+
 ##############################
 # LiteLLM Config #############
 ##############################

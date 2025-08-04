@@ -5,7 +5,7 @@ use crate::{
 use agent::{AgentComponent, AgentMetrics};
 use hive::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
 use hive_actor_utils_common_messages::{
-    actors::AgentSpawned,
+    actors::{AgentSpawned, Exit},
     assistant::{self, Request as AssistantRequest, Status as AgentStatus, StatusUpdate},
     tools::ExecuteTool,
 };
@@ -616,6 +616,23 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                         } else {
                             root.set_status(&agent_scope, &agent_status_update.status);
                             Some(TuiMessage::Redraw)
+                        }
+                    } else {
+                        None
+                    }
+                }
+                // Handle Exit messages - when an agent exits, remove it from the graph
+                else if parse_common_message_as::<Exit>(&envelope).is_some() {
+                    if let Some(root) = &mut self.component.root_node
+                        && let Ok(agent_scope) = envelope.from_scope.parse::<Scope>()
+                    {
+                        // Remove the agent that sent the Exit message
+                        if let Some(scope) = root.remove(&agent_scope) {
+                            Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
+                                scope.to_string(),
+                            )))
+                        } else {
+                            None
                         }
                     } else {
                         None

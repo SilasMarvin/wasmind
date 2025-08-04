@@ -1,0 +1,5 @@
+package hive:report-normal@0.1.0;
+
+world report-normal {
+    include hive:actor/actor-world@0.1.0;
+}

@@ -125,15 +125,15 @@ pub mod assistant {
         const MESSAGE_TYPE: &str = "hive.common.assistant.RequestStatusUpdate";
     }
 
-    // hive.common.assistant.InterruptAndForceWaitForSystem
+    // hive.common.assistant.InterruptAndForceWaitForSystemInput
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct InterruptAndForceWaitForSystem {
+    pub struct InterruptAndForceWaitForSystemInput {
         pub agent: Scope,
         pub required_scope: Option<Scope>,
     }
 
-    impl Message for InterruptAndForceWaitForSystem {
-        const MESSAGE_TYPE: &str = "hive.common.assistant.InterruptAndForceWaitForSystem";
+    impl Message for InterruptAndForceWaitForSystemInput {
+        const MESSAGE_TYPE: &str = "hive.common.assistant.InterruptAndForceWaitForSystemInput";
     }
 
     // hive.common.assistant.AddMessage
