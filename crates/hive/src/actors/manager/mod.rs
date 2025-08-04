@@ -123,8 +123,7 @@ impl Manager {
                     match self.rx.recv().await {
                         Ok(msg) => {
                             // This message doesn't hold anything so we just need to check if the message_type matches
-                            if let Ok(scope) = Scope::try_from(msg.from_scope.as_str())
-                                && scope == self.scope
+                            if msg.from_scope == self.scope
                                 && msg.message_type == actors::Exit::MESSAGE_TYPE
                             {
                                 break;

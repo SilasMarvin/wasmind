@@ -1,4 +1,3 @@
-use crate::scope::Scope;
 
-pub const STARTING_SCOPE: Scope =
-    Scope::from_uuid(uuid::uuid!("00000000-0000-0000-0000-000000000000"));
+/// The starting scope for the root agent - a well-known 6-character identifier
+pub const STARTING_SCOPE: &str = "000000";

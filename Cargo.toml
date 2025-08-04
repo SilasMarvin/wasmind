@@ -26,7 +26,6 @@ url = "2.5"
 tempfile = "3.8"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "0.8.22"
-uuid = { version = "1.17.0", features = ["v4", "serde"] }
 
 [profile.release]
 incremental = true

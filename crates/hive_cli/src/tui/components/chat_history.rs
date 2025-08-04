@@ -24,7 +24,7 @@ use super::dashboard::SCOPE_ATTR;
 use super::scrollable::ScrollableComponentTrait;
 
 // Constants from the main hive
-const STARTING_SCOPE: Scope = hive::hive::STARTING_SCOPE;
+const STARTING_SCOPE: &str = hive::hive::STARTING_SCOPE;
 const ROOT_AGENT_NAME: &str = "Root Agent";
 
 const MESSAGE_GAP: u16 = 1;
@@ -326,7 +326,7 @@ impl ChatHistoryComponent {
             component: ChatHistory {
                 props,
                 state: State::None,
-                chat_history_map: HashMap::from([(STARTING_SCOPE.clone(), manager_assistant_info)]),
+                chat_history_map: HashMap::from([(STARTING_SCOPE.to_string(), manager_assistant_info)]),
                 last_content_height: None,
                 is_modified: false,
             },
@@ -388,8 +388,9 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
             Event::User(envelope) => {
                 // Handle AddMessage for user input
                 if let Some(add_message) = parse_common_message_as::<AddMessage>(&envelope) {
-                    if let Ok(scope) = add_message.agent.parse::<Scope>() {
-                        if let Some(actor_info) = self.component.chat_history_map.get_mut(&scope) {
+                    {
+                        let scope = &add_message.agent;
+                        if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
                             if let ChatMessage::User(user_msg) = add_message.message {
                                 actor_info.pending_user_message = Some(user_msg.content);
                                 self.component.is_modified = true;
@@ -400,8 +401,9 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                 }
                 // Handle AssistantRequest to clear pending message
                 else if let Some(_) = parse_common_message_as::<AssistantRequest>(&envelope) {
-                    if let Ok(scope) = envelope.from_scope.parse::<Scope>() {
-                        if let Some(actor_info) = self.component.chat_history_map.get_mut(&scope) {
+                    {
+                        let scope = &envelope.from_scope;
+                        if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
                             actor_info.pending_user_message = None;
                             self.component.is_modified = true;
                             return Some(TuiMessage::Redraw);
@@ -412,8 +414,9 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                 else if let Some(chat_updated) =
                     parse_common_message_as::<ChatStateUpdated>(&envelope)
                 {
-                    if let Ok(scope) = envelope.from_scope.parse::<Scope>() {
-                        if let Some(actor_info) = self.component.chat_history_map.get_mut(&scope) {
+                    {
+                        let scope = &envelope.from_scope;
+                        if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
                             actor_info.chat_state = Some(chat_updated.chat_state);
                             self.component.is_modified = true;
                             return Some(TuiMessage::Redraw);
@@ -424,8 +427,9 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                 else if let Some(tool_update) =
                     parse_common_message_as::<ToolCallStatusUpdate>(&envelope)
                 {
-                    if let Ok(scope) = envelope.from_scope.parse::<Scope>() {
-                        if let Some(actor_info) = self.component.chat_history_map.get_mut(&scope) {
+                    {
+                        let scope = &envelope.from_scope;
+                        if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
                             actor_info
                                 .tool_call_updates
                                 .insert(tool_update.id, tool_update.status);
@@ -438,7 +442,8 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                 else if let Some(agent_spawned) =
                     parse_common_message_as::<AgentSpawned>(&envelope)
                 {
-                    if let Ok(agent_scope) = agent_spawned.agent_id.parse::<Scope>() {
+                    {
+                        let agent_scope = agent_spawned.agent_id.clone();
                         self.component
                             .chat_history_map
                             .insert(agent_scope, AssistantInfo::new(agent_spawned.name, None));

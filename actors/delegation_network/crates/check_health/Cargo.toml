@@ -17,7 +17,6 @@ serde.workspace = true
 serde_json = "1"
 toml.workspace = true
 wit-bindgen-rt.workspace = true
-uuid = { version = "1.0", features = ["v4"] }
 delegation_network_common_types = { path = "../common_types" }
 
 [package.metadata.component.target.dependencies]

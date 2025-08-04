@@ -750,6 +750,8 @@ pub mod exports {
                 #[doc(hidden)]
                 static __FORCE_SECTION_REF: fn() = super::super::super::super::__link_custom_section_describing_imports;
                 use super::super::super::super::_rt;
+                /// A scope identifier - a 6-character alphanumeric string used to identify agent contexts
+                pub type Scope = _rt::String;
                 /// An envelope that wraps every message passed between actors.
                 /// It provides context about the message's origin.
                 #[derive(Clone)]
@@ -759,7 +761,7 @@ pub mod exports {
                     /// The unique identifier of the actor that sent the message.
                     pub from_actor_id: _rt::String,
                     /// The scope in which the sending actor was operating.
-                    pub from_scope: _rt::String,
+                    pub from_scope: Scope,
                     /// The raw, serialized message data. The format (e.g., JSON)
                     /// is determined by the sending actor's implementation.
                     pub payload: _rt::Vec<u8>,
@@ -1013,7 +1015,7 @@ pub mod exports {
                     /// Use this to initialize the actor's state.
                     /// @param scope - The execution scope provided by the host.
                     /// @param config - The configuration string (TOML format) for this actor.
-                    fn new(scope: _rt::String, config: _rt::String) -> Self;
+                    fn new(scope: Scope, config: _rt::String) -> Self;
                     /// The primary entry point for processing incoming messages. This
                     /// function is called by the host whenever another actor broadcasts
                     /// a message to the system.
@@ -1286,8 +1288,8 @@ pub(crate) use __export_actor_world_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1278] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xfc\x08\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1291] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x89\x09\x01A\x02\x01\
 A\x0a\x01B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\
 \x1aget-host-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\
 \x03\x03\0\x1ahive:actor/host-info@0.1.0\x05\0\x01B\x03\x01p}\x01@\x02\x0cmessag\
@@ -1306,14 +1308,15 @@ st.timeout\x01\x10\x01@\x03\x04self\x0c\x0cmax-attemptsy\x0dbase-delay-msw\0\x0a
 \0\x12\x04\0\x14[method]request.send\x01\x13\x03\0\x15hive:actor/http@0.1.0\x05\x02\
 \x01B\x04\x01m\x04\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01\
 @\x02\x05level\x01\x07messages\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/lo\
-gger@0.1.0\x05\x03\x01B\x0c\x01p}\x01r\x04\x0cmessage-types\x0dfrom-actor-ids\x0a\
-from-scopes\x07payload\0\x04\0\x10message-envelope\x03\0\x01\x04\0\x05actor\x03\x01\
-\x01i\x03\x01@\x02\x05scopes\x06configs\0\x04\x04\0\x12[constructor]actor\x01\x05\
-\x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\x04\0\x1c[method]actor.handl\
-e-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18[method]actor.destructor\x01\
-\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x04\x04\0!assistant:actor/actor-world@0\
-.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\x0cprocessed\
--by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+gger@0.1.0\x05\x03\x01B\x0e\x01s\x04\0\x05scope\x03\0\0\x01p}\x01r\x04\x0cmessag\
+e-types\x0dfrom-actor-ids\x0afrom-scope\x01\x07payload\x02\x04\0\x10message-enve\
+lope\x03\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\
+\x06\x04\0\x12[constructor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07messag\
+e\x04\x01\0\x04\0\x1c[method]actor.handle-message\x01\x09\x01@\x01\x04self\x08\x01\
+\0\x04\0\x18[method]actor.destructor\x01\x0a\x04\0\x16hive:actor/actor@0.1.0\x05\
+\x04\x04\0!assistant:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\
+\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-\
+bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

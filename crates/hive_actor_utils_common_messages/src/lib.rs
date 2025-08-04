@@ -51,7 +51,6 @@ pub mod actors {
 pub mod assistant {
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
-    use uuid::Uuid;
 
     use crate::Scope;
 
@@ -93,7 +92,7 @@ pub mod assistant {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub enum Status {
         Processing {
-            request_id: Uuid,
+            request_id: String,
         },
         Wait {
             reason: WaitReason,
@@ -167,7 +166,7 @@ pub mod assistant {
     // hive.common.assistant.Response
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Response {
-        pub request_id: Uuid,
+        pub request_id: String,
         pub message: hive_llm_types::types::AssistantChatMessage,
     }
 

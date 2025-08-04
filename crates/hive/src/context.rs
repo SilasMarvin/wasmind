@@ -63,7 +63,7 @@ impl HiveContext {
         agent_name: String,
         parent_scope: Option<Scope>,
     ) -> HiveResult<Scope> {
-        let scope = Scope::new();
+        let scope = crate::scope::new_scope();
         self.spawn_agent_in_scope(actor_ids, scope.clone(), agent_name, parent_scope)
             .await?;
         Ok(scope)
@@ -132,7 +132,7 @@ impl HiveContext {
         // Store parent relationship
         {
             let mut parents = self.scope_parents.lock().unwrap();
-            parents.insert(scope.clone(), parent_scope);
+            parents.insert(scope.clone(), parent_scope.clone());
         }
 
         // Broadcast AgentSpawned message
@@ -179,6 +179,6 @@ impl HiveContext {
     /// Returns None if the scope has no parent (root scope)
     pub fn get_parent_scope(&self, scope: Scope) -> Option<Scope> {
         let parents = self.scope_parents.lock().unwrap();
-        parents.get(&scope).copied().flatten()
+        parents.get(&scope).cloned().flatten()
     }
 }

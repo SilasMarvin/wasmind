@@ -100,7 +100,7 @@ pub struct Assistant {
 }
 
 impl Assistant {
-    fn submit_and_process(&mut self, request_id: uuid::Uuid) {
+    fn submit_and_process(&mut self, request_id: String) {
         // Generate system prompt
         let system_prompt = self.render_system_prompt();
 
@@ -286,10 +286,10 @@ impl Assistant {
         }
 
         // Generate a unique request ID for this submission
-        let request_id = uuid::Uuid::new_v4();
+        let request_id = format!("req_{}", hive_actor_utils::generate_id(6));
 
         // Set status to processing with the request ID
-        self.set_status(Status::Processing { request_id }, true);
+        self.set_status(Status::Processing { request_id: request_id.clone() }, true);
 
         // Submit and process the request with automatic retry
         self.submit_and_process(request_id);

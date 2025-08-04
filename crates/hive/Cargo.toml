@@ -23,7 +23,6 @@ reqwest = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 snafu = { workspace = true }
-uuid = { workspace = true }
 
 hive_actor_loader = { path = "../hive_actor_loader" }
 hive_config = { path = "../hive_config" }

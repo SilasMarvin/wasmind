@@ -67,15 +67,8 @@ impl Tool for SendMessage {
     type Params = SendMessageInput;
 
     async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
-        // Parse the agent ID
-        let agent_scope = match params.agent_id.parse::<uuid::Uuid>() {
-            Ok(uuid) => Scope::from_uuid(uuid),
-            Err(e) => {
-                let error_msg = format!("Invalid agent ID format: {}", e);
-                self.broadcast_finished(&tool_call.id, ToolCallResult::Err(error_msg), None);
-                return;
-            }
-        };
+        // Use the agent ID directly as scope
+        let agent_scope = params.agent_id.clone();
 
         // Send the message
         self.broadcast(Message::Agent(AgentMessage {

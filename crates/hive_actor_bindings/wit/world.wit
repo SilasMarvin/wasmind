@@ -7,6 +7,9 @@ package hive:actor@0.1.0;
 // to create a stateful, message-driven actors.
 // =================================================================
 interface actor {
+    /// A scope identifier - a 6-character alphanumeric string used to identify agent contexts
+    type scope = string;
+
     /// An envelope that wraps every message passed between actors.
     /// It provides context about the message's origin.
     record message-envelope {
@@ -15,7 +18,7 @@ interface actor {
         /// The unique identifier of the actor that sent the message.
         from-actor-id: string,
         /// The scope in which the sending actor was operating.
-        from-scope: string,
+        from-scope: scope,
         /// The raw, serialized message data. The format (e.g., JSON)
         /// is determined by the sending actor's implementation.
         payload: list<u8>,
@@ -28,7 +31,7 @@ interface actor {
         /// Use this to initialize the actor's state.
         /// @param scope - The execution scope provided by the host.
         /// @param config - The configuration string (TOML format) for this actor.
-        constructor(scope: string, config: string);
+        constructor(scope: scope, config: string);
 
         /// The primary entry point for processing incoming messages. This
         /// function is called by the host whenever another actor broadcasts
@@ -142,17 +145,19 @@ interface http {
 }
 
 interface agent {
+    use actor.{scope};
+    
     /// Spawn a new agent with the specified actors
     /// Returns the scope ID of the newly created agent
-    spawn-agent: func(actor-ids: list<string>, agent-name: string) -> result<string, string>;
+    spawn-agent: func(actor-ids: list<string>, agent-name: string) -> result<scope, string>;
     
     /// Get the parent scope of the current actor
     /// Returns None if this is a root agent, Some(scope_id) if it has a parent
-    get-parent-scope: func() -> option<string>;
+    get-parent-scope: func() -> option<scope>;
     
     /// Get the parent scope of the specified scope
     /// Returns None if the scope has no parent or if the scope is invalid
-    get-parent-scope-of: func(scope: string) -> option<string>;
+    get-parent-scope-of: func(scope: scope) -> option<scope>;
 }
 
 interface host-info {

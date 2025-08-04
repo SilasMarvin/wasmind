@@ -7,7 +7,7 @@ use hive_actor_utils_common_messages::{Message, actors};
 
 use crate::SerializationSnafu;
 use crate::{
-    HiveResult, InvalidScopeSnafu, actors::MessageEnvelope, context::HiveContext,
+    HiveResult, actors::MessageEnvelope, context::HiveContext,
     hive::STARTING_SCOPE, scope::Scope,
 };
 
@@ -43,9 +43,9 @@ impl HiveCoordinator {
         root_agent_name: String,
     ) -> HiveResult<Scope> {
         self.context
-            .spawn_agent_in_scope(starting_actors, STARTING_SCOPE, root_agent_name, None)
+            .spawn_agent_in_scope(starting_actors, STARTING_SCOPE.to_string(), root_agent_name, None)
             .await?;
-        Ok(STARTING_SCOPE.clone())
+        Ok(STARTING_SCOPE.to_string())
     }
 
     /// Run the coordinator until system exit
@@ -72,7 +72,7 @@ impl HiveCoordinator {
                         }
                         actors::Exit::MESSAGE_TYPE => {
                             // Check if it's the STARTING_SCOPE exiting
-                            if msg.from_scope == STARTING_SCOPE.to_string() {
+                            if msg.from_scope == STARTING_SCOPE {
                                 tracing::info!("Starting scope exited, shutting down system");
                                 return Ok(());
                             }
@@ -94,13 +94,8 @@ impl HiveCoordinator {
     }
 
     fn handle_actor_ready(&mut self, msg: MessageEnvelope) -> HiveResult<()> {
-        // Parse scope from message
-        let scope = msg
-            .from_scope
-            .parse::<Scope>()
-            .with_context(|_| InvalidScopeSnafu {
-                scope: msg.from_scope.clone(),
-            })?;
+        // Get scope from message
+        let scope = msg.from_scope.clone();
 
         // Track this actor as ready
         self.ready_actors

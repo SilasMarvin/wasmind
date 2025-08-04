@@ -1388,7 +1388,6 @@ dependencies = [
  "tracing-subscriber",
  "tui-textarea",
  "tuirealm",
- "uuid",
  "wasmtime",
  "wasmtime-wasi",
  "wiremock",
@@ -1430,6 +1429,7 @@ dependencies = [
  "hive_actor_utils_common_messages",
  "hive_actor_utils_macros",
  "hive_llm_types",
+ "rand 0.9.1",
  "serde",
  "serde_json",
 ]
@@ -1441,7 +1441,6 @@ dependencies = [
  "hive_llm_types",
  "serde",
  "serde_json",
- "uuid",
 ]
 
 [[package]]
@@ -1490,7 +1489,6 @@ dependencies = [
  "tui-textarea",
  "tuirealm",
  "url",
- "uuid",
  "wasmtime",
  "wasmtime-wasi",
 ]
@@ -3875,9 +3873,7 @@ version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
 dependencies = [
- "getrandom 0.3.3",
  "js-sys",
- "serde",
  "wasm-bindgen",
 ]
 

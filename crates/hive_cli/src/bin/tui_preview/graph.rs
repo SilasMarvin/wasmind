@@ -59,7 +59,7 @@ pub async fn run() -> TuiResult<()> {
 
     // Spawn some agents
     let (spawn_agent_message, agent1_scope) =
-        create_spawn_agent_message("Sub Manager 1", Some(&STARTING_SCOPE));
+        create_spawn_agent_message("Sub Manager 1", Some(&STARTING_SCOPE.to_string()));
     coordinator.broadcast_common_message(spawn_agent_message, false)?;
 
     let (spawn_agent_message, _) = create_spawn_agent_message("Worker 1", Some(&agent1_scope));

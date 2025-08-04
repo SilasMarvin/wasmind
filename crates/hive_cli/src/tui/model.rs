@@ -74,7 +74,7 @@ impl Model<CrosstermTerminalAdapter> {
             redraw: true,
             terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),
             context,
-            active_scope: STARTING_SCOPE.clone(),
+            active_scope: STARTING_SCOPE.to_string(),
         }
     }
 }

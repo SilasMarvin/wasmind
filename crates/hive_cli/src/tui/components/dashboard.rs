@@ -8,14 +8,13 @@ use tuirealm::{
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
-use uuid::Uuid;
 
 use super::chat::ChatAreaComponent;
 use super::graph::GraphAreaComponent;
 use super::scrollable::ScrollableComponent;
 use super::splash::SplashComponent;
 
-pub const DASHBOARD_SCOPE: Uuid = uuid::uuid!("00000000-0000-0000-0000-d68b0e6c4cf1");
+pub const DASHBOARD_SCOPE: &str = "DASHBD";
 
 pub const SCOPE_ATTR: &'static str = "SCOPE_ATTR";
 

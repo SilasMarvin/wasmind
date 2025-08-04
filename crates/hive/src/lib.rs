@@ -8,7 +8,6 @@ pub mod utils;
 use hive_actor_loader::{ActorLoader, LoadedActor};
 
 use snafu::Snafu;
-use std::path::PathBuf;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Snafu)]
@@ -38,12 +37,6 @@ pub enum Error {
     #[snafu(display("Channel closed"))]
     ChannelClosed,
 
-    #[snafu(display("Invalid scope format: {scope}"))]
-    InvalidScope {
-        scope: String,
-        #[snafu(source)]
-        source: uuid::Error,
-    },
 
     #[snafu(display("Attempt to spawn non-existent actor: {actor}"))]
     NonExistentActor { actor: String },

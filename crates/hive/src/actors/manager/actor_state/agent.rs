@@ -25,17 +25,11 @@ impl agent::Host for ActorState {
     async fn get_parent_scope(&mut self) -> Option<String> {
         // Get the parent scope for this actor's scope
         self.context
-            .get_parent_scope(self.scope)
-            .map(|scope| scope.to_string())
+            .get_parent_scope(self.scope.clone())
     }
 
     async fn get_parent_scope_of(&mut self, scope: String) -> Option<String> {
-        // Parse the scope string and get its parent scope
-        match scope.parse() {
-            Ok(parsed_scope) => self.context
-                .get_parent_scope(parsed_scope)
-                .map(|parent_scope| parent_scope.to_string()),
-            Err(_) => None, // Return None for invalid scope strings
-        }
+        // Get the parent scope directly
+        self.context.get_parent_scope(scope)
     }
 }

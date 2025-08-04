@@ -1,85 +1,56 @@
-use serde::{Deserialize, Serialize};
-use std::fmt;
 #[cfg(feature = "test-utils")]
 use std::sync::atomic::AtomicU64;
 #[cfg(feature = "test-utils")]
 use std::sync::atomic::Ordering;
-use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
-pub struct Scope(Uuid);
+/// A scope identifier - a 6-character alphanumeric string used to identify agent contexts
+pub type Scope = String;
 
 #[cfg(feature = "test-utils")]
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-impl Scope {
-    pub fn new() -> Self {
-        #[cfg(feature = "test-utils")]
-        {
-            // In tests, use deterministic UUIDs based on atomic counter
-            let counter = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-            // Create a deterministic UUID from the counter
-            let uuid_bytes = [
-                (counter >> 56) as u8,
-                (counter >> 48) as u8,
-                (counter >> 40) as u8,
-                (counter >> 32) as u8,
-                (counter >> 24) as u8,
-                (counter >> 16) as u8,
-                (counter >> 8) as u8,
-                counter as u8,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-            ];
-            Self(Uuid::from_bytes(uuid_bytes))
-        }
-        #[cfg(not(feature = "test-utils"))]
-        {
-            Self(Uuid::new_v4())
-        }
+/// Generate a new 6-character alphanumeric scope identifier
+pub fn new_scope() -> Scope {
+    #[cfg(feature = "test-utils")]
+    {
+        // In tests, use deterministic scopes based on atomic counter
+        let counter = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+        format!("{:06X}", counter % 0xFFFFFF) // 6-character hex, cycling at 16M
     }
-
-    pub const fn from_uuid(uuid: Uuid) -> Self {
-        Self(uuid)
+    #[cfg(not(feature = "test-utils"))]
+    {
+        use rand::Rng;
+        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        let mut rng = rand::rng();
+        (0..6)
+            .map(|_| {
+                let idx = rng.random_range(0..CHARSET.len());
+                CHARSET[idx] as char
+            })
+            .collect()
     }
 }
 
-impl fmt::Display for Scope {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_scope_generates_6_char_scope() {
+        let scope = new_scope();
+        assert_eq!(scope.len(), 6);
+        assert!(scope.chars().all(|c| c.is_ascii_alphanumeric()));
     }
-}
 
-impl TryFrom<&str> for Scope {
-    type Error = uuid::Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(Self(Uuid::try_from(value)?))
-    }
-}
-
-impl std::str::FromStr for Scope {
-    type Err = uuid::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self(Uuid::from_str(s)?))
-    }
-}
-
-impl From<Uuid> for Scope {
-    fn from(uuid: Uuid) -> Self {
-        Self(uuid)
-    }
-}
-
-impl From<Scope> for Uuid {
-    fn from(scope: Scope) -> Self {
-        scope.0
+    #[test]
+    #[cfg(feature = "test-utils")]
+    fn test_deterministic_scope_in_tests() {
+        // In test mode, scopes should be deterministic
+        let scope1 = new_scope();
+        let scope2 = new_scope();
+        assert_ne!(scope1, scope2);
+        assert_eq!(scope1.len(), 6);
+        assert_eq!(scope2.len(), 6);
     }
 }

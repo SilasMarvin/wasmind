@@ -16,7 +16,6 @@ wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
-uuid = "1.0"
 tracing = "0.1"
 minijinja = "2.5"
 regex = "1.10"

@@ -543,8 +543,9 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                     if let Some(root) = &mut self.component.root_node {
                         let metrics = AgentMetrics::with_completion_request();
                         self.component.stats.aggregated_agent_metrics += metrics;
-                        if let Ok(scope) = envelope.from_scope.parse::<Scope>() {
-                            root.increment_metrics(&scope, metrics);
+                        {
+                            let scope = &envelope.from_scope;
+                            root.increment_metrics(scope, metrics);
                         }
                         Some(TuiMessage::Redraw)
                     } else {
@@ -556,8 +557,9 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                     if let Some(root) = &mut self.component.root_node {
                         let metrics = AgentMetrics::with_tool_call();
                         self.component.stats.aggregated_agent_metrics += metrics;
-                        if let Ok(scope) = envelope.from_scope.parse::<Scope>() {
-                            root.increment_metrics(&scope, metrics);
+                        {
+                            let scope = &envelope.from_scope;
+                            root.increment_metrics(scope, metrics);
                         }
                         Some(TuiMessage::Redraw)
                     } else {
@@ -568,45 +570,38 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                 else if let Some(agent_spawned) =
                     parse_common_message_as::<AgentSpawned>(&envelope)
                 {
-                    // Parse the agent scope and parent scope
-                    if let Ok(agent_scope) = agent_spawned.agent_id.parse::<Scope>() {
-                        let parent_scope = agent_spawned
-                            .parent_agent
-                            .and_then(|p| p.parse::<Scope>().ok());
+                    // Get the agent scope and parent scope
+                    let agent_scope = agent_spawned.agent_id.clone();
+                    let parent_scope = agent_spawned.parent_agent.clone();
 
-                        // Create new agent component
-                        let agent_component = AgentComponent::new(
-                            agent_scope,
-                            agent_spawned.name,
-                            agent_spawned.actors,
-                            false,
-                        );
-                        let mut node = AgentNode::new(agent_component);
+                    // Create new agent component
+                    let agent_component = AgentComponent::new(
+                        agent_scope,
+                        agent_spawned.name,
+                        agent_spawned.actors,
+                        false,
+                    );
+                    let mut node = AgentNode::new(agent_component);
 
-                        if let Some(root) = &mut self.component.root_node
-                            && let Some(parent_scope) = parent_scope
-                        {
-                            // Insert into the tree at the parent scope
-                            let _ = root.insert(&parent_scope, node);
-                            self.component.stats.agents_spawned += 1;
-                        } else {
-                            node.component.component.is_selected = true;
-                            self.component.root_node = Some(node);
-                        }
-
-                        Some(TuiMessage::Redraw)
+                    if let Some(root) = &mut self.component.root_node
+                        && let Some(parent_scope) = parent_scope
+                    {
+                        // Insert into the tree at the parent scope
+                        let _ = root.insert(&parent_scope, node);
+                        self.component.stats.agents_spawned += 1;
                     } else {
-                        tracing::error!("Failed to parse agent scope: {}", agent_spawned.agent_id);
-                        None
+                        node.component.component.is_selected = true;
+                        self.component.root_node = Some(node);
                     }
+
+                    Some(TuiMessage::Redraw)
                 } else if let Some(agent_status_update) =
                     parse_common_message_as::<StatusUpdate>(&envelope)
                 {
-                    if let Some(root) = &mut self.component.root_node
-                        && let Ok(agent_scope) = envelope.from_scope.parse::<Scope>()
-                    {
+                    if let Some(root) = &mut self.component.root_node {
+                        let agent_scope = &envelope.from_scope;
                         if matches!(agent_status_update.status, assistant::Status::Done { .. }) {
-                            if let Some(scope) = root.remove(&agent_scope) {
+                            if let Some(scope) = root.remove(agent_scope) {
                                 Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
                                     scope.to_string(),
                                 )))
@@ -623,11 +618,10 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                 }
                 // Handle Exit messages - when an agent exits, remove it from the graph
                 else if parse_common_message_as::<Exit>(&envelope).is_some() {
-                    if let Some(root) = &mut self.component.root_node
-                        && let Ok(agent_scope) = envelope.from_scope.parse::<Scope>()
-                    {
+                    if let Some(root) = &mut self.component.root_node {
+                        let agent_scope = &envelope.from_scope;
                         // Remove the agent that sent the Exit message
-                        if let Some(scope) = root.remove(&agent_scope) {
+                        if let Some(scope) = root.remove(agent_scope) {
                             Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
                                 scope.to_string(),
                             )))

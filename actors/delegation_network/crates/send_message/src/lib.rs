@@ -105,20 +105,6 @@ impl tools::Tool for SendMessageTool {
             }
         };
 
-        // Validate agent ID format (should be a valid UUID)
-        if let Err(e) = uuid::Uuid::parse_str(&params.agent_id) {
-            let error_msg = format!("Invalid agent ID format: {}", e);
-            let error_result = ToolCallResult {
-                content: error_msg.clone(),
-                ui_display_info: UIDisplayInfo {
-                    collapsed: "Invalid Agent ID".to_string(),
-                    expanded: Some(format!("Invalid Agent ID:\n{}", error_msg)),
-                },
-            };
-            self.send_error_result(&tool_call.tool_call.id, error_result);
-            return;
-        }
-
         // Create the message to send to the agent
         let add_message = AddMessage {
             agent: params.agent_id.clone(),
