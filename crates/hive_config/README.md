@@ -1,7 +1,5 @@
 # Hive Configuration Specification
 
-This document outlines the configuration system for the Hive framework. The system is designed to be powerful for developers while remaining intuitive for users.
-
 Configuration is managed through two key concepts:
 1.  **The User Configuration File:** A TOML file provided by the user that defines which actor *instances* are available to their Hive system, provides runtime configuration, and sets up the environment.
 2.  **The `Hive.toml` Actor Manifest:** A file created by an actor *developer* that declares an actor's canonical identity and its dependencies on other actors.
