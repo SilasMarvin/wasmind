@@ -31,7 +31,6 @@ pub fn new_scope() -> Scope {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

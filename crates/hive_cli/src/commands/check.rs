@@ -1,9 +1,9 @@
 use crate::TuiResult;
 use crate::tui::icons;
+use hive_actor_loader::dependency_resolver::{DependencyResolver, ResolvedActor};
+use hive_config::{ActorSource, Config};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use hive_actor_loader::dependency_resolver::{DependencyResolver, ResolvedActor};
-use hive_config::{Config, ActorSource};
 
 #[derive(Debug)]
 struct StartupAnalysis {
@@ -16,7 +16,7 @@ struct StartupAnalysis {
 pub fn show_status(config_path: Option<PathBuf>) -> TuiResult<()> {
     println!("Hive Configuration Status");
     println!("========================");
-    
+
     // Load config using provided path or default
     let (config, config_file) = if let Some(path) = config_path {
         if !path.exists() {
@@ -36,54 +36,72 @@ pub fn show_status(config_path: Option<PathBuf>) -> TuiResult<()> {
         let config = hive_config::load_default_config()?;
         (config, config_file)
     };
-    println!("Config: {} {} Valid", config_file.display(), icons::SUCCESS_ICON);
+    println!(
+        "Config: {} {} Valid",
+        config_file.display(),
+        icons::SUCCESS_ICON
+    );
     println!();
-    
-    // Use hive_actor_loader to resolve dependencies  
+
+    // Use hive_actor_loader to resolve dependencies
     let resolver = DependencyResolver::new();
-    let resolved_actors = match resolver.resolve_all(config.actors.clone(), config.actor_overrides.clone()) {
-        Ok(actors) => actors,
-        Err(e) => {
-            println!("{} Dependency resolution failed:", icons::FAILED_ICON);
-            println!("  {}", e);
-            return Ok(());
-        }
-    };
-    
+    let resolved_actors =
+        match resolver.resolve_all(config.actors.clone(), config.actor_overrides.clone()) {
+            Ok(actors) => actors,
+            Err(e) => {
+                println!("{} Dependency resolution failed:", icons::FAILED_ICON);
+                println!("  {}", e);
+                return Ok(());
+            }
+        };
+
     // Analyze startup behavior
     let startup_analysis = analyze_startup_behavior(&config, &resolved_actors);
-    
+
     // Display comprehensive status
     display_status(&config, &resolved_actors, &startup_analysis);
-    
+
     Ok(())
 }
 
-fn analyze_startup_behavior(config: &Config, resolved_actors: &HashMap<String, ResolvedActor>) -> StartupAnalysis {
+fn analyze_startup_behavior(
+    config: &Config,
+    resolved_actors: &HashMap<String, ResolvedActor>,
+) -> StartupAnalysis {
     let starting_actors = config.starting_actors.clone();
-    
+
     let auto_spawn_actors: Vec<String> = resolved_actors
         .values()
         .filter(|actor| actor.auto_spawn)
         .map(|actor| actor.logical_name.clone())
         .collect();
-    
+
     // Calculate effective startup actors by following dependency chains
     let mut effective_startup_actors = Vec::new();
     let mut visited = std::collections::HashSet::new();
-    
+
     // Add explicitly configured starting actors and their dependencies
     for actor_name in &starting_actors {
-        collect_actor_and_dependencies(actor_name, resolved_actors, &mut effective_startup_actors, &mut visited);
+        collect_actor_and_dependencies(
+            actor_name,
+            resolved_actors,
+            &mut effective_startup_actors,
+            &mut visited,
+        );
     }
-    
+
     // Add auto-spawn actors and their dependencies
     for actor_name in &auto_spawn_actors {
-        collect_actor_and_dependencies(actor_name, resolved_actors, &mut effective_startup_actors, &mut visited);
+        collect_actor_and_dependencies(
+            actor_name,
+            resolved_actors,
+            &mut effective_startup_actors,
+            &mut visited,
+        );
     }
-    
+
     let has_valid_startup = !effective_startup_actors.is_empty();
-    
+
     StartupAnalysis {
         starting_actors,
         auto_spawn_actors,
@@ -102,13 +120,13 @@ fn collect_actor_and_dependencies(
         return;
     }
     visited.insert(actor_name.to_string());
-    
+
     if let Some(actor) = resolved_actors.get(actor_name) {
         // Add this actor to effective startup
         if !effective_actors.contains(&actor.logical_name) {
             effective_actors.push(actor.logical_name.clone());
         }
-        
+
         // Recursively add dependencies that will be spawned
         for dep_name in &actor.required_spawn_with {
             collect_actor_and_dependencies(dep_name, resolved_actors, effective_actors, visited);
@@ -128,14 +146,14 @@ fn format_config_compact(config: &toml::Table) -> String {
     if config.is_empty() {
         return "(empty)".to_string();
     }
-    
+
     // Use proper TOML format with sections
     format_toml_table_proper(config, String::new(), 0)
 }
 
 fn format_toml_table_proper(table: &toml::Table, section_prefix: String, _depth: usize) -> String {
     let mut result = Vec::new();
-    
+
     // First, handle simple key-value pairs (non-table values)
     for (key, value) in table.iter() {
         if !matches!(value, toml::Value::Table(_)) {
@@ -143,23 +161,23 @@ fn format_toml_table_proper(table: &toml::Table, section_prefix: String, _depth:
             result.push(format!("{} = {}", key, formatted_value));
         }
     }
-    
+
     // Then handle table sections
     for (key, value) in table.iter() {
         if let toml::Value::Table(nested_table) = value {
             if nested_table.is_empty() {
                 continue;
             }
-            
+
             let section_name = if section_prefix.is_empty() {
                 key.clone()
             } else {
                 format!("{}.{}", section_prefix, key)
             };
-            
+
             // Add section header
             result.push(format!("[{}]", section_name));
-            
+
             // Recursively format nested table
             let nested_content = format_toml_table_proper(nested_table, section_name, 0);
             if !nested_content.is_empty() {
@@ -167,7 +185,7 @@ fn format_toml_table_proper(table: &toml::Table, section_prefix: String, _depth:
             }
         }
     }
-    
+
     result.join("\n")
 }
 
@@ -193,54 +211,83 @@ fn format_toml_value_for_display(value: &toml::Value) -> String {
     }
 }
 
-fn display_status(_config: &Config, resolved_actors: &HashMap<String, ResolvedActor>, analysis: &StartupAnalysis) {
+fn display_status(
+    _config: &Config,
+    resolved_actors: &HashMap<String, ResolvedActor>,
+    analysis: &StartupAnalysis,
+) {
     // Display startup behavior
     println!("Startup Behavior:");
     if !analysis.starting_actors.is_empty() {
-        println!("├─ User-configured starting actors: {}", analysis.starting_actors.join(", "));
+        println!(
+            "├─ User-configured starting actors: {}",
+            analysis.starting_actors.join(", ")
+        );
     } else {
         println!("├─ User-configured starting actors: (none)");
     }
-    
+
     if !analysis.auto_spawn_actors.is_empty() {
-        println!("├─ Auto-spawn actors: {}", analysis.auto_spawn_actors.join(", "));
+        println!(
+            "├─ Auto-spawn actors: {}",
+            analysis.auto_spawn_actors.join(", ")
+        );
     } else {
         println!("├─ Auto-spawn actors: (none)");
     }
-    
-    println!("├─ Calculated effective startup actors ({} total): {}", analysis.effective_startup_actors.len(), analysis.effective_startup_actors.join(", "));
-    
+
+    println!(
+        "├─ Calculated effective startup actors ({} total): {}",
+        analysis.effective_startup_actors.len(),
+        analysis.effective_startup_actors.join(", ")
+    );
+
     if analysis.has_valid_startup {
-        println!("└─ Validation: {} At least one starting actor configured", icons::SUCCESS_ICON);
+        println!(
+            "└─ Validation: {} At least one starting actor configured",
+            icons::SUCCESS_ICON
+        );
     } else {
-        println!("└─ Validation: {} No starting actors configured", icons::FAILED_ICON);
+        println!(
+            "└─ Validation: {} No starting actors configured",
+            icons::FAILED_ICON
+        );
     }
-    
+
     println!();
-    
+
     // Display all actors
     println!("All Actors ({} total):", resolved_actors.len());
     println!();
-    
+
     // Sort actors: user-defined first, then dependencies
-    let mut user_actors: Vec<_> = resolved_actors.values().filter(|actor| !actor.is_dependency).collect();
-    let mut dependency_actors: Vec<_> = resolved_actors.values().filter(|actor| actor.is_dependency).collect();
-    
+    let mut user_actors: Vec<_> = resolved_actors
+        .values()
+        .filter(|actor| !actor.is_dependency)
+        .collect();
+    let mut dependency_actors: Vec<_> = resolved_actors
+        .values()
+        .filter(|actor| actor.is_dependency)
+        .collect();
+
     user_actors.sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
     dependency_actors.sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
-    
+
     // Display user-defined actors
     for actor in user_actors {
         display_actor_info(actor, analysis);
     }
-    
+
     // Display dependency actors
     for actor in dependency_actors {
         display_actor_info(actor, analysis);
     }
-    
+
     println!();
-    println!("System Validation: {} All checks passed", icons::SUCCESS_ICON);
+    println!(
+        "System Validation: {} All checks passed",
+        icons::SUCCESS_ICON
+    );
 }
 
 fn display_actor_info(actor: &ResolvedActor, analysis: &StartupAnalysis) {
@@ -250,31 +297,31 @@ fn display_actor_info(actor: &ResolvedActor, analysis: &StartupAnalysis) {
     } else {
         tags.push("dependency");
     }
-    
+
     if analysis.starting_actors.contains(&actor.logical_name) {
         tags.push("starting");
     }
-    
+
     if actor.auto_spawn {
         tags.push("auto-spawn");
     }
-    
+
     let has_config = actor.config.is_some() && !actor.config.as_ref().unwrap().is_empty();
     if has_config {
         tags.push("overridden");
     }
-    
-    let tags_str = if tags.len() > 1 { 
+
+    let tags_str = if tags.len() > 1 {
         format!(" ({})", tags.join(", "))
     } else if !tags.is_empty() {
         format!(" ({})", tags[0])
     } else {
         String::new()
     };
-    
+
     println!("{}{}", actor.logical_name, tags_str);
     println!("   ID: {}", actor.actor_id);
-    
+
     let source_str = match &actor.source {
         ActorSource::Path(path_source) => {
             if let Some(package) = &path_source.package {
@@ -292,7 +339,7 @@ fn display_actor_info(actor: &ResolvedActor, analysis: &StartupAnalysis) {
         }
     };
     println!("   Source: {}", source_str);
-    
+
     if let Some(config) = &actor.config {
         let config_display = format_config_compact(config);
         println!("   Effective config:");
@@ -304,7 +351,7 @@ fn display_actor_info(actor: &ResolvedActor, analysis: &StartupAnalysis) {
     } else {
         println!("   Effective config: (empty)");
     }
-    
+
     println!("   ───────────────────────────────────────────────────────────────────────────");
     println!();
 }

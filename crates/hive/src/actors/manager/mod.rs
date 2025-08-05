@@ -2,7 +2,7 @@ use hive::actor::{agent, command, host_info, http, logger, messaging};
 use hive_actor_utils_common_messages::{Message, actors};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::Level;
+use tracing::{Instrument, Level};
 use wasmtime::{
     Config, Engine, Store,
     component::{Component, HasSelf, Linker, ResourceAny, bindgen},
@@ -135,9 +135,8 @@ impl Manager {
                                     "hive_actor_manager",
                                     correlation_id = msg.id
                                 );
-                                let _enter = span.enter();
 
-                                // Set current message ID for correlation in logging
+                                // Set current message ID for correlation
                                 self.store.data_mut().current_message_id = Some(msg.id.clone());
 
                                 if let Err(e) = self
@@ -145,6 +144,7 @@ impl Manager {
                                     .hive_actor_actor()
                                     .actor()
                                     .call_handle_message(&mut self.store, self.actor_resource, &msg)
+                                    .instrument(span)
                                     .await
                                 {
                                     tracing::error!("Calling handle_message: {e:?}");

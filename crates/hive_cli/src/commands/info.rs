@@ -47,4 +47,3 @@ pub fn show_info() -> TuiResult<()> {
 
     Ok(())
 }
-

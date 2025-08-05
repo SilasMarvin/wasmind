@@ -24,8 +24,7 @@ impl agent::Host for ActorState {
 
     async fn get_parent_scope(&mut self) -> Option<String> {
         // Get the parent scope for this actor's scope
-        self.context
-            .get_parent_scope(self.scope.clone())
+        self.context.get_parent_scope(self.scope.clone())
     }
 
     async fn get_parent_scope_of(&mut self, scope: String) -> Option<String> {

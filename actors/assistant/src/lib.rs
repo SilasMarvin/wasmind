@@ -1,16 +1,16 @@
-use bindings::hive::actor::{host_info, logger};
+use bindings::hive::actor::logger;
 use hive_actor_utils::{
     common_messages::{
         actors,
         assistant::{
-            self, ChatState, ChatStateUpdated, InterruptAndForceWaitForSystemInput, Request,
+            self, ChatState, ChatStateUpdated, Request,
             Status, StatusUpdate, SystemPromptContribution, WaitReason,
         },
         litellm,
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
     },
     llm_client_types::{
-        self, ChatMessage, ChatRequest, ChatResponse, SystemChatMessage, Tool, UserChatMessage,
+        ChatMessage, ChatRequest, ChatResponse, SystemChatMessage, Tool, UserChatMessage,
     },
 };
 use serde::Deserialize;
@@ -92,7 +92,7 @@ pub struct Assistant {
     pending_message: PendingMessage,
     scope: String,
     chat_history: Vec<ChatMessage>,
-    available_tools: Vec<llm_client_types::Tool>,
+    available_tools: Vec<Tool>,
     status: Status,
     config: AssistantConfig,
     base_url: Option<String>,
@@ -119,11 +119,10 @@ impl Assistant {
                             self.add_chat_messages([choice.message.clone()]);
 
                             // Broadcast the response for other actors to handle
-                            Self::broadcast_common_message(assistant::Response {
+                            let _ = Self::broadcast_common_message(assistant::Response {
                                 request_id,
                                 message: assistant_msg.clone(),
-                            })
-                            .unwrap();
+                            });
                         }
                         _ => {
                             self.set_status(
@@ -183,14 +182,13 @@ impl Assistant {
             _ => unreachable!(),
         };
 
-        Self::broadcast_common_message(Request {
+        let _ = Self::broadcast_common_message(Request {
             chat_state: ChatState {
                 system: system_message,
                 tools: self.available_tools.clone(),
                 messages: self.chat_history.clone(),
             },
-        })
-        .unwrap();
+        });
 
         // Build the request
         let mut all_messages = vec![ChatMessage::system(system_prompt)];
@@ -218,24 +216,34 @@ impl Assistant {
             .retry(3, 1000) // 3 attempts, 1 second base delay with exponential backoff
             .timeout(120) // 120 second timeout
             .send()
-            .map_err(|e| format!("HTTP request failed: {:?}", e))?;
+            .map_err(|e| {
+                let error_msg = format!("HTTP request failed: {:?}", e);
+                logger::log(logger::LogLevel::Error, &error_msg);
+                error_msg
+            })?;
 
         // Check status
         if response.status < 200 || response.status >= 300 {
             let error_text = String::from_utf8_lossy(&response.body);
-            return Err(format!("API error ({}): {}", response.status, error_text));
+            let error_msg = format!("LLM API error ({}): {}", response.status, error_text);
+            logger::log(logger::LogLevel::Error, &error_msg);
+            return Err(error_msg);
         }
 
         // Deserialize response
         serde_json::from_slice(&response.body)
-            .map_err(|e| format!("Failed to deserialize response: {}", e))
+            .map_err(|e| {
+                let error_msg = format!("Failed to deserialize response: {}", e);
+                logger::log(logger::LogLevel::Error, &error_msg);
+                error_msg
+            })
     }
 
     fn render_system_prompt(&self) -> String {
         match self.system_prompt_renderer.render() {
             Ok(rendered) => rendered,
             Err(e) => {
-                // TODO: Log error
+                logger::log(logger::LogLevel::Error, &format!("Failed to render system prompt: {}", e));
                 "".to_string()
             }
         }
@@ -522,10 +530,9 @@ impl GeneratedActorTrait for Assistant {
 
                             // Broadcast tool calls for execution
                             for tool_call in tool_calls {
-                                Self::broadcast_common_message(tools::ExecuteTool {
+                                let _ = Self::broadcast_common_message(tools::ExecuteTool {
                                     tool_call: tool_call.clone(),
-                                })
-                                .unwrap();
+                                });
                             }
                         } else {
                             if self.config.require_tool_call {
@@ -671,7 +678,5 @@ impl GeneratedActorTrait for Assistant {
         }
     }
 
-    fn destructor(&mut self) -> () {
-        todo!()
-    }
+    fn destructor(&mut self) -> () {}
 }

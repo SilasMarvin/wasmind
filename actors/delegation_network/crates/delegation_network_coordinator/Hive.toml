@@ -197,4 +197,4 @@ source = { path = "../../", package = "crates/complete" }
 source = { path = "../../", package = "crates/check_health" }
 
 [dependencies.check_health.config]
-check_interval = 0
+check_interval = 10

@@ -272,7 +272,7 @@ impl ActorLoader {
                 // For local path dependencies, build in-place using default target directory for speed
                 info!("Building local actor in-place: {}", path_source.path);
                 let source_path = Path::new(&path_source.path);
-                
+
                 // Verify source path exists
                 ensure!(
                     source_path.exists(),
@@ -301,7 +301,7 @@ impl ActorLoader {
                 info!("Copying Git actor to temp: {}", repository.url);
                 let temp_dir = TempDir::new().context(TempDirSnafu)?;
                 let build_path = temp_dir.path().join(&actor.name);
-                
+
                 self.clone_git_actor(&repository.url, &build_path, repository.git_ref.as_ref())
                     .await?;
 
@@ -460,7 +460,6 @@ impl ActorLoader {
         hex::encode(hasher.finalize())
     }
 
-
     async fn clone_git_actor(
         &self,
         url: &Url,
@@ -513,7 +512,6 @@ impl ActorLoader {
         Ok(())
     }
 
-
     async fn build_actor(
         &self,
         actor_path: &Path,
@@ -521,7 +519,8 @@ impl ActorLoader {
         actor_name: &str,
     ) -> Result<PathBuf> {
         // Default behavior uses the default target directory
-        self.build_actor_internal(actor_path, package_name, actor_name, None).await
+        self.build_actor_internal(actor_path, package_name, actor_name, None)
+            .await
     }
 
     async fn build_actor_internal(
@@ -626,7 +625,6 @@ impl ActorLoader {
             location: location!(),
         })
     }
-
 
     async fn get_expected_wasm_name(&self, build_dir: &Path) -> Result<String> {
         let cargo_toml_path = build_dir.join("Cargo.toml");
@@ -900,11 +898,11 @@ mod tests {
     async fn test_load_local_path_actor_builds_in_place() {
         let temp_cache_dir = TempDir::new().unwrap();
         let loader = ActorLoader::new(Some(temp_cache_dir.path().to_path_buf())).unwrap();
-        
+
         let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("test_actors")
             .join("buildable_simple");
-        
+
         let actor = Actor {
             name: "test_in_place".to_string(),
             source: ActorSource::Path(hive_config::PathSource {
@@ -921,23 +919,27 @@ mod tests {
             .load_single_actor(actor, "test:in-place".to_string(), vec![])
             .await;
 
-        assert!(result.is_ok(), "Failed to load local path actor: {:?}", result.err());
-        
+        assert!(
+            result.is_ok(),
+            "Failed to load local path actor: {:?}",
+            result.err()
+        );
+
         let loaded_actor = result.unwrap();
         assert_eq!(loaded_actor.name, "test_in_place");
         assert_eq!(loaded_actor.id, "test:in-place");
         assert!(!loaded_actor.wasm.is_empty());
     }
 
-    #[tokio::test] 
+    #[tokio::test]
     async fn test_git_vs_path_source_behavior() {
         let temp_cache_dir = TempDir::new().unwrap();
         let loader = ActorLoader::new(Some(temp_cache_dir.path().to_path_buf())).unwrap();
-        
+
         let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("test_actors")
             .join("buildable_simple");
-        
+
         // Test path source (should build in-place)
         let path_actor = Actor {
             name: "path_actor".to_string(),
@@ -962,7 +964,7 @@ mod tests {
     #[tokio::test]
     async fn test_hash_differs_for_path_vs_git_sources() {
         use url::Url;
-        
+
         let loader = ActorLoader::new(None).unwrap();
 
         let path_actor = Actor {

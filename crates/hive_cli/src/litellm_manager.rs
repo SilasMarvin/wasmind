@@ -358,8 +358,9 @@ impl LiteLLMManager {
             .arg(format!("{}:4000", config.port));
 
         info!(
-            "Starting LiteLLM container: {} with {} environment variables", 
-            config.container_name, env_vars.len()
+            "Starting LiteLLM container: {} with {} environment variables",
+            config.container_name,
+            env_vars.len()
         );
         debug!("Docker image: {}, port: {}", config.image, config.port);
 

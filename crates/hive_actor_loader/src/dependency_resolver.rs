@@ -439,7 +439,7 @@ fn git_refs_match(ref1: &Option<hive_config::GitRef>, ref2: &Option<hive_config:
 /// Recursively merges two TOML tables, with values from `override_table` taking precedence
 fn merge_toml_tables(base: &toml::Table, override_table: &toml::Table) -> toml::Table {
     let mut merged = base.clone();
-    
+
     for (key, override_value) in override_table {
         match (merged.get(key), override_value) {
             // If both are tables, merge recursively
@@ -453,7 +453,7 @@ fn merge_toml_tables(base: &toml::Table, override_table: &toml::Table) -> toml::
             }
         }
     }
-    
+
     merged
 }
 
@@ -537,79 +537,136 @@ mod tests {
     #[test]
     fn test_merge_toml_tables() {
         let mut base = toml::Table::new();
-        base.insert("model_name".to_string(), toml::Value::String("gpt-3.5".to_string()));
+        base.insert(
+            "model_name".to_string(),
+            toml::Value::String("gpt-3.5".to_string()),
+        );
         base.insert("require_tool_call".to_string(), toml::Value::Boolean(true));
-        
+
         let mut system_prompt_base = toml::Table::new();
         let mut defaults_base = toml::Table::new();
-        defaults_base.insert("identity".to_string(), toml::Value::String("You are a helpful assistant".to_string()));
-        defaults_base.insert("context".to_string(), toml::Value::String("Some context".to_string()));
+        defaults_base.insert(
+            "identity".to_string(),
+            toml::Value::String("You are a helpful assistant".to_string()),
+        );
+        defaults_base.insert(
+            "context".to_string(),
+            toml::Value::String("Some context".to_string()),
+        );
         system_prompt_base.insert("defaults".to_string(), toml::Value::Table(defaults_base));
-        base.insert("system_prompt".to_string(), toml::Value::Table(system_prompt_base));
+        base.insert(
+            "system_prompt".to_string(),
+            toml::Value::Table(system_prompt_base),
+        );
 
         let mut override_table = toml::Table::new();
-        override_table.insert("model_name".to_string(), toml::Value::String("gpt-4o".to_string()));
-        
+        override_table.insert(
+            "model_name".to_string(),
+            toml::Value::String("gpt-4o".to_string()),
+        );
+
         let merged = merge_toml_tables(&base, &override_table);
-        
+
         // Check that model_name was overridden
-        assert_eq!(merged.get("model_name").unwrap().as_str().unwrap(), "gpt-4o");
-        
+        assert_eq!(
+            merged.get("model_name").unwrap().as_str().unwrap(),
+            "gpt-4o"
+        );
+
         // Check that require_tool_call was preserved
-        assert_eq!(merged.get("require_tool_call").unwrap().as_bool().unwrap(), true);
-        
+        assert_eq!(
+            merged.get("require_tool_call").unwrap().as_bool().unwrap(),
+            true
+        );
+
         // Check that system_prompt.defaults was preserved
         let system_prompt = merged.get("system_prompt").unwrap().as_table().unwrap();
         let defaults = system_prompt.get("defaults").unwrap().as_table().unwrap();
-        assert_eq!(defaults.get("identity").unwrap().as_str().unwrap(), "You are a helpful assistant");
-        assert_eq!(defaults.get("context").unwrap().as_str().unwrap(), "Some context");
+        assert_eq!(
+            defaults.get("identity").unwrap().as_str().unwrap(),
+            "You are a helpful assistant"
+        );
+        assert_eq!(
+            defaults.get("context").unwrap().as_str().unwrap(),
+            "Some context"
+        );
     }
 
     #[test]
     fn test_merge_toml_tables_nested_override() {
         let mut base = toml::Table::new();
-        base.insert("model_name".to_string(), toml::Value::String("gpt-3.5".to_string()));
-        
+        base.insert(
+            "model_name".to_string(),
+            toml::Value::String("gpt-3.5".to_string()),
+        );
+
         let mut system_prompt_base = toml::Table::new();
         let mut defaults_base = toml::Table::new();
-        defaults_base.insert("identity".to_string(), toml::Value::String("You are a helpful assistant".to_string()));
-        defaults_base.insert("context".to_string(), toml::Value::String("Some context".to_string()));
+        defaults_base.insert(
+            "identity".to_string(),
+            toml::Value::String("You are a helpful assistant".to_string()),
+        );
+        defaults_base.insert(
+            "context".to_string(),
+            toml::Value::String("Some context".to_string()),
+        );
         system_prompt_base.insert("defaults".to_string(), toml::Value::Table(defaults_base));
-        base.insert("system_prompt".to_string(), toml::Value::Table(system_prompt_base));
+        base.insert(
+            "system_prompt".to_string(),
+            toml::Value::Table(system_prompt_base),
+        );
 
         let mut override_table = toml::Table::new();
         let mut system_prompt_override = toml::Table::new();
         let mut defaults_override = toml::Table::new();
-        defaults_override.insert("identity".to_string(), toml::Value::String("You are a specialized assistant".to_string()));
-        system_prompt_override.insert("defaults".to_string(), toml::Value::Table(defaults_override));
-        override_table.insert("system_prompt".to_string(), toml::Value::Table(system_prompt_override));
-        
+        defaults_override.insert(
+            "identity".to_string(),
+            toml::Value::String("You are a specialized assistant".to_string()),
+        );
+        system_prompt_override.insert(
+            "defaults".to_string(),
+            toml::Value::Table(defaults_override),
+        );
+        override_table.insert(
+            "system_prompt".to_string(),
+            toml::Value::Table(system_prompt_override),
+        );
+
         let merged = merge_toml_tables(&base, &override_table);
-        
+
         // Check that model_name was preserved
-        assert_eq!(merged.get("model_name").unwrap().as_str().unwrap(), "gpt-3.5");
-        
+        assert_eq!(
+            merged.get("model_name").unwrap().as_str().unwrap(),
+            "gpt-3.5"
+        );
+
         // Check that system_prompt.defaults.identity was overridden
         let system_prompt = merged.get("system_prompt").unwrap().as_table().unwrap();
         let defaults = system_prompt.get("defaults").unwrap().as_table().unwrap();
-        assert_eq!(defaults.get("identity").unwrap().as_str().unwrap(), "You are a specialized assistant");
-        
+        assert_eq!(
+            defaults.get("identity").unwrap().as_str().unwrap(),
+            "You are a specialized assistant"
+        );
+
         // Check that system_prompt.defaults.context was preserved
-        assert_eq!(defaults.get("context").unwrap().as_str().unwrap(), "Some context");
+        assert_eq!(
+            defaults.get("context").unwrap().as_str().unwrap(),
+            "Some context"
+        );
     }
 
     #[test]
     fn test_actor_override_config_merging_integration() {
         use tempfile::TempDir;
-        
+
         // Create a temporary test directory structure
         let temp_dir = TempDir::new().unwrap();
         let test_root = temp_dir.path();
-        
+
         // Create dependency actor directory with Hive.toml
         let dep_actor_dir = test_root.join("dep_actor");
         std::fs::create_dir_all(&dep_actor_dir).unwrap();
-        
+
         let hive_toml_content = r#"
 actor_id = "test:dependency_actor"
 required_spawn_with = []
@@ -627,17 +684,17 @@ context = "You operate in a test environment"
 guidelines = "Follow all instructions carefully"
 "#;
         std::fs::write(dep_actor_dir.join("Hive.toml"), hive_toml_content).unwrap();
-        
+
         // Create assistant actor directory with Hive.toml
         let assistant_actor_dir = test_root.join("assistant_actor");
         std::fs::create_dir_all(&assistant_actor_dir).unwrap();
-        
+
         let assistant_hive_toml = r#"
 actor_id = "test:assistant"
 required_spawn_with = []
 "#;
         std::fs::write(assistant_actor_dir.join("Hive.toml"), assistant_hive_toml).unwrap();
-        
+
         // Create user actor that depends on the dependency
         let user_actors = vec![Actor {
             name: "dependency_actor".to_string(),
@@ -649,41 +706,59 @@ required_spawn_with = []
             auto_spawn: false,
             required_spawn_with: vec![],
         }];
-        
+
         // Create actor override that only specifies model_name
         let actor_overrides = vec![hive_config::ActorOverride {
             name: "test_assistant".to_string(),
             source: None,
             config: Some({
                 let mut override_config = toml::Table::new();
-                override_config.insert("model_name".to_string(), toml::Value::String("gpt-4o".to_string()));
+                override_config.insert(
+                    "model_name".to_string(),
+                    toml::Value::String("gpt-4o".to_string()),
+                );
                 override_config
             }),
             auto_spawn: None,
             required_spawn_with: None,
         }];
-        
+
         // Resolve all actors
         let resolver = DependencyResolver::new();
         let resolved = resolver.resolve_all(user_actors, actor_overrides).unwrap();
-        
+
         // Verify that test_assistant was resolved with merged config
         let assistant = resolved.get("test_assistant").unwrap();
         let config = assistant.config.as_ref().unwrap();
-        
+
         // Check that model_name was overridden
-        assert_eq!(config.get("model_name").unwrap().as_str().unwrap(), "gpt-4o");
-        
+        assert_eq!(
+            config.get("model_name").unwrap().as_str().unwrap(),
+            "gpt-4o"
+        );
+
         // Check that require_tool_call was preserved from dependency config
-        assert_eq!(config.get("require_tool_call").unwrap().as_bool().unwrap(), true);
-        
+        assert_eq!(
+            config.get("require_tool_call").unwrap().as_bool().unwrap(),
+            true
+        );
+
         // Check that system_prompt.defaults were preserved
         let system_prompt = config.get("system_prompt").unwrap().as_table().unwrap();
         let defaults = system_prompt.get("defaults").unwrap().as_table().unwrap();
-        assert_eq!(defaults.get("identity").unwrap().as_str().unwrap(), "You are a helpful assistant");
-        assert_eq!(defaults.get("context").unwrap().as_str().unwrap(), "You operate in a test environment");
-        assert_eq!(defaults.get("guidelines").unwrap().as_str().unwrap(), "Follow all instructions carefully");
-        
+        assert_eq!(
+            defaults.get("identity").unwrap().as_str().unwrap(),
+            "You are a helpful assistant"
+        );
+        assert_eq!(
+            defaults.get("context").unwrap().as_str().unwrap(),
+            "You operate in a test environment"
+        );
+        assert_eq!(
+            defaults.get("guidelines").unwrap().as_str().unwrap(),
+            "Follow all instructions carefully"
+        );
+
         // Verify that the assistant has the correct actor_id
         assert_eq!(assistant.actor_id, "test:assistant");
         assert_eq!(assistant.logical_name, "test_assistant");

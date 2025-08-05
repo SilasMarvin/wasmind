@@ -310,10 +310,8 @@ pub fn count_cached_actors(cache_dir: &Path) -> Result<usize, Error> {
     if !cache_dir.exists() {
         return Ok(0);
     }
-    
-    let count = std::fs::read_dir(cache_dir)
-        .context(IoSnafu)?
-        .count();
+
+    let count = std::fs::read_dir(cache_dir).context(IoSnafu)?.count();
     Ok(count)
 }
 

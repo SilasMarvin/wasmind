@@ -326,7 +326,10 @@ impl ChatHistoryComponent {
             component: ChatHistory {
                 props,
                 state: State::None,
-                chat_history_map: HashMap::from([(STARTING_SCOPE.to_string(), manager_assistant_info)]),
+                chat_history_map: HashMap::from([(
+                    STARTING_SCOPE.to_string(),
+                    manager_assistant_info,
+                )]),
                 last_content_height: None,
                 is_modified: false,
             },
