@@ -62,3 +62,21 @@ When activated in a Hive system, this actor:
 6. **Manages output size** by intelligently truncating large outputs while preserving important information
 
 The actor ensures each command runs in a fresh bash environment without session state, providing predictable and secure command execution for AI agents.
+
+## Building
+
+To build the Execute Bash Actor WASM component:
+
+```bash
+cargo component build
+```
+
+This generates `target/wasm32-wasip1/debug/execute_bash.wasm` for use in the Hive system.
+
+## Testing
+
+Run the test suite:
+
+```bash
+cargo test
+```

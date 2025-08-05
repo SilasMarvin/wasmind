@@ -1,7 +1,9 @@
 use hive_actor_utils::{
     common_messages::{
-        actors::Exit,
-        assistant::{AddMessage, InterruptAndForceWaitForSystemInput},
+        assistant::{
+            AddMessage, AgentTaskResponse, InterruptAndForceStatus,
+            RequestStatusUpdate, Status, WaitReason,
+        },
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
     },
     llm_client_types::{ChatMessage, SystemChatMessage},
@@ -62,9 +64,14 @@ impl tools::Tool for FlagIssueTool {
         if let Some(parent_scope) = parent_scope
             && let Some(grandparent_scope) = grandparent_scope
         {
-            let _ = Self::broadcast_common_message(InterruptAndForceWaitForSystemInput {
+            let _ = Self::broadcast_common_message(InterruptAndForceStatus {
                 agent: parent_scope.clone(),
-                required_scope: Some(grandparent_scope.clone()),
+                status: Status::Wait {
+                    reason: WaitReason::WaitingForSystemInput {
+                        required_scope: Some(grandparent_scope.clone()),
+                        interruptible_by_user: true,
+                    },
+                },
             });
 
             let _ = Self::broadcast_common_message(AddMessage {
@@ -79,18 +86,7 @@ impl tools::Tool for FlagIssueTool {
         }
 
         // Send success result
-        let result = ToolCallResult {
-            content: format!("Agent flagged for issue: {}", params.issue_summary),
-            ui_display_info: UIDisplayInfo {
-                collapsed: "Issue flagged".to_string(),
-                expanded: Some(format!(
-                    "Agent flagged for problematic behavior: {}",
-                    params.issue_summary
-                )),
-            },
-        };
-
-        self.send_success_result(&tool_call.tool_call.id, result);
+        self.send_success_result(&tool_call.tool_call.id, &params.issue_summary);
     }
 }
 
@@ -112,15 +108,36 @@ impl FlagIssueTool {
         let _ = Self::broadcast_common_message(update);
     }
 
-    fn send_success_result(&self, tool_call_id: &str, result: ToolCallResult) {
+    fn send_success_result(&self, tool_call_id: &str, issue_summary: &str) {
+        let status_update_request = RequestStatusUpdate {
+            agent: self.scope.clone(),
+            status: Status::Done {
+                result: Ok(AgentTaskResponse {
+                    summary: format!("Flagged parent agent for issue: {issue_summary}"),
+                    success: true,
+                }),
+            },
+            tool_call_id: Some(tool_call_id.to_string()),
+        };
+
+        let _ = Self::broadcast_common_message(status_update_request);
+
+        let result = ToolCallResult {
+            content: format!("Agent flagged for issue: {}", issue_summary),
+            ui_display_info: UIDisplayInfo {
+                collapsed: "Issue flagged".to_string(),
+                expanded: Some(format!(
+                    "Agent flagged for problematic behavior: {}",
+                    issue_summary
+                )),
+            },
+        };
+
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
             status: ToolCallStatus::Done { result: Ok(result) },
         };
 
         let _ = Self::broadcast_common_message(update);
-
-        let _ = Self::broadcast_common_message(Exit);
     }
 }
-

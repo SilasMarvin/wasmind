@@ -27,7 +27,7 @@ snafu = { workspace = true }
 hive_actor_loader = { path = "../hive_actor_loader" }
 hive_config = { path = "../hive_config" }
 hive_llm_types = { path = "../hive_llm_types" }
-hive_actor_utils_common_messages = { path = "../hive_actor_utils_common_messages" }
+hive_actor_utils = { path = "../hive_actor_utils" }
 
 rand = "0.9"
 throbber-widgets-tui = "0.8"

@@ -1,10 +1,10 @@
 use bindings::hive::actor::logger;
 use hive_actor_utils::{
     common_messages::{
-        actors,
+        actors::{self, Exit},
         assistant::{
-            self, ChatState, ChatStateUpdated, Request,
-            Status, StatusUpdate, SystemPromptContribution, WaitReason,
+            self, ChatState, ChatStateUpdated, Request, Status, StatusUpdate,
+            SystemPromptContribution, WaitReason,
         },
         litellm,
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
@@ -125,26 +125,26 @@ impl Assistant {
                             });
                         }
                         _ => {
+                            logger::log(
+                                logger::LogLevel::Error,
+                                &format!("Unexpected message type in LLM response: expected Assistant message, got {:?}", choice.message)
+                            );
                             self.set_status(
                                 Status::Wait {
-                                    reason: WaitReason::WaitingForUserInput,
+                                    reason: WaitReason::WaitingForSystemInput {
+                                        required_scope: None,
+                                        interruptible_by_user: true,
+                                    },
                                 },
                                 true,
                             );
                         }
                     }
                 } else {
-                    self.set_status(
-                        Status::Wait {
-                            reason: WaitReason::WaitingForUserInput,
-                        },
-                        true,
+                    logger::log(
+                        logger::LogLevel::Error,
+                        "LLM response contained no choices - empty response"
                     );
-                }
-            }
-            Err(e) => {
-                // Check if this is a "no base URL" error - if so, go back to waiting for system or user input
-                if e.contains("No LiteLLM base URL available") {
                     self.set_status(
                         Status::Wait {
                             reason: WaitReason::WaitingForSystemInput {
@@ -154,14 +154,22 @@ impl Assistant {
                         },
                         true,
                     );
-                } else {
-                    self.set_status(
-                        Status::Wait {
-                            reason: WaitReason::WaitingForUserInput,
-                        },
-                        true,
-                    );
                 }
+            }
+            Err(e) => {
+                logger::log(
+                    logger::LogLevel::Error,
+                    &format!("Error making completion request: {e:?}"),
+                );
+                self.set_status(
+                    Status::Wait {
+                        reason: WaitReason::WaitingForSystemInput {
+                            required_scope: None,
+                            interruptible_by_user: true,
+                        },
+                    },
+                    true,
+                );
             }
         }
     }
@@ -174,7 +182,7 @@ impl Assistant {
     ) -> Result<ChatResponse, String> {
         // Check if we have a base URL from LiteLLM
         let base_url = self.base_url.as_ref().ok_or_else(|| {
-            "No LiteLLM base URL available - waiting for LiteLLM manager to start".to_string()
+            "No LiteLLM base URL available! This should be impossible to reach. Please report this as a bug".to_string()
         })?;
 
         let system_message = match ChatMessage::system(system_prompt) {
@@ -231,19 +239,21 @@ impl Assistant {
         }
 
         // Deserialize response
-        serde_json::from_slice(&response.body)
-            .map_err(|e| {
-                let error_msg = format!("Failed to deserialize response: {}", e);
-                logger::log(logger::LogLevel::Error, &error_msg);
-                error_msg
-            })
+        serde_json::from_slice(&response.body).map_err(|e| {
+            let error_msg = format!("Failed to deserialize response: {}", e);
+            logger::log(logger::LogLevel::Error, &error_msg);
+            error_msg
+        })
     }
 
     fn render_system_prompt(&self) -> String {
         match self.system_prompt_renderer.render() {
             Ok(rendered) => rendered,
             Err(e) => {
-                logger::log(logger::LogLevel::Error, &format!("Failed to render system prompt: {}", e));
+                logger::log(
+                    logger::LogLevel::Error,
+                    &format!("Failed to render system prompt: {}", e),
+                );
                 "".to_string()
             }
         }
@@ -288,7 +298,7 @@ impl Assistant {
         }
 
         // Generate a unique request ID for this submission
-        let request_id = format!("req_{}", hive_actor_utils::generate_id(6));
+        let request_id = format!("req_{}", hive_actor_utils::utils::generate_id(6));
 
         // Set status to processing with the request ID
         self.set_status(
@@ -495,7 +505,7 @@ impl GeneratedActorTrait for Assistant {
                     if tool_calls.get(&tool_call_id).is_some() {
                         self.set_status(status_update_request.status.clone(), true);
                         if matches!(status_update_request.status, Status::Done { .. }) {
-                            // TODO: Broadcast Exit?
+                            let _ = Self::broadcast_common_message(Exit);
                         }
                     }
                 }
@@ -541,7 +551,10 @@ impl GeneratedActorTrait for Assistant {
                             } else {
                                 self.set_status(
                                     Status::Wait {
-                                        reason: WaitReason::WaitingForUserInput,
+                                        reason: WaitReason::WaitingForSystemInput {
+                                            required_scope: None,
+                                            interruptible_by_user: true,
+                                        },
                                     },
                                     true,
                                 );
@@ -570,9 +583,9 @@ impl GeneratedActorTrait for Assistant {
             }
         }
 
-        // Handle interrupt and force wait for system input
+        // Handle interrupt and force status
         if let Some(interrupt) =
-            Self::parse_as::<assistant::InterruptAndForceWaitForSystemInput>(&message)
+            Self::parse_as::<assistant::InterruptAndForceStatus>(&message)
             && interrupt.agent == self.scope
         {
             // Check if the last message in chat history is a tool call that needs to be removed
@@ -584,16 +597,8 @@ impl GeneratedActorTrait for Assistant {
                 }
             }
 
-            // Force the agent to wait for system input from the specified scope
-            self.set_status(
-                Status::Wait {
-                    reason: WaitReason::WaitingForSystemInput {
-                        required_scope: interrupt.required_scope,
-                        interruptible_by_user: true,
-                    },
-                },
-                true,
-            );
+            // Force the agent to the specified status
+            self.set_status(interrupt.status, true);
         }
 
         // Handle add message

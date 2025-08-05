@@ -1,7 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
-use hive::{coordinator::HiveCoordinator, hive::STARTING_SCOPE};
+use hive::coordinator::HiveCoordinator;
 use hive_actor_loader::LoadedActor;
+use hive_actor_utils::STARTING_SCOPE;
 use hive_cli::{TuiResult, tui};
 use tracing::info;
 

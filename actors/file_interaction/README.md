@@ -76,3 +76,21 @@ Key features:
 - **Atomic operations**: Multiple edits applied from bottom to top to maintain line integrity
 - **Automatic directory creation**: Parent directories created as needed
 - **Intelligent caching**: Optimizes repeated file access and tracks modifications
+
+## Building
+
+To build the File Interaction Actor WASM component:
+
+```bash
+cargo component build
+```
+
+This generates `target/wasm32-wasip1/debug/file_interaction.wasm` for use in the Hive system.
+
+## Testing
+
+Run the test suite:
+
+```bash
+cargo test
+```

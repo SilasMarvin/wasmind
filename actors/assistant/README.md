@@ -1,8 +1,29 @@
 # Assistant Actor
 
-> **⚠️ WIP README**: This documentation is a work in progress and may not be complete.
-
 The Assistant Actor is a conversational AI agent that manages chat interactions, tool execution, and dynamic system prompt generation within the Hive actor system.
+
+This is just one version of an Assistant that can be used within Hive with sane defaults and reasonable interoperability. In reality, anyone can create their own assistant with their own state management and messages.
+
+## Quick Reference
+
+**Key Concepts:**
+- **Default State**: `WaitingForSystemInput` with `interruptible_by_user: true` 
+- **External Control**: Any state can be overridden via `RequestStatusUpdate` or `InterruptAndForceStatus`
+- **Tool Status Updates**: Tools can request status changes and have their results queued until coordination completes
+- **System Prompt**: Dynamic contributions from any actor using `SystemPromptContribution` messages
+
+**Common States:**
+- `WaitingForSystemInput` - Default waiting state (accepts user + system messages)
+- `Processing` - Actively communicating with LLM
+- `WaitingForTools` - Tools executing in parallel
+- `WaitingForAgentCoordination` - Coordination with other agents (external only)
+- `Done` - Task completion and shutdown (external only)
+
+**Key Messages:**
+- `AddMessage` - Add user/system messages to conversation
+- `SystemPromptContribution` - Contribute content to system prompt
+- `InterruptAndForceStatus` - External state control
+- `ToolCallStatusUpdate` - Tool execution results
 
 ## Overview
 
@@ -109,6 +130,20 @@ SystemPromptContribution {
 }
 ```
 
+#### `assistant::InterruptAndForceStatus`
+Interrupts the assistant and forces it to a specific status, providing external control over state. See [State Management](#state-management) for details on available states.
+```rust
+InterruptAndForceStatus {
+    agent: "assistant-scope".to_string(),
+    status: Status::Wait {
+        reason: WaitReason::WaitingForSystemInput {
+            required_scope: Some("manager-scope".to_string()),
+            interruptible_by_user: true,
+        },
+    },
+}
+```
+
 ### Outgoing Messages
 
 #### `assistant::Response`
@@ -120,66 +155,281 @@ Requests tool execution when the LLM generates tool calls.
 #### `assistant::StatusUpdate`
 Notifies other actors of state changes (future implementation).
 
-## State Transitions
+## State Management
 
-The Assistant Actor maintains a state machine with the following states:
+The Assistant Actor uses a state machine to manage conversation flow and coordination. States are organized into logical groups based on their purpose.
 
-### `WaitingForAllActorsReady`
-**Initial state** - Waiting for all actors in the scope to be ready before accepting any input.
-- **Triggers**: `AllActorsReady` broadcast message from the system
-- **Transitions to**: 
-  - `WaitingForSystemInput` if LiteLLM base URL is available
-  - `WaitingForLiteLLM` if no base URL is available
-- **Use cases**: System startup coordination, ensuring all actors are initialized
+### State Overview
 
-### `WaitingForSystemInput`
-Waiting for system messages, with optional user interruption.
-- **Fields**: 
-  - `required_scope: Option<String>` - Only accept messages from specific scope if set
-  - `interruptible_by_user: bool` - Whether user messages can interrupt this wait
-- **Triggers**: System message (from required scope if specified), user message (if interruptible)
-- **Transitions to**: `Processing` when valid input received
-- **Use cases**: Conversation compaction, base URL waiting, general system coordination
+| State | Purpose | Set By | Can Be Forced |
+|-------|---------|--------|---------------|
+| `WaitingForAllActorsReady` | Initial startup coordination | System | ✓ |
+| `WaitingForLiteLLM` | Wait for LLM service | Assistant | ✓ |
+| `WaitingForSystemInput` | Default waiting (system/user messages) | Assistant | ✓ |
+| `WaitingForUserInput` | Force user interaction only | External only | ✓ |
+| `WaitingForAgentCoordination` | Inter-agent communication | External only | ✓ |
+| `WaitingForTools` | Tool execution in progress | Assistant | ✓ |
+| `Processing` | LLM request/response cycle | Assistant | ✓ |
+| `Done` | Task completion & shutdown | External only | ✓ |
 
-### `WaitingForAgentCoordination`
-Waiting for agent-to-agent communication to complete via tool coordination.
-- **Fields**:
-  - `coordinating_tool_call_id: String` - Tool call that initiated the coordination
-  - `coordinating_tool_name: String` - Name of the coordinating tool
-  - `target_agent_scope: Option<String>` - Specific agent to wait for (if any)
-  - `user_can_interrupt: bool` - Whether user input can interrupt coordination
-- **Triggers**: Tool requests coordination, target agent responds, user interrupts (if allowed)
-- **Transitions to**: Tool completion when agent responds
-- **Use cases**: Inter-agent messaging, agent queries, coordinated operations
+**External State Control**: Any state can be overridden using `RequestStatusUpdate` or `InterruptAndForceStatus` messages from other actors. See [Tool-Initiated Status Updates](#tool-initiated-status-updates) for implementation details.
 
-### `WaitingForUserInput`
-Specifically waiting for user interaction.
-- **Triggers**: Tool execution completed, conversation turn finished
-- **Transitions to**: `Processing` when user provides input
+### Initialization States
 
-### `WaitingForLiteLLM`
-Waiting for LiteLLM base URL to become available.
-- **Triggers**: No base URL available after `AllActorsReady`, or base URL lost during operation
-- **Transitions to**: `WaitingForSystemInput` when base URL received
+#### `WaitingForAllActorsReady`
+The assistant's starting state, ensuring system-wide readiness before operation.
+- **Purpose**: Prevents processing before all required actors are initialized
+- **Enters from**: Initial creation
+- **Exits to**:
+  - `Processing` - if messages are already queued and LiteLLM is available
+  - `WaitingForSystemInput` - if ready to accept input and LiteLLM is available
+  - `WaitingForLiteLLM` - if the LLM service isn't available yet
 
-### `Processing`
-Actively processing a request with the LLM.
-- **Triggers**: `submit()` called with pending messages
-- **Transitions to**: 
-  - `WaitingForTools` if LLM response contains tool calls
-  - `WaitingForUserInput` if response is complete
-  - `WaitingForSystemInput` on error
+#### `WaitingForLiteLLM`
+Waits for the language model service to become available.
+- **Purpose**: Handles graceful startup when LiteLLM service is still initializing
+- **Enters from**: 
+  - `WaitingForAllActorsReady` - when actors are ready but LLM isn't
+- **Exits to**:
+  - `Processing` - if messages are queued when LLM becomes available
+  - `WaitingForSystemInput` - when LLM is ready and waiting for input
 
-### `WaitingForTools`
-Waiting for tool execution to complete.
-- **Triggers**: LLM response with tool calls
-- **Transitions to**: 
-  - `Processing` when all tools complete
-  - `WaitingForAgentCoordination` when tool requests agent coordination
+### Waiting States
+
+#### `WaitingForSystemInput`
+- **Purpose**: The primary waiting state for the assistant, enabling both system-level coordination and user interaction
+- **Note**: In Hive, events are typically represented as system messages, making this the natural default state
+- **Configuration**:
+  - `required_scope` - if set, only accepts messages from that specific actor
+  - `interruptible_by_user` - whether user messages can interrupt the wait
+- **Enters from**:
+  - `WaitingForAllActorsReady` - standard ready state after initialization
+  - `WaitingForLiteLLM` - after LLM becomes available
+  - `Processing` - after LLM responds without tool calls (automatically with `interruptible_by_user: true`)
+  - `Processing` - after any errors occur during LLM communication (this may change)
+  - External control via `RequestStatusUpdate` or `InterruptAndForceStatus` messages
+- **Exits to**:
+  - `Processing` - when appropriate message is received (system message from required scope, or user message if interruptible)
+- **Default configuration**: The assistant typically uses `required_scope: None, interruptible_by_user: true`, allowing it to respond to both users and any system actor
+
+#### `WaitingForUserInput`
+A specialized state that only accepts user messages, queuing but not immediately processing all system messages.
+- **Purpose**: Forces user interaction before continuing, useful for explicit user confirmation scenarios
+- **Note**: This state is never set by the assistant itself - only by external actors
+- **Enters from**:
+  - External `RequestStatusUpdate` message
+  - External `InterruptAndForceStatus` message
+- **Exits to**:
+  - `Processing` - when user sends a message
+
+#### `WaitingForAgentCoordination`
+Manages inter-agent communication through tool-based coordination.
+- **Purpose**: Allows agents to communicate and coordinate through the assistant
+- **Note**: This state is never set by the assistant itself - only by external actors (typically tools). See [Tool-Initiated Status Updates](#tool-initiated-status-updates) for examples.
+- **Configuration**:
+  - `coordinating_tool_call_id` - tracks which tool initiated coordination
+  - `target_agent_scope` - specific agent being waited for (if any)
+  - `user_can_interrupt` - whether users can interrupt the coordination
+- **Enters from**:
+  - External `RequestStatusUpdate` message from tools that need agent coordination
+  - External `InterruptAndForceStatus` message
+- **Exits to**:
+  - `Processing` - when coordination completes (tool call finishes)
+
+#### `WaitingForTools`
+Tracks execution of multiple tool calls from an LLM response.
+- **Purpose**: Manages parallel tool execution and result collection
+- **Enters from**:
+  - `Processing` - when LLM response includes tool calls
+  - External control via `RequestStatusUpdate` or `InterruptAndForceStatus` messages
+- **Exits to**:
+  - `Processing` - automatically when all tools complete (resubmits to LLM with results)
+
+### Active States
+
+#### `Processing`
+Waiting on an API request to the model provider
+- **Purpose**: Handles the LLM request/response cycle
+- **Enters from**:
+  - Any waiting state when appropriate input is received (user or system messages)
+  - `WaitingForTools` - automatically after all tools complete
+- **Exits to**:
+  - `WaitingForTools` - if LLM response includes tool calls
+  - `WaitingForSystemInput` (with `interruptible_by_user: true`) - after successful text response or on any error
+  - `Processing` - if `require_tool_call` is enabled but LLM didn't use tools (retries with error message)
+
+### Terminal State
+
+#### `Done`
+Final state indicating the conversation or task has completed.
+- **Purpose**: Signals task completion and triggers system shutdown
+- **Special behavior**: Broadcasts `Exit` message to shutdown all actors in the current scope
+- **Note**: This state is never set by the assistant itself - only by external actors
+- **Enters from**:
+  - External `RequestStatusUpdate` message with `Done` status
+  - External `InterruptAndForceStatus` message with `Done` status
+  - Typically sent by tools that determine task completion (e.g., task completion tools, user exit commands)
+- **Exits to**: None (terminal state, triggers shutdown)
+
+## Common State Flows
+
+### Normal Conversation
+```
+WaitingForSystemInput → Processing → WaitingForSystemInput
+```
+User or system sends message → LLM processes → Assistant responds → Return to default waiting state
+
+### Tool Execution Flow
+```
+WaitingForSystemInput → Processing → WaitingForTools → Processing → WaitingForSystemInput
+```
+Input received → LLM generates tool calls → Tools execute in parallel → Results collected and sent to LLM → Final response → Return to waiting
+
+### System Startup Flow
+```
+WaitingForAllActorsReady → WaitingForLiteLLM → WaitingForSystemInput
+```
+Initial state → Wait for LLM service → Ready for operation
+
+**Alternative startup** (if LLM already available):
+```
+WaitingForAllActorsReady → WaitingForSystemInput
+```
+
+### External State Control Examples
+```
+WaitingForSystemInput → [InterruptAndForceStatus] → WaitingForUserInput
+WaitingForTools → [RequestStatusUpdate] → WaitingForAgentCoordination
+Processing → [InterruptAndForceStatus] → Done
+```
+External actors can override any state using `RequestStatusUpdate` or `InterruptAndForceStatus`
+
+### Error Recovery
+```
+Processing → WaitingForSystemInput (interruptible_by_user: true)
+```
+Any LLM communication error → Return to default waiting state with user interruption enabled
+
+### Task Completion Flow
+```
+Any State → [External InterruptAndForceStatus] → Done → [Exit Broadcast] → [System Shutdown]
+```
+External completion signal → Terminal state → Shutdown message → All actors in scope terminate
+
+### Agent Coordination Flow
+```
+WaitingForTools → [Tool RequestStatusUpdate] → WaitingForAgentCoordination → [External event] → Processing
+```
+Tool execution → Tool requests coordination state → Tool result queued → External event completes coordination → Resume with all tool results
+
+**Example with [`send_message`](../delegation_network/crates/send_message/src/lib.rs) tool**:
+1. LLM calls `send_message` with `wait: true`
+2. Tool sends message to target agent
+3. Tool sends `RequestStatusUpdate` → Assistant enters `WaitingForAgentCoordination` 
+4. Tool result ("Message sent, waiting for response") is queued
+5. Target agent eventually responds with system message
+6. Assistant returns to `Processing` and submits tool result to LLM
+
+## Tool-Initiated Status Updates
+
+Tools can send `RequestStatusUpdate` messages during execution to change the assistant's state, enabling advanced coordination patterns. This is commonly used when tools need the assistant to wait for external events or agent responses.
+
+### How Tool Status Updates Typically Work
+
+1. **Tool Execution Begins**: Assistant enters `WaitingForTools` when LLM response includes tool calls
+2. **Tool Requests Status Change**: During execution, tool sends `RequestStatusUpdate` to change assistant state
+3. **Assistant State Changes**: Assistant immediately transitions to the requested state (e.g., `WaitingForAgentCoordination`)
+4. **Tool Completes**: Tool sends `ToolCallStatusUpdate` with success/error result
+5. **Tool Response Queued**: The tool result is stored but **not immediately submitted to the LLM**
+6. **Coordination Continues**: Assistant remains in the requested state until coordination completes
+7. **Resume Processing**: When coordination finishes, assistant returns to `Processing` and submits **all queued tool results** to the LLM
+
+**Key Point**: When a tool requests a status update, its response is held until the coordination completes. This prevents the LLM from receiving partial results and ensures proper sequencing of operations.
+
+### Common Patterns
+
+#### Pattern 1: Simple Wait State
+**Scenario**: Assistant needs to pause execution and wait for external events, user input, or other agents to complete tasks.
+
+**When to use**: The LLM determines it should wait before proceeding, but you want to complete the tool call immediately.
+
+**Implementation** ([`wait`](../delegation_network/crates/wait/src/lib.rs) tool):
+```rust
+// 1. Request status change
+RequestStatusUpdate {
+    agent: self.scope.clone(),
+    status: Status::Wait {
+        reason: WaitReason::WaitingForAgentCoordination {
+            coordinating_tool_call_id: tool_call.tool_call.id.clone(),
+            coordinating_tool_name: "wait".to_string(),
+            target_agent_scope: None,
+            user_can_interrupt: true,
+        },
+    },
+    tool_call_id: Some(tool_call.tool_call.id.clone()),
+}
+
+// 2. Send tool result (gets queued)
+ToolCallStatusUpdate {
+    id: tool_call.tool_call.id,
+    status: ToolCallStatus::Done {
+        result: Ok(ToolCallResult {
+            content: "Waiting...".to_string(),
+            ui_display_info: UIDisplayInfo {
+                collapsed: "Waiting: {reason}".to_string(),
+                expanded: Some("Waiting for system input\n\nReason: {reason}".to_string()),
+            },
+        }),
+    },
+}
+```
+
+**Flow**: Tool completes → Assistant enters `WaitingForAgentCoordination` → User or system can send messages to wake assistant → Assistant resumes with "Waiting..." result included.
+
+#### Pattern 2: Send and Wait for Response
+**Scenario**: Send a message to another agent and wait for their response before continuing.
+
+**When to use**: You need synchronous communication with other agents where the assistant should pause until receiving a reply.
+
+**Implementation** ([`send_message`](../delegation_network/crates/send_message/src/lib.rs) tool with `wait: true`):
+```rust
+// 1. Send the message
+AddMessage { agent: target_agent, message: ChatMessage::system(&content) }
+
+// 2. Request wait state
+RequestStatusUpdate {
+    agent: self.scope.clone(),
+    status: Status::Wait {
+        reason: WaitReason::WaitingForAgentCoordination {
+            coordinating_tool_call_id: tool_call.tool_call.id.clone(),
+            coordinating_tool_name: "send_message".to_string(),
+            target_agent_scope: Some(target_agent.clone()),
+            user_can_interrupt: true,
+        },
+    },
+    tool_call_id: Some(tool_call.tool_call.id.clone()),
+}
+
+// 3. Send tool result (gets queued)
+ToolCallStatusUpdate {
+    id: tool_call.tool_call.id,
+    status: ToolCallStatus::Done {
+        result: Ok(ToolCallResult {
+            content: format!("Message sent to {}, waiting for response", target_agent),
+            ui_display_info: UIDisplayInfo {
+                collapsed: "Message sent, waiting for response".to_string(),
+                expanded: Some(format!("Sent message to {}\n\nWaiting for their response...", target_agent)),
+            },
+        }),
+    },
+}
+```
+
+**Flow**: Message sent to target agent → Tool completes → Assistant enters `WaitingForAgentCoordination` → Target agent responds → Assistant resumes with "Message sent..." result included.
 
 ## Startup Coordination Flow
 
-The Assistant Actor uses a sophisticated startup coordination mechanism to ensure all actors are ready before beginning operations:
+The Assistant Actor uses startup coordination to ensure all actors are ready before beginning operations:
 
 1. **Initial State**: `WaitingForAllActorsReady`
    - Assistant starts in this state and ignores all input
@@ -192,18 +442,23 @@ The Assistant Actor uses a sophisticated startup coordination mechanism to ensur
 3. **LiteLLM Ready**: When `BaseUrlUpdate` is received while in `WaitingForLiteLLM`
    - Transitions to `WaitingForSystemInput` (now fully ready)
 
-This ensures the assistant doesn't attempt to process requests before all necessary actors and services are available, providing clean system startup coordination.
+This ensures the assistant doesn't attempt to process requests before all necessary actors and services are available, ensuring proper startup order.
 
 ## System Prompt Rendering
 
-The Assistant Actor features a sophisticated system prompt system that allows any actor to contribute content dynamically.
+The Assistant Actor features a system prompt system that allows any actor to contribute content dynamically.
+
+### How It Works
+
+Actors contribute content to the system prompt by sending `SystemPromptContribution` messages. Each contribution has a unique key, content, priority, and optional section. The assistant collects these contributions, applies user customizations, and renders the final prompt using Jinja2 templates.
 
 ### Architecture
 
 #### Key Validation
-- Format: `actor_type.contribution_name`
-- Only alphanumeric characters, hyphens, and underscores
-- Examples: `file_reader.open_files`, `git-status.branch_info`
+- Format: `actor_type:contribution_name` (note the colon separator)
+- **actor_type** (before colon): lowercase letters, numbers, hyphens, and underscores only
+- **contribution_name** (after colon): any characters allowed
+- Examples: `file_reader:open_files`, `git-status:branch_info`, `file_interaction:/path/to/file.txt`
 
 #### Content Types
 
@@ -224,7 +479,19 @@ SystemPromptContent::Data {
 ```
 
 #### Section Organization
-Contributions are organized into sections (e.g., "context", "tools", "instructions") and sorted by priority within each section (higher priority appears first).
+Contributions are organized into sections and sorted by priority within each section (higher priority appears first).
+
+**Built-in Sections:**
+- `Identity` - Who the assistant is and its role
+- `Context` - Current state and environmental information  
+- `Capabilities` - What the assistant can do
+- `Guidelines` - Rules and behavioral instructions
+- `Tools` - Available tool descriptions and usage
+- `Instructions` - Specific task instructions
+- `System Context` - Internal system information
+- `Custom(name)` - User-defined sections
+
+**Section Priority Order**: Sections appear in the final prompt in a consistent order, with contributions within each section sorted by priority (highest first).
 
 #### User Customization
 
@@ -247,9 +514,18 @@ Uses Jinja2 templating via `minijinja` for flexible template rendering with feat
 - Filters: `{{ list | length }}`
 - Conditionals: `{% if condition %}`
 
+### Rendering Process
+
+1. **Collection**: Assistant receives `SystemPromptContribution` messages from actors
+2. **Validation**: Keys are validated, malformed keys are rejected with errors
+3. **Organization**: Contributions are grouped by section and sorted by priority
+4. **Customization**: User overrides are applied, excluded contributions are filtered out
+5. **Template Rendering**: Jinja2 processes data contributions with their templates
+6. **Final Assembly**: All sections are combined into the complete system prompt
+
 ### Error Handling
 - Invalid contributions are logged and ignored
-- Template errors fall back to basic system prompt
+- Template rendering errors fall back to basic system prompt
 - Malformed keys are rejected with validation errors
 
 ## Implementation Details
@@ -287,10 +563,19 @@ Self::broadcast(assistant::AddMessage {
 // Any actor can contribute context
 Self::broadcast(assistant::SystemPromptContribution {
     agent: "assistant-scope".to_string(),
-    key: "shell.current_directory".to_string(),
+    key: "shell:current_directory".to_string(),
     content: SystemPromptContent::Text("/home/user/project".to_string()),
     priority: 1000,
-    section: Some("context".to_string()),
+    section: Some(Section::Context),
+});
+
+// Example with file path in key
+Self::broadcast(assistant::SystemPromptContribution {
+    agent: "assistant-scope".to_string(),
+    key: "file_reader:/path/to/important_file.txt".to_string(),
+    content: SystemPromptContent::Text("File content here...".to_string()),
+    priority: 500,
+    section: Some(Section::Context),
 });
 ```
 
@@ -325,12 +610,6 @@ Run the comprehensive test suite:
 ```bash
 cargo test
 ```
-
-Tests cover:
-- System prompt rendering with all content types
-- Message handling and state transitions
-- Configuration parsing and validation
-- Error handling and edge cases
 
 ---
 

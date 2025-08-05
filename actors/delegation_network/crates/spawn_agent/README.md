@@ -32,7 +32,7 @@ Include this actor in your Hive configuration when you need AI agents to:
 - **Project management**: Create sub-managers for different domains within larger projects
 - **Workflow automation**: Build complex multi-agent workflows where agents spawn other agents as needed
 
-This actor is essential for building sophisticated delegation networks where agents can dynamically create and manage teams of specialized subordinate agents.
+This actor is essential for building sophisticated delegation networks where agents can dynamically create and manage teams of specialized subordinate agents. See the [Delegation Network overview](../../README.md) for complete system architecture.
 
 ## Messages Listened For
 
@@ -70,3 +70,13 @@ When activated in a Hive system, this actor:
 7. **Handles coordination** by optionally waiting for initial responses from spawned agents
 
 This actor enables the creation of dynamic, hierarchical agent networks where agents can intelligently delegate work to specialized subordinates based on task requirements.
+
+## Building
+
+To build the Spawn Agent Actor WASM component:
+
+```bash
+cargo component build
+```
+
+This generates `target/wasm32-wasip1/debug/spawn_agent.wasm` for use in the Hive system.

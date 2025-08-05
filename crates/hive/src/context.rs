@@ -1,9 +1,9 @@
 use crate::actors::ActorExecutor;
+use hive_actor_utils::STARTING_SCOPE;
+use hive_actor_utils::common_messages::actors::AgentSpawned;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
-
-use hive_actor_utils_common_messages::actors::AgentSpawned;
 
 use crate::{HiveResult, SerializationSnafu, actors::MessageEnvelope, scope::Scope};
 use snafu::ResultExt;
@@ -154,12 +154,12 @@ impl HiveContext {
     /// Broadcast a common message to all actors
     pub fn broadcast_common_message<T>(&self, message: T) -> HiveResult<()>
     where
-        T: hive_actor_utils_common_messages::Message,
+        T: hive_actor_utils::messages::Message,
     {
         let message_envelope = MessageEnvelope {
             id: crate::utils::generate_root_correlation_id(),
             from_actor_id: "hive__context".to_string(),
-            from_scope: crate::hive::STARTING_SCOPE.to_string(),
+            from_scope: STARTING_SCOPE.to_string(),
             message_type: T::MESSAGE_TYPE.to_string(),
             payload: serde_json::to_vec(&message).context(SerializationSnafu {
                 message: "Failed to serialize message for broadcast",

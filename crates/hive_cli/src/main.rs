@@ -172,7 +172,7 @@ async fn main() -> TuiResult<()> {
         // Broadcast initial user prompt if provided
         if let Some(prompt) = &cli.prompt {
             let add_message = AddMessage {
-                agent: hive::hive::STARTING_SCOPE.to_string(),
+                agent: hive_actor_utils::STARTING_SCOPE.to_string(),
                 message: ChatMessage::user(prompt),
             };
             coordinator.broadcast_common_message(add_message, false)?;

@@ -10,6 +10,7 @@ use bindings::{
 };
 use delegation_network_common_types::{AgentSpawned, AgentType};
 use hive_actor_utils::{
+    STARTING_SCOPE,
     common_messages::{
         assistant::{AddMessage, Status, StatusUpdate, WaitReason},
         tools::ExecuteTool,
@@ -33,9 +34,16 @@ struct DelegationNetworkCoordinator {
 }
 
 impl GeneratedActorTrait for DelegationNetworkCoordinator {
-    fn new(_scope: String, _config_str: String) -> Self {
+    fn new(scope: String, _config_str: String) -> Self {
+        // Assume the scope we are created in is the MainManager's scope
         Self {
-            active_agents: HashMap::new(),
+            active_agents: HashMap::from([(
+                scope,
+                StoredAgent {
+                    agent_type: AgentType::MainManager,
+                    active_agents: HashSet::new(),
+                },
+            )]),
         }
     }
 

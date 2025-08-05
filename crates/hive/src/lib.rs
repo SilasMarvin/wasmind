@@ -1,7 +1,6 @@
 pub mod actors;
 pub mod context;
 pub mod coordinator;
-pub mod hive;
 pub mod scope;
 pub mod utils;
 

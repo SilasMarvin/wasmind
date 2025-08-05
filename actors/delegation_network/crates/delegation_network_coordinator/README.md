@@ -18,7 +18,7 @@ Include this actor in your Hive configuration when you need:
 - **Lifecycle coordination**: Track agent spawning and completion events
 - **Smart guardrails**: Provide intelligent feedback to prevent common delegation mistakes
 
-This actor is essential for delegation networks to maintain structural integrity and provide intelligent coordination between managers and their subordinates.
+This actor is essential for delegation networks to maintain structural integrity and provide intelligent coordination between managers and their subordinates. See the [Delegation Network overview](../../README.md) for complete system architecture and usage examples.
 
 ## Messages Listened For
 
@@ -52,3 +52,13 @@ When activated in a Hive system, this actor:
 6. **Ensures network consistency** by maintaining accurate state across the entire delegation hierarchy
 
 This coordinator ensures that delegation networks operate smoothly with proper tracking and validation of agent relationships and operations.
+
+## Building
+
+To build the Delegation Network Coordinator Actor WASM component:
+
+```bash
+cargo component build
+```
+
+This generates `target/wasm32-wasip1/debug/delegation_network_coordinator.wasm` for use in the Hive system.

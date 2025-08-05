@@ -1,5 +1,5 @@
 use hive::actor::{agent, command, host_info, http, logger, messaging};
-use hive_actor_utils_common_messages::{Message, actors};
+use hive_actor_utils::{common_messages::actors, messages::Message};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{Instrument, Level};

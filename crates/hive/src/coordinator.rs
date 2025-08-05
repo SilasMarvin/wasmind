@@ -1,16 +1,14 @@
+use hive_actor_utils::STARTING_SCOPE;
+use hive_actor_utils::common_messages::actors;
+use hive_actor_utils::messages::Message;
 use snafu::ResultExt;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::field::FieldSet;
-use tracing::{Level, Metadata, Span};
-
-use hive_actor_utils_common_messages::{Message, actors};
+use tracing::Level;
 
 use crate::SerializationSnafu;
-use crate::{
-    HiveResult, actors::MessageEnvelope, context::HiveContext, hive::STARTING_SCOPE, scope::Scope,
-};
+use crate::{HiveResult, actors::MessageEnvelope, context::HiveContext, scope::Scope};
 
 /// Coordinator that monitors actor lifecycle and system exit
 pub struct HiveCoordinator {
@@ -161,12 +159,12 @@ impl HiveCoordinator {
 
     pub fn broadcast_common_message<T>(&mut self, message: T, replayable: bool) -> HiveResult<()>
     where
-        T: hive_actor_utils_common_messages::Message + Clone,
+        T: hive_actor_utils::common_messages::Message + Clone,
     {
         let message_envelope = MessageEnvelope {
             id: crate::utils::generate_root_correlation_id(),
             from_actor_id: "hive__coordinator".to_string(),
-            from_scope: crate::hive::STARTING_SCOPE.to_string(),
+            from_scope: STARTING_SCOPE.to_string(),
             message_type: T::MESSAGE_TYPE.to_string(),
             payload: serde_json::to_vec(&message).context(SerializationSnafu {
                 message: "Failed to serialize message for broadcast",

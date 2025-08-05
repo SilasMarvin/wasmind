@@ -28,7 +28,7 @@ Include this actor in your Hive configuration when you need AI agents to:
 - **Enable user interruption**: Allow users to intervene during waiting periods
 - **Maintain delegation flow**: Ensure proper sequencing in hierarchical agent structures
 
-This actor is essential for building coordinated multi-agent systems where timing and synchronization between agents is important.
+This actor is essential for building coordinated multi-agent systems where timing and synchronization between agents is important. See the [Delegation Network overview](../../README.md) for coordination patterns and examples.
 
 ## Messages Listened For
 

@@ -1,5 +1,5 @@
-use hive::hive::STARTING_SCOPE;
 use hive::scope::Scope;
+use hive_actor_utils::STARTING_SCOPE;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::{Receiver, Sender};

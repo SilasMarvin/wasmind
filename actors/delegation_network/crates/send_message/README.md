@@ -30,7 +30,7 @@ Include this actor in your Hive configuration when you need AI agents to:
 - **Share new information**: Pass along updates that might affect ongoing work
 - **Manage delegation workflows**: Maintain oversight and communication in hierarchical agent structures
 
-This actor is essential for building effective delegation networks where manager agents need to stay in communication with their subordinate agents.
+This actor is essential for building effective delegation networks where manager agents need to stay in communication with their subordinate agents. See the [Delegation Network overview](../../README.md) for hierarchy patterns and communication flows.
 
 ## Messages Listened For
 

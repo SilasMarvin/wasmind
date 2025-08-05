@@ -24,7 +24,7 @@ use super::dashboard::SCOPE_ATTR;
 use super::scrollable::ScrollableComponentTrait;
 
 // Constants from the main hive
-const STARTING_SCOPE: &str = hive::hive::STARTING_SCOPE;
+const STARTING_SCOPE: &str = hive_actor_utils::STARTING_SCOPE;
 const ROOT_AGENT_NAME: &str = "Root Agent";
 
 const MESSAGE_GAP: u16 = 1;

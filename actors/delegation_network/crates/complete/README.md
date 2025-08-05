@@ -29,7 +29,7 @@ Include this actor in your Hive configuration when you need AI agents to:
 - **Maintain workflow integrity**: Ensure proper closure of delegated tasks
 - **Track project progress**: Enable parent agents to monitor completion of delegated work
 
-This actor is essential for delegation networks where agents need to formally complete tasks and report results to their managers or coordinators.
+This actor is essential for delegation networks where agents need to formally complete tasks and report results to their managers or coordinators. See the [Delegation Network overview](../../README.md) for complete workflow examples.
 
 ## Messages Listened For
 

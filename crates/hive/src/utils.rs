@@ -1,5 +1,5 @@
 use crate::actors::MessageEnvelope;
-use hive_actor_utils_common_messages::Message;
+use hive_actor_utils::messages::Message;
 use rand::Rng;
 use serde::de::DeserializeOwned;
 
@@ -54,7 +54,8 @@ pub fn generate_child_correlation_id(parent_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hive_actor_utils_common_messages::actors::AgentSpawned;
+
+    use hive_actor_utils::common_messages::actors::AgentSpawned;
 
     #[test]
     fn test_parse_common_message_as_success() {
