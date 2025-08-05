@@ -28,9 +28,6 @@ enum Scenario {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logger to write to log.txt in current directory
-    hive::init_test_logger();
-
     let args = Args::parse();
 
     // Run the preview scenario

@@ -157,6 +157,7 @@ impl HiveContext {
         T: hive_actor_utils_common_messages::Message,
     {
         let message_envelope = MessageEnvelope {
+            id: crate::utils::generate_root_correlation_id(),
             from_actor_id: "hive__context".to_string(),
             from_scope: crate::hive::STARTING_SCOPE.to_string(),
             message_type: T::MESSAGE_TYPE.to_string(),

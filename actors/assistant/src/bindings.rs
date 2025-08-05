@@ -756,6 +756,8 @@ pub mod exports {
                 /// It provides context about the message's origin.
                 #[derive(Clone)]
                 pub struct MessageEnvelope {
+                    /// Correlation ID for tracing related operations (format: "parent:child")
+                    pub id: _rt::String,
                     /// The unique identifier of the message type
                     pub message_type: _rt::String,
                     /// The unique identifier of the actor that sent the message.
@@ -772,6 +774,7 @@ pub mod exports {
                         f: &mut ::core::fmt::Formatter<'_>,
                     ) -> ::core::fmt::Result {
                         f.debug_struct("MessageEnvelope")
+                            .field("id", &self.id)
                             .field("message-type", &self.message_type)
                             .field("from-actor-id", &self.from_actor_id)
                             .field("from-scope", &self.from_scope)
@@ -934,6 +937,8 @@ pub mod exports {
                     arg6: usize,
                     arg7: *mut u8,
                     arg8: usize,
+                    arg9: *mut u8,
+                    arg10: usize,
                 ) {
                     #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
                     let len0 = arg2;
@@ -943,13 +948,16 @@ pub mod exports {
                     let len2 = arg6;
                     let bytes2 = _rt::Vec::from_raw_parts(arg5.cast(), len2, len2);
                     let len3 = arg8;
+                    let bytes3 = _rt::Vec::from_raw_parts(arg7.cast(), len3, len3);
+                    let len4 = arg10;
                     T::handle_message(
                         unsafe { ActorBorrow::lift(arg0 as u32 as usize) }.get(),
                         MessageEnvelope {
-                            message_type: _rt::string_lift(bytes0),
-                            from_actor_id: _rt::string_lift(bytes1),
-                            from_scope: _rt::string_lift(bytes2),
-                            payload: _rt::Vec::from_raw_parts(arg7.cast(), len3, len3),
+                            id: _rt::string_lift(bytes0),
+                            message_type: _rt::string_lift(bytes1),
+                            from_actor_id: _rt::string_lift(bytes2),
+                            from_scope: _rt::string_lift(bytes3),
+                            payload: _rt::Vec::from_raw_parts(arg9.cast(), len4, len4),
                         },
                     );
                 }
@@ -1039,11 +1047,12 @@ pub mod exports {
                         "hive:actor/actor@0.1.0#[method]actor.handle-message")] unsafe
                         extern "C" fn export_method_actor_handle_message(arg0 : * mut u8,
                         arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 : usize,
-                        arg5 : * mut u8, arg6 : usize, arg7 : * mut u8, arg8 : usize,) {
-                        unsafe { $($path_to_types)*::
+                        arg5 : * mut u8, arg6 : usize, arg7 : * mut u8, arg8 : usize,
+                        arg9 : * mut u8, arg10 : usize,) { unsafe { $($path_to_types)*::
                         _export_method_actor_handle_message_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Actor > (arg0, arg1, arg2, arg3,
-                        arg4, arg5, arg6, arg7, arg8) } } #[unsafe (export_name =
+                        arg4, arg5, arg6, arg7, arg8, arg9, arg10) } } #[unsafe
+                        (export_name =
                         "hive:actor/actor@0.1.0#[method]actor.destructor")] unsafe extern
                         "C" fn export_method_actor_destructor(arg0 : * mut u8,) { unsafe
                         { $($path_to_types)*::
@@ -1288,8 +1297,8 @@ pub(crate) use __export_actor_world_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1291] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x89\x09\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1295] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x8d\x09\x01A\x02\x01\
 A\x0a\x01B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\
 \x1aget-host-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\
 \x03\x03\0\x1ahive:actor/host-info@0.1.0\x05\0\x01B\x03\x01p}\x01@\x02\x0cmessag\
@@ -1308,15 +1317,15 @@ st.timeout\x01\x10\x01@\x03\x04self\x0c\x0cmax-attemptsy\x0dbase-delay-msw\0\x0a
 \0\x12\x04\0\x14[method]request.send\x01\x13\x03\0\x15hive:actor/http@0.1.0\x05\x02\
 \x01B\x04\x01m\x04\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01\
 @\x02\x05level\x01\x07messages\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/lo\
-gger@0.1.0\x05\x03\x01B\x0e\x01s\x04\0\x05scope\x03\0\0\x01p}\x01r\x04\x0cmessag\
-e-types\x0dfrom-actor-ids\x0afrom-scope\x01\x07payload\x02\x04\0\x10message-enve\
-lope\x03\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\
-\x06\x04\0\x12[constructor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07messag\
-e\x04\x01\0\x04\0\x1c[method]actor.handle-message\x01\x09\x01@\x01\x04self\x08\x01\
-\0\x04\0\x18[method]actor.destructor\x01\x0a\x04\0\x16hive:actor/actor@0.1.0\x05\
-\x04\x04\0!assistant:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\
-\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-\
-bindgen-rust\x060.41.0";
+gger@0.1.0\x05\x03\x01B\x0e\x01s\x04\0\x05scope\x03\0\0\x01p}\x01r\x05\x02ids\x0c\
+message-types\x0dfrom-actor-ids\x0afrom-scope\x01\x07payload\x02\x04\0\x10messag\
+e-envelope\x03\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06co\
+nfigs\0\x06\x04\0\x12[constructor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07\
+message\x04\x01\0\x04\0\x1c[method]actor.handle-message\x01\x09\x01@\x01\x04self\
+\x08\x01\0\x04\0\x18[method]actor.destructor\x01\x0a\x04\0\x16hive:actor/actor@0\
+.1.0\x05\x04\x04\0!assistant:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bacto\
+r-world\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.22\
+7.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

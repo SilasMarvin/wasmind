@@ -37,7 +37,6 @@ etcetera = "0.10.0"
 image = "0.25.6"
 toml = { workspace = true }
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 futures = "0.3.31"
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = ["server", "transport-child-process", "client"] }
 libc = "0.2"

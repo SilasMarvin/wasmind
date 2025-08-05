@@ -126,7 +126,6 @@ impl Assistant {
                             .unwrap();
                         }
                         _ => {
-                            tracing::error!("Unexpected message type in LLM response");
                             self.set_status(
                                 Status::Wait {
                                     reason: WaitReason::WaitingForUserInput,
@@ -136,7 +135,6 @@ impl Assistant {
                         }
                     }
                 } else {
-                    tracing::error!("No choices in LLM completion response");
                     self.set_status(
                         Status::Wait {
                             reason: WaitReason::WaitingForUserInput,
@@ -148,9 +146,6 @@ impl Assistant {
             Err(e) => {
                 // Check if this is a "no base URL" error - if so, go back to waiting for system or user input
                 if e.contains("No LiteLLM base URL available") {
-                    tracing::warn!(
-                        "LiteLLM base URL not available, staying in waiting for system or user input"
-                    );
                     self.set_status(
                         Status::Wait {
                             reason: WaitReason::WaitingForSystemInput {
@@ -161,7 +156,6 @@ impl Assistant {
                         true,
                     );
                 } else {
-                    tracing::error!("LLM completion request failed after retries: {}", e);
                     self.set_status(
                         Status::Wait {
                             reason: WaitReason::WaitingForUserInput,
@@ -241,7 +235,7 @@ impl Assistant {
         match self.system_prompt_renderer.render() {
             Ok(rendered) => rendered,
             Err(e) => {
-                tracing::error!("Failed to render system prompt: {}", e);
+                // TODO: Log error
                 "".to_string()
             }
         }
@@ -289,7 +283,12 @@ impl Assistant {
         let request_id = format!("req_{}", hive_actor_utils::generate_id(6));
 
         // Set status to processing with the request ID
-        self.set_status(Status::Processing { request_id: request_id.clone() }, true);
+        self.set_status(
+            Status::Processing {
+                request_id: request_id.clone(),
+            },
+            true,
+        );
 
         // Submit and process the request with automatic retry
         self.submit_and_process(request_id);
@@ -406,10 +405,6 @@ impl GeneratedActorTrait for Assistant {
     ) -> () {
         // Handle LiteLLM base URL updates
         if let Some(base_url_update) = Self::parse_as::<litellm::BaseUrlUpdate>(&message) {
-            tracing::info!(
-                "Received LiteLLM base URL update: {}",
-                base_url_update.base_url
-            );
             self.base_url = Some(base_url_update.base_url);
 
             // If we were waiting for LiteLLM, transition to waiting for system or user input

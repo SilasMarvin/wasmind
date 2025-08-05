@@ -22,6 +22,7 @@ pub struct ActorState {
     pub tx: broadcast::Sender<MessageEnvelope>,
     pub scope: Scope,
     pub context: Arc<HiveContext>,
+    pub current_message_id: Option<String>,
 }
 
 impl IoView for ActorState {
@@ -64,6 +65,7 @@ impl ActorState {
             context,
             ctx: builder.build(),
             table: ResourceTable::new(),
+            current_message_id: None,
         }
     }
 }

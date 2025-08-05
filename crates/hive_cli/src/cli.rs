@@ -15,6 +15,10 @@ pub struct Cli {
     /// Optional prompt to send as initial user message to assistant
     #[arg(short, long)]
     pub prompt: Option<String>,
+
+    /// Path to log file (defaults to ~/.local/share/hive/hive.log)
+    #[arg(long, value_name = "FILE")]
+    pub log_file: Option<PathBuf>,
 }
 
 #[derive(Subcommand, Debug)]

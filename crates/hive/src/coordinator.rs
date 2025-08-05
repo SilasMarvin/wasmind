@@ -2,13 +2,14 @@ use snafu::ResultExt;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tracing::field::FieldSet;
+use tracing::{Level, Metadata, Span};
 
 use hive_actor_utils_common_messages::{Message, actors};
 
 use crate::SerializationSnafu;
 use crate::{
-    HiveResult, actors::MessageEnvelope, context::HiveContext,
-    hive::STARTING_SCOPE, scope::Scope,
+    HiveResult, actors::MessageEnvelope, context::HiveContext, hive::STARTING_SCOPE, scope::Scope,
 };
 
 /// Coordinator that monitors actor lifecycle and system exit
@@ -43,7 +44,12 @@ impl HiveCoordinator {
         root_agent_name: String,
     ) -> HiveResult<Scope> {
         self.context
-            .spawn_agent_in_scope(starting_actors, STARTING_SCOPE.to_string(), root_agent_name, None)
+            .spawn_agent_in_scope(
+                starting_actors,
+                STARTING_SCOPE.to_string(),
+                root_agent_name,
+                None,
+            )
             .await?;
         Ok(STARTING_SCOPE.to_string())
     }
@@ -53,6 +59,13 @@ impl HiveCoordinator {
         loop {
             match self.rx.recv().await {
                 Ok(msg) => {
+                    let span = tracing::span!(
+                        Level::ERROR,
+                        "hive_coordinator_run",
+                        correlation_id = msg.id
+                    );
+                    let _enter = span.enter();
+
                     let message_json =
                         if let Ok(json_string) = String::from_utf8(msg.payload.clone()) {
                             json_string
@@ -121,6 +134,7 @@ impl HiveCoordinator {
 
                 // Broadcast AllActorsReady for this scope
                 let all_ready_msg = MessageEnvelope {
+                    id: crate::utils::generate_root_correlation_id(),
                     message_type: actors::AllActorsReady::MESSAGE_TYPE.to_string(),
                     from_actor_id: "hive_coordinator".to_string(),
                     from_scope: scope.to_string(),
@@ -150,6 +164,7 @@ impl HiveCoordinator {
         T: hive_actor_utils_common_messages::Message + Clone,
     {
         let message_envelope = MessageEnvelope {
+            id: crate::utils::generate_root_correlation_id(),
             from_actor_id: "hive__coordinator".to_string(),
             from_scope: crate::hive::STARTING_SCOPE.to_string(),
             message_type: T::MESSAGE_TYPE.to_string(),

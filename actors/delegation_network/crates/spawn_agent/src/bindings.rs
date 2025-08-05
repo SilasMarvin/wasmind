@@ -1030,19 +1030,247 @@ pub mod hive {
                 }
             }
         }
+        /// =================================================================
+        /// INTERFACE 1: Core Actor Model
+        /// This interface defines the essential types and behaviors required
+        /// to create a stateful, message-driven actors.
+        /// =================================================================
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod actor {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            /// A scope identifier - a 6-character alphanumeric string used to identify agent contexts
+            pub type Scope = _rt::String;
+            /// An envelope that wraps every message passed between actors.
+            /// It provides context about the message's origin.
+            #[derive(Clone)]
+            pub struct MessageEnvelope {
+                /// Correlation ID for tracing related operations (format: "parent:child")
+                pub id: _rt::String,
+                /// The unique identifier of the message type
+                pub message_type: _rt::String,
+                /// The unique identifier of the actor that sent the message.
+                pub from_actor_id: _rt::String,
+                /// The scope in which the sending actor was operating.
+                pub from_scope: Scope,
+                /// The raw, serialized message data. The format (e.g., JSON)
+                /// is determined by the sending actor's implementation.
+                pub payload: _rt::Vec<u8>,
+            }
+            impl ::core::fmt::Debug for MessageEnvelope {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("MessageEnvelope")
+                        .field("id", &self.id)
+                        .field("message-type", &self.message_type)
+                        .field("from-actor-id", &self.from_actor_id)
+                        .field("from-scope", &self.from_scope)
+                        .field("payload", &self.payload)
+                        .finish()
+                }
+            }
+            /// Represents a stateful actor instance. Actor authors must provide
+            /// an implementation for this resource.
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct Actor {
+                handle: _rt::Resource<Actor>,
+            }
+            impl Actor {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: u32) -> Self {
+                    Self {
+                        handle: unsafe { _rt::Resource::from_handle(handle) },
+                    }
+                }
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> u32 {
+                    _rt::Resource::take_handle(&self.handle)
+                }
+                #[doc(hidden)]
+                pub fn handle(&self) -> u32 {
+                    _rt::Resource::handle(&self.handle)
+                }
+            }
+            unsafe impl _rt::WasmResource for Actor {
+                #[inline]
+                unsafe fn drop(_handle: u32) {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unreachable!();
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        #[link(wasm_import_module = "hive:actor/actor@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[resource-drop]actor"]
+                            fn drop(_: u32);
+                        }
+                        unsafe { drop(_handle) };
+                    }
+                }
+            }
+            impl Actor {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Called by the host once when the actor is first instantiated.
+                /// Use this to initialize the actor's state.
+                /// @param scope - The execution scope provided by the host.
+                /// @param config - The configuration string (TOML format) for this actor.
+                pub fn new(scope: &str, config: &str) -> Self {
+                    unsafe {
+                        let vec0 = scope;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        let vec1 = config;
+                        let ptr1 = vec1.as_ptr().cast::<u8>();
+                        let len1 = vec1.len();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/actor@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[constructor]actor"]
+                            fn wit_import2(
+                                _: *mut u8,
+                                _: usize,
+                                _: *mut u8,
+                                _: usize,
+                            ) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import2(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                        ) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import2(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1)
+                        };
+                        unsafe { Actor::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Actor {
+                #[allow(unused_unsafe, clippy::all)]
+                /// The primary entry point for processing incoming messages. This
+                /// function is called by the host whenever another actor broadcasts
+                /// a message to the system.
+                /// @param message - The incoming message envelope, containing the
+                /// payload and sender's context.
+                pub fn handle_message(&self, message: &MessageEnvelope) -> () {
+                    unsafe {
+                        let MessageEnvelope {
+                            id: id0,
+                            message_type: message_type0,
+                            from_actor_id: from_actor_id0,
+                            from_scope: from_scope0,
+                            payload: payload0,
+                        } = message;
+                        let vec1 = id0;
+                        let ptr1 = vec1.as_ptr().cast::<u8>();
+                        let len1 = vec1.len();
+                        let vec2 = message_type0;
+                        let ptr2 = vec2.as_ptr().cast::<u8>();
+                        let len2 = vec2.len();
+                        let vec3 = from_actor_id0;
+                        let ptr3 = vec3.as_ptr().cast::<u8>();
+                        let len3 = vec3.len();
+                        let vec4 = from_scope0;
+                        let ptr4 = vec4.as_ptr().cast::<u8>();
+                        let len4 = vec4.len();
+                        let vec5 = payload0;
+                        let ptr5 = vec5.as_ptr().cast::<u8>();
+                        let len5 = vec5.len();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/actor@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]actor.handle-message"]
+                            fn wit_import6(
+                                _: i32,
+                                _: *mut u8,
+                                _: usize,
+                                _: *mut u8,
+                                _: usize,
+                                _: *mut u8,
+                                _: usize,
+                                _: *mut u8,
+                                _: usize,
+                                _: *mut u8,
+                                _: usize,
+                            );
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import6(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                        ) {
+                            unreachable!()
+                        }
+                        unsafe {
+                            wit_import6(
+                                (self).handle() as i32,
+                                ptr1.cast_mut(),
+                                len1,
+                                ptr2.cast_mut(),
+                                len2,
+                                ptr3.cast_mut(),
+                                len3,
+                                ptr4.cast_mut(),
+                                len4,
+                                ptr5.cast_mut(),
+                                len5,
+                            )
+                        };
+                    }
+                }
+            }
+            impl Actor {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Called by the host when the actor instance is being shut down.
+                /// Use this for cleanup tasks like persisting state.
+                pub fn destructor(&self) -> () {
+                    unsafe {
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "hive:actor/actor@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]actor.destructor"]
+                            fn wit_import0(_: i32);
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import0(_: i32) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import0((self).handle() as i32) };
+                    }
+                }
+            }
+        }
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod agent {
             #[used]
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
+            pub type Scope = super::super::super::hive::actor::actor::Scope;
             #[allow(unused_unsafe, clippy::all)]
             /// Spawn a new agent with the specified actors
             /// Returns the scope ID of the newly created agent
             pub fn spawn_agent(
                 actor_ids: &[_rt::String],
                 agent_name: &str,
-            ) -> Result<_rt::String, _rt::String> {
+            ) -> Result<Scope, _rt::String> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
@@ -1159,7 +1387,7 @@ pub mod hive {
             #[allow(unused_unsafe, clippy::all)]
             /// Get the parent scope of the current actor
             /// Returns None if this is a root agent, Some(scope_id) if it has a parent
-            pub fn get_parent_scope() -> Option<_rt::String> {
+            pub fn get_parent_scope() -> Option<Scope> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
@@ -1213,7 +1441,7 @@ pub mod hive {
             #[allow(unused_unsafe, clippy::all)]
             /// Get the parent scope of the specified scope
             /// Returns None if the scope has no parent or if the scope is invalid
-            pub fn get_parent_scope_of(scope: &str) -> Option<_rt::String> {
+            pub fn get_parent_scope_of(scope: &str) -> Option<Scope> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
@@ -1397,16 +1625,20 @@ pub mod exports {
                 #[doc(hidden)]
                 static __FORCE_SECTION_REF: fn() = super::super::super::super::__link_custom_section_describing_imports;
                 use super::super::super::super::_rt;
+                /// A scope identifier - a 6-character alphanumeric string used to identify agent contexts
+                pub type Scope = _rt::String;
                 /// An envelope that wraps every message passed between actors.
                 /// It provides context about the message's origin.
                 #[derive(Clone)]
                 pub struct MessageEnvelope {
+                    /// Correlation ID for tracing related operations (format: "parent:child")
+                    pub id: _rt::String,
                     /// The unique identifier of the message type
                     pub message_type: _rt::String,
                     /// The unique identifier of the actor that sent the message.
                     pub from_actor_id: _rt::String,
                     /// The scope in which the sending actor was operating.
-                    pub from_scope: _rt::String,
+                    pub from_scope: Scope,
                     /// The raw, serialized message data. The format (e.g., JSON)
                     /// is determined by the sending actor's implementation.
                     pub payload: _rt::Vec<u8>,
@@ -1417,6 +1649,7 @@ pub mod exports {
                         f: &mut ::core::fmt::Formatter<'_>,
                     ) -> ::core::fmt::Result {
                         f.debug_struct("MessageEnvelope")
+                            .field("id", &self.id)
                             .field("message-type", &self.message_type)
                             .field("from-actor-id", &self.from_actor_id)
                             .field("from-scope", &self.from_scope)
@@ -1579,6 +1812,8 @@ pub mod exports {
                     arg6: usize,
                     arg7: *mut u8,
                     arg8: usize,
+                    arg9: *mut u8,
+                    arg10: usize,
                 ) {
                     #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
                     let len0 = arg2;
@@ -1588,13 +1823,16 @@ pub mod exports {
                     let len2 = arg6;
                     let bytes2 = _rt::Vec::from_raw_parts(arg5.cast(), len2, len2);
                     let len3 = arg8;
+                    let bytes3 = _rt::Vec::from_raw_parts(arg7.cast(), len3, len3);
+                    let len4 = arg10;
                     T::handle_message(
                         unsafe { ActorBorrow::lift(arg0 as u32 as usize) }.get(),
                         MessageEnvelope {
-                            message_type: _rt::string_lift(bytes0),
-                            from_actor_id: _rt::string_lift(bytes1),
-                            from_scope: _rt::string_lift(bytes2),
-                            payload: _rt::Vec::from_raw_parts(arg7.cast(), len3, len3),
+                            id: _rt::string_lift(bytes0),
+                            message_type: _rt::string_lift(bytes1),
+                            from_actor_id: _rt::string_lift(bytes2),
+                            from_scope: _rt::string_lift(bytes3),
+                            payload: _rt::Vec::from_raw_parts(arg9.cast(), len4, len4),
                         },
                     );
                 }
@@ -1660,7 +1898,7 @@ pub mod exports {
                     /// Use this to initialize the actor's state.
                     /// @param scope - The execution scope provided by the host.
                     /// @param config - The configuration string (TOML format) for this actor.
-                    fn new(scope: _rt::String, config: _rt::String) -> Self;
+                    fn new(scope: Scope, config: _rt::String) -> Self;
                     /// The primary entry point for processing incoming messages. This
                     /// function is called by the host whenever another actor broadcasts
                     /// a message to the system.
@@ -1684,11 +1922,12 @@ pub mod exports {
                         "hive:actor/actor@0.1.0#[method]actor.handle-message")] unsafe
                         extern "C" fn export_method_actor_handle_message(arg0 : * mut u8,
                         arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 : usize,
-                        arg5 : * mut u8, arg6 : usize, arg7 : * mut u8, arg8 : usize,) {
-                        unsafe { $($path_to_types)*::
+                        arg5 : * mut u8, arg6 : usize, arg7 : * mut u8, arg8 : usize,
+                        arg9 : * mut u8, arg10 : usize,) { unsafe { $($path_to_types)*::
                         _export_method_actor_handle_message_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Actor > (arg0, arg1, arg2, arg3,
-                        arg4, arg5, arg6, arg7, arg8) } } #[unsafe (export_name =
+                        arg4, arg5, arg6, arg7, arg8, arg9, arg10) } } #[unsafe
+                        (export_name =
                         "hive:actor/actor@0.1.0#[method]actor.destructor")] unsafe extern
                         "C" fn export_method_actor_destructor(arg0 : * mut u8,) { unsafe
                         { $($path_to_types)*::
@@ -1933,9 +2172,9 @@ pub(crate) use __export_spawn_agent_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1883] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd9\x0d\x01A\x02\x01\
-A\x0e\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 2203] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x99\x10\x01A\x02\x01\
+A\x11\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
 cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x18\x01q\x04\x06exit\
 ed\x01}\0\x08signaled\x01}\0\x0ffailed-to-start\x01s\0\x0ftimeout-expired\0\0\x04\
 \0\x0bexit-status\x03\0\0\x01p}\x01r\x03\x06stdout\x02\x06stderr\x02\x06status\x01\
@@ -1960,21 +2199,28 @@ f\x0c\x0cmax-attemptsy\x0dbase-delay-msw\0\x0a\x04\0\x15[method]request.retry\x0
 \x11\x01j\x01\x08\x01\x05\x01@\x01\x04self\x0c\0\x12\x04\0\x14[method]request.se\
 nd\x01\x13\x03\0\x15hive:actor/http@0.1.0\x05\x02\x01B\x04\x01m\x04\x05debug\x04\
 info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07messag\
-es\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x03\x01B\x09\x01\
-ps\x01j\x01s\x01s\x01@\x02\x09actor-ids\0\x0aagent-names\0\x01\x04\0\x0bspawn-ag\
-ent\x01\x02\x01ks\x01@\0\0\x03\x04\0\x10get-parent-scope\x01\x04\x01@\x01\x05sco\
-pes\0\x03\x04\0\x13get-parent-scope-of\x01\x05\x03\0\x16hive:actor/agent@0.1.0\x05\
-\x04\x01B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\x1a\
-get-host-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\x03\
-\x03\0\x1ahive:actor/host-info@0.1.0\x05\x05\x01B\x0c\x01p}\x01r\x04\x0cmessage-\
-types\x0dfrom-actor-ids\x0afrom-scopes\x07payload\0\x04\0\x10message-envelope\x03\
-\0\x01\x04\0\x05actor\x03\x01\x01i\x03\x01@\x02\x05scopes\x06configs\0\x04\x04\0\
-\x12[constructor]actor\x01\x05\x01h\x03\x01@\x02\x04self\x06\x07message\x02\x01\0\
-\x04\0\x1c[method]actor.handle-message\x01\x07\x01@\x01\x04self\x06\x01\0\x04\0\x18\
-[method]actor.destructor\x01\x08\x04\0\x16hive:actor/actor@0.1.0\x05\x06\x04\0\"\
-hive:spawn-agent/spawn-agent@0.1.0\x04\0\x0b\x11\x01\0\x0bspawn-agent\x03\0\0\0G\
-\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen\
--rust\x060.41.0";
+es\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x03\x01B\x0e\x01\
+s\x04\0\x05scope\x03\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-id\
+s\x0afrom-scope\x01\x07payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05\
+actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[construc\
+tor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[m\
+ethod]actor.handle-message\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]a\
+ctor.destructor\x01\x0a\x03\0\x16hive:actor/actor@0.1.0\x05\x04\x02\x03\0\x04\x05\
+scope\x01B\x0b\x02\x03\x02\x01\x05\x04\0\x05scope\x03\0\0\x01ps\x01j\x01\x01\x01\
+s\x01@\x02\x09actor-ids\x02\x0aagent-names\0\x03\x04\0\x0bspawn-agent\x01\x04\x01\
+k\x01\x01@\0\0\x05\x04\0\x10get-parent-scope\x01\x06\x01@\x01\x05scope\x01\0\x05\
+\x04\0\x13get-parent-scope-of\x01\x07\x03\0\x16hive:actor/agent@0.1.0\x05\x06\x01\
+B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\x1aget-h\
+ost-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\x03\x03\
+\0\x1ahive:actor/host-info@0.1.0\x05\x07\x01B\x0e\x01s\x04\0\x05scope\x03\0\0\x01\
+p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scope\x01\x07paylo\
+ad\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01@\x02\
+\x05scope\x01\x06configs\0\x06\x04\0\x12[constructor]actor\x01\x07\x01h\x05\x01@\
+\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[method]actor.handle-message\x01\x09\
+\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]actor.destructor\x01\x0a\x04\0\x16h\
+ive:actor/actor@0.1.0\x05\x08\x04\0\"hive:spawn-agent/spawn-agent@0.1.0\x04\0\x0b\
+\x11\x01\0\x0bspawn-agent\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit\
+-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

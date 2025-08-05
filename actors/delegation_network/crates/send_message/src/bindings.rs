@@ -1047,6 +1047,8 @@ pub mod hive {
             /// It provides context about the message's origin.
             #[derive(Clone)]
             pub struct MessageEnvelope {
+                /// Correlation ID for tracing related operations (format: "parent:child")
+                pub id: _rt::String,
                 /// The unique identifier of the message type
                 pub message_type: _rt::String,
                 /// The unique identifier of the actor that sent the message.
@@ -1063,6 +1065,7 @@ pub mod hive {
                     f: &mut ::core::fmt::Formatter<'_>,
                 ) -> ::core::fmt::Result {
                     f.debug_struct("MessageEnvelope")
+                        .field("id", &self.id)
                         .field("message-type", &self.message_type)
                         .field("from-actor-id", &self.from_actor_id)
                         .field("from-scope", &self.from_scope)
@@ -1160,29 +1163,35 @@ pub mod hive {
                 pub fn handle_message(&self, message: &MessageEnvelope) -> () {
                     unsafe {
                         let MessageEnvelope {
+                            id: id0,
                             message_type: message_type0,
                             from_actor_id: from_actor_id0,
                             from_scope: from_scope0,
                             payload: payload0,
                         } = message;
-                        let vec1 = message_type0;
+                        let vec1 = id0;
                         let ptr1 = vec1.as_ptr().cast::<u8>();
                         let len1 = vec1.len();
-                        let vec2 = from_actor_id0;
+                        let vec2 = message_type0;
                         let ptr2 = vec2.as_ptr().cast::<u8>();
                         let len2 = vec2.len();
-                        let vec3 = from_scope0;
+                        let vec3 = from_actor_id0;
                         let ptr3 = vec3.as_ptr().cast::<u8>();
                         let len3 = vec3.len();
-                        let vec4 = payload0;
+                        let vec4 = from_scope0;
                         let ptr4 = vec4.as_ptr().cast::<u8>();
                         let len4 = vec4.len();
+                        let vec5 = payload0;
+                        let ptr5 = vec5.as_ptr().cast::<u8>();
+                        let len5 = vec5.len();
                         #[cfg(target_arch = "wasm32")]
                         #[link(wasm_import_module = "hive:actor/actor@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]actor.handle-message"]
-                            fn wit_import5(
+                            fn wit_import6(
                                 _: i32,
+                                _: *mut u8,
+                                _: usize,
                                 _: *mut u8,
                                 _: usize,
                                 _: *mut u8,
@@ -1194,8 +1203,10 @@ pub mod hive {
                             );
                         }
                         #[cfg(not(target_arch = "wasm32"))]
-                        unsafe extern "C" fn wit_import5(
+                        unsafe extern "C" fn wit_import6(
                             _: i32,
+                            _: *mut u8,
+                            _: usize,
                             _: *mut u8,
                             _: usize,
                             _: *mut u8,
@@ -1208,7 +1219,7 @@ pub mod hive {
                             unreachable!()
                         }
                         unsafe {
-                            wit_import5(
+                            wit_import6(
                                 (self).handle() as i32,
                                 ptr1.cast_mut(),
                                 len1,
@@ -1218,6 +1229,8 @@ pub mod hive {
                                 len3,
                                 ptr4.cast_mut(),
                                 len4,
+                                ptr5.cast_mut(),
+                                len5,
                             )
                         };
                     }
@@ -1618,6 +1631,8 @@ pub mod exports {
                 /// It provides context about the message's origin.
                 #[derive(Clone)]
                 pub struct MessageEnvelope {
+                    /// Correlation ID for tracing related operations (format: "parent:child")
+                    pub id: _rt::String,
                     /// The unique identifier of the message type
                     pub message_type: _rt::String,
                     /// The unique identifier of the actor that sent the message.
@@ -1634,6 +1649,7 @@ pub mod exports {
                         f: &mut ::core::fmt::Formatter<'_>,
                     ) -> ::core::fmt::Result {
                         f.debug_struct("MessageEnvelope")
+                            .field("id", &self.id)
                             .field("message-type", &self.message_type)
                             .field("from-actor-id", &self.from_actor_id)
                             .field("from-scope", &self.from_scope)
@@ -1796,6 +1812,8 @@ pub mod exports {
                     arg6: usize,
                     arg7: *mut u8,
                     arg8: usize,
+                    arg9: *mut u8,
+                    arg10: usize,
                 ) {
                     #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
                     let len0 = arg2;
@@ -1805,13 +1823,16 @@ pub mod exports {
                     let len2 = arg6;
                     let bytes2 = _rt::Vec::from_raw_parts(arg5.cast(), len2, len2);
                     let len3 = arg8;
+                    let bytes3 = _rt::Vec::from_raw_parts(arg7.cast(), len3, len3);
+                    let len4 = arg10;
                     T::handle_message(
                         unsafe { ActorBorrow::lift(arg0 as u32 as usize) }.get(),
                         MessageEnvelope {
-                            message_type: _rt::string_lift(bytes0),
-                            from_actor_id: _rt::string_lift(bytes1),
-                            from_scope: _rt::string_lift(bytes2),
-                            payload: _rt::Vec::from_raw_parts(arg7.cast(), len3, len3),
+                            id: _rt::string_lift(bytes0),
+                            message_type: _rt::string_lift(bytes1),
+                            from_actor_id: _rt::string_lift(bytes2),
+                            from_scope: _rt::string_lift(bytes3),
+                            payload: _rt::Vec::from_raw_parts(arg9.cast(), len4, len4),
                         },
                     );
                 }
@@ -1901,11 +1922,12 @@ pub mod exports {
                         "hive:actor/actor@0.1.0#[method]actor.handle-message")] unsafe
                         extern "C" fn export_method_actor_handle_message(arg0 : * mut u8,
                         arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 : usize,
-                        arg5 : * mut u8, arg6 : usize, arg7 : * mut u8, arg8 : usize,) {
-                        unsafe { $($path_to_types)*::
+                        arg5 : * mut u8, arg6 : usize, arg7 : * mut u8, arg8 : usize,
+                        arg9 : * mut u8, arg10 : usize,) { unsafe { $($path_to_types)*::
                         _export_method_actor_handle_message_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Actor > (arg0, arg1, arg2, arg3,
-                        arg4, arg5, arg6, arg7, arg8) } } #[unsafe (export_name =
+                        arg4, arg5, arg6, arg7, arg8, arg9, arg10) } } #[unsafe
+                        (export_name =
                         "hive:actor/actor@0.1.0#[method]actor.destructor")] unsafe extern
                         "C" fn export_method_actor_destructor(arg0 : * mut u8,) { unsafe
                         { $($path_to_types)*::
@@ -2150,8 +2172,8 @@ pub(crate) use __export_send_message_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 2198] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x93\x10\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 2206] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x9b\x10\x01A\x02\x01\
 A\x11\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
 cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x18\x01q\x04\x06exit\
 ed\x01}\0\x08signaled\x01}\0\x0ffailed-to-start\x01s\0\x0ftimeout-expired\0\0\x04\
@@ -2178,27 +2200,27 @@ f\x0c\x0cmax-attemptsy\x0dbase-delay-msw\0\x0a\x04\0\x15[method]request.retry\x0
 nd\x01\x13\x03\0\x15hive:actor/http@0.1.0\x05\x02\x01B\x04\x01m\x04\x05debug\x04\
 info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07messag\
 es\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x03\x01B\x0e\x01\
-s\x04\0\x05scope\x03\0\0\x01p}\x01r\x04\x0cmessage-types\x0dfrom-actor-ids\x0afr\
-om-scope\x01\x07payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05actor\x03\
-\x01\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[constructor]actor\
-\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[method]act\
-or.handle-message\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]actor.dest\
-ructor\x01\x0a\x03\0\x16hive:actor/actor@0.1.0\x05\x04\x02\x03\0\x04\x05scope\x01\
-B\x0b\x02\x03\x02\x01\x05\x04\0\x05scope\x03\0\0\x01ps\x01j\x01\x01\x01s\x01@\x02\
-\x09actor-ids\x02\x0aagent-names\0\x03\x04\0\x0bspawn-agent\x01\x04\x01k\x01\x01\
-@\0\0\x05\x04\0\x10get-parent-scope\x01\x06\x01@\x01\x05scope\x01\0\x05\x04\0\x13\
-get-parent-scope-of\x01\x07\x03\0\x16hive:actor/agent@0.1.0\x05\x06\x01B\x06\x01\
-r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\x1aget-host-worki\
-ng-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\x03\x03\0\x1ahiv\
-e:actor/host-info@0.1.0\x05\x07\x01B\x0e\x01s\x04\0\x05scope\x03\0\0\x01p}\x01r\x04\
-\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scope\x01\x07payload\x02\x04\0\x10me\
-ssage-envelope\x03\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06\
-configs\0\x06\x04\0\x12[constructor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07\
-message\x04\x01\0\x04\0\x1c[method]actor.handle-message\x01\x09\x01@\x01\x04self\
-\x08\x01\0\x04\0\x18[method]actor.destructor\x01\x0a\x04\0\x16hive:actor/actor@0\
-.1.0\x05\x08\x04\0$hive:send-message/send-message@0.1.0\x04\0\x0b\x12\x01\0\x0cs\
-end-message\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x07\
-0.227.1\x10wit-bindgen-rust\x060.41.0";
+s\x04\0\x05scope\x03\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-id\
+s\x0afrom-scope\x01\x07payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05\
+actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[construc\
+tor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[m\
+ethod]actor.handle-message\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]a\
+ctor.destructor\x01\x0a\x03\0\x16hive:actor/actor@0.1.0\x05\x04\x02\x03\0\x04\x05\
+scope\x01B\x0b\x02\x03\x02\x01\x05\x04\0\x05scope\x03\0\0\x01ps\x01j\x01\x01\x01\
+s\x01@\x02\x09actor-ids\x02\x0aagent-names\0\x03\x04\0\x0bspawn-agent\x01\x04\x01\
+k\x01\x01@\0\0\x05\x04\0\x10get-parent-scope\x01\x06\x01@\x01\x05scope\x01\0\x05\
+\x04\0\x13get-parent-scope-of\x01\x07\x03\0\x16hive:actor/agent@0.1.0\x05\x06\x01\
+B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\x1aget-h\
+ost-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\x03\x03\
+\0\x1ahive:actor/host-info@0.1.0\x05\x07\x01B\x0e\x01s\x04\0\x05scope\x03\0\0\x01\
+p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scope\x01\x07paylo\
+ad\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01@\x02\
+\x05scope\x01\x06configs\0\x06\x04\0\x12[constructor]actor\x01\x07\x01h\x05\x01@\
+\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[method]actor.handle-message\x01\x09\
+\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]actor.destructor\x01\x0a\x04\0\x16h\
+ive:actor/actor@0.1.0\x05\x08\x04\0$hive:send-message/send-message@0.1.0\x04\0\x0b\
+\x12\x01\0\x0csend-message\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwi\
+t-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

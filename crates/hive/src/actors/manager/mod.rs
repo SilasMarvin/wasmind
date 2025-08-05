@@ -2,6 +2,7 @@ use hive::actor::{agent, command, host_info, http, logger, messaging};
 use hive_actor_utils_common_messages::{Message, actors};
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tracing::Level;
 use wasmtime::{
     Config, Engine, Store,
     component::{Component, HasSelf, Linker, ResourceAny, bindgen},
@@ -111,6 +112,7 @@ impl Manager {
         tracing::info_span!("actor_lifecycle", actor_id = self.actor_id).in_scope(move || {
             tokio::spawn(async move {
                 let _ = self.tx.send(MessageEnvelope {
+                    id: crate::utils::generate_root_correlation_id(),
                     message_type: actors::ActorReady::MESSAGE_TYPE.to_string(),
                     from_actor_id: self.actor_id.to_string(),
                     from_scope: self.scope.to_string(),
@@ -128,6 +130,16 @@ impl Manager {
                             {
                                 break;
                             } else {
+                                let span = tracing::span!(
+                                    Level::ERROR,
+                                    "hive_actor_manager",
+                                    correlation_id = msg.id
+                                );
+                                let _enter = span.enter();
+
+                                // Set current message ID for correlation in logging
+                                self.store.data_mut().current_message_id = Some(msg.id.clone());
+
                                 if let Err(e) = self
                                     .actor_world
                                     .hive_actor_actor()
@@ -137,6 +149,9 @@ impl Manager {
                                 {
                                     tracing::error!("Calling handle_message: {e:?}");
                                 }
+
+                                // Clear current message ID
+                                self.store.data_mut().current_message_id = None;
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {

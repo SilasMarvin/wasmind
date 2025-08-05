@@ -220,28 +220,25 @@ pub fn load_default_config() -> Result<Config, Error> {
     load_from_path(config_path)
 }
 
-pub fn get_config_dir() -> Result<PathBuf, Error> {
-    // Create an instance of Etcetera for your application "hive".
-    // The etcetera crate will determine the correct base config directory depending on the OS.
-    Ok(choose_app_strategy(AppStrategyArgs {
+fn get_app_strategy() -> Result<impl AppStrategy, Error> {
+    choose_app_strategy(AppStrategyArgs {
         top_level_domain: "com".to_string(),
         author: "hive".to_string(),
         app_name: "hive".to_string(),
     })
-    .context(ConfigSnafu)?
-    .config_dir())
+    .context(ConfigSnafu)
+}
+
+pub fn get_config_dir() -> Result<PathBuf, Error> {
+    // Create an instance of Etcetera for your application "hive".
+    // The etcetera crate will determine the correct base config directory depending on the OS.
+    Ok(get_app_strategy()?.config_dir())
 }
 
 pub fn get_cache_dir() -> Result<PathBuf, Error> {
     // On Linux/macOS, this will be: $HOME/.cache/hive/
     // On Windows, this will typically be: %LOCALAPPDATA%\hive\
-    Ok(choose_app_strategy(AppStrategyArgs {
-        top_level_domain: "com".to_string(),
-        author: "hive".to_string(),
-        app_name: "hive".to_string(),
-    })
-    .context(ConfigSnafu)?
-    .cache_dir())
+    Ok(get_app_strategy()?.cache_dir())
 }
 
 pub fn get_config_file_path() -> Result<PathBuf, Error> {
@@ -295,6 +292,18 @@ impl ActorManifest {
 
 pub fn get_actors_cache_dir() -> Result<PathBuf, Error> {
     Ok(get_cache_dir()?.join("actors"))
+}
+
+pub fn get_log_file_path() -> Result<PathBuf, Error> {
+    // Log file goes in the data directory
+    let data_dir = get_data_dir()?;
+    Ok(data_dir.join("hive.log"))
+}
+
+pub fn get_data_dir() -> Result<PathBuf, Error> {
+    // On Linux/macOS, this will be: $HOME/.local/share/hive/
+    // On Windows, this will typically be: %APPDATA%\hive\
+    Ok(get_app_strategy()?.data_dir())
 }
 
 pub fn count_cached_actors(cache_dir: &Path) -> Result<usize, Error> {

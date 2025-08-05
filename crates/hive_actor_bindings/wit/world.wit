@@ -13,6 +13,8 @@ interface actor {
     /// An envelope that wraps every message passed between actors.
     /// It provides context about the message's origin.
     record message-envelope {
+        /// Correlation ID for tracing related operations (format: "parent:child")
+        id: string,
         /// The unique identifier of the message type
         message-type: string,
         /// The unique identifier of the actor that sent the message.
