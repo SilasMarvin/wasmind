@@ -31,56 +31,17 @@ pub async fn run() -> TuiResult<()> {
 
     tui.run();
 
-    // let config = hive_config::load_default_config().unwrap();
-    // let tui_config = crate::config::TuiConfig::from_config(&config)?.parse()?;
-    //
-    // // Set up broadcast channel
-    // let (tx, _rx) = broadcast::channel(1000);
-    //
-    // // Create actors
-    // TuiActor::new(config.clone(), tx.clone(), scope.clone(), None).run();
-    // // Send the LiteLLM Actor Ready message
-    // // Need to actually let the dashboard mount first
-    // tokio::time::sleep(Duration::from_secs(1)).await;
-    // let _ = tx.send(hive::actors::ActorMessage {
-    //     scope: MAIN_MANAGER_SCOPE.clone(),
-    //     message: Message::ActorReady {
-    //         actor_id: LiteLLMManager::ACTOR_ID.to_string(),
-    //     },
-    // });
-    // let _ = tx.send(create_agent_status_update_message(
-    //     &scope,
-    //     hive::actors::AgentStatus::Wait {
-    //         reason: hive::actors::WaitReason::WaitForSystem {
-    //             tool_name: None,
-    //             tool_call_id: "Filler".to_string(),
-    //         },
-    //     },
-    // ));
-
     // Spawn some agents
-    let (spawn_agent_message, agent1_scope) =
-        create_spawn_agent_message("Sub Manager 1", Some(&STARTING_SCOPE.to_string()));
-    coordinator.broadcast_common_message(spawn_agent_message, false)?;
+    for i in 0..1000 {
+        let (spawn_agent_message, agent1_scope) = create_spawn_agent_message(
+            &format!("Sub Manager {i}"),
+            Some(&STARTING_SCOPE.to_string()),
+        );
+        coordinator.broadcast_common_message(spawn_agent_message, false)?;
+    }
 
-    let (spawn_agent_message, _) = create_spawn_agent_message("Worker 1", Some(&agent1_scope));
-    coordinator.broadcast_common_message(spawn_agent_message, false)?;
-
-    // let (spawn_agent_message, _) =
-    //     create_spawn_agent_message(&agent1_scope, AgentType::Worker, "Filler Role", "Work");
-    // let _ = tx.send(spawn_agent_message);
-    //
-    // let (spawn_agent_message, agent2_scope) = create_spawn_agent_message(
-    //     &agent1_scope,
-    //     AgentType::SubManager,
-    //     "Filler Role",
-    //     "Manage some workers",
-    // );
-    // let _ = tx.send(spawn_agent_message);
-    //
-    // let (spawn_agent_message, _) =
-    //     create_spawn_agent_message(&agent2_scope, AgentType::Worker, "Filler Role", "Work");
-    // let _ = tx.send(spawn_agent_message);
+    // let (spawn_agent_message, _) = create_spawn_agent_message("Worker 1", Some(&agent1_scope));
+    // coordinator.broadcast_common_message(spawn_agent_message, false)?;
 
     tokio::time::sleep(Duration::from_secs(10_000)).await;
 

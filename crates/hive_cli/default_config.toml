@@ -22,16 +22,16 @@ starting_actors = ["delegation_network_coordinator"]
 source = { path = "/Users/silasmarvin/github/hive/actors/delegation_network", package = "crates/delegation_network_coordinator" }
 
 [actor_overrides.main_manager_assistant.config]
-model_name = "horizon-beta"
+model_name = "gpt-oss-120b"
 
 [actor_overrides.sub_manager_assistant.config]
-model_name = "horizon-beta"
+model_name = "gpt-oss-120b"
 
 [actor_overrides.worker_assistant.config]
-model_name = "horizon-beta"
+model_name = "gpt-oss-120b"
 
 [actor_overrides.check_health_assistant.config]
-model_name = "horizon-beta"
+model_name = "gpt-oss-120b"
 
 ##############################
 # LiteLLM Config #############
@@ -50,11 +50,12 @@ model = "openai/gpt-4o"
 api_key = "os.environ/OPENAI_API_KEY"
 
 [[litellm.models]]
-model_name = "horizon-beta"
+model_name = "gpt-oss-120b"
 
 [litellm.models.litellm_params]
-model = "openrouter/openrouter/horizon-beta"
+model = "openrouter/openai/gpt-oss-120b"
 api_key = "os.environ/OPENROUTER_API_KEY"
+provider = { only = ["cerebras"] }
 
 # [[litellm.models]]
 # model_name = "qwen3-480b"

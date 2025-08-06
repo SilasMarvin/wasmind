@@ -29,5 +29,4 @@ toml = "0.8.22"
 
 [profile.release]
 incremental = true
-# Set this to 1 or 2 to get more useful backtraces in debugger.
-debug = 0
+debug = true
