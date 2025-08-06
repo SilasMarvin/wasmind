@@ -109,20 +109,30 @@ impl MockComponent for Scrollable {
                     .height
                     .min(self.content_height.saturating_sub(self.scroll_offset));
 
-                // Copy visible content from cached buffer to frame buffer
+                // Optimized bulk copy using slice operations
+                let width = area.width as usize;
+                let dest_width = frame_buffer.area.width as usize;
+
+                // Process entire rows at once for better cache locality
                 for y in 0..visible_height {
-                    let source_y = self.scroll_offset + y;
+                    let source_y = (self.scroll_offset + y) as usize;
                     let dest_y = area.y + y;
 
-                    for x in 0..area.width {
-                        let source_idx = (source_y as usize) * (area.width as usize) + (x as usize);
-                        let dest_x = area.x + x;
+                    // Calculate source range in the cached buffer
+                    let source_start = source_y * width;
+                    let source_end = source_start + width;
 
-                        if let Some(cell) = cached_buffer.content().get(source_idx) {
-                            if let Some(dest_cell) = frame_buffer.cell_mut((dest_x, dest_y)) {
-                                *dest_cell = cell.clone();
-                            }
-                        }
+                    // Calculate destination range in the frame buffer
+                    let dest_start_idx = (dest_y as usize) * dest_width + (area.x as usize);
+                    let dest_end_idx = dest_start_idx + width;
+
+                    // Perform bulk copy if both ranges are valid
+                    if let (Some(src_slice), Some(dst_slice)) = (
+                        cached_buffer.content.get(source_start..source_end),
+                        frame_buffer.content.get_mut(dest_start_idx..dest_end_idx),
+                    ) {
+                        // Use clone_from_slice for efficient bulk copying
+                        dst_slice.clone_from_slice(src_slice);
                     }
                 }
             }
