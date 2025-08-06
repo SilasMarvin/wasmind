@@ -32,7 +32,7 @@ pub async fn run() -> TuiResult<()> {
     tui.run();
 
     // Spawn some agents
-    for i in 0..1000 {
+    for i in 0..300 {
         let (spawn_agent_message, agent1_scope) = create_spawn_agent_message(
             &format!("Sub Manager {i}"),
             Some(&STARTING_SCOPE.to_string()),
@@ -43,7 +43,7 @@ pub async fn run() -> TuiResult<()> {
     // let (spawn_agent_message, _) = create_spawn_agent_message("Worker 1", Some(&agent1_scope));
     // coordinator.broadcast_common_message(spawn_agent_message, false)?;
 
-    tokio::time::sleep(Duration::from_secs(10_000)).await;
+    tokio::time::sleep(Duration::from_secs(15)).await;
 
     Ok(())
 }

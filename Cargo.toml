@@ -27,6 +27,6 @@ tempfile = "3.8"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "0.8.22"
 
-[profile.release]
-incremental = true
+[profile.profiling]
+inherits = "release"
 debug = true
