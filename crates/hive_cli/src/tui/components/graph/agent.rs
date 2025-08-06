@@ -1,20 +1,24 @@
 use crate::tui::{model::TuiMessage, throbber_in_title_ext::ThrobberInTitleExt, utils};
 use hive::{actors::MessageEnvelope, scope::Scope};
 use hive_actor_utils_common_messages::assistant::Status as AgentStatus;
-use ratatui::widgets::{Paragraph, Widget, Wrap};
+use ratatui::{
+    text::{Line, Span},
+    widgets::Paragraph,
+};
 use throbber_widgets_tui::{
     BLACK_CIRCLE, OGHAM_C, Throbber, ThrobberState, VERTICAL_BLOCK, symbols::throbber,
 };
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
+    props::BorderSides,
     props::Borders,
     props::Color,
     ratatui::layout::Rect,
 };
 
 pub const WIDGET_WIDTH: u16 = 50;
-pub const WIDGET_HEIGHT: u16 = 8;
+pub const WIDGET_HEIGHT: u16 = 6;
 
 #[derive(Default, Copy, Clone)]
 pub struct AgentMetrics {
@@ -123,25 +127,45 @@ pub struct Agent {
     throbber_state: ThrobberState,
 }
 
-impl MockComponent for Agent {
-    fn view(&mut self, frame: &mut Frame, area: Rect) {
-        if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
-            assert!(area.area() == WIDGET_WIDTH as u32 * WIDGET_HEIGHT as u32);
+impl Agent {
+    pub fn view_with_content_trim(&mut self, frame: &mut Frame, area: Rect, trim_top: bool) {
+        if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) != AttrValue::Flag(true) {
+            return;
+        }
 
-            let borders = if self.is_selected {
-                Borders::default().color(Color::Green)
+        // Render border (always render if we have any visible area)
+        if area.height > 0 {
+            let mut borders = if self.is_selected {
+                Borders::default()
+                    .color(Color::Green)
+                    .modifiers(tuirealm::props::BorderType::Thick)
             } else {
                 Borders::default()
             };
-            let title = if let Some(status) = &self.status {
-                format!("[ {} | {} ]", self.name, format_agent_status(status))
+
+            if trim_top {
+                borders.sides.remove(BorderSides::TOP);
+            } else if area.height < WIDGET_HEIGHT {
+                borders.sides.remove(BorderSides::BOTTOM);
+            }
+
+            // Only show title if we're showing the top
+            // TODO: FIGURE OUT WHY THIS IS BLANK
+            let title = if !trim_top {
+                if let Some(status) = &self.status {
+                    format!("[ {} | {} ]", self.id, format_agent_status(status))
+                } else {
+                    format!("[ {} ]", self.id)
+                }
             } else {
-                format!("[ {} ]", self.name)
+                String::new() // No title when top is clipped
             };
+
             let maybe_loc = title.chars().position(|c| c == '⌘');
             let div = utils::create_block_with_title(title, borders, false, None);
 
-            if let Some(loc) = maybe_loc
+            if !trim_top
+                && let Some(loc) = maybe_loc
                 && let Some(status) = &self.status
                 && let Some(throbber_set) = get_throbber_for_agent_status(&status)
             {
@@ -151,41 +175,75 @@ impl MockComponent for Agent {
             } else {
                 frame.render_widget_ref(div, area);
             }
-
-            // Render the Actors list
-            let actors_paragraph_chunk = Rect::new(area.x + 2, area.y + 1, area.width - 4, 2);
-            let actors_text = if self.actors.is_empty() {
-                "Actors: []".to_string()
-            } else {
-                format!("Actors: [{}]", self.actors.join(", "))
-            };
-            let actors_paragraph = Paragraph::new(actors_text).wrap(Wrap { trim: true });
-            actors_paragraph.render(actors_paragraph_chunk, frame.buffer_mut());
-
-            // Context
-            let paragraph_chunk = Rect::new(area.x + 2, area.y + 5, area.width, 2);
-            let paragraph = Paragraph::new(format!("Context\n{}", self.context_size));
-            paragraph.render(paragraph_chunk, frame.buffer_mut());
-
-            // Requests Made
-            let paragraph_chunk = Rect::new(area.x + 12, area.y + 5, area.width, 2);
-            let paragraph = Paragraph::new(format!(
-                "Requests\n{}",
-                self.metrics.completion_requests_sent
-            ));
-            paragraph.render(paragraph_chunk, frame.buffer_mut());
-
-            // Tool Calls
-            let paragraph_chunk = Rect::new(area.x + 23, area.y + 5, area.width, 2);
-            let paragraph = Paragraph::new(format!("Tool Calls\n{}", self.metrics.tools_called));
-            paragraph.render(paragraph_chunk, frame.buffer_mut());
-
-            // Tokens Used
-            let paragraph_chunk = Rect::new(area.x + 36, area.y + 5, area.width, 2);
-            let paragraph =
-                Paragraph::new(format!("Tokens Used\n{}", self.metrics.total_tokens_used));
-            paragraph.render(paragraph_chunk, frame.buffer_mut());
         }
+
+        // Render content inside the box
+        if area.height > 2 {
+            // We need at least 3 lines to show content (top border, content, bottom border)
+            let content_area = Rect::new(
+                area.x + 2,
+                area.y + 1,
+                area.width.saturating_sub(4),
+                area.height.saturating_sub(2),
+            );
+
+            // Generate all content lines
+            let mut content_lines = Vec::new();
+
+            // Line 1: Name (truncated with ellipsis if needed)
+            let name_str = format!("Name: {}", self.name);
+            let name_line = if name_str.len() > content_area.width as usize {
+                format!(
+                    "{}...",
+                    &name_str[..content_area.width.saturating_sub(3) as usize]
+                )
+            } else {
+                name_str
+            };
+            content_lines.push(Line::from(name_line));
+
+            // Line 2: Actor count
+            content_lines.push(Line::from(format!("Actors: {} active", self.actors.len())));
+
+            // Line 3: Separator
+            let separator_width = content_area.width.min(45) as usize;
+            content_lines.push(Line::from("─".repeat(separator_width)));
+
+            // Line 4: All metrics in 4-column layout
+            content_lines.push(Line::from(vec![
+                Span::raw(format!("Ctx:{:3} ", self.context_size)),
+                Span::raw(format!("Reqs:{:3} ", self.metrics.completion_requests_sent)),
+                Span::raw(format!("Tools:{:3} ", self.metrics.tools_called)),
+                Span::raw(format!("Tok:{:4}", self.metrics.total_tokens_used)),
+            ]));
+
+            // Calculate which lines to show based on trim_top and available height
+            let skip_lines = if trim_top {
+                // When top is trimmed, we need to skip some content lines
+                // The border takes 1 line, so WIDGET_HEIGHT - area.height - 1 gives us content lines to skip
+                (WIDGET_HEIGHT.saturating_sub(area.height).saturating_sub(1)) as usize
+            } else {
+                0
+            };
+
+            // Take only the visible lines
+            let visible_lines: Vec<Line> = content_lines
+                .into_iter()
+                .skip(skip_lines)
+                .take(content_area.height as usize)
+                .collect();
+
+            if !visible_lines.is_empty() {
+                let content_paragraph = Paragraph::new(visible_lines);
+                frame.render_widget(content_paragraph, content_area);
+            }
+        }
+    }
+}
+
+impl MockComponent for Agent {
+    fn view(&mut self, _frame: &mut Frame, _area: Rect) {
+        panic!("Use view_with_content_offset instead of view() for agent rendering");
     }
 
     fn query(&self, attr: Attribute) -> Option<AttrValue> {

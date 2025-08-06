@@ -11,7 +11,6 @@ use tuirealm::{
 
 use super::chat::ChatAreaComponent;
 use super::graph::GraphAreaComponent;
-use super::scrollable::ScrollableComponent;
 use super::splash::SplashComponent;
 
 pub const DASHBOARD_SCOPE: &str = "DASHBD";
@@ -55,10 +54,7 @@ impl DashboardComponent {
             component: Dashboard {
                 state: State::None,
                 props: Props::default(),
-                graph_area_component: ScrollableComponent::new(
-                    Box::new(GraphAreaComponent::new(config.clone())),
-                    false,
-                ),
+                graph_area_component: GraphAreaComponent::new(config.clone()),
                 show_splash: initial_prompt.is_none(),
                 chat_area_component: ChatAreaComponent::new(config.clone(), initial_prompt),
                 splash_component: SplashComponent::new(config.clone()),
@@ -71,7 +67,7 @@ impl DashboardComponent {
 struct Dashboard {
     props: Props,
     state: State,
-    graph_area_component: ScrollableComponent,
+    graph_area_component: GraphAreaComponent,
     chat_area_component: ChatAreaComponent,
     splash_component: SplashComponent,
     show_splash: bool,

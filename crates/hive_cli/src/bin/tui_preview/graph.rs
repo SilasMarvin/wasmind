@@ -4,15 +4,10 @@ use hive::coordinator::HiveCoordinator;
 use hive_actor_loader::LoadedActor;
 use hive_actor_utils::STARTING_SCOPE;
 use hive_cli::{TuiResult, tui};
-use tracing::info;
 
 use crate::utils::create_spawn_agent_message;
 
-// use crate::utils::{create_agent_status_update_message, create_spawn_agent_message};
-
 pub async fn run() -> TuiResult<()> {
-    info!("Starting command execution scenario");
-
     let tui_config = hive_cli::config::TuiConfig::default().parse()?;
 
     let context = Arc::new(hive::context::HiveContext::new::<LoadedActor>(vec![]));
@@ -43,7 +38,7 @@ pub async fn run() -> TuiResult<()> {
     // let (spawn_agent_message, _) = create_spawn_agent_message("Worker 1", Some(&agent1_scope));
     // coordinator.broadcast_common_message(spawn_agent_message, false)?;
 
-    tokio::time::sleep(Duration::from_secs(15)).await;
+    tokio::time::sleep(Duration::from_secs(150)).await;
 
     Ok(())
 }

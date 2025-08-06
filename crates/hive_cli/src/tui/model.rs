@@ -128,10 +128,9 @@ where
     T: TerminalAdapter,
 {
     fn update(&mut self, msg: Option<TuiMessage>) -> Option<TuiMessage> {
+        self.redraw = true;
         if let Some(msg) = msg {
             // Set redraw
-            self.redraw = true;
-
             match msg {
                 TuiMessage::Batch(batch) => {
                     for msg in batch {
@@ -145,7 +144,9 @@ where
                     }
                     self.quit = true;
                 }
-                TuiMessage::UpdatedUserTypedLLMMessage(_) => (),
+                TuiMessage::UpdatedUserTypedLLMMessage(_) => {
+                    self.redraw = true;
+                }
                 TuiMessage::SubmittedUserTypedLLMMessage(message) => {
                     // Broadcast AddMessage from the user
                     let add_message = AddMessage {
@@ -155,6 +156,7 @@ where
                     if let Err(e) = self.context.broadcast_common_message(add_message) {
                         tracing::error!("Failed to broadcast AddMessage: {}", e);
                     }
+                    self.redraw = true;
                 }
                 TuiMessage::Redraw => (),
                 TuiMessage::Graph(graph_message) => match graph_message {

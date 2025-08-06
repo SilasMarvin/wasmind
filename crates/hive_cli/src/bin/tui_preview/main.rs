@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use hive_cli::init_logger_with_path;
 
 // mod command;
 // mod edit_file;
@@ -28,6 +29,8 @@ enum Scenario {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logger_with_path("log.txt");
+
     let args = Args::parse();
 
     // Run the preview scenario

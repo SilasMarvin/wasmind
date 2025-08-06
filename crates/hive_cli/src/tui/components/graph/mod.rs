@@ -21,8 +21,6 @@ use tuirealm::{
     ratatui::layout::Rect,
 };
 
-use super::scrollable::ScrollableComponentTrait;
-
 mod agent;
 
 const LINE_INDENT: u16 = 5;
@@ -322,6 +320,25 @@ impl AgentNode {
 
         None
     }
+
+    /// Find the Y position of the selected node in the tree
+    fn find_selected_y_position(&self, current_y: &mut u32) -> Option<u32> {
+        if self.component.component.is_selected {
+            return Some(*current_y + agent::WIDGET_HEIGHT as u32 / 2); // Center of the node
+        }
+
+        // Update y for this node
+        *current_y += agent::WIDGET_HEIGHT as u32 + 1;
+
+        // Check children
+        for child in &self.spawned_agents {
+            if let Some(selected_y) = child.find_selected_y_position(current_y) {
+                return Some(selected_y);
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(MockComponent)]
@@ -339,9 +356,11 @@ impl GraphAreaComponent {
                 state: State::None,
                 props: Props::default(),
                 root_node: None,
-                content_height: 0,
                 is_modified: false,
+                height: 0,
                 stats,
+                scroll_offset: 0,
+                viewport_height: 0,
             },
             config,
         }
@@ -358,9 +377,34 @@ struct GraphArea {
     props: Props,
     state: State,
     root_node: Option<AgentNode>,
-    content_height: u16,
+    height: u32,
     is_modified: bool,
     stats: TotalStats,
+    scroll_offset: u32,
+    viewport_height: u16,
+}
+
+impl GraphArea {
+    /// Centers the currently selected node in the viewport
+    fn center_on_selected(&mut self) {
+        // Don't center if we don't know the viewport size yet
+        if self.viewport_height == 0 {
+            return;
+        }
+        
+        if let Some(ref root) = self.root_node {
+            let mut y_position = 0;
+            if let Some(selected_y) = root.find_selected_y_position(&mut y_position) {
+                // Calculate scroll offset to center the selected node
+                let center_offset = selected_y.saturating_sub(self.viewport_height as u32 / 2);
+
+                // Ensure we don't scroll past the content bounds
+                let max_offset = (self.height * (agent::WIDGET_HEIGHT as u32 + 1))
+                    .saturating_sub(self.viewport_height as u32);
+                self.scroll_offset = center_offset.min(max_offset);
+            }
+        }
+    }
 }
 
 fn render_tree_node(
@@ -368,88 +412,198 @@ fn render_tree_node(
     area: Rect,
     node: &mut AgentNode,
     depth: u16,
-    y_offset: &mut u16,
-) {
-    // SAFTEY CHECKS:
-    // The Y is basically infinite as this is in Scrollable
-    // The X is not so we check here.
-    // TODO: Fix this
+    y_offset: &mut u32,
+    viewport_start: u32,
+    viewport_end: u32,
+) -> bool {
+    // Check if this node is within the viewport
+    let node_start = *y_offset;
+    let node_end = *y_offset + agent::WIDGET_HEIGHT as u32;
+    let node_visible = node_end > viewport_start && node_start < viewport_end;
+
+    // Safety check for horizontal bounds
     if area.x + (depth * LINE_INDENT) + agent::WIDGET_WIDTH >= frame.area().width {
-        tracing::error!(
-            "The graph is to wide to show on the screen sorry :( - this will be fixed soon!"
-        );
-        return;
+        tracing::error!("The graph is too wide to show on the screen - this will be fixed soon!");
+        return false;
     }
 
     // Position for the agent box (indented based on depth)
     let box_x = area.x + (depth * LINE_INDENT);
-    let box_y = area.y + *y_offset;
 
-    // Render the agent component
-    let agent_area = Rect::new(box_x, box_y, agent::WIDGET_WIDTH, agent::WIDGET_HEIGHT);
-    node.component.view(frame, agent_area);
+    // Render if the node intersects with viewport
+    if node_visible {
+        // The height the agent can render in
+        let (start_y, agent_height) = if node_start < viewport_start {
+            (
+                0,
+                agent::WIDGET_HEIGHT - (viewport_start - node_start) as u16,
+            )
+        } else if node_end > viewport_end {
+            // node_start must be > viewport_start here
+            (
+                node_start - viewport_start,
+                agent::WIDGET_HEIGHT - (node_end - viewport_end) as u16,
+            )
+        } else {
+            (node_start - viewport_start, agent::WIDGET_HEIGHT)
+        };
 
-    // Update y_offset for next element
-    *y_offset += agent::WIDGET_HEIGHT + 1;
+        // Only render if we have valid dimensions
+        if agent_height > 0 && box_x + agent::WIDGET_WIDTH <= area.x + area.width {
+            let agent_area = Rect::new(
+                box_x,
+                area.y + start_y as u16,
+                agent::WIDGET_WIDTH,
+                agent_height,
+            );
+            node.component.component.view_with_content_trim(
+                frame,
+                agent_area,
+                node_start < viewport_start,
+            );
+        }
+    }
+
+    // Always update y_offset for layout calculation
+    *y_offset += agent::WIDGET_HEIGHT as u32 + 1;
+
+    // Track if the selected node was found and rendered
+    let mut selected_rendered = node_visible && node.component.component.is_selected;
 
     // Render children
     let child_count = node.spawned_agents.len();
     if child_count > 0 {
-        // Draw vertical line from parent box to children
         let line_x = area.x + ((depth + 1) * LINE_INDENT) - 3;
-        let parent_end = box_y + agent::WIDGET_HEIGHT;
+
+        // Calculate parent end position in viewport coordinates
+        // let viewport_relative_y = node_start.saturating_sub(viewport_start) as u16;
+        // let parent_end_viewport = area.y + viewport_relative_y + agent::WIDGET_HEIGHT;
+
+        let parent_end_viewport =
+            node_start as i32 - viewport_start as i32 + agent::WIDGET_HEIGHT as i32;
+        let parent_end_viewport = if parent_end_viewport < 0 {
+            0 + area.y
+        } else {
+            parent_end_viewport as u16 + area.y
+        };
 
         for (index, child) in node.spawned_agents.iter_mut().enumerate() {
             let is_last_child = index == child_count - 1;
             let child_y_start = *y_offset;
 
-            // Draw vertical line from parent to this child's elbow
-            let child_elbow_y = area.y + child_y_start + agent::WIDGET_HEIGHT / 2;
-
-            // Draw vertical line from parent end down to child's elbow level
-            for y in parent_end..=child_elbow_y {
-                let line_widget = Paragraph::new(Span::raw("│"));
-                let line_area = Rect::new(line_x, y, 1, 1);
-                frame.render_widget(line_widget, line_area);
+            // Early exit if we're already past the viewport
+            if child_y_start > viewport_end {
+                return false;
             }
 
-            // Draw the elbow (└── or ├──) at the child's vertical center
-            let branch = if is_last_child {
-                "└── "
-            } else {
-                "├── "
-            };
-            let branch_widget = Paragraph::new(Span::raw(branch));
-            let branch_area = Rect::new(line_x, child_elbow_y, 4, 1);
-            frame.render_widget(branch_widget, branch_area);
+            // Check if child will be visible
+            let child_visible = (child_y_start + agent::WIDGET_HEIGHT as u32) > viewport_start
+                && child_y_start < viewport_end;
+
+            // Draw connecting lines only if parent or child is visible
+            if node_visible || child_visible {
+                let child_elbow_y_absolute = child_y_start + agent::WIDGET_HEIGHT as u32 / 2;
+                let child_elbow_y =
+                    area.y + child_elbow_y_absolute.saturating_sub(viewport_start) as u16;
+
+                // Draw vertical line from parent end down to child's elbow level
+                if child_visible
+                    && child_elbow_y >= area.y
+                    && parent_end_viewport <= area.y + area.height
+                {
+                    let line_start = parent_end_viewport.max(area.y);
+                    let line_end = child_elbow_y.min(area.y + area.height);
+
+                    for y in line_start..line_end {
+                        if y < area.y + area.height {
+                            let line_widget = Paragraph::new(Span::raw("│"));
+                            let line_area = Rect::new(line_x, y, 1, 1);
+                            frame.render_widget(line_widget, line_area);
+                        }
+                    }
+                }
+
+                // Draw the elbow (└── or ├──) only if it's actually in the viewport
+                if child_elbow_y_absolute >= viewport_start && child_elbow_y_absolute < viewport_end {
+                    if child_elbow_y >= area.y && child_elbow_y < area.y + area.height {
+                        let branch = if is_last_child {
+                            "└── "
+                        } else {
+                            "├── "
+                        };
+                        let branch_widget = Paragraph::new(Span::raw(branch));
+                        let branch_area = Rect::new(line_x, child_elbow_y, 4, 1);
+                        frame.render_widget(branch_widget, branch_area);
+                    }
+                }
+            }
 
             // Recursively render child
-            render_tree_node(frame, area, child, depth + 1, y_offset);
+            let child_selected = render_tree_node(
+                frame,
+                area,
+                child,
+                depth + 1,
+                y_offset,
+                viewport_start,
+                viewport_end,
+            );
+            selected_rendered = selected_rendered || child_selected;
 
-            // For non-last children, continue vertical line below the elbow
-            if !is_last_child {
+            // Draw continuation line for non-last children
+            if !is_last_child && (node_visible || child_visible) {
                 let next_child_start = *y_offset;
-                for y in (child_elbow_y + 1)..(area.y + next_child_start + agent::WIDGET_HEIGHT / 2)
-                {
-                    let line_widget = Paragraph::new(Span::raw("│"));
-                    let line_area = Rect::new(line_x, y, 1, 1);
-                    frame.render_widget(line_widget, line_area);
+                let current_elbow_y = area.y
+                    + (child_y_start + agent::WIDGET_HEIGHT as u32 / 2)
+                        .saturating_sub(viewport_start) as u16;
+                let next_elbow_y = area.y
+                    + (next_child_start + agent::WIDGET_HEIGHT as u32 / 2)
+                        .saturating_sub(viewport_start) as u16;
+
+                let line_start = (current_elbow_y + 1).max(area.y);
+                let line_end = next_elbow_y.min(area.y + area.height);
+
+                for y in line_start..line_end {
+                    if y < area.y + area.height {
+                        let line_widget = Paragraph::new(Span::raw("│"));
+                        let line_area = Rect::new(line_x, y, 1, 1);
+                        frame.render_widget(line_widget, line_area);
+                    }
                 }
             }
         }
     }
+
+    selected_rendered
 }
 
 impl MockComponent for GraphArea {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
         if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
-            // Render the agent graph
+            // Clear the entire area before rendering to prevent visual artifacts
+            Clear.render(area, frame.buffer_mut());
+
+            // Update viewport dimensions
+            self.viewport_height = area.height;
+
+            // Calculate viewport bounds
+            let viewport_start = self.scroll_offset;
+            let viewport_end = self.scroll_offset + area.height as u32;
+
+            // Render the agent graph with viewport culling
             let mut y_offset = 0;
             if let Some(root) = &mut self.root_node {
-                render_tree_node(frame, area, root, 0, &mut y_offset);
-                self.content_height = y_offset;
+                render_tree_node(
+                    frame,
+                    area,
+                    root,
+                    0,
+                    &mut y_offset,
+                    viewport_start,
+                    viewport_end,
+                );
 
-                // Render the overall stats
+                // Render the overall stats (always visible in top-right)
                 let live_agents = root.count();
                 let block = create_block_with_title(
                     "[ System Stats ]",
@@ -465,12 +619,12 @@ impl MockComponent for GraphArea {
                     self.stats.aggregated_agent_metrics.tools_called,
                     self.stats.aggregated_agent_metrics.total_tokens_used
                 )).block(block);
-                let [mut area] = Layout::horizontal([stats_paragraph.line_width() as u16])
+                let [mut stats_area] = Layout::horizontal([stats_paragraph.line_width() as u16])
                     .flex(Flex::End)
                     .areas(area);
-                area.height = stats_paragraph.line_count(area.width) as u16;
-                Clear.render(area, frame.buffer_mut());
-                frame.render_widget(stats_paragraph, area);
+                stats_area.height = stats_paragraph.line_count(stats_area.width) as u16;
+                Clear.render(stats_area, frame.buffer_mut());
+                frame.render_widget(stats_paragraph, stats_area);
             }
 
             self.is_modified = false;
@@ -491,16 +645,6 @@ impl MockComponent for GraphArea {
 
     fn perform(&mut self, _cmd: Cmd) -> CmdResult {
         unreachable!()
-    }
-}
-
-impl ScrollableComponentTrait<TuiMessage, MessageEnvelope> for GraphAreaComponent {
-    fn is_modified(&self) -> bool {
-        self.component.is_modified
-    }
-
-    fn get_content_height(&self, _area: Rect) -> u16 {
-        self.component.content_height
     }
 }
 
@@ -527,6 +671,11 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                             .map(|root| root.select_previous())
                             .flatten(),
                     };
+
+                    if scope.is_some() {
+                        // Center the newly selected node
+                        self.component.center_on_selected();
+                    }
 
                     scope.and_then(|scope| {
                         Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
@@ -589,9 +738,13 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                         // Insert into the tree at the parent scope
                         let _ = root.insert(&parent_scope, node);
                         self.component.stats.agents_spawned += 1;
+                        self.component.height += 1;
                     } else {
                         node.component.component.is_selected = true;
                         self.component.root_node = Some(node);
+                        self.component.height = 1;
+                        // Center on the newly created root node
+                        self.component.center_on_selected();
                     }
 
                     Some(TuiMessage::Redraw)
@@ -602,6 +755,8 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                         let agent_scope = &envelope.from_scope;
                         if matches!(agent_status_update.status, assistant::Status::Done { .. }) {
                             if let Some(scope) = root.remove(agent_scope) {
+                                // Center on the newly selected node after removal
+                                self.component.center_on_selected();
                                 Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
                                     scope.to_string(),
                                 )))
@@ -622,6 +777,9 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                         let agent_scope = &envelope.from_scope;
                         // Remove the agent that sent the Exit message
                         if let Some(scope) = root.remove(agent_scope) {
+                            // Center on the newly selected node after removal
+                            self.component.center_on_selected();
+                            self.component.height -= 1;
                             Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
                                 scope.to_string(),
                             )))
