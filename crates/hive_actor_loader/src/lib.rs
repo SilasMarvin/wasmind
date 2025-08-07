@@ -21,7 +21,6 @@ use url::Url;
 use hive_config::{Actor, ActorSource, GitRef};
 
 #[derive(Debug, Snafu)]
-#[allow(clippy::result_large_err)]
 pub enum Error {
     #[snafu(display("IO error: {} | Operation on path: {path:?}", source))]
     Io {
@@ -116,7 +115,7 @@ pub enum Error {
 
     #[snafu(display("Missing required dependency: {dependency}. {install_message}"))]
     MissingDependency {
-        dependency: String,
+        dependency: &'static str,
         install_message: String,
         #[snafu(implicit)]
         location: Location,
@@ -149,7 +148,6 @@ pub struct ActorLoader {
 }
 
 impl ActorLoader {
-    #[allow(clippy::result_large_err)]
     pub fn new(cache_dir: Option<PathBuf>) -> Result<Self> {
         match cache_dir {
             Some(cache_dir) => Ok(Self { cache_dir }),
@@ -218,7 +216,7 @@ impl ActorLoader {
         // Check for git
         if which::which("git").is_err() {
             return Err(Error::MissingDependency {
-                dependency: "git".to_string(),
+                dependency: "git",
                 install_message: "Please install git to clone remote actors.".to_string(),
                 location: location!(),
             });
@@ -227,8 +225,9 @@ impl ActorLoader {
         // Check for cargo
         if which::which("cargo").is_err() {
             return Err(Error::MissingDependency {
-                dependency: "cargo".to_string(),
-                install_message: "Please install Rust and Cargo from https://rustup.rs/".to_string(),
+                dependency: "cargo",
+                install_message: "Please install Rust and Cargo from https://rustup.rs/"
+                    .to_string(),
                 location: location!(),
             });
         }
@@ -236,8 +235,9 @@ impl ActorLoader {
         // Check for cargo-component
         if which::which("cargo-component").is_err() {
             return Err(Error::MissingDependency {
-                dependency: "cargo-component".to_string(),
-                install_message: "Please install cargo-component with: cargo install cargo-component".to_string(),
+                dependency: "cargo-component",
+                install_message:
+                    "Please install cargo-component with: cargo install cargo-component".to_string(),
                 location: location!(),
             });
         }
@@ -594,7 +594,7 @@ impl ActorLoader {
         // Get the expected WASM file name from the package manifest
         let expected_name = self.get_expected_wasm_name(&build_dir)?;
         let wasm_path = target_dir.join(&expected_name);
-        
+
         if wasm_path.exists() {
             Ok(wasm_path)
         } else {
@@ -607,10 +607,9 @@ impl ActorLoader {
         }
     }
 
-    #[allow(clippy::result_large_err)]
     fn get_expected_wasm_name(&self, build_dir: &Path) -> Result<String> {
         let manifest_path = build_dir.join("Cargo.toml");
-        
+
         let metadata = MetadataCommand::new()
             .manifest_path(&manifest_path)
             .exec()

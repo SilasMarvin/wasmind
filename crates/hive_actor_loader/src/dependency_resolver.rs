@@ -5,8 +5,33 @@ use tempfile::TempDir;
 
 use hive_config::{Actor, ActorManifest, ActorSource};
 
+/// Detailed information for conflicting sources error
+#[derive(Debug)]
+pub struct ConflictingSourcesData {
+    pub logical_name: String,
+    pub parent_actor_id: String,
+    pub source1: String,
+    pub path1: String,
+    pub source2: String,
+    pub path2: String,
+}
+
+impl std::fmt::Display for ConflictingSourcesData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Conflicting sources for dependency '{}' required by '{}'.\n  - {} via '{}'\n  - {} via '{}'",
+            self.logical_name,
+            self.parent_actor_id,
+            self.source1,
+            self.path1,
+            self.source2,
+            self.path2
+        )
+    }
+}
+
 #[derive(Debug, Snafu)]
-#[allow(clippy::result_large_err)]
 pub enum Error {
     #[snafu(display(
         "Circular dependency detected while resolving '{actor_id}'. Resolution path: {path}"
@@ -18,16 +43,9 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display(
-        "Conflicting sources for dependency '{logical_name}' required by '{parent_actor_id}'.\n  - {source1} via '{path1}'\n  - {source2} via '{path2}'"
-    ))]
+    #[snafu(display("{conflicting_sources}"))]
     ConflictingSources {
-        logical_name: String,
-        parent_actor_id: String,
-        source1: String,
-        path1: String,
-        source2: String,
-        path2: String,
+        conflicting_sources: Box<ConflictingSourcesData>,
         #[snafu(implicit)]
         location: Location,
     },
@@ -162,8 +180,61 @@ impl DependencyResolver {
     ) -> Result<()> {
         let logical_name = actor.name.clone();
 
-        // Check if already resolved
-        if let Some(existing) = self.resolved.get(&logical_name) {
+        // Check if already resolved or if there are conflicts/cycles
+        if self.is_already_resolved_with_matching_source(&logical_name, &actor)? {
+            return Ok(());
+        }
+
+        self.check_for_circular_dependency(&logical_name)?;
+
+        // Push to resolution stack
+        self.resolution_stack.push(logical_name.clone());
+
+        // Load and process the actor manifest
+        let manifest = self.load_actor_manifest(&logical_name, &actor)?;
+        let actor_id = manifest.actor_id.clone();
+
+        // Apply configuration overrides
+        let (final_source, final_config, final_auto_spawn, final_required_spawn_with) = 
+            self.apply_configuration_overrides(
+                &logical_name,
+                actor,
+                &manifest,
+                global_overrides,
+                actor_overrides,
+            );
+
+        // Create and store the resolved actor
+        let resolved_actor = ResolvedActor {
+            logical_name: logical_name.clone(),
+            actor_id,
+            source: final_source.clone(),
+            config: final_config,
+            auto_spawn: final_auto_spawn,
+            required_spawn_with: final_required_spawn_with,
+            is_dependency,
+        };
+        self.resolved.insert(logical_name, resolved_actor);
+
+        // Resolve all dependencies
+        self.resolve_actor_dependencies(&final_source, &manifest, global_overrides, actor_overrides)?;
+
+        // Pop from resolution stack
+        self.resolution_stack.pop();
+
+        Ok(())
+    }
+
+    fn get_resolution_path_for(&self, logical_name: &str) -> String {
+        // This is a simplified version - in a real implementation,
+        // we might want to track the actual resolution paths
+        format!("(previously resolved as '{logical_name}')")
+    }
+
+    /// Check if actor is already resolved with matching source
+    #[allow(clippy::result_large_err)]
+    fn is_already_resolved_with_matching_source(&self, logical_name: &str, actor: &Actor) -> Result<bool> {
+        if let Some(existing) = self.resolved.get(logical_name) {
             // Validate that sources match
             if !sources_match(&actor.source, &existing.source) {
                 let parent_actor_id = if self.resolution_stack.is_empty() {
@@ -176,29 +247,35 @@ impl DependencyResolver {
                 };
 
                 return Err(Error::ConflictingSources {
-                    logical_name: logical_name.clone(),
-                    parent_actor_id,
-                    source1: source_to_string(&existing.source),
-                    path1: self.get_resolution_path_for(&existing.logical_name),
-                    source2: source_to_string(&actor.source),
-                    path2: self.resolution_stack.join(" -> "),
+                    conflicting_sources: Box::new(ConflictingSourcesData {
+                        logical_name: logical_name.to_string(),
+                        parent_actor_id,
+                        source1: source_to_string(&existing.source),
+                        path1: self.get_resolution_path_for(&existing.logical_name),
+                        source2: source_to_string(&actor.source),
+                        path2: self.resolution_stack.join(" -> "),
+                    }),
                     location: snafu::Location::default(),
                 });
             }
-            // Already resolved with matching source, nothing to do
-            return Ok(());
+            // Already resolved with matching source
+            return Ok(true);
         }
+        Ok(false)
+    }
 
-        // Check for circular dependencies
-        if self.resolution_stack.contains(&logical_name) {
+    /// Check for circular dependencies
+    #[allow(clippy::result_large_err)]
+    fn check_for_circular_dependency(&self, logical_name: &str) -> Result<()> {
+        if self.resolution_stack.contains(&logical_name.to_string()) {
             let mut path = self.resolution_stack.clone();
-            path.push(logical_name.clone());
+            path.push(logical_name.to_string());
 
             // Get the actor_id of the first actor in the cycle for better error message
             let actor_id = if let Some(first_actor) = self.resolved.get(&path[0]) {
                 first_actor.actor_id.clone()
             } else {
-                logical_name.clone()
+                logical_name.to_string()
             };
 
             return Err(Error::CircularDependency {
@@ -207,89 +284,80 @@ impl DependencyResolver {
                 location: snafu::Location::default(),
             });
         }
+        Ok(())
+    }
 
-        // Push to resolution stack
-        self.resolution_stack.push(logical_name.clone());
-
-        // Load manifest (REQUIRED for ALL actors - no exceptions)
+    /// Load and validate actor manifest
+    #[allow(clippy::result_large_err)]
+    fn load_actor_manifest(&self, logical_name: &str, actor: &Actor) -> Result<ActorManifest> {
         let manifest = load_manifest_for_source(&actor.source)
             .map_err(|e| Error::ManifestLoad {
-                logical_name: logical_name.clone(),
+                logical_name: logical_name.to_string(),
                 source_path: source_to_string(&actor.source),
                 message: e.to_string(),
                 location: snafu::Location::default(),
             })?
             .ok_or_else(|| Error::MissingManifest {
-                logical_name: logical_name.clone(),
+                logical_name: logical_name.to_string(),
                 source_path: source_to_string(&actor.source),
                 location: snafu::Location::default(),
             })?;
 
-        // Get actor_id from manifest (always required)
-        let actor_id = manifest.actor_id.clone();
+        Ok(manifest)
+    }
 
-        // Apply overrides in order: manifest defaults → actor definition → global overrides → actor overrides
-        let mut final_source = actor.source.clone();
-        let mut final_config = actor.config.clone();
+    /// Apply configuration overrides in the correct precedence order
+    fn apply_configuration_overrides(
+        &self,
+        logical_name: &str,
+        actor: Actor,
+        manifest: &ActorManifest,
+        global_overrides: &HashMap<String, Actor>,
+        actor_overrides: &HashMap<String, hive_config::ActorOverride>,
+    ) -> (ActorSource, Option<toml::Table>, bool, Vec<String>) {
+        // Start with base configuration from actor and manifest
+        let mut final_source = actor.source;
+        let mut final_config = actor.config;
         let mut final_auto_spawn = actor.auto_spawn;
         let mut final_required_spawn_with = manifest.required_spawn_with.clone();
 
         // Apply global override if it exists
-        if let Some(global_override) = global_overrides.get(&logical_name) {
-            final_source = global_override.source.clone();
-            // Merge configs instead of replacing
-            final_config = match (final_config, &global_override.config) {
-                (Some(base), Some(override_cfg)) => Some(merge_toml_tables(&base, override_cfg)),
-                (None, Some(override_cfg)) => Some(override_cfg.clone()),
-                (base, None) => base,
-            };
-            final_auto_spawn = global_override.auto_spawn;
-            // Use user-provided required_spawn_with if not empty, otherwise keep current
-            if !global_override.required_spawn_with.is_empty() {
-                final_required_spawn_with = global_override.required_spawn_with.clone();
-            }
+        if let Some(global_override) = global_overrides.get(logical_name) {
+            self.apply_global_override(
+                &mut final_source,
+                &mut final_config,
+                &mut final_auto_spawn,
+                &mut final_required_spawn_with,
+                global_override,
+            );
         }
 
         // Apply actor override if it exists (this takes precedence over global overrides)
-        if let Some(actor_override) = actor_overrides.get(&logical_name) {
-            if let Some(override_source) = &actor_override.source {
-                final_source = override_source.clone();
-            }
-            if let Some(override_config) = &actor_override.config {
-                // Merge configs instead of replacing
-                final_config = match final_config {
-                    Some(base) => Some(merge_toml_tables(&base, override_config)),
-                    None => Some(override_config.clone()),
-                };
-            }
-            if let Some(override_auto_spawn) = actor_override.auto_spawn {
-                final_auto_spawn = override_auto_spawn;
-            }
-            if let Some(override_required_spawn_with) = &actor_override.required_spawn_with {
-                final_required_spawn_with = override_required_spawn_with.clone();
-            }
+        if let Some(actor_override) = actor_overrides.get(logical_name) {
+            self.apply_actor_override(
+                &mut final_source,
+                &mut final_config,
+                &mut final_auto_spawn,
+                &mut final_required_spawn_with,
+                actor_override,
+            );
         }
 
-        // Create resolved actor
-        let resolved_actor = ResolvedActor {
-            logical_name: logical_name.clone(),
-            actor_id,
-            source: final_source.clone(), // Clone for later use
-            config: final_config,
-            auto_spawn: final_auto_spawn,
-            required_spawn_with: final_required_spawn_with,
-            is_dependency,
-        };
+        (final_source, final_config, final_auto_spawn, final_required_spawn_with)
+    }
 
-        // Store the resolved actor
-        self.resolved.insert(logical_name.clone(), resolved_actor);
-
-        // No longer checking for orphaned dependency configs as we use global overrides now
-
-        // Resolve dependencies from manifest
-        for (dep_name, dep_config) in manifest.dependencies {
+    /// Resolve all dependencies declared in the manifest
+    #[allow(clippy::result_large_err)]
+    fn resolve_actor_dependencies(
+        &mut self,
+        final_source: &ActorSource,
+        manifest: &ActorManifest,
+        global_overrides: &HashMap<String, Actor>,
+        actor_overrides: &HashMap<String, hive_config::ActorOverride>,
+    ) -> Result<()> {
+        for (dep_name, dep_config) in &manifest.dependencies {
             // Start with manifest defaults
-            let dep_source = resolve_relative_source(&final_source, dep_config.source.clone());
+            let dep_source = resolve_relative_source(final_source, dep_config.source.clone());
             let dep_config_table = dep_config.config.clone();
             let dep_auto_spawn = dep_config.auto_spawn.unwrap_or(false);
 
@@ -302,17 +370,56 @@ impl DependencyResolver {
             };
             self.resolve_actor_internal(dep_actor, true, global_overrides, actor_overrides)?;
         }
-
-        // Pop from resolution stack
-        self.resolution_stack.pop();
-
         Ok(())
     }
 
-    fn get_resolution_path_for(&self, logical_name: &str) -> String {
-        // This is a simplified version - in a real implementation,
-        // we might want to track the actual resolution paths
-        format!("(previously resolved as '{logical_name}')")
+    /// Apply global override configuration to an actor
+    fn apply_global_override(
+        &self,
+        final_source: &mut ActorSource,
+        final_config: &mut Option<toml::Table>,
+        final_auto_spawn: &mut bool,
+        final_required_spawn_with: &mut Vec<String>,
+        global_override: &Actor,
+    ) {
+        *final_source = global_override.source.clone();
+        
+        // Merge configs instead of replacing
+        *final_config = merge_config_option(final_config.as_ref(), global_override.config.as_ref());
+        
+        *final_auto_spawn = global_override.auto_spawn;
+        
+        // Use user-provided required_spawn_with if not empty, otherwise keep current
+        if !global_override.required_spawn_with.is_empty() {
+            *final_required_spawn_with = global_override.required_spawn_with.clone();
+        }
+    }
+
+    /// Apply actor override configuration to an actor
+    fn apply_actor_override(
+        &self,
+        final_source: &mut ActorSource,
+        final_config: &mut Option<toml::Table>,
+        final_auto_spawn: &mut bool,
+        final_required_spawn_with: &mut Vec<String>,
+        actor_override: &hive_config::ActorOverride,
+    ) {
+        if let Some(override_source) = &actor_override.source {
+            *final_source = override_source.clone();
+        }
+        
+        if let Some(override_config) = &actor_override.config {
+            // Merge configs instead of replacing
+            *final_config = merge_config_option(final_config.as_ref(), Some(override_config));
+        }
+        
+        if let Some(override_auto_spawn) = actor_override.auto_spawn {
+            *final_auto_spawn = override_auto_spawn;
+        }
+        
+        if let Some(override_required_spawn_with) = &actor_override.required_spawn_with {
+            *final_required_spawn_with = override_required_spawn_with.clone();
+        }
     }
 }
 
@@ -458,6 +565,18 @@ fn merge_toml_tables(base: &toml::Table, override_table: &toml::Table) -> toml::
     }
 
     merged
+}
+
+/// Helper function to merge optional TOML configurations
+fn merge_config_option(
+    base: Option<&toml::Table>,
+    override_config: Option<&toml::Table>,
+) -> Option<toml::Table> {
+    match (base, override_config) {
+        (Some(base), Some(override_cfg)) => Some(merge_toml_tables(base, override_cfg)),
+        (None, Some(override_cfg)) => Some(override_cfg.clone()),
+        (base, None) => base.cloned(),
+    }
 }
 
 fn source_to_string(source: &ActorSource) -> String {
