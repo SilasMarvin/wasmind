@@ -132,9 +132,9 @@ mod tests {
 
         // Test with nested parent
         let grandchild_id = generate_child_correlation_id(&child_id);
-        let parts: Vec<&str> = grandchild_id.split(':').collect();
-        assert_eq!(parts.len(), 2);
-        assert_eq!(parts[0], parts[1].split(':').last().unwrap_or(""));
-        assert_eq!(parts[1].len(), 6);
+        let parts2: Vec<&str> = grandchild_id.split(':').collect();
+        assert_eq!(parts2.len(), 2);
+        assert_eq!(parts2[0], parts[1]);
+        assert_eq!(parts2[1].len(), 6);
     }
 }

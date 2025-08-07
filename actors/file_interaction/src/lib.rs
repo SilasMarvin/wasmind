@@ -380,8 +380,6 @@ impl GeneratedActorTrait for FileInteractionActor {
             section: Some(Section::Tools),
         });
 
-        // Debug filesystem operations have been completed - absolute paths are now required
-
         Self {
             scope,
             cache: HashMap::new(),
@@ -398,9 +396,7 @@ impl GeneratedActorTrait for FileInteractionActor {
             match execute_tool.tool_call.function.name.as_str() {
                 READ_FILE_NAME => self.handle_read_file(execute_tool),
                 EDIT_FILE_NAME => self.handle_edit_file(execute_tool),
-                _ => {
-                    // Not our tool
-                }
+                _ => {}
             }
         }
     }
@@ -419,7 +415,7 @@ impl FileInteractionActor {
         for (path, entry) in &self.cache {
             // Always use numbered content for consistent formatting
             let content = entry.content.get_numbered_content();
-            
+
             files.push(serde_json::json!({
                 "path": path.display().to_string(),
                 "content": content
@@ -428,7 +424,10 @@ impl FileInteractionActor {
 
         // Sort files by path for consistent ordering
         files.sort_by(|a, b| {
-            a["path"].as_str().unwrap_or("").cmp(b["path"].as_str().unwrap_or(""))
+            a["path"]
+                .as_str()
+                .unwrap_or("")
+                .cmp(b["path"].as_str().unwrap_or(""))
         });
 
         let data = serde_json::json!({
@@ -437,7 +436,8 @@ impl FileInteractionActor {
 
         let default_template = r#"{% for file in data.files -%}
 <file path="{{ file.path }}">{{ file.content }}</file>
-{% endfor %}"#.to_string();
+{% endfor %}"#
+            .to_string();
 
         let _ = Self::broadcast_common_message(SystemPromptContribution {
             agent: self.scope.clone(),
