@@ -40,7 +40,7 @@ async fn main() -> TuiResult<()> {
             return Ok(());
         }
         Some(cli::Commands::Check) => {
-            if let Err(e) = hive_cli::commands::check::show_status(cli.config.clone()) {
+            if let Err(e) = hive_cli::commands::check::show_status(cli.config.clone()).await {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }

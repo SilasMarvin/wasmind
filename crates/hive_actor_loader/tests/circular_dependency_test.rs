@@ -3,11 +3,12 @@ use hive_config::{Actor, ActorSource, PathSource};
 use std::fs;
 use tempfile::TempDir;
 
-#[test]
-fn test_circular_dependency_detection() {
+#[tokio::test]
+async fn test_circular_dependency_detection() {
     // Create a temporary test directory structure with different names to avoid source conflicts
     let temp_dir = TempDir::new().unwrap();
     let test_root = temp_dir.path();
+    
 
     // Create Actor A directory with Hive.toml
     let actor_a_dir = test_root.join("actor_a");
@@ -46,8 +47,8 @@ source = { path = "../actor_a" }
     }];
 
     // Attempt to resolve dependencies
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(user_actors, vec![]);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(user_actors, vec![]).await;
 
     // Verify circular dependency error is detected
     assert!(result.is_err());
@@ -73,11 +74,12 @@ source = { path = "../actor_a" }
     );
 }
 
-#[test] 
-fn test_deep_circular_dependency() {
+#[tokio::test] 
+async fn test_deep_circular_dependency() {
     // Test a more complex circular dependency: A -> B -> C -> A with unique logical names
     let temp_dir = TempDir::new().unwrap();
     let test_root = temp_dir.path();
+    
 
     // Create Actor A (depends on B via unique logical name)
     let actor_a_dir = test_root.join("actor_a");
@@ -128,8 +130,8 @@ source = { path = "../actor_a" }
     }];
 
     // Attempt to resolve dependencies
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(user_actors, vec![]);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(user_actors, vec![]).await;
 
     // Verify an error is detected (circular dependency or conflicting sources)
     assert!(result.is_err());

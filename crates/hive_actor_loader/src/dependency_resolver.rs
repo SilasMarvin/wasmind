@@ -1,19 +1,20 @@
 use snafu::{Location, Snafu};
 use std::collections::HashMap;
 use std::path::Path;
-use tempfile::TempDir;
+use std::sync::Arc;
 
+use crate::ExternalDependencyCache;
 use hive_config::{Actor, ActorManifest, ActorSource};
 
 /// Detailed information for conflicting sources error
 #[derive(Debug)]
 pub struct ConflictingSourcesData {
-    pub logical_name: String,
-    pub parent_actor_id: String,
-    pub source1: String,
-    pub path1: String,
-    pub source2: String,
-    pub path2: String,
+    logical_name: String,
+    parent_actor_id: String,
+    source1: String,
+    path1: String,
+    source2: String,
+    path2: String,
 }
 
 impl std::fmt::Display for ConflictingSourcesData {
@@ -114,22 +115,43 @@ pub struct ResolvedActor {
 }
 
 /// Handles dependency resolution and validation
-#[derive(Default)]
 pub struct DependencyResolver {
     /// Maps logical names to their resolved actors
     resolved: HashMap<String, ResolvedActor>,
     /// Tracks the resolution path for circular dependency detection
     resolution_stack: Vec<String>,
+    /// Cache for external dependencies
+    external_cache: Arc<ExternalDependencyCache>,
+}
+
+impl Default for DependencyResolver {
+    fn default() -> Self {
+        let temp_dir =
+            tempfile::TempDir::new().expect("Failed to create temporary directory for actor cache");
+        let external_cache = Arc::new(
+            ExternalDependencyCache::new(temp_dir)
+                .expect("Failed to create external dependency cache"),
+        );
+        Self {
+            resolved: HashMap::new(),
+            resolution_stack: Vec::new(),
+            external_cache,
+        }
+    }
 }
 
 impl DependencyResolver {
-    pub fn new() -> Self {
-        Self::default()
+    /// Internal constructor for ActorLoader to reuse its external cache
+    pub(crate) fn with_cache(external_cache: Arc<ExternalDependencyCache>) -> Self {
+        Self {
+            resolved: HashMap::new(),
+            resolution_stack: Vec::new(),
+            external_cache,
+        }
     }
 
     /// Resolve all actors and their dependencies
-    #[allow(clippy::result_large_err)]
-    pub fn resolve_all(
+    pub async fn resolve_all(
         mut self,
         user_actors: Vec<Actor>,
         actor_overrides: Vec<hive_config::ActorOverride>,
@@ -163,66 +185,74 @@ impl DependencyResolver {
 
         // First pass: resolve all user actors and collect all dependency names
         for actor in user_actors {
-            self.resolve_actor_internal(actor, false, &global_overrides, &overrides_map)?;
+            self.resolve_actor_internal(actor, false, &global_overrides, &overrides_map)
+                .await?;
         }
 
         Ok(self.resolved)
     }
 
     /// Internal method for resolving actors with full context
-    #[allow(clippy::result_large_err)]
-    fn resolve_actor_internal(
-        &mut self,
+    fn resolve_actor_internal<'a>(
+        &'a mut self,
         actor: Actor,
         is_dependency: bool,
-        global_overrides: &HashMap<String, Actor>,
-        actor_overrides: &HashMap<String, hive_config::ActorOverride>,
-    ) -> Result<()> {
-        let logical_name = actor.name.clone();
+        global_overrides: &'a HashMap<String, Actor>,
+        actor_overrides: &'a HashMap<String, hive_config::ActorOverride>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + 'a>> {
+        Box::pin(async move {
+            let logical_name = actor.name.clone();
 
-        // Check if already resolved or if there are conflicts/cycles
-        if self.is_already_resolved_with_matching_source(&logical_name, &actor)? {
-            return Ok(());
-        }
+            // Check if already resolved or if there are conflicts/cycles
+            if self.is_already_resolved_with_matching_source(&logical_name, &actor)? {
+                return Ok(());
+            }
 
-        self.check_for_circular_dependency(&logical_name)?;
+            self.check_for_circular_dependency(&logical_name)?;
 
-        // Push to resolution stack
-        self.resolution_stack.push(logical_name.clone());
+            // Push to resolution stack
+            self.resolution_stack.push(logical_name.clone());
 
-        // Load and process the actor manifest
-        let manifest = self.load_actor_manifest(&logical_name, &actor)?;
-        let actor_id = manifest.actor_id.clone();
+            // Load and process the actor manifest
+            let manifest = self.load_actor_manifest(&logical_name, &actor).await?;
+            let actor_id = manifest.actor_id.clone();
 
-        // Apply configuration overrides
-        let (final_source, final_config, final_auto_spawn, final_required_spawn_with) = 
-            self.apply_configuration_overrides(
-                &logical_name,
-                actor,
+            // Apply configuration overrides
+            let (final_source, final_config, final_auto_spawn, final_required_spawn_with) = self
+                .apply_configuration_overrides(
+                    &logical_name,
+                    actor,
+                    &manifest,
+                    global_overrides,
+                    actor_overrides,
+                );
+
+            // Create and store the resolved actor
+            let resolved_actor = ResolvedActor {
+                logical_name: logical_name.clone(),
+                actor_id,
+                source: final_source.clone(),
+                config: final_config,
+                auto_spawn: final_auto_spawn,
+                required_spawn_with: final_required_spawn_with,
+                is_dependency,
+            };
+            self.resolved.insert(logical_name, resolved_actor);
+
+            // Resolve all dependencies
+            self.resolve_actor_dependencies(
+                &final_source,
                 &manifest,
                 global_overrides,
                 actor_overrides,
-            );
+            )
+            .await?;
 
-        // Create and store the resolved actor
-        let resolved_actor = ResolvedActor {
-            logical_name: logical_name.clone(),
-            actor_id,
-            source: final_source.clone(),
-            config: final_config,
-            auto_spawn: final_auto_spawn,
-            required_spawn_with: final_required_spawn_with,
-            is_dependency,
-        };
-        self.resolved.insert(logical_name, resolved_actor);
+            // Pop from resolution stack
+            self.resolution_stack.pop();
 
-        // Resolve all dependencies
-        self.resolve_actor_dependencies(&final_source, &manifest, global_overrides, actor_overrides)?;
-
-        // Pop from resolution stack
-        self.resolution_stack.pop();
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn get_resolution_path_for(&self, logical_name: &str) -> String {
@@ -232,8 +262,11 @@ impl DependencyResolver {
     }
 
     /// Check if actor is already resolved with matching source
-    #[allow(clippy::result_large_err)]
-    fn is_already_resolved_with_matching_source(&self, logical_name: &str, actor: &Actor) -> Result<bool> {
+    fn is_already_resolved_with_matching_source(
+        &self,
+        logical_name: &str,
+        actor: &Actor,
+    ) -> Result<bool> {
         if let Some(existing) = self.resolved.get(logical_name) {
             // Validate that sources match
             if !sources_match(&actor.source, &existing.source) {
@@ -265,7 +298,6 @@ impl DependencyResolver {
     }
 
     /// Check for circular dependencies
-    #[allow(clippy::result_large_err)]
     fn check_for_circular_dependency(&self, logical_name: &str) -> Result<()> {
         if self.resolution_stack.contains(&logical_name.to_string()) {
             let mut path = self.resolution_stack.clone();
@@ -288,9 +320,13 @@ impl DependencyResolver {
     }
 
     /// Load and validate actor manifest
-    #[allow(clippy::result_large_err)]
-    fn load_actor_manifest(&self, logical_name: &str, actor: &Actor) -> Result<ActorManifest> {
-        let manifest = load_manifest_for_source(&actor.source)
+    async fn load_actor_manifest(
+        &self,
+        logical_name: &str,
+        actor: &Actor,
+    ) -> Result<ActorManifest> {
+        let manifest = load_manifest_for_source(&actor.source, &self.external_cache)
+            .await
             .map_err(|e| Error::ManifestLoad {
                 logical_name: logical_name.to_string(),
                 source_path: source_to_string(&actor.source),
@@ -343,34 +379,41 @@ impl DependencyResolver {
             );
         }
 
-        (final_source, final_config, final_auto_spawn, final_required_spawn_with)
+        (
+            final_source,
+            final_config,
+            final_auto_spawn,
+            final_required_spawn_with,
+        )
     }
 
     /// Resolve all dependencies declared in the manifest
-    #[allow(clippy::result_large_err)]
-    fn resolve_actor_dependencies(
-        &mut self,
-        final_source: &ActorSource,
-        manifest: &ActorManifest,
-        global_overrides: &HashMap<String, Actor>,
-        actor_overrides: &HashMap<String, hive_config::ActorOverride>,
-    ) -> Result<()> {
-        for (dep_name, dep_config) in &manifest.dependencies {
-            // Start with manifest defaults
-            let dep_source = resolve_relative_source(final_source, dep_config.source.clone());
-            let dep_config_table = dep_config.config.clone();
-            let dep_auto_spawn = dep_config.auto_spawn.unwrap_or(false);
+    fn resolve_actor_dependencies<'a>(
+        &'a mut self,
+        final_source: &'a ActorSource,
+        manifest: &'a ActorManifest,
+        global_overrides: &'a HashMap<String, Actor>,
+        actor_overrides: &'a HashMap<String, hive_config::ActorOverride>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + 'a>> {
+        Box::pin(async move {
+            for (dep_name, dep_config) in &manifest.dependencies {
+                // Start with manifest defaults
+                let dep_source = resolve_relative_source(final_source, dep_config.source.clone());
+                let dep_config_table = dep_config.config.clone();
+                let dep_auto_spawn = dep_config.auto_spawn.unwrap_or(false);
 
-            let dep_actor = Actor {
-                name: dep_name.clone(),
-                source: dep_source,
-                config: dep_config_table,
-                auto_spawn: dep_auto_spawn,
-                required_spawn_with: vec![], // Dependencies don't have required_spawn_with from manifest
-            };
-            self.resolve_actor_internal(dep_actor, true, global_overrides, actor_overrides)?;
-        }
-        Ok(())
+                let dep_actor = Actor {
+                    name: dep_name.clone(),
+                    source: dep_source,
+                    config: dep_config_table,
+                    auto_spawn: dep_auto_spawn,
+                    required_spawn_with: vec![], // Dependencies don't have required_spawn_with from manifest
+                };
+                self.resolve_actor_internal(dep_actor, true, global_overrides, actor_overrides)
+                    .await?;
+            }
+            Ok(())
+        })
     }
 
     /// Apply global override configuration to an actor
@@ -383,12 +426,12 @@ impl DependencyResolver {
         global_override: &Actor,
     ) {
         *final_source = global_override.source.clone();
-        
+
         // Merge configs instead of replacing
         *final_config = merge_config_option(final_config.as_ref(), global_override.config.as_ref());
-        
+
         *final_auto_spawn = global_override.auto_spawn;
-        
+
         // Use user-provided required_spawn_with if not empty, otherwise keep current
         if !global_override.required_spawn_with.is_empty() {
             *final_required_spawn_with = global_override.required_spawn_with.clone();
@@ -407,68 +450,34 @@ impl DependencyResolver {
         if let Some(override_source) = &actor_override.source {
             *final_source = override_source.clone();
         }
-        
+
         if let Some(override_config) = &actor_override.config {
             // Merge configs instead of replacing
             *final_config = merge_config_option(final_config.as_ref(), Some(override_config));
         }
-        
+
         if let Some(override_auto_spawn) = actor_override.auto_spawn {
             *final_auto_spawn = override_auto_spawn;
         }
-        
+
         if let Some(override_required_spawn_with) = &actor_override.required_spawn_with {
             *final_required_spawn_with = override_required_spawn_with.clone();
         }
     }
 }
 
-fn load_manifest_from_git(
+async fn load_manifest_from_git(
     git_source: &hive_config::Repository,
+    external_cache: &ExternalDependencyCache,
 ) -> std::result::Result<Option<ActorManifest>, hive_config::Error> {
-    // Create temporary directory for cloning
-    let temp_dir = TempDir::new().map_err(|e| hive_config::Error::Io {
-        source: e,
-        location: snafu::Location::default(),
-    })?;
-
-    let clone_path = temp_dir.path().join("repo");
-
-    // Build git clone command
-    let mut cmd = std::process::Command::new("git");
-    cmd.arg("clone")
-        .arg("--depth")
-        .arg("1") // Shallow clone for efficiency
-        .arg(git_source.url.as_str())
-        .arg(&clone_path);
-
-    // Add git ref if specified
-    if let Some(git_ref) = &git_source.git_ref {
-        match git_ref {
-            hive_config::GitRef::Branch(branch) => {
-                cmd.arg("-b").arg(branch);
-            }
-            hive_config::GitRef::Tag(tag) => {
-                cmd.arg("-b").arg(tag);
-            }
-            hive_config::GitRef::Rev(_rev) => {
-                // Note: Specific revision checkout is not currently supported
-                // We clone the default branch instead
-                cmd.arg("-b").arg("main");
-            }
-        }
-    }
-
-    // Execute clone
-    let output = cmd.output().map_err(|e| hive_config::Error::Io {
-        source: e,
-        location: snafu::Location::default(),
-    })?;
-
-    if !output.status.success() {
-        // If clone fails, treat as no manifest available
-        return Ok(None);
-    }
+    // Use external cache to get the cached clone path
+    let clone_path = external_cache
+        .load_external_dependency(git_source)
+        .await
+        .map_err(|e| hive_config::Error::Io {
+            source: std::io::Error::other(e.to_string()),
+            location: snafu::Location::default(),
+        })?;
 
     // Determine manifest path based on package
     let manifest_path = if let Some(package) = &git_source.package {
@@ -489,8 +498,9 @@ fn load_manifest_from_git(
     }
 }
 
-pub fn load_manifest_for_source(
+async fn load_manifest_for_source(
     source: &ActorSource,
+    external_cache: &ExternalDependencyCache,
 ) -> std::result::Result<Option<ActorManifest>, hive_config::Error> {
     match source {
         ActorSource::Path(path_source) => {
@@ -515,8 +525,8 @@ pub fn load_manifest_for_source(
             }
         }
         ActorSource::Git(git_source) => {
-            // Clone the repository temporarily to read Hive.toml
-            load_manifest_from_git(git_source)
+            // Use cached git clone to read Hive.toml
+            load_manifest_from_git(git_source, external_cache).await
         }
     }
 }
@@ -622,8 +632,8 @@ mod tests {
     use super::*;
     use hive_config::PathSource;
 
-    #[test]
-    fn test_missing_manifest_fails() {
+    #[tokio::test]
+    async fn test_missing_manifest_fails() {
         let actors = vec![Actor {
             name: "actor_a".to_string(),
             source: ActorSource::Path(PathSource {
@@ -635,8 +645,8 @@ mod tests {
             required_spawn_with: vec![],
         }];
 
-        let resolver = DependencyResolver::new();
-        let result = resolver.resolve_all(actors, vec![]);
+        let resolver = DependencyResolver::default();
+        let result = resolver.resolve_all(actors, vec![]).await;
 
         // Should fail because Hive.toml is required for ALL actors
         assert!(result.is_err());
@@ -771,8 +781,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_actor_override_config_merging_integration() {
+    #[tokio::test]
+    async fn test_actor_override_config_merging_integration() {
         use tempfile::TempDir;
 
         // Create a temporary test directory structure
@@ -840,8 +850,11 @@ required_spawn_with = []
         }];
 
         // Resolve all actors
-        let resolver = DependencyResolver::new();
-        let resolved = resolver.resolve_all(user_actors, actor_overrides).unwrap();
+        let resolver = DependencyResolver::default();
+        let resolved = resolver
+            .resolve_all(user_actors, actor_overrides)
+            .await
+            .unwrap();
 
         // Verify that test_assistant was resolved with merged config
         let assistant = resolved.get("test_assistant").unwrap();

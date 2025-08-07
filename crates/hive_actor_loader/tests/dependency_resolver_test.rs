@@ -2,8 +2,9 @@ use hive_actor_loader::dependency_resolver::DependencyResolver;
 use hive_config::{Actor, ActorSource, PathSource};
 use std::path::PathBuf;
 
-#[test]
-fn test_simple_actor_resolution() {
+#[tokio::test]
+async fn test_simple_actor_resolution() {
+    
     let test_actor_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors/simple_actor");
 
@@ -18,8 +19,8 @@ fn test_simple_actor_resolution() {
         required_spawn_with: vec![],
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, vec![]);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, vec![]).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -31,8 +32,9 @@ fn test_simple_actor_resolution() {
     assert_eq!(actor.logical_name, "test_actor");
 }
 
-#[test]
-fn test_actor_without_manifest_fails() {
+#[tokio::test]
+async fn test_actor_without_manifest_fails() {
+    
     let actors = vec![Actor {
         name: "no_manifest_actor".to_string(),
         source: ActorSource::Path(PathSource {
@@ -44,8 +46,8 @@ fn test_actor_without_manifest_fails() {
         required_spawn_with: vec![],
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, vec![]);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, vec![]).await;
 
     // Should fail because Hive.toml is required
     assert!(result.is_err());
@@ -57,8 +59,9 @@ fn test_actor_without_manifest_fails() {
     assert!(error_msg.contains("no_manifest_actor"));
 }
 
-#[test]
-fn test_dependency_resolution() {
+#[tokio::test]
+async fn test_dependency_resolution() {
+    
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![Actor {
@@ -76,8 +79,8 @@ fn test_dependency_resolution() {
         required_spawn_with: vec![],
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, vec![]);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, vec![]).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -97,9 +100,10 @@ fn test_dependency_resolution() {
     assert_eq!(logger.auto_spawn, true);
 }
 
-#[test]
-fn test_global_configuration_override() {
+#[tokio::test]
+async fn test_global_configuration_override() {
     use toml::Table;
+    
 
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -147,8 +151,8 @@ fn test_global_configuration_override() {
         },
     ];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, vec![]);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, vec![]).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -168,8 +172,9 @@ fn test_global_configuration_override() {
     // Note: The dependency's default config is not merged with global overrides
 }
 
-#[test]
-fn test_global_source_and_auto_spawn_overrides() {
+#[tokio::test]
+async fn test_global_source_and_auto_spawn_overrides() {
+    
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![
@@ -205,8 +210,8 @@ fn test_global_source_and_auto_spawn_overrides() {
         },
     ];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, vec![]);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, vec![]).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();

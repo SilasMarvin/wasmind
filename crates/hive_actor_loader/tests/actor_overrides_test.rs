@@ -2,8 +2,8 @@ use hive_actor_loader::dependency_resolver::DependencyResolver;
 use hive_config::{Actor, ActorOverride, ActorSource, PathSource};
 use std::path::PathBuf;
 
-#[test]
-fn test_actor_overrides_config_only() {
+#[tokio::test]
+async fn test_actor_overrides_config_only() {
     // Test [actor_overrides.NAME.config] syntax for config-only overrides
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -41,8 +41,8 @@ fn test_actor_overrides_config_only() {
         required_spawn_with: None, // No required_spawn_with override
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     assert!(result.is_ok(), "Resolution should succeed: {:?}", result);
     let resolved = result.unwrap();
@@ -70,8 +70,8 @@ fn test_actor_overrides_config_only() {
     assert_eq!(logger.actor_id, "test:logger"); // From manifest
 }
 
-#[test]
-fn test_actor_overrides_for_existing_dependency() {
+#[tokio::test]
+async fn test_actor_overrides_for_existing_dependency() {
     // Test that actor_overrides can modify existing dependencies
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -112,8 +112,8 @@ fn test_actor_overrides_for_existing_dependency() {
         required_spawn_with: None,
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -146,8 +146,8 @@ fn test_actor_overrides_for_existing_dependency() {
     assert_eq!(logger.actor_id, "test:logger");
 }
 
-#[test]
-fn test_actor_overrides_all_fields() {
+#[tokio::test]
+async fn test_actor_overrides_all_fields() {
     // Test overriding source, config, auto_spawn, required_spawn_with via actor_overrides
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -188,8 +188,8 @@ fn test_actor_overrides_all_fields() {
         required_spawn_with: Some(vec!["coordinator_instance".to_string()]), // Add required spawn
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -223,8 +223,8 @@ fn test_actor_overrides_all_fields() {
     assert_eq!(logger.actor_id, "test:logger");
 }
 
-#[test]
-fn test_actor_overrides_partial_fields() {
+#[tokio::test]
+async fn test_actor_overrides_partial_fields() {
     // Test overriding only some fields (e.g., just auto_spawn)
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -252,8 +252,8 @@ fn test_actor_overrides_partial_fields() {
         required_spawn_with: None, // No override
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -283,8 +283,8 @@ fn test_actor_overrides_partial_fields() {
     assert_eq!(logger.actor_id, "test:logger");
 }
 
-#[test]
-fn test_user_defined_actor_separate_from_dependencies() {
+#[tokio::test]
+async fn test_user_defined_actor_separate_from_dependencies() {
     // Test that user can define separate actors that don't conflict with dependencies
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -343,8 +343,8 @@ fn test_user_defined_actor_separate_from_dependencies() {
         required_spawn_with: None,
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -381,8 +381,8 @@ fn test_user_defined_actor_separate_from_dependencies() {
     assert_eq!(custom_service.actor_id, "test:simple-actor");
 }
 
-#[test]
-fn test_actor_overrides_nonexistent_actor() {
+#[tokio::test]
+async fn test_actor_overrides_nonexistent_actor() {
     // Test graceful handling when actor_overrides reference unused actors
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -416,8 +416,8 @@ fn test_actor_overrides_nonexistent_actor() {
         required_spawn_with: None,
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     // Should succeed - unused overrides are simply ignored
     assert!(result.is_ok());
@@ -432,8 +432,8 @@ fn test_actor_overrides_nonexistent_actor() {
     assert_eq!(simple_service.actor_id, "test:simple-actor");
 }
 
-#[test]
-fn test_actor_and_override_conflict_error() {
+#[tokio::test]
+async fn test_actor_and_override_conflict_error() {
     // Test that having both [actors.NAME] and [actor_overrides.NAME] causes an error
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -468,8 +468,8 @@ fn test_actor_and_override_conflict_error() {
         required_spawn_with: None,
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     // Should fail with ActorAndOverrideConflict error
     assert!(result.is_err());

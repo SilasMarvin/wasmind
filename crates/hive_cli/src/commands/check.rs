@@ -13,7 +13,7 @@ struct StartupAnalysis {
     has_valid_startup: bool,
 }
 
-pub fn show_status(config_path: Option<PathBuf>) -> TuiResult<()> {
+pub async fn show_status(config_path: Option<PathBuf>) -> TuiResult<()> {
     println!("Hive Configuration Status");
     println!("========================");
 
@@ -44,9 +44,9 @@ pub fn show_status(config_path: Option<PathBuf>) -> TuiResult<()> {
     println!();
 
     // Use hive_actor_loader to resolve dependencies
-    let resolver = DependencyResolver::new();
+    let resolver = DependencyResolver::default();
     let resolved_actors =
-        match resolver.resolve_all(config.actors.clone(), config.actor_overrides.clone()) {
+        match resolver.resolve_all(config.actors.clone(), config.actor_overrides.clone()).await {
             Ok(actors) => actors,
             Err(e) => {
                 println!("{} Dependency resolution failed:", icons::FAILED_ICON);

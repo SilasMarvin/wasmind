@@ -4,9 +4,10 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-#[test]
-fn test_required_spawn_with_basic_functionality() {
+#[tokio::test]
+async fn test_required_spawn_with_basic_functionality() {
     // Test that required_spawn_with from manifest propagates to LoadedActor
+    
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![Actor {
@@ -24,8 +25,8 @@ fn test_required_spawn_with_basic_functionality() {
         required_spawn_with: vec![],
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, vec![]);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, vec![]).await;
 
     assert!(result.is_ok(), "Resolution should succeed: {:?}", result);
     let resolved = result.unwrap();
@@ -47,9 +48,10 @@ fn test_required_spawn_with_basic_functionality() {
     assert_eq!(logger.required_spawn_with, Vec::<String>::new());
 }
 
-#[test]
-fn test_required_spawn_with_global_override() {
+#[tokio::test]
+async fn test_required_spawn_with_global_override() {
     // Test user can override required_spawn_with via global config
+    
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![
@@ -85,8 +87,8 @@ fn test_required_spawn_with_global_override() {
         },
     ];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, vec![]);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, vec![]).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -97,8 +99,8 @@ fn test_required_spawn_with_global_override() {
     assert_eq!(logger.required_spawn_with, vec!["coordinator_instance"]);
 }
 
-#[test]
-fn test_required_spawn_with_actor_override() {
+#[tokio::test]
+async fn test_required_spawn_with_actor_override() {
     // Test required_spawn_with can be overridden via actor_overrides
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -129,8 +131,8 @@ fn test_required_spawn_with_actor_override() {
         ]),
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -144,8 +146,8 @@ fn test_required_spawn_with_actor_override() {
     );
 }
 
-#[test]
-fn test_required_spawn_with_empty_override() {
+#[tokio::test]
+async fn test_required_spawn_with_empty_override() {
     // Test overriding to empty list vs non-empty
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -176,8 +178,8 @@ fn test_required_spawn_with_empty_override() {
         required_spawn_with: Some(vec![]), // Explicitly override to empty
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -188,8 +190,8 @@ fn test_required_spawn_with_empty_override() {
     assert_eq!(logger.required_spawn_with, Vec::<String>::new());
 }
 
-#[test]
-fn test_required_spawn_with_precedence() {
+#[tokio::test]
+async fn test_required_spawn_with_precedence() {
     // Test precedence: manifest < global actor < actor_override
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
@@ -220,8 +222,8 @@ fn test_required_spawn_with_precedence() {
         required_spawn_with: Some(vec!["from_override".to_string()]),
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();
@@ -236,8 +238,8 @@ fn test_required_spawn_with_precedence() {
     assert_eq!(logger.required_spawn_with, vec!["from_override"]);
 }
 
-#[test]
-fn test_required_spawn_with_with_complex_actor() {
+#[tokio::test]
+async fn test_required_spawn_with_with_complex_actor() {
     // Test with an actor that has its own manifest-defined required_spawn_with
     let temp_dir = TempDir::new().unwrap();
     let workspace_path = temp_dir.path();
@@ -285,8 +287,8 @@ auto_spawn = false
         required_spawn_with: vec![],
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, vec![]);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, vec![]).await;
 
     assert!(
         result.is_ok(),
@@ -308,8 +310,8 @@ auto_spawn = false
     assert_eq!(package_actor.actor_id, "test:package-actor");
 }
 
-#[test]
-fn test_required_spawn_with_override_precedence_chain() {
+#[tokio::test]
+async fn test_required_spawn_with_override_precedence_chain() {
     // Test that required_spawn_with overrides work with both global actors and actor_overrides
     let temp_dir = TempDir::new().unwrap();
     let workspace_path = temp_dir.path();
@@ -356,8 +358,8 @@ source = { path = "../dep_actor" }
         required_spawn_with: Some(vec!["from_actor_override".to_string()]),
     }];
 
-    let resolver = DependencyResolver::new();
-    let result = resolver.resolve_all(actors, actor_overrides);
+    let resolver = DependencyResolver::default();
+    let result = resolver.resolve_all(actors, actor_overrides).await;
 
     assert!(result.is_ok());
     let resolved = result.unwrap();

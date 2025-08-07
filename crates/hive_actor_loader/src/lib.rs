@@ -10,13 +10,14 @@ use cargo_metadata::MetadataCommand;
 use futures::future::join_all;
 use sha2::{Digest, Sha256};
 use snafu::{Location, ResultExt, Snafu, ensure, location};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 use tokio::fs;
 use tokio::process::Command;
 use tracing::{info, warn};
-use url::Url;
 
 use hive_config::{Actor, ActorSource, GitRef};
 
@@ -98,12 +99,8 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display("Config error"))]
-    Config {
-        source: hive_config::Error,
-        #[snafu(implicit)]
-        location: Location,
-    },
+    #[snafu(transparent)]
+    Config { source: hive_config::Error },
 
     #[snafu(display("Failed to load actor '{actor_name}'. Source path '{path}' not found."))]
     InvalidPath {
@@ -132,6 +129,131 @@ pub enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
+/// Cache for external dependencies (git repos, etc.) to avoid duplicate fetching
+struct ExternalDependencyCache {
+    temp_dir: TempDir,
+    cache: Mutex<HashMap<String, PathBuf>>,
+}
+
+impl ExternalDependencyCache {
+    /// Create a new external dependency cache with a temporary directory
+    fn new(temp_dir: TempDir) -> Result<Self> {
+        Ok(Self {
+            temp_dir,
+            cache: Mutex::new(HashMap::new()),
+        })
+    }
+
+    /// Load external dependency (git repository) and return the path to the cloned repo
+    async fn load_external_dependency(
+        &self,
+        git_source: &hive_config::Repository,
+    ) -> Result<PathBuf> {
+        let cache_key = self.compute_git_source_hash(git_source);
+
+        // Check cache first
+        {
+            let cache = self.cache.lock().unwrap();
+            if let Some(existing_path) = cache.get(&cache_key) {
+                if existing_path.exists() {
+                    return Ok(existing_path.clone());
+                }
+            }
+        }
+
+        // Clone and cache
+        let clone_path = self.temp_dir.path().join(&cache_key);
+        self.clone_git_source(git_source, &clone_path).await?;
+
+        // Update cache
+        {
+            let mut cache = self.cache.lock().unwrap();
+            cache.insert(cache_key, clone_path.clone());
+        }
+
+        Ok(clone_path)
+    }
+
+    /// Compute a hash for the given git source to use as cache key
+    fn compute_git_source_hash(&self, git_source: &hive_config::Repository) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update("git:");
+        hasher.update(git_source.url.as_str());
+        if let Some(git_ref) = &git_source.git_ref {
+            match git_ref {
+                GitRef::Branch(branch) => hasher.update(format!("branch:{branch}")),
+                GitRef::Tag(tag) => hasher.update(format!("tag:{tag}")),
+                GitRef::Rev(rev) => hasher.update(format!("rev:{rev}")),
+            }
+        }
+        if let Some(package) = &git_source.package {
+            hasher.update("package:");
+            hasher.update(package);
+        }
+        hex::encode(hasher.finalize())
+    }
+
+    /// Clone a git source to the specified path
+    async fn clone_git_source(
+        &self,
+        git_source: &hive_config::Repository,
+        dest: &Path,
+    ) -> Result<()> {
+        info!("Cloning git source {} to cache", git_source.url);
+
+        let mut cmd = Command::new("git");
+        cmd.arg("clone").arg("--depth").arg("1");
+
+        // Add git ref if specified
+        if let Some(git_ref) = &git_source.git_ref {
+            match git_ref {
+                GitRef::Branch(branch) => {
+                    cmd.arg("-b").arg(branch);
+                }
+                GitRef::Tag(tag) => {
+                    cmd.arg("-b").arg(tag);
+                }
+                GitRef::Rev(_rev) => {
+                    // Note: Specific revision checkout requires two-step process
+                    // Clone default branch first, then checkout specific commit
+                }
+            }
+        }
+
+        cmd.arg(git_source.url.as_str()).arg(dest);
+
+        let output = cmd.output().await.context(CommandSnafu)?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(Error::CommandFailed {
+                actor_name: "<git-clone>".to_string(),
+                status: output.status,
+                stderr: stderr.into_owned(),
+                location: location!(),
+            });
+        }
+
+        // Handle specific revision checkout if needed
+        if let Some(GitRef::Rev(rev)) = &git_source.git_ref {
+            let mut checkout_cmd = Command::new("git");
+            checkout_cmd.current_dir(dest).arg("checkout").arg(rev);
+
+            let checkout_output = checkout_cmd.output().await.context(CommandSnafu)?;
+            if !checkout_output.status.success() {
+                let stderr = String::from_utf8_lossy(&checkout_output.stderr);
+                return Err(Error::CommandFailed {
+                    actor_name: "<git-checkout>".to_string(),
+                    status: checkout_output.status,
+                    stderr: stderr.into_owned(),
+                    location: location!(),
+                });
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LoadedActor {
     pub id: String,   // This will be the actor_id from manifest
@@ -145,19 +267,22 @@ pub struct LoadedActor {
 
 pub struct ActorLoader {
     cache_dir: PathBuf,
+    external_cache: Arc<ExternalDependencyCache>,
 }
 
 impl ActorLoader {
     pub fn new(cache_dir: Option<PathBuf>) -> Result<Self> {
-        match cache_dir {
-            Some(cache_dir) => Ok(Self { cache_dir }),
-            None => {
-                let cache_dir = hive_config::get_cache_dir()
-                    .context(ConfigSnafu)?
-                    .join("actors");
-                Ok(Self { cache_dir })
-            }
-        }
+        let cache_dir = match cache_dir {
+            Some(cache_dir) => cache_dir,
+            None => hive_config::get_cache_dir()?.join("actors"),
+        };
+
+        Ok(Self {
+            cache_dir,
+            external_cache: Arc::new(ExternalDependencyCache::new(
+                TempDir::new().context(TempDirSnafu)?,
+            )?),
+        })
     }
 
     pub async fn load_actors(
@@ -176,9 +301,11 @@ impl ActorLoader {
         // Phase 1: Resolve all dependencies
         #[cfg(feature = "progress-output")]
         println!("Resolving actor dependencies...");
-        let resolver = dependency_resolver::DependencyResolver::new();
+        let resolver =
+            dependency_resolver::DependencyResolver::with_cache(self.external_cache.clone());
         let resolved_actors = resolver
             .resolve_all(actors, actor_overrides)
+            .await
             .context(DependencyResolutionSnafu)?;
 
         // Phase 2: Load all resolved actors in parallel
@@ -311,22 +438,28 @@ impl ActorLoader {
                 (source_path.to_path_buf(), wasm_path, version)
             }
             ActorSource::Git(repository) => {
-                // For Git dependencies, continue copying to temp for isolation
-                info!("Copying Git actor to temp: {}", repository.url);
-                let temp_dir = TempDir::new().context(TempDirSnafu)?;
-                let build_path = temp_dir.path().join(&actor.name);
-
-                self.clone_git_actor(&repository.url, &build_path, repository.git_ref.as_ref())
+                // Use external cache to get the cloned repository
+                info!("Using cached Git actor: {}", repository.url);
+                let cached_repo_path = self
+                    .external_cache
+                    .load_external_dependency(repository)
                     .await?;
 
-                // Git dependencies use their original dependencies as-is
+                // Determine build path based on package
+                let build_path = if let Some(package) = &repository.package {
+                    // Package is the full subpath to the package
+                    cached_repo_path.join(package)
+                } else {
+                    // For single actors, use the repo root
+                    cached_repo_path.clone()
+                };
 
-                // Build in temp directory
+                // Build using the cached repository
                 let wasm_path = self
                     .build_actor(&build_path, package_name, &actor.name)
                     .await?;
 
-                // Get version from temp copy
+                // Get version from cached copy
                 let version = self
                     .get_actor_version(&build_path, package_name, &actor.name)
                     .await?;
@@ -359,7 +492,7 @@ impl ActorLoader {
         })
     }
 
-    pub async fn check_cache(
+    async fn check_cache(
         &self,
         actor: &Actor,
         actor_id: &str,
@@ -405,7 +538,7 @@ impl ActorLoader {
         Ok(None)
     }
 
-    pub async fn cache_actor(
+    async fn cache_actor(
         &self,
         actor: &Actor,
         actor_id: &str,
@@ -473,58 +606,6 @@ impl ActorLoader {
             }
         }
         hex::encode(hasher.finalize())
-    }
-
-    async fn clone_git_actor(
-        &self,
-        url: &Url,
-        dest: &Path,
-        specifier: Option<&GitRef>,
-    ) -> Result<()> {
-        info!("Cloning git actor from {} to {:?}", url, dest);
-
-        let mut cmd = Command::new("git");
-        cmd.arg("clone").arg(url.as_str()).arg(dest);
-
-        let status = cmd.status().await.context(CommandSnafu)?;
-        if !status.success() {
-            return Err(Error::CommandFailed {
-                actor_name: "<git-clone>".to_string(),
-                status,
-                stderr: "Git clone failed".to_string(),
-                location: location!(),
-            });
-        }
-
-        // Checkout specific branch/tag/rev if specified
-        if let Some(spec) = specifier {
-            let mut checkout_cmd = Command::new("git");
-            checkout_cmd.current_dir(dest).arg("checkout");
-
-            match spec {
-                GitRef::Branch(branch) => {
-                    checkout_cmd.arg(branch);
-                }
-                GitRef::Tag(tag) => {
-                    checkout_cmd.arg(tag);
-                }
-                GitRef::Rev(rev) => {
-                    checkout_cmd.arg(rev);
-                }
-            }
-
-            let checkout_status = checkout_cmd.status().await.context(CommandSnafu)?;
-            if !checkout_status.success() {
-                return Err(Error::CommandFailed {
-                    actor_name: "<git-checkout>".to_string(),
-                    status: checkout_status,
-                    stderr: "Git checkout failed".to_string(),
-                    location: location!(),
-                });
-            }
-        }
-
-        Ok(())
     }
 
     async fn build_actor(
