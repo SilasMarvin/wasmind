@@ -1,13 +1,17 @@
+//! # Hive Configuration Management
+//!
+//! This crate provides configuration management for the Hive actor orchestration system.
+
 use etcetera::{AppStrategy, AppStrategyArgs, choose_app_strategy};
 use serde::{Deserialize, de::DeserializeOwned};
-use snafu::{Location, ResultExt, Snafu};
+use snafu::{Location, OptionExt, ResultExt, Snafu};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use url::Url;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Config error"))]
+    #[snafu(display("Config directory error"))]
     Config {
         #[snafu(source)]
         source: etcetera::HomeDirError,
@@ -23,7 +27,7 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display("Error reading file: `{:?}` {}", file, source))]
+    #[snafu(display("Error reading file: `{:?}` - {}", file, source))]
     ReadingFile {
         file: PathBuf,
         #[snafu(source)]
@@ -36,6 +40,21 @@ pub enum Error {
     TomlParse {
         #[snafu(source)]
         source: toml::de::Error,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Invalid configuration section '[{}]': {}", section, reason))]
+    InvalidSection {
+        section: String,
+        reason: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Actor manifest not found: {}", path.display()))]
+    InvalidManifestLocation { 
+        path: PathBuf,
         #[snafu(implicit)]
         location: Location,
     },
@@ -71,6 +90,7 @@ pub enum ActorSource {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Actor {
+    /// The logical name of the actor. This is populated from the TOML key, not the value.
     #[serde(skip)]
     pub name: String,
     pub source: ActorSource,
@@ -84,6 +104,7 @@ pub struct Actor {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ActorOverride {
+    /// The logical name of the actor override. This is populated from the TOML key, not the value.
     #[serde(skip)]
     pub name: String,
     #[serde(default)]
@@ -129,18 +150,18 @@ pub fn load_from_path<P: AsRef<Path> + ToOwned<Owned = PathBuf>>(path: P) -> Res
     let raw_config: toml::Table = toml::from_str(&content).context(TomlParseSnafu)?;
 
     let actors = if let Some(actors_section) = raw_config.get("actors") {
-        if let Some(actors_table) = actors_section.as_table() {
-            let mut actors_vec = Vec::new();
-            for (name, value) in actors_table {
-                let mut actor: Actor = value.clone().try_into().context(TomlParseSnafu)?;
-                actor.name.clone_from(name);
-                actors_vec.push(actor);
-            }
-            actors_vec
-        } else {
-            // actors_section exists but is not a table
-            Vec::new()
+        let actors_table = actors_section.as_table().context(InvalidSectionSnafu {
+            section: "actors",
+            reason: "must be a table, not a different type",
+        })?;
+
+        let mut actors_vec = Vec::new();
+        for (name, value) in actors_table {
+            let mut actor: Actor = value.clone().try_into().context(TomlParseSnafu)?;
+            actor.name.clone_from(name);
+            actors_vec.push(actor);
         }
+        actors_vec
     } else {
         Vec::new()
     };
@@ -156,53 +177,21 @@ pub fn load_from_path<P: AsRef<Path> + ToOwned<Owned = PathBuf>>(path: P) -> Res
 
     // Parse actor_overrides section
     let actor_overrides = if let Some(overrides_section) = raw_config.get("actor_overrides") {
-        if let Some(overrides_table) = overrides_section.as_table() {
-            let mut overrides_vec = Vec::new();
-            for (name, value) in overrides_table {
-                // Handle both flat overrides and nested config overrides
-                if name.ends_with(".config") {
-                    // This is a config-only override like "actor_name.config"
-                    let actor_name = name.strip_suffix(".config").unwrap();
+        let overrides_table = overrides_section.as_table().context(InvalidSectionSnafu {
+            section: "actor_overrides",
+            reason: "must be a table, not a different type",
+        })?;
 
-                    // Check if we already have an override for this actor
-                    if let Some(existing_override) = overrides_vec
-                        .iter_mut()
-                        .find(|o: &&mut ActorOverride| o.name == actor_name)
-                    {
-                        // Merge the config
-                        existing_override.config = Some(value.as_table().unwrap().clone());
-                    } else {
-                        // Create new override with just config
-                        let override_entry = ActorOverride {
-                            name: actor_name.to_string(),
-                            source: None,
-                            config: Some(value.as_table().unwrap().clone()),
-                            auto_spawn: None,
-                            required_spawn_with: None,
-                        };
-                        overrides_vec.push(override_entry);
-                    }
-                } else {
-                    // This is a regular override that might contain multiple fields
-                    let mut actor_override: ActorOverride =
-                        value.clone().try_into().context(TomlParseSnafu)?;
-                    actor_override.name.clone_from(name);
-
-                    // Check if there's also a .config section for this actor
-                    let config_key = format!("{}.config", name);
-                    if let Some(config_value) = overrides_table.get(&config_key) {
-                        if let Some(config_table) = config_value.as_table() {
-                            actor_override.config = Some(config_table.clone());
-                        }
-                    }
-
-                    overrides_vec.push(actor_override);
-                }
-            }
-            overrides_vec
-        } else {
-            Vec::new()
+        let mut overrides_vec = Vec::new();
+        for (name, value) in overrides_table {
+            // TOML naturally handles dotted keys like [actor_overrides.logger.config]
+            // They become nested tables, so we can just deserialize normally
+            let mut actor_override: ActorOverride =
+                value.clone().try_into().context(TomlParseSnafu)?;
+            actor_override.name.clone_from(name);
+            overrides_vec.push(actor_override);
         }
+        overrides_vec
     } else {
         Vec::new()
     };
@@ -272,13 +261,9 @@ impl ActorManifest {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         let manifest_path = path.as_ref().join("Hive.toml");
         if !manifest_path.exists() {
-            return Err(Error::Io {
-                source: std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Hive.toml not found at {manifest_path:?}"),
-                ),
-                location: snafu::Location::default(),
-            });
+            return InvalidManifestLocationSnafu {
+                path: manifest_path,
+            }.fail();
         }
 
         let content = std::fs::read_to_string(&manifest_path).context(ReadingFileSnafu {
@@ -304,22 +289,6 @@ pub fn get_data_dir() -> Result<PathBuf, Error> {
     // On Linux/macOS, this will be: $HOME/.local/share/hive/
     // On Windows, this will typically be: %APPDATA%\hive\
     Ok(get_app_strategy()?.data_dir())
-}
-
-pub fn count_cached_actors(cache_dir: &Path) -> Result<usize, Error> {
-    if !cache_dir.exists() {
-        return Ok(0);
-    }
-
-    let count = std::fs::read_dir(cache_dir).context(IoSnafu)?.count();
-    Ok(count)
-}
-
-pub fn remove_actors_cache(cache_dir: &Path) -> Result<(), Error> {
-    if cache_dir.exists() {
-        std::fs::remove_dir_all(cache_dir).context(IoSnafu)?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -407,5 +376,297 @@ auto_spawn = false
             .unwrap();
         assert!(matches!(coordinator.source, ActorSource::Git(_)));
         assert!(!coordinator.auto_spawn); // defaults to false
+    }
+
+    #[test]
+    fn test_invalid_actors_section_type() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // actors section as a string instead of a table
+        let invalid_config = r#"
+actors = "this should be a table, not a string"
+"#;
+
+        let config_path = temp_dir.path().join("config.toml");
+        fs::write(&config_path, invalid_config).unwrap();
+
+        let result = load_from_path(config_path);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Invalid configuration section '[actors]'")
+        );
+    }
+
+    #[test]
+    fn test_invalid_actor_overrides_section_type() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // actor_overrides section as an array instead of a table
+        let invalid_config = r#"
+actor_overrides = ["should", "be", "a", "table"]
+"#;
+
+        let config_path = temp_dir.path().join("config.toml");
+        fs::write(&config_path, invalid_config).unwrap();
+
+        let result = load_from_path(config_path);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Invalid configuration section '[actor_overrides]'")
+        );
+    }
+
+    #[test]
+    fn test_actor_overrides_parsing() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_content = r#"
+[actors.my_assistant]
+source = { path = "./actors/assistant" }
+auto_spawn = true
+
+[actor_overrides.logger]
+source = { path = "./custom_logger" }
+auto_spawn = false
+
+[actor_overrides.logger.config]
+level = "debug"
+format = "json"
+
+[actor_overrides.database.config]
+connection_string = "postgres://localhost/test"
+"#;
+
+        let config_path = temp_dir.path().join("config.toml");
+        fs::write(&config_path, config_content).unwrap();
+
+        let config = load_from_path(config_path).unwrap();
+
+        // Check actors
+        assert_eq!(config.actors.len(), 1);
+        assert!(config.actors.iter().any(|a| a.name == "my_assistant"));
+
+        // Check overrides
+        assert_eq!(config.actor_overrides.len(), 2);
+
+        // Find logger override
+        let logger_override = config
+            .actor_overrides
+            .iter()
+            .find(|o| o.name == "logger")
+            .unwrap();
+        assert!(matches!(logger_override.source, Some(ActorSource::Path(_))));
+        assert_eq!(logger_override.auto_spawn, Some(false));
+        assert!(logger_override.config.is_some());
+        let logger_config = logger_override.config.as_ref().unwrap();
+        assert_eq!(
+            logger_config.get("level").unwrap().as_str().unwrap(),
+            "debug"
+        );
+        assert_eq!(
+            logger_config.get("format").unwrap().as_str().unwrap(),
+            "json"
+        );
+
+        // Find database override (config-only)
+        let db_override = config
+            .actor_overrides
+            .iter()
+            .find(|o| o.name == "database")
+            .unwrap();
+        assert!(db_override.source.is_none());
+        assert!(db_override.auto_spawn.is_none());
+        assert!(db_override.config.is_some());
+        let db_config = db_override.config.as_ref().unwrap();
+        assert_eq!(
+            db_config
+                .get("connection_string")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "postgres://localhost/test"
+        );
+    }
+
+    #[test]
+    fn test_mixed_actor_and_override_definitions() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_content = r#"
+starting_actors = ["assistant", "executor"]
+
+[actors.assistant]
+source = { path = "./actors/assistant" }
+auto_spawn = true
+required_spawn_with = ["logger"]
+
+[actors.executor]
+source = { path = "./actors/bash" }
+
+[actors.executor.config]
+shell = "/bin/zsh"
+timeout = 30
+
+[actor_overrides.logger]
+auto_spawn = true
+
+[actor_overrides.logger.config]
+level = "info"
+"#;
+
+        let config_path = temp_dir.path().join("config.toml");
+        fs::write(&config_path, config_content).unwrap();
+
+        let config = load_from_path(config_path).unwrap();
+
+        // Check starting actors
+        assert_eq!(config.starting_actors, vec!["assistant", "executor"]);
+
+        // Check actors
+        assert_eq!(config.actors.len(), 2);
+
+        let assistant = config
+            .actors
+            .iter()
+            .find(|a| a.name == "assistant")
+            .unwrap();
+        assert_eq!(assistant.required_spawn_with, vec!["logger"]);
+
+        let executor = config.actors.iter().find(|a| a.name == "executor").unwrap();
+        assert!(executor.config.is_some());
+        let exec_config = executor.config.as_ref().unwrap();
+        assert_eq!(
+            exec_config.get("shell").unwrap().as_str().unwrap(),
+            "/bin/zsh"
+        );
+        assert_eq!(
+            exec_config.get("timeout").unwrap().as_integer().unwrap(),
+            30
+        );
+
+        // Check overrides
+        assert_eq!(config.actor_overrides.len(), 1);
+        let logger_override = config
+            .actor_overrides
+            .iter()
+            .find(|o| o.name == "logger")
+            .unwrap();
+        assert_eq!(logger_override.auto_spawn, Some(true));
+    }
+
+    #[test]
+    fn test_invalid_starting_actors_type() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // starting_actors as a string instead of an array
+        let invalid_config = r#"
+starting_actors = "should be an array"
+"#;
+
+        let config_path = temp_dir.path().join("config.toml");
+        fs::write(&config_path, invalid_config).unwrap();
+
+        let result = load_from_path(config_path);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("TOML parsing error"));
+    }
+
+    #[test]
+    fn test_invalid_actor_configuration() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Actor with invalid source field
+        let invalid_config = r#"
+[actors.bad_actor]
+source = "should be a table with path or url"
+"#;
+
+        let config_path = temp_dir.path().join("config.toml");
+        fs::write(&config_path, invalid_config).unwrap();
+
+        let result = load_from_path(config_path);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("TOML parsing error"));
+    }
+
+    #[test]
+    fn test_invalid_manifest_file() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create an invalid manifest file
+        let invalid_manifest = r#"
+# Missing required actor_id field
+dependencies = {}
+"#;
+        fs::write(temp_dir.path().join("Hive.toml"), invalid_manifest).unwrap();
+
+        let result = ActorManifest::from_path(temp_dir.path());
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("TOML parsing error"));
+    }
+
+    #[test]
+    fn test_missing_manifest_file() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Don't create any Hive.toml file
+        let result = ActorManifest::from_path(temp_dir.path());
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Actor manifest not found"));
+    }
+
+    #[test]
+    fn test_toml_dotted_key_parsing() {
+        // Test how TOML handles dotted keys vs nested tables
+        let dotted_toml = r#"
+[actor_overrides.logger.config]
+level = "debug"
+format = "json"
+"#;
+
+        let nested_toml = r#"
+[actor_overrides.logger]
+config = { level = "debug", format = "json" }
+"#;
+
+        let dotted_parsed: toml::Table = toml::from_str(dotted_toml).unwrap();
+        let nested_parsed: toml::Table = toml::from_str(nested_toml).unwrap();
+
+        // Both should create the same structure
+        let dotted_overrides = dotted_parsed
+            .get("actor_overrides")
+            .unwrap()
+            .as_table()
+            .unwrap();
+        let nested_overrides = nested_parsed
+            .get("actor_overrides")
+            .unwrap()
+            .as_table()
+            .unwrap();
+
+        // Both should have "logger" as a key
+        assert!(dotted_overrides.contains_key("logger"));
+        assert!(nested_overrides.contains_key("logger"));
+
+        // Both logger values should be tables with a "config" key
+        let dotted_logger = dotted_overrides.get("logger").unwrap().as_table().unwrap();
+        let nested_logger = nested_overrides.get("logger").unwrap().as_table().unwrap();
+
+        assert!(dotted_logger.contains_key("config"));
+        assert!(nested_logger.contains_key("config"));
+
+        // The config values should be identical
+        let dotted_config = dotted_logger.get("config").unwrap();
+        let nested_config = nested_logger.get("config").unwrap();
+
+        assert_eq!(dotted_config, nested_config);
     }
 }

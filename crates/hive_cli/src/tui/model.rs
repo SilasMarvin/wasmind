@@ -2,7 +2,7 @@ use hive::scope::Scope;
 use hive_actor_utils::STARTING_SCOPE;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::broadcast::Receiver;
 use tuirealm::listener::{ListenerResult, Poll};
 use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
 use tuirealm::{Application, AttrValue, Attribute, EventListenerCfg, ListenerError, Update};
@@ -54,7 +54,6 @@ where
     pub quit: bool,
     pub redraw: bool,
     pub terminal: TerminalBridge<T>,
-    tx: Sender<MessageEnvelope>,
     context: Arc<HiveContext>,
     active_scope: Scope,
 }
@@ -62,14 +61,12 @@ where
 impl Model<CrosstermTerminalAdapter> {
     pub fn new(
         config: ParsedTuiConfig,
-        tx: Sender<MessageEnvelope>,
         rx: Receiver<MessageEnvelope>,
         initial_prompt: Option<String>,
         context: Arc<HiveContext>,
     ) -> Self {
         Self {
             app: Self::init_app(config, rx, initial_prompt),
-            tx,
             quit: false,
             redraw: true,
             terminal: TerminalBridge::init_crossterm().expect("Cannot initialize terminal"),

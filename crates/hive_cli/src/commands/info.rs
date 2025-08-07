@@ -1,4 +1,4 @@
-use crate::TuiResult;
+use crate::{utils, TuiResult};
 
 pub fn show_info() -> TuiResult<()> {
     println!("Hive Configuration and Cache Information");
@@ -20,7 +20,7 @@ pub fn show_info() -> TuiResult<()> {
     println!("\nCache directory: {}", cache_dir.display());
 
     let actors_cache_dir = hive_config::get_actors_cache_dir()?;
-    let cached_count = hive_config::count_cached_actors(&actors_cache_dir)?;
+    let cached_count = utils::count_cached_actors(&actors_cache_dir)?;
 
     if cached_count > 0 {
         println!(

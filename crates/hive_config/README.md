@@ -45,7 +45,7 @@ The `source` table supports multiple ways to locate actor code, providing flexib
 Loads an actor from a local filesystem path. This is ideal for local development.
 
 *   `path` (string): A relative or absolute path to the actor's directory.
-*   `package` (string, optional): If the path points to a Rust workspace, this specifies which package contains the actor. When using `package`, Hive will look for the `Hive.toml` manifest in `crates/{package}/` within the workspace. Note: Package support is currently designed for Rust workspaces but will be expanded to other languages in the future.
+*   `package` (string, optional): If the path points to a Rust workspace, this specifies the full subpath to the package directory containing the actor. Hive will look for the `Hive.toml` manifest at `{path}/{package}/`. Note: Package support is currently designed for Rust workspaces but will be expanded to other languages in the future.
 
 ```toml
 # Simple path source
@@ -55,7 +55,7 @@ source = { path = "/Users/silas/hive/actors/assistant" }
 # Path source pointing to a Rust workspace with a package
 # Hive will look for the manifest at: /Users/silas/hive/crates/some_utility/Hive.toml
 [actors.another_actor]
-source = { path = "/Users/silas/hive", package = "some_utility" }
+source = { path = "/Users/silas/hive", package = "crates/some_utility" }
 ```
 
 #### Git Source
@@ -64,7 +64,7 @@ Clones a remote Git repository to fetch the actor's code.
 
 *   `url` (string): The URL of the Git repository.
 *   `git_ref` (table, optional): Specifies which Git reference to check out. Can be a branch, tag, or specific revision hash. Defaults to the repository's default branch.
-*   `package` (string, optional): If the repository is a Rust workspace, this specifies which package contains the actor. Similar to path sources, Hive will look for the manifest in `crates/{package}/` for Git sources with packages.
+*   `package` (string, optional): If the repository is a Rust workspace, this specifies the full subpath to the package directory containing the actor. Similar to path sources, Hive will look for the manifest at `{repository_root}/{package}/` for Git sources with packages.
 
 ```toml
 # Clones the 'main' branch of a repository
@@ -81,7 +81,7 @@ source = { url = "https://github.com/my-org/hive-tools", git_ref = { rev = "a1b2
 
 # Clones a monorepo and targets a specific package within it
 [actors.specific_tool]
-source = { url = "https://github.com/my-org/hive-tools", git_ref = { tag = "v1.1.0" }, package = "data_parser" }
+source = { url = "https://github.com/my-org/hive-tools", git_ref = { tag = "v1.1.0" }, package = "crates/data_parser" }
 ```
 
 ---
@@ -470,7 +470,7 @@ All actors must have a Hive.toml file that declares their actor_id.
 actor_id = "my-namespace:my-actor"
 ```
 
-For Rust workspaces using the `package` field, ensure the `Hive.toml` is in `crates/{package}/`:
+For Rust workspaces using the `package` field, ensure the `Hive.toml` is at the specified package path:
 ```toml
 # If your config has:
 [actors.my_workspace_actor]

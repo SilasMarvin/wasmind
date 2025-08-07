@@ -28,8 +28,8 @@ bindgen!({
 
 // TODO: Implement equality
 impl PartialEq for MessageEnvelope {
-    fn eq(&self, _other: &Self) -> bool {
-        false
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
     }
 }
 

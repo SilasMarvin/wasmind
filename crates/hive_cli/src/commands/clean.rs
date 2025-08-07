@@ -1,4 +1,4 @@
-use crate::TuiResult;
+use crate::{utils, TuiResult};
 
 pub fn clean_cache() -> TuiResult<()> {
     let actors_cache_dir = hive_config::get_actors_cache_dir()?;
@@ -11,7 +11,7 @@ pub fn clean_cache() -> TuiResult<()> {
     println!("Cleaning actor cache at {}...", actors_cache_dir.display());
 
     // Remove the entire actors cache directory
-    hive_config::remove_actors_cache(&actors_cache_dir)?;
+    utils::remove_actors_cache(&actors_cache_dir)?;
 
     println!("✓ Actor cache cleaned successfully");
     Ok(())

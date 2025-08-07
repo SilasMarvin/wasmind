@@ -19,7 +19,6 @@ use crate::config::ParsedTuiConfig;
 
 pub struct Tui {
     tui_config: ParsedTuiConfig,
-    tx: Sender<MessageEnvelope>,
     rx: Receiver<MessageEnvelope>,
     initial_prompt: Option<String>,
     context: Arc<HiveContext>,
@@ -35,28 +34,18 @@ impl Tui {
         Self {
             tui_config,
             rx: tx.subscribe(),
-            tx,
             initial_prompt,
             context,
         }
     }
 
     pub fn run(self) {
-        thread::spawn(|| {
-            start_model(
-                self.tui_config,
-                self.tx,
-                self.rx,
-                self.initial_prompt,
-                self.context,
-            )
-        });
+        thread::spawn(|| start_model(self.tui_config, self.rx, self.initial_prompt, self.context));
     }
 }
 
 fn start_model(
     config: ParsedTuiConfig,
-    tx: Sender<MessageEnvelope>,
     rx: Receiver<MessageEnvelope>,
     initial_prompt: Option<String>,
     context: Arc<HiveContext>,
@@ -72,7 +61,7 @@ fn start_model(
     }
 
     // Setup model
-    let mut model = Model::new(config, tx, rx, initial_prompt, context);
+    let mut model = Model::new(config, rx, initial_prompt, context);
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
     let _ = model.terminal.enable_raw_mode();

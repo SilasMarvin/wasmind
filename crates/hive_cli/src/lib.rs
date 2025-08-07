@@ -33,6 +33,12 @@ pub enum Error {
         source: litellm_manager::LiteLLMError,
     },
 
+    #[snafu(transparent)]
+    Io {
+        #[snafu(source)]
+        source: std::io::Error,
+    },
+
     #[snafu(whatever, display("{message}"))]
     Whatever {
         message: String,

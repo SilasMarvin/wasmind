@@ -1,4 +1,21 @@
+use std::path::Path;
 use tuirealm::event::{Key, KeyEvent, KeyModifiers};
+
+pub fn count_cached_actors(cache_dir: &Path) -> Result<usize, std::io::Error> {
+    if !cache_dir.exists() {
+        return Ok(0);
+    }
+
+    let count = std::fs::read_dir(cache_dir)?.count();
+    Ok(count)
+}
+
+pub fn remove_actors_cache(cache_dir: &Path) -> Result<(), std::io::Error> {
+    if cache_dir.exists() {
+        std::fs::remove_dir_all(cache_dir)?;
+    }
+    Ok(())
+}
 
 pub fn parse_key_combination(input: &str) -> Option<KeyEvent> {
     let parts: Vec<&str> = input.split('-').collect();

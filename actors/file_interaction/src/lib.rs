@@ -5,10 +5,7 @@ use std::{
     time::SystemTime,
 };
 
-use bindings::{
-    exports::hive::actor::actor::MessageEnvelope,
-    hive::actor::logger::{LogLevel, log},
-};
+use bindings::exports::hive::actor::actor::MessageEnvelope;
 use hive_actor_utils::common_messages::{
     assistant::{Section, SystemPromptContent, SystemPromptContribution},
     tools::{
@@ -316,9 +313,9 @@ impl FileContent {
 #[derive(Debug, Clone)]
 struct FileCacheEntry {
     content: FileContent,
-    read_at: SystemTime,
+    _read_at: SystemTime,
     last_modified_at_read: SystemTime,
-    size_bytes: u64,
+    _size_bytes: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -509,9 +506,6 @@ impl FileInteractionActor {
         // Execute the read
         match self.get_or_read_file_content(&params.path, start_line, end_line) {
             Ok(content) => {
-                // TODO: Broadcast FileRead message
-                log(LogLevel::Debug, "TODO: Broadcast FileRead message");
-
                 // Update unified system prompt contribution for all files
                 self.update_unified_files_system_prompt();
 
@@ -583,9 +577,6 @@ impl FileInteractionActor {
         // Execute the edits
         match self.apply_edits(&params.path, edits) {
             Ok(message) => {
-                // TODO: Broadcast FileEdited message
-                log(LogLevel::Debug, "TODO: Broadcast FileEdited message");
-
                 // Update unified system prompt contribution for all files
                 self.update_unified_files_system_prompt();
 
@@ -852,9 +843,9 @@ impl FileInteractionActor {
 
         let entry = FileCacheEntry {
             content,
-            read_at,
+            _read_at: read_at,
             last_modified_at_read,
-            size_bytes: file_size,
+            _size_bytes: file_size,
         };
 
         self.cache.insert(canonical_path, entry);
