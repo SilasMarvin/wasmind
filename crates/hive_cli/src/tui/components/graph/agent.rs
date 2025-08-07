@@ -178,13 +178,18 @@ impl Agent {
         }
 
         // Render content inside the box
-        if area.height > 2 {
-            // We need at least 3 lines to show content (top border, content, bottom border)
+        if area.height > 1 {
+            // We need at least 3 lines to show content top or bottom border / conent
             let content_area = Rect::new(
                 area.x + 2,
-                area.y + 1,
+                area.y + if trim_top { 0 } else { 1 },
                 area.width.saturating_sub(4),
-                area.height.saturating_sub(2),
+                area.height
+                    .saturating_sub(if trim_top || area.height < WIDGET_HEIGHT {
+                        1
+                    } else {
+                        2
+                    }),
             );
 
             // Generate all content lines

@@ -1,8 +1,6 @@
 use clap::{Parser, Subcommand};
 use hive_cli::init_logger_with_path;
 
-// mod command;
-// mod edit_file;
 mod graph;
 mod splash;
 mod utils;
@@ -19,10 +17,6 @@ struct Args {
 enum Scenario {
     /// Preview the splash screen
     Splash,
-    /// Preview commands
-    Command,
-    /// Preview file edits
-    EditFile,
     /// Preview the agent graph
     Graph,
 }
@@ -38,9 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             match args.scenario {
                 Scenario::Splash => splash::run().await,
-                Scenario::Command => todo!(),
                 Scenario::Graph => graph::run().await,
-                Scenario::EditFile => todo!(),
             }
         })
     })

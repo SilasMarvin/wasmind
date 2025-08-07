@@ -161,10 +161,22 @@ impl HiveCoordinator {
     where
         T: hive_actor_utils::common_messages::Message + Clone,
     {
+        self.broadcast_common_message_in_scope(message, &STARTING_SCOPE.to_string(), replayable)
+    }
+
+    pub fn broadcast_common_message_in_scope<T>(
+        &mut self,
+        message: T,
+        scope: &Scope,
+        replayable: bool,
+    ) -> HiveResult<()>
+    where
+        T: hive_actor_utils::common_messages::Message + Clone,
+    {
         let message_envelope = MessageEnvelope {
             id: crate::utils::generate_root_correlation_id(),
             from_actor_id: "hive__coordinator".to_string(),
-            from_scope: STARTING_SCOPE.to_string(),
+            from_scope: scope.to_owned(),
             message_type: T::MESSAGE_TYPE.to_string(),
             payload: serde_json::to_vec(&message).context(SerializationSnafu {
                 message: "Failed to serialize message for broadcast",

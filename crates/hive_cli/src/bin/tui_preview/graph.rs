@@ -1,13 +1,68 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use hive::coordinator::HiveCoordinator;
 use hive_actor_loader::LoadedActor;
 use hive_actor_utils::STARTING_SCOPE;
-use hive_actor_utils_common_messages::assistant::{ChatState, ChatStateUpdated};
+use hive_actor_utils_common_messages::{
+    Scope,
+    assistant::{ChatState, ChatStateUpdated, Status, StatusUpdate, WaitReason},
+};
 use hive_cli::{TuiResult, tui};
 use hive_llm_types::types::{ChatMessage, SystemChatMessage};
 
 use crate::utils::create_spawn_agent_message;
+
+pub fn spawn_agent(scope: &Scope, coordinator: &mut HiveCoordinator) -> TuiResult<Scope> {
+    let (spawn_agent_message, agent_scope) = create_spawn_agent_message(
+        &format!("Sub Manager {}", rand::random::<u64>()),
+        Some(scope),
+    );
+    coordinator.broadcast_common_message(spawn_agent_message, false)?;
+    let status = match rand::random_range(0..8) {
+        0 => Status::Processing {
+            request_id: "Filler".to_string(),
+        },
+        1 => Status::Done {
+            result: Err("Filler".to_string()),
+        },
+        2 => Status::Wait {
+            reason: WaitReason::WaitingForAllActorsReady,
+        },
+        3 => Status::Wait {
+            reason: WaitReason::WaitingForUserInput,
+        },
+        4 => Status::Wait {
+            reason: WaitReason::WaitingForSystemInput {
+                required_scope: None,
+                interruptible_by_user: true,
+            },
+        },
+        5 => Status::Wait {
+            reason: WaitReason::WaitingForAgentCoordination {
+                coordinating_tool_call_id: "Filler".to_string(),
+                coordinating_tool_name: "Filler".to_string(),
+                target_agent_scope: None,
+                user_can_interrupt: true,
+            },
+        },
+        6 => Status::Wait {
+            reason: WaitReason::WaitingForTools {
+                tool_calls: HashMap::new(),
+            },
+        },
+        7 => Status::Wait {
+            reason: WaitReason::WaitingForLiteLLM,
+        },
+        _ => unreachable!(),
+    };
+    coordinator.broadcast_common_message_in_scope(StatusUpdate { status }, &agent_scope, false)?;
+
+    if rand::random_bool(0.25) {
+        spawn_agent(&agent_scope, coordinator)
+    } else {
+        Ok(agent_scope)
+    }
+}
 
 pub async fn run() -> TuiResult<()> {
     let tui_config = hive_cli::config::TuiConfig::default().parse()?;
@@ -29,14 +84,9 @@ pub async fn run() -> TuiResult<()> {
     tui.run();
 
     // Spawn some agents
-    for i in 0..2000 {
-        let (spawn_agent_message, _agent1_scope) = create_spawn_agent_message(
-            &format!("Sub Manager {i}"),
-            Some(&STARTING_SCOPE.to_string()),
-        );
-        coordinator.broadcast_common_message(spawn_agent_message, false)?;
+    for _ in 0..100 {
+        spawn_agent(&STARTING_SCOPE.to_string(), &mut coordinator)?;
     }
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Create VERY large sample chat state for testing scrolling performance
     let large_system_content = format!(
