@@ -1,12 +1,20 @@
-# Hive
+<div align="center">
+   <picture>
+     <source media="(prefers-color-scheme: dark)" srcset="">
+     <source media="(prefers-color-scheme: light)" srcset="">
+     <img alt="Logo" src="" width="520">
+   </picture>
+</div>
 
-<!-- Big header image here -->
+<p align="center">
+   <p align="center"><b>A modular AI agent coordination system for building massively parallel agentic systems</b></p>
+</p>
 
-**A modular AI agent coordination system for building massively parallel agentic systems**
+<p align="center">
+| <a href=""><b>Documentation</b></a> | <a href="https://postgresml.org/blog"><b>Why Hive</b></a> | <a href="https://discord.gg/DmyJP3qJ7U"><b>FAQ</b></a> |
+</p>
 
-[Getting Started](#getting-started) | [Documentation](docs/) | [What You Can Build](#what-you-can-build-with-hive) | [FAQ](#faq)
-
-Hive is an actor-based system where actors are WebAssembly components. Compose focused actors to create AI workflows and multi-agent systems.
+---
 
 ## Getting Started
 
@@ -48,11 +56,11 @@ Demo's can be ran with the **[hive_cli](crates/hive_cli/)**
 ├── hive_cli/      # Command-line interface
 ├── hive_config/   # Configuration system
 ├── hive_actor_loader/     # Actor loading and dependency resolution
-├── hive_actor_utils/      # Utilities for building actors
-├── hive_actor_utils_common_messages/  # Shared message types
-├── hive_actor_utils_macros/   # Macros for actor development
-├── hive_actor_bindings/   # WASM bindings
-└── hive_llm_types/        # LLM integration types
+├── hive_actor_utils/      # Utilities for building Rust actors
+├── hive_actor_utils_common_messages/  # Common shared message types
+├── hive_actor_utils_macros/   # Macros for Rust actor development
+├── hive_actor_bindings/   # WASM component definition
+└── hive_llm_types/        # Common LLM API request types
 ```
 
 For detailed information about specific actors, see their individual READMEs.
