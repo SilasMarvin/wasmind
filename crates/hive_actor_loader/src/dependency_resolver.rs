@@ -6,6 +6,7 @@ use tempfile::TempDir;
 use hive_config::{Actor, ActorManifest, ActorSource};
 
 #[derive(Debug, Snafu)]
+#[allow(clippy::result_large_err)]
 pub enum Error {
     #[snafu(display(
         "Circular dependency detected while resolving '{actor_id}'. Resolution path: {path}"
@@ -109,6 +110,7 @@ impl DependencyResolver {
     }
 
     /// Resolve all actors and their dependencies
+    #[allow(clippy::result_large_err)]
     pub fn resolve_all(
         mut self,
         user_actors: Vec<Actor>,
@@ -150,6 +152,7 @@ impl DependencyResolver {
     }
 
     /// Internal method for resolving actors with full context
+    #[allow(clippy::result_large_err)]
     fn resolve_actor_internal(
         &mut self,
         actor: Actor,
@@ -526,13 +529,7 @@ mod tests {
         assert!(error_msg.contains("actor_a"));
     }
 
-    #[test]
-    fn test_circular_dependency_detection() {
-        // This test would require setting up test actors with circular dependencies
-        // For now, we'll just test the basic structure
-        let resolver = DependencyResolver::new();
-        assert!(resolver.resolved.is_empty());
-    }
+    // Circular dependency testing is handled in integration tests (tests/circular_dependency_test.rs)
 
     #[test]
     fn test_merge_toml_tables() {

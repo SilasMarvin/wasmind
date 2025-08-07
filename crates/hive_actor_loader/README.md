@@ -21,26 +21,13 @@ Dynamic loading and dependency resolution system for Hive WASM actor components.
 - Manage build artifacts and WASM binary extraction
 - Handle build errors and validation
 
-## Usage
+## Language Support
 
-This crate is primarily used by the Hive core library and shouldn't need direct usage in most cases:
+**Currently supports Rust actors only.** The loader uses `cargo component build` to compile Rust-based actors into WebAssembly components. Support for additional languages (JavaScript, Python, etc.) is planned for future releases.
 
-```rust
-use hive_actor_loader::ActorLoader;
-use hive_config::{Actor, ActorOverride};
+## Feature Flags
 
-let loader = ActorLoader::new(None)?; // Uses default cache directory
-let loaded_actors = loader.load_actors(actors, overrides).await?;
-```
-
-The `LoadedActor` struct contains the compiled WASM binary, configuration, and metadata needed by the Hive runtime.
-
-## Architecture
-
-- **ActorLoader** - Main interface for loading actors with caching
-- **DependencyResolver** - Handles dependency analysis and resolution
-- **LoadedActor** - Represents a fully loaded actor with WASM binary and config
-- **Caching system** - Avoids rebuilding actors when sources haven't changed
+- **`progress-output`** (enabled by default) - Controls whether the loader prints build progress to the console. Useful for CLI tools but can be disabled for library usage:
 
 ## Links
 

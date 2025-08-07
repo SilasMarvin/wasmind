@@ -8,6 +8,10 @@ readme.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["progress-output"]
+progress-output = []
+
 [dependencies]
 tokio = { workspace = true, features = ["full"] }
 snafu = { workspace = true }

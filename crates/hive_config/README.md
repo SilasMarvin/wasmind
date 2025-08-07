@@ -45,18 +45,34 @@ The `source` table supports multiple ways to locate actor code, providing flexib
 Loads an actor from a local filesystem path. This is ideal for local development.
 
 *   `path` (string): A relative or absolute path to the actor's directory.
-*   `package` (string, optional): If the path points to a Rust workspace, this specifies the full subpath to the package directory containing the actor. Hive will look for the `Hive.toml` manifest at `{path}/{package}/`. Note: Package support is currently designed for Rust workspaces but will be expanded to other languages in the future.
+*   `package` (string, required for cargo workspaces): If the path points to a Rust workspace, this specifies the full subpath to the package directory containing the actor. Hive will look for the `Hive.toml` manifest at `{path}/{package}/`. **Important:** This field is currently required when pointing to cargo workspaces, as Hive needs it to locate the compiled WASM output correctly. This limitation will be improved in future versions. Note: Package support is currently designed for Rust workspaces but will be expanded to other languages in the future.
 
 ```toml
-# Simple path source
+# Simple path source (single-package project)
 [actors.local_assistant]
 source = { path = "/Users/silas/hive/actors/assistant" }
 
-# Path source pointing to a Rust workspace with a package
+# Path source pointing to a Rust workspace - package field is REQUIRED
 # Hive will look for the manifest at: /Users/silas/hive/crates/some_utility/Hive.toml
 [actors.another_actor]
 source = { path = "/Users/silas/hive", package = "crates/some_utility" }
 ```
+
+**⚠️ Important Note for Cargo Workspaces:**
+
+When working with cargo workspaces, the `package` field is **required**, not optional. This is because Hive currently needs to know the exact package location to find the compiled WASM output after building. If you omit the `package` field when pointing to a workspace, you'll encounter "WASM not found" errors.
+
+```toml
+# ❌ This will NOT work for cargo workspaces:
+[actors.workspace_actor]
+source = { path = "/path/to/workspace/crates/my_actor" }
+
+# ✅ This WILL work for cargo workspaces:
+[actors.workspace_actor] 
+source = { path = "/path/to/workspace", package = "crates/my_actor" }
+```
+
+This limitation will be improved in future versions to automatically detect workspace structures.
 
 #### Git Source
 
@@ -64,22 +80,22 @@ Clones a remote Git repository to fetch the actor's code.
 
 *   `url` (string): The URL of the Git repository.
 *   `git_ref` (table, optional): Specifies which Git reference to check out. Can be a branch, tag, or specific revision hash. Defaults to the repository's default branch.
-*   `package` (string, optional): If the repository is a Rust workspace, this specifies the full subpath to the package directory containing the actor. Similar to path sources, Hive will look for the manifest at `{repository_root}/{package}/` for Git sources with packages.
+*   `package` (string, required for cargo workspaces): If the repository is a Rust workspace, this specifies the full subpath to the package directory containing the actor. Similar to path sources, Hive will look for the manifest at `{repository_root}/{package}/` for Git sources with packages. **Important:** This field is currently required when the Git repository contains a cargo workspace, as Hive needs it to locate the compiled WASM output correctly.
 
 ```toml
-# Clones the 'main' branch of a repository
+# Clones the 'main' branch of a repository (single-package)
 [actors.assistant_from_git]
 source = { url = "https://github.com/my-org/hive-assistant", git_ref = { branch = "main" } }
 
-# Uses a specific version tag
+# Uses a specific version tag (single-package)
 [actors.bash_v1]
 source = { url = "https://github.com/my-org/hive-execute-bash", git_ref = { tag = "v1.0.2" } }
 
-# Pins to an exact commit revision
+# Pins to an exact commit revision (single-package)
 [actors.stable_tool]
 source = { url = "https://github.com/my-org/hive-tools", git_ref = { rev = "a1b2c3d4e5f6" } }
 
-# Clones a monorepo and targets a specific package within it
+# Clones a monorepo/workspace - package field is REQUIRED
 [actors.specific_tool]
 source = { url = "https://github.com/my-org/hive-tools", git_ref = { tag = "v1.1.0" }, package = "crates/data_parser" }
 ```

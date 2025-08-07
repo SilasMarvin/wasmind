@@ -225,5 +225,3 @@ fn test_global_source_and_auto_spawn_overrides() {
     // auto_spawn should be globally overridden to false
     assert_eq!(logger.auto_spawn, false);
 }
-
-// Test removed - orphaned dependency configurations are no longer a concept with global overrides

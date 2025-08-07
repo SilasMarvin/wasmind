@@ -1,3 +1,9 @@
+//! # Hive Actor Loader
+//!
+//! Dynamic loading and dependency resolution system for Hive WASM actor components.
+//! This crate handles downloading, building, caching, and loading actors from various
+//! sources (local paths, Git repositories, etc.).
+
 pub mod dependency_resolver;
 
 use cargo_metadata::MetadataCommand;
@@ -15,19 +21,12 @@ use url::Url;
 use hive_config::{Actor, ActorSource, GitRef};
 
 #[derive(Debug, Snafu)]
+#[allow(clippy::result_large_err)]
 pub enum Error {
     #[snafu(display("IO error: {} | Operation on path: {path:?}", source))]
     Io {
         source: std::io::Error,
         path: Option<PathBuf>,
-        #[snafu(implicit)]
-        location: Location,
-    },
-
-    #[snafu(display("Failed to deserialize TOML content: {text}"))]
-    TomlDeserialize {
-        source: toml::de::Error,
-        text: String,
         #[snafu(implicit)]
         location: Location,
     },
@@ -115,14 +114,10 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display("Git command not found. Please install git."))]
-    GitNotFound {
-        #[snafu(implicit)]
-        location: Location,
-    },
-
-    #[snafu(display("Cargo component command not found. Please install cargo-component."))]
-    CargoComponentNotFound {
+    #[snafu(display("Missing required dependency: {dependency}. {install_message}"))]
+    MissingDependency {
+        dependency: String,
+        install_message: String,
         #[snafu(implicit)]
         location: Location,
     },
@@ -154,6 +149,7 @@ pub struct ActorLoader {
 }
 
 impl ActorLoader {
+    #[allow(clippy::result_large_err)]
     pub fn new(cache_dir: Option<PathBuf>) -> Result<Self> {
         match cache_dir {
             Some(cache_dir) => Ok(Self { cache_dir }),
@@ -180,6 +176,7 @@ impl ActorLoader {
         self.check_required_tools().await?;
 
         // Phase 1: Resolve all dependencies
+        #[cfg(feature = "progress-output")]
         println!("Resolving actor dependencies...");
         let resolver = dependency_resolver::DependencyResolver::new();
         let resolved_actors = resolver
@@ -187,6 +184,7 @@ impl ActorLoader {
             .context(DependencyResolutionSnafu)?;
 
         // Phase 2: Load all resolved actors in parallel
+        #[cfg(feature = "progress-output")]
         println!("Loading {} actors...", resolved_actors.len());
         let tasks: Vec<_> = resolved_actors
             .into_iter()
@@ -211,6 +209,7 @@ impl ActorLoader {
         // Collect results, propagating any errors
         let loaded_actors = results.into_iter().collect::<Result<Vec<_>>>()?;
 
+        #[cfg(feature = "progress-output")]
         println!("✓ Actor loading complete");
         Ok(loaded_actors)
     }
@@ -218,14 +217,27 @@ impl ActorLoader {
     async fn check_required_tools(&self) -> Result<()> {
         // Check for git
         if which::which("git").is_err() {
-            return Err(Error::GitNotFound {
+            return Err(Error::MissingDependency {
+                dependency: "git".to_string(),
+                install_message: "Please install git to clone remote actors.".to_string(),
+                location: location!(),
+            });
+        }
+
+        // Check for cargo
+        if which::which("cargo").is_err() {
+            return Err(Error::MissingDependency {
+                dependency: "cargo".to_string(),
+                install_message: "Please install Rust and Cargo from https://rustup.rs/".to_string(),
                 location: location!(),
             });
         }
 
         // Check for cargo-component
         if which::which("cargo-component").is_err() {
-            return Err(Error::CargoComponentNotFound {
+            return Err(Error::MissingDependency {
+                dependency: "cargo-component".to_string(),
+                install_message: "Please install cargo-component with: cargo install cargo-component".to_string(),
                 location: location!(),
             });
         }
@@ -239,6 +251,7 @@ impl ActorLoader {
         actor_id: String,
         required_spawn_with: Vec<String>,
     ) -> Result<LoadedActor> {
+        #[cfg(feature = "progress-output")]
         println!("  Loading {}", actor.name);
         info!("Loading actor: {} (id: {})", actor.name, actor_id);
 
@@ -250,6 +263,7 @@ impl ActorLoader {
                 .check_cache(&actor, &actor_id, &required_spawn_with)
                 .await?
             {
+                #[cfg(feature = "progress-output")]
                 println!("  ✓ {} (cached)", actor.name);
                 info!("Using cached actor: {}", actor.name);
                 return Ok(cached);
@@ -331,6 +345,7 @@ impl ActorLoader {
             self.cache_actor(&actor, &actor_id, &version, &wasm).await?;
         }
 
+        #[cfg(feature = "progress-output")]
         println!("  ✓ {} (built)", actor.name);
 
         Ok(LoadedActor {
@@ -518,18 +533,6 @@ impl ActorLoader {
         package_name: Option<&str>,
         actor_name: &str,
     ) -> Result<PathBuf> {
-        // Default behavior uses the default target directory
-        self.build_actor_internal(actor_path, package_name, actor_name, None)
-            .await
-    }
-
-    async fn build_actor_internal(
-        &self,
-        actor_path: &Path,
-        package_name: Option<&str>,
-        actor_name: &str,
-        custom_target_dir: Option<&Path>,
-    ) -> Result<PathBuf> {
         info!("Building actor at {:?}", actor_path);
 
         // Determine the actual build directory
@@ -543,11 +546,6 @@ impl ActorLoader {
 
         let mut cmd = Command::new("cargo-component");
         cmd.current_dir(&build_dir).arg("build").arg("--release");
-
-        // Use custom target directory if provided
-        if let Some(target_dir) = custom_target_dir {
-            cmd.arg("--target-dir").arg(target_dir);
-        }
 
         if package_name.is_some() {
             info!("Building in package directory: {:?}", build_dir);
@@ -569,10 +567,7 @@ impl ActorLoader {
         }
 
         // Find the built wasm file
-        let target_dir = if let Some(custom_target) = custom_target_dir {
-            // Use the custom target directory
-            custom_target.join("wasm32-wasip1").join("release")
-        } else if package_name.is_some() {
+        let target_dir = if package_name.is_some() {
             // For packages, check if there's a workspace target directory at the actor_path root
             let workspace_target = actor_path
                 .join("target")
@@ -596,58 +591,42 @@ impl ActorLoader {
                 .join("release")
         };
 
-        let mut entries = fs::read_dir(&target_dir).await.context(IoSnafu {
-            path: Some(target_dir.to_path_buf()),
-        })?;
-
-        // Try to find the expected WASM file name from package Cargo.toml
-        if package_name.is_some() {
-            if let Ok(expected_name) = self.get_expected_wasm_name(&build_dir).await {
-                let wasm_path = target_dir.join(&expected_name);
-                if wasm_path.exists() {
-                    return Ok(wasm_path);
-                }
-            }
+        // Get the expected WASM file name from the package manifest
+        let expected_name = self.get_expected_wasm_name(&build_dir)?;
+        let wasm_path = target_dir.join(&expected_name);
+        
+        if wasm_path.exists() {
+            Ok(wasm_path)
+        } else {
+            Err(Error::WasmNotFound {
+                actor_name: actor_name.to_string(),
+                expected_wasm: expected_name,
+                target_dir: target_dir.display().to_string(),
+                location: location!(),
+            })
         }
-
-        // Fallback: find any .wasm file
-        while let Some(entry) = entries.next_entry().await.context(IoSnafu { path: None })? {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("wasm") {
-                return Ok(path);
-            }
-        }
-
-        Err(Error::WasmNotFound {
-            actor_name: actor_name.to_string(),
-            expected_wasm: "<any .wasm file>".to_string(),
-            target_dir: target_dir.display().to_string(),
-            location: location!(),
-        })
     }
 
-    async fn get_expected_wasm_name(&self, build_dir: &Path) -> Result<String> {
-        let cargo_toml_path = build_dir.join("Cargo.toml");
-        let content = fs::read_to_string(&cargo_toml_path)
-            .await
-            .context(IoSnafu {
-                path: Some(cargo_toml_path),
-            })?;
+    #[allow(clippy::result_large_err)]
+    fn get_expected_wasm_name(&self, build_dir: &Path) -> Result<String> {
+        let manifest_path = build_dir.join("Cargo.toml");
+        
+        let metadata = MetadataCommand::new()
+            .manifest_path(&manifest_path)
+            .exec()
+            .context(CargoMetadataSnafu)?;
 
-        let cargo_toml: toml::Value =
-            toml::from_str(&content).context(TomlDeserializeSnafu { text: content })?;
-
-        let package_name = cargo_toml
-            .get("package")
-            .and_then(|p| p.get("name"))
-            .and_then(|n| n.as_str())
+        let package = metadata
+            .packages
+            .iter()
+            .find(|p| p.source.is_none())
             .ok_or_else(|| Error::MissingRequiredField {
                 actor_name: "<package>".to_string(),
                 field: "name".to_string(),
                 location: location!(),
             })?;
 
-        Ok(format!("{}.wasm", package_name.replace('-', "_")))
+        Ok(format!("{}.wasm", package.name.replace('-', "_")))
     }
 
     async fn get_actor_version(
@@ -656,53 +635,32 @@ impl ActorLoader {
         package_name: Option<&str>,
         actor_name: &str,
     ) -> Result<String> {
-        // Since we only need the version (actor_id comes from Hive.toml now),
-        // we can read the Cargo.toml directly for packages to avoid metadata complexity
-        if let Some(package_path) = package_name {
-            // For packages, read the package's Cargo.toml directly
-            let package_cargo_toml = actor_path.join(package_path).join("Cargo.toml");
-            let cargo_content = fs::read_to_string(&package_cargo_toml)
-                .await
-                .context(IoSnafu {
-                    path: Some(package_cargo_toml),
-                })?;
-
-            let cargo_toml: toml::Value =
-                toml::from_str(&cargo_content).context(TomlDeserializeSnafu {
-                    text: cargo_content,
-                })?;
-
-            let version = cargo_toml
-                .get("package")
-                .and_then(|p| p.get("version"))
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::MissingRequiredField {
-                    actor_name: actor_name.to_string(),
-                    field: "version".to_string(),
-                    location: location!(),
-                })?;
-
-            Ok(version.to_string())
+        // Determine the manifest path
+        let manifest_path = if let Some(package) = package_name {
+            actor_path.join(package).join("Cargo.toml")
         } else {
-            // For single actors, use cargo metadata
-            let metadata = MetadataCommand::new()
-                .current_dir(actor_path)
-                .exec()
-                .context(CargoMetadataSnafu)?;
+            actor_path.join("Cargo.toml")
+        };
 
-            let package = metadata
-                .packages
-                .iter()
-                .find(|p| p.source.is_none())
-                .ok_or_else(|| Error::PackageNotFound {
-                    actor_name: actor_name.to_string(),
-                    package_name: "root package".to_string(),
-                    workspace_path: actor_path.display().to_string(),
-                    location: location!(),
-                })?;
+        // Use cargo metadata with explicit manifest path
+        let metadata = MetadataCommand::new()
+            .manifest_path(&manifest_path)
+            .exec()
+            .context(CargoMetadataSnafu)?;
 
-            Ok(package.version.to_string())
-        }
+        // Find the package (should be the root package of the manifest we specified)
+        let package = metadata
+            .packages
+            .iter()
+            .find(|p| p.source.is_none())
+            .ok_or_else(|| Error::PackageNotFound {
+                actor_name: actor_name.to_string(),
+                package_name: package_name.unwrap_or("root").to_string(),
+                workspace_path: manifest_path.display().to_string(),
+                location: location!(),
+            })?;
+
+        Ok(package.version.to_string())
     }
 }
 
