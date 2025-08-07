@@ -11,7 +11,6 @@ use tuirealm::{
 };
 
 use super::chat_history::ChatHistoryComponent;
-use super::scrollable::ScrollableComponent;
 use super::textarea::LLMTextAreaComponent;
 
 /// Actions the user can bind keys to
@@ -51,10 +50,7 @@ impl ChatAreaComponent {
                 props: Props::default(),
                 state: State::One(StateValue::String("".to_string())),
                 llm_textarea: LLMTextAreaComponent::new(config.clone()),
-                chat_history: ScrollableComponent::new(
-                    Box::new(ChatHistoryComponent::new(initial_prompt)),
-                    true,
-                ),
+                chat_history: ChatHistoryComponent::new(initial_prompt),
             },
         }
     }
@@ -64,7 +60,7 @@ struct ChatArea {
     props: Props,
     state: State,
     llm_textarea: LLMTextAreaComponent,
-    chat_history: ScrollableComponent,
+    chat_history: ChatHistoryComponent,
 }
 
 impl MockComponent for ChatArea {
