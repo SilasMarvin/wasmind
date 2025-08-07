@@ -29,13 +29,14 @@ pub async fn run() -> TuiResult<()> {
     tui.run();
 
     // Spawn some agents
-    for i in 0..20 {
+    for i in 0..2000 {
         let (spawn_agent_message, _agent1_scope) = create_spawn_agent_message(
             &format!("Sub Manager {i}"),
             Some(&STARTING_SCOPE.to_string()),
         );
         coordinator.broadcast_common_message(spawn_agent_message, false)?;
     }
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Create VERY large sample chat state for testing scrolling performance
     let large_system_content = format!(

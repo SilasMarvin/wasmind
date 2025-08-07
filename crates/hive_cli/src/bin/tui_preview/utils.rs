@@ -10,15 +10,14 @@
 //     scope::Scope,
 // };
 
-use hive::scope::Scope;
-use hive_actor_utils_common_messages::actors::AgentSpawned;
+use hive::scope::new_scope;
+use hive_actor_utils_common_messages::{Scope, actors::AgentSpawned};
 
 pub fn create_spawn_agent_message(
     name: &str,
     parent_agent: Option<&Scope>,
 ) -> (AgentSpawned, Scope) {
-    let new_scope = Scope::new();
-
+    let new_scope = new_scope();
     (
         AgentSpawned {
             agent_id: new_scope.to_string(),

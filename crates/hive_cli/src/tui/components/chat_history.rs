@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::tui::utils::{center_horizontal, create_block_with_title, offset_y};
+use crate::tui::utils::{center_horizontal, create_block_with_title};
 use crate::tui::{icons, model::TuiMessage};
 use hive::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
 use hive_actor_utils_common_messages::{
@@ -27,24 +27,79 @@ const ROOT_AGENT_NAME: &str = "Root Agent";
 
 const MESSAGE_GAP: u16 = 1;
 
-fn create_pending_user_message_widget(content: String, area: Rect) -> (Box<dyn WidgetRef>, u16) {
-    let borders = tuirealm::props::Borders::default();
-    let block = create_block_with_title(
-        format!("[ {} You - PENDING ]", icons::USER_ICON),
-        borders,
-        false,
-        Some(Padding::horizontal(1)),
-    );
-    let message_paragraph = Paragraph::new(content)
-        .block(block)
-        .style(Style::new())
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
-    let min_height = message_paragraph.line_count(area.width) as u16;
+// =============================================================================
+// CACHING SYSTEM
+// =============================================================================
 
-    (Box::new(message_paragraph), min_height)
+/// Trait for items that can be rendered with caching support
+trait CacheableRenderItem {
+    type Context;
+
+    fn get_height(&mut self, area: Rect, context: &Self::Context) -> u16;
+    fn get_buffer(&mut self, area: Rect, context: &Self::Context) -> &Buffer;
+    fn invalidate_cache(&mut self);
 }
 
+// Cached wrapper for simple Paragraph widgets
+struct CachedParagraph {
+    paragraph: Paragraph<'static>,
+    height: Option<u16>,
+    buffer: Option<Buffer>,
+}
+
+
+impl CachedParagraph {
+    fn new(paragraph: Paragraph<'static>) -> Self {
+        Self {
+            paragraph,
+            height: None,
+            buffer: None,
+        }
+    }
+}
+
+impl CacheableRenderItem for CachedParagraph {
+    type Context = ();
+
+    fn get_height(&mut self, area: Rect, _context: &()) -> u16 {
+        if let Some(height) = self.height {
+            height
+        } else {
+            let height = self.paragraph.line_count(area.width) as u16;
+            self.height = Some(height);
+            height
+        }
+    }
+
+    fn get_buffer(&mut self, area: Rect, context: &()) -> &Buffer {
+        if self.buffer.is_some() {
+            self.buffer.as_ref().unwrap()
+        } else {
+            let height = self.get_height(area, context);
+            let mut buffer_area = area;
+            buffer_area.height = height;
+            buffer_area.x = 0;
+            buffer_area.y = 0;
+            let mut buf = Buffer::empty(buffer_area);
+            self.paragraph.clone().render(buffer_area, &mut buf);
+            self.buffer = Some(buf);
+            self.buffer.as_ref().unwrap()
+        }
+    }
+
+    fn invalidate_cache(&mut self) {
+        self.height = None;
+        self.buffer = None;
+    }
+}
+
+
+// =============================================================================
+// WIDGET CREATION FUNCTIONS
+// =============================================================================
+
+
+/// Creates a user message widget
 fn create_user_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) {
     let borders = tuirealm::props::Borders::default();
     let block = create_block_with_title(
@@ -63,6 +118,7 @@ fn create_user_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) {
     (Box::new(message_paragraph), min_height)
 }
 
+/// Creates a system message widget
 fn create_system_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) {
     let borders = tuirealm::props::Borders::default();
     let block = create_block_with_title(
@@ -81,6 +137,7 @@ fn create_system_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) 
     (Box::new(message_paragraph), min_height)
 }
 
+/// Creates a tool call widget with dynamic status and expansion support
 fn create_tool_widget(
     tool_call: &ToolCall,
     status: &ToolCallStatus,
@@ -154,6 +211,7 @@ fn create_tool_widget(
     (Box::new(p), min_height)
 }
 
+/// Creates widgets for assistant messages, including text content and tool calls
 fn create_assistant_widgets(
     message: &AssistantChatMessage,
     area: Rect,
@@ -191,6 +249,11 @@ fn create_assistant_widgets(
     widgets
 }
 
+// =============================================================================
+// CHAT MESSAGE STATE MANAGEMENT
+// =============================================================================
+
+/// Represents a chat message with cached rendering state
 struct ChatMessageWidgetState {
     message: ChatMessage,
     height: Option<u16>,
@@ -199,19 +262,6 @@ struct ChatMessageWidgetState {
 }
 
 impl ChatMessageWidgetState {
-    fn get_height(
-        &mut self,
-        area: Rect,
-        tool_call_updates: &HashMap<String, ToolCallStatus>,
-    ) -> u16 {
-        if let Some(height) = self.height {
-            height
-        } else {
-            self.build_widgets(area, tool_call_updates);
-            self.get_height(area, tool_call_updates)
-        }
-    }
-
     fn build_widgets(&mut self, area: Rect, tool_call_updates: &HashMap<String, ToolCallStatus>) {
         let widgets = match &self.message {
             ChatMessage::System(system_msg) => {
@@ -232,28 +282,50 @@ impl ChatMessageWidgetState {
         }
         self.height = Some(total_height);
     }
+}
 
-    fn get_buff(
-        &mut self,
-        mut area: Rect,
-        tool_call_updates: &HashMap<String, ToolCallStatus>,
-    ) -> &Buffer {
-        // Hack around Rust's borrow checker
+impl CacheableRenderItem for ChatMessageWidgetState {
+    type Context = HashMap<String, ToolCallStatus>;
+
+    fn get_height(&mut self, area: Rect, context: &Self::Context) -> u16 {
+        if let Some(height) = self.height {
+            height
+        } else {
+            self.build_widgets(area, context);
+            self.height.unwrap()
+        }
+    }
+
+    fn get_buffer(&mut self, area: Rect, context: &Self::Context) -> &Buffer {
         if self.buffer.is_some() {
             self.buffer.as_ref().unwrap()
         } else {
-            area.height = self.get_height(area, tool_call_updates);
-            area.x = 0;
-            area.y = 0;
-            let mut buff = Buffer::empty(area);
-            for (widget, height) in &self.widgets {
-                area.height = *height;
-                widget.render_ref(area, &mut buff);
-                area = offset_y(area, height + MESSAGE_GAP);
+            let height = self.get_height(area, context);
+            let mut buffer_area = area;
+            buffer_area.height = height;
+            buffer_area.x = 0;
+            buffer_area.y = 0;
+            let mut buff = Buffer::empty(buffer_area);
+
+            let mut render_area = buffer_area;
+            for (widget, widget_height) in &self.widgets {
+                render_area.height = *widget_height;
+                widget.render_ref(render_area, &mut buff);
+                render_area.y += widget_height + MESSAGE_GAP;
+                render_area.height = render_area
+                    .height
+                    .saturating_sub(widget_height + MESSAGE_GAP);
             }
+
             self.buffer = Some(buff);
             self.buffer.as_ref().unwrap()
         }
+    }
+
+    fn invalidate_cache(&mut self) {
+        self.height = None;
+        self.buffer = None;
+        self.widgets.clear();
     }
 }
 
@@ -280,11 +352,20 @@ fn convert_from_chat_state_to_chat_message_widget_state(
     msgs
 }
 
+// =============================================================================
+// ASSISTANT INFO AND RENDERING
+// =============================================================================
+
+/// Contains all information needed to render an assistant's chat interface
 struct AssistantInfo {
     role: String,
     chat_message_widget_state: Vec<ChatMessageWidgetState>,
     pending_user_message: Option<String>,
     tool_call_updates: HashMap<String, ToolCallStatus>,
+    // Cached render items
+    cached_title: Option<CachedParagraph>,
+    cached_empty_state: Option<CachedParagraph>,
+    cached_pending: Option<CachedParagraph>,
 }
 
 impl AssistantInfo {
@@ -294,12 +375,49 @@ impl AssistantInfo {
             chat_message_widget_state: vec![],
             pending_user_message: None,
             tool_call_updates: HashMap::new(),
+            cached_title: None,
+            cached_empty_state: None,
+            cached_pending: None,
         }
     }
 }
 
 impl AssistantInfo {
-    // Helper function to copy lines from message buffer to main buffer
+    /// Invalidates all cached render items for this assistant
+    fn invalidate_all_caches(&mut self) {
+        if let Some(ref mut cached) = self.cached_title {
+            cached.invalidate_cache();
+        }
+        if let Some(ref mut cached) = self.cached_empty_state {
+            cached.invalidate_cache();
+        }
+        if let Some(ref mut cached) = self.cached_pending {
+            cached.invalidate_cache();
+        }
+
+        for message in &mut self.chat_message_widget_state {
+            message.invalidate_cache();
+        }
+    }
+
+    /// Finds and invalidates cache for message containing specific tool call
+    fn invalidate_message_with_tool_call(&mut self, tool_call_id: &str) {
+        for message in &mut self.chat_message_widget_state {
+            // Check if this message contains the tool call
+            if let ChatMessage::Assistant(assistant_msg) = &message.message {
+                if let Some(tool_calls) = &assistant_msg.tool_calls {
+                    for tool_call in tool_calls {
+                        if tool_call.id == tool_call_id {
+                            message.invalidate_cache();
+                            return; // Found it, no need to continue
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Helper function to copy lines from message buffer to main buffer
     fn copy_buffer_lines(
         message_buffer: &Buffer,
         buf: &mut Buffer,
@@ -342,132 +460,178 @@ impl AssistantInfo {
             {
                 dst_slice.clone_from_slice(src_slice);
             } else {
-                tracing::error!(
-                    "Buffer copy failed: source_y={}, dest_y={}, source_range={}..{}, dest_range={}..{}, msg_buf_size={}, dest_buf_size={}, area.width={}, buf.area.width={}",
-                    source_y,
-                    dest_y,
-                    source_start,
-                    source_end,
-                    dest_start,
-                    dest_end,
-                    message_buffer.content.len(),
-                    buf.content.len(),
-                    area.width,
-                    buf.area.width
-                );
+                tracing::error!("Buffer copy failed: invalid slice ranges");
             }
         }
     }
 
-    // This render function tracks total content height and supports scrolling
-    fn render_ref_mut(&mut self, mut area: Rect, buf: &mut Buffer, scroll_offset: u16) -> u16 {
-        let mut total_content_height = 0;
+    /// Helper to render an item if visible and track offsets - eliminates repetition
+    fn render_and_track<T: CacheableRenderItem>(
+        item: &mut T,
+        context: &T::Context,
+        area: Rect,
+        buf: &mut Buffer,
+        scroll_offset: u16,
+        y_offset: &mut u16,
+        total_content_height: &mut u16,
+    ) {
+        let height = item.get_height(area, context);
+        *total_content_height += height + MESSAGE_GAP;
 
-        // Render top role title
-        let title_paragraph = Paragraph::new(format!("[ {} ]", self.role.clone()))
-            .style(Style::new())
-            .alignment(Alignment::Center);
-        let title_height = title_paragraph.line_count(area.width) as u16;
-        total_content_height += title_height + MESSAGE_GAP;
-
-        // Only render title if it's visible
-        if total_content_height > scroll_offset {
-            title_paragraph.render(area, buf);
+        // Check visibility
+        if *y_offset + height > scroll_offset && *y_offset < scroll_offset + area.height {
+            let buffer = item.get_buffer(area, context);
+            Self::render_item_with_clipping(buffer, height, *y_offset, scroll_offset, area, buf);
         }
-        area = offset_y(area, title_height + MESSAGE_GAP);
+
+        *y_offset += height + MESSAGE_GAP;
+    }
+
+    // Universal clipping and rendering method for any renderable item
+    fn render_item_with_clipping(
+        item_buffer: &Buffer,
+        item_height: u16,
+        y_offset: u16,
+        scroll_offset: u16,
+        area: Rect,
+        buf: &mut Buffer,
+    ) {
+        let top_clipping = if y_offset < scroll_offset {
+            scroll_offset - y_offset
+        } else {
+            0
+        };
+
+        let bottom_clipping = if y_offset + item_height > scroll_offset + area.height {
+            (y_offset + item_height) - (scroll_offset + area.height)
+        } else {
+            0
+        };
+
+        let visible_height = item_height - top_clipping - bottom_clipping;
+
+        if visible_height > 0 {
+            let source_start_line = top_clipping;
+            let dest_start_line = area.y
+                + if y_offset > scroll_offset {
+                    y_offset - scroll_offset
+                } else {
+                    0
+                };
+
+            Self::copy_buffer_lines(
+                item_buffer,
+                buf,
+                area,
+                source_start_line,
+                dest_start_line,
+                visible_height,
+            );
+        }
+    }
+
+    // This render function tracks total content height and supports scrolling
+    fn render_ref_mut(&mut self, area: Rect, buf: &mut Buffer, scroll_offset: u16) -> u16 {
+        let mut total_content_height = 0;
+        let mut y_offset = 0;
+
+        // Create or get cached title
+        if self.cached_title.is_none() {
+            let title_paragraph = Paragraph::new(format!("[ {} ]", self.role))
+                .style(Style::new())
+                .alignment(Alignment::Center);
+            self.cached_title = Some(CachedParagraph::new(title_paragraph));
+        }
+
+        // Render title using helper
+        Self::render_and_track(
+            self.cached_title.as_mut().unwrap(),
+            &(),
+            area,
+            buf,
+            scroll_offset,
+            &mut y_offset,
+            &mut total_content_height,
+        );
 
         if self.chat_message_widget_state.is_empty() && self.pending_user_message.is_none() {
-            let content = "It's quiet, too quiet...\n\nSend a message - don't be shy!".to_string();
-            let block = Block::new()
-                .borders(Borders::ALL)
-                .padding(Padding::horizontal(1));
-            let paragraph = Paragraph::new(content)
-                .alignment(Alignment::Center)
-                .wrap(Wrap { trim: true })
-                .block(block);
-
-            let width = paragraph.line_width();
-            let mut empty_area = center_horizontal(area, width as u16);
-            let height = paragraph.line_count(empty_area.width) as u16;
-            empty_area.y += 10;
-            empty_area.height = height;
-            total_content_height += height + 10; // Include the padding
-
-            // Only render if visible
-            if total_content_height > scroll_offset {
-                paragraph.render(empty_area, buf);
+            // Create or get cached empty state
+            if self.cached_empty_state.is_none() {
+                let content =
+                    "It's quiet, too quiet...\n\nSend a message - don't be shy!".to_string();
+                let block = Block::new()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1));
+                let paragraph = Paragraph::new(content)
+                    .alignment(Alignment::Center)
+                    .wrap(Wrap { trim: true })
+                    .block(block);
+                self.cached_empty_state = Some(CachedParagraph::new(paragraph));
             }
+
+            // Special handling for empty state centering
+            let width = self
+                .cached_empty_state
+                .as_ref()
+                .unwrap()
+                .paragraph
+                .line_width();
+            let centered_area = center_horizontal(area, width as u16);
+
+            // Adjust y_offset for centering
+            y_offset += 10;
+
+            Self::render_and_track(
+                self.cached_empty_state.as_mut().unwrap(),
+                &(),
+                centered_area,
+                buf,
+                scroll_offset,
+                &mut y_offset,
+                &mut total_content_height,
+            );
         } else {
             // Render chat history
-            let mut y_offset = 0;
             for message in &mut self.chat_message_widget_state {
-                let height = message.get_height(area, &self.tool_call_updates);
-                total_content_height += height + MESSAGE_GAP;
-
-                tracing::error!("{} + {} - {}", y_offset, height, scroll_offset);
-
-                if y_offset + height > scroll_offset && y_offset < scroll_offset + area.height {
-                    let message_buffer = message.get_buff(area, &self.tool_call_updates);
-
-                    // Calculate clipping for any message (handles all cases including both top and bottom clipping)
-                    let top_clipping = if y_offset < scroll_offset {
-                        scroll_offset - y_offset
-                    } else {
-                        0
-                    };
-
-                    let bottom_clipping = if y_offset + height > scroll_offset + area.height {
-                        (y_offset + height) - (scroll_offset + area.height)
-                    } else {
-                        0
-                    };
-
-                    let visible_height = height - top_clipping - bottom_clipping;
-
-                    // Only proceed if there's something visible
-                    if visible_height > 0 {
-                        let source_start_line = top_clipping;
-                        let dest_start_line = area.y
-                            + if y_offset > scroll_offset {
-                                y_offset - scroll_offset
-                            } else {
-                                0
-                            };
-
-                        tracing::error!(
-                            "RENDERING: source_start_line={}, dest_start_line={}, visible_height={}",
-                            source_start_line,
-                            dest_start_line,
-                            visible_height
-                        );
-
-                        Self::copy_buffer_lines(
-                            message_buffer,
-                            buf,
-                            area,
-                            source_start_line,
-                            dest_start_line,
-                            visible_height,
-                        );
-                    }
-                }
-
-                y_offset += height + MESSAGE_GAP;
+                Self::render_and_track(
+                    message,
+                    &self.tool_call_updates,
+                    area,
+                    buf,
+                    scroll_offset,
+                    &mut y_offset,
+                    &mut total_content_height,
+                );
             }
 
-            // Handle pending message
+            // Handle pending message using unified clipping system
             if let Some(ref pending_message) = self.pending_user_message {
-                let (widget, height) =
-                    create_pending_user_message_widget(pending_message.clone(), area);
-                total_content_height += height + MESSAGE_GAP;
-
-                // Only render if visible (simplified check for now)
-                if y_offset >= scroll_offset && y_offset - scroll_offset < area.height {
-                    let mut pending_area = area;
-                    pending_area.y += y_offset - scroll_offset;
-                    pending_area.height = height;
-                    widget.render_ref(pending_area, buf);
+                // Create or get cached pending paragraph
+                if self.cached_pending.is_none() {
+                    let borders = tuirealm::props::Borders::default();
+                    let block = create_block_with_title(
+                        format!("[ {} You - PENDING ]", icons::USER_ICON),
+                        borders,
+                        false,
+                        Some(Padding::horizontal(1)),
+                    );
+                    let message_paragraph = Paragraph::new(pending_message.clone())
+                        .block(block)
+                        .style(Style::new())
+                        .alignment(Alignment::Left)
+                        .wrap(Wrap { trim: true });
+                    self.cached_pending = Some(CachedParagraph::new(message_paragraph));
                 }
+
+                Self::render_and_track(
+                    self.cached_pending.as_mut().unwrap(),
+                    &(),
+                    area,
+                    buf,
+                    scroll_offset,
+                    &mut y_offset,
+                    &mut total_content_height,
+                );
             }
         }
 
@@ -475,6 +639,11 @@ impl AssistantInfo {
     }
 }
 
+// =============================================================================
+// MAIN TUI COMPONENT
+// =============================================================================
+
+/// The main chat history component that integrates with tuirealm
 #[derive(MockComponent)]
 pub struct ChatHistoryComponent {
     component: ChatHistory,
@@ -516,6 +685,15 @@ struct ChatHistory {
     scroll_offset: u16,
     content_height: u16,
     last_render_area: Option<Rect>,
+}
+
+impl ChatHistory {
+    /// Invalidates all caches for all assistants
+    fn invalidate_all_caches(&mut self) {
+        for assistant_info in self.chat_history_map.values_mut() {
+            assistant_info.invalidate_all_caches();
+        }
+    }
 }
 
 impl MockComponent for ChatHistory {
@@ -562,6 +740,11 @@ impl MockComponent for ChatHistory {
 impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
     fn on(&mut self, ev: Event<MessageEnvelope>) -> Option<TuiMessage> {
         match ev {
+            Event::WindowResize(_, _) => {
+                // Invalidate all caches since terminal width changes affect text wrapping
+                self.component.invalidate_all_caches();
+                Some(TuiMessage::Redraw)
+            }
             Event::User(envelope) => {
                 // Handle AddMessage for user input
                 if let Some(add_message) = parse_common_message_as::<AddMessage>(&envelope) {
@@ -570,8 +753,6 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                         if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
                             if let ChatMessage::User(user_msg) = add_message.message {
                                 actor_info.pending_user_message = Some(user_msg.content);
-                                self.component.is_modified = true;
-                                return Some(TuiMessage::Redraw);
                             }
                         }
                     }
@@ -582,8 +763,6 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                         let scope = &envelope.from_scope;
                         if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
                             actor_info.pending_user_message = None;
-                            self.component.is_modified = true;
-                            return Some(TuiMessage::Redraw);
                         }
                     }
                 }
@@ -598,8 +777,6 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                                 convert_from_chat_state_to_chat_message_widget_state(
                                     chat_updated.chat_state,
                                 );
-                            self.component.is_modified = true;
-                            return Some(TuiMessage::Redraw);
                         }
                     }
                 }
@@ -612,9 +789,10 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                         if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
                             actor_info
                                 .tool_call_updates
-                                .insert(tool_update.id, tool_update.status);
-                            self.component.is_modified = true;
-                            return Some(TuiMessage::Redraw);
+                                .insert(tool_update.id.clone(), tool_update.status);
+                            
+                            // Invalidate cache for the specific message containing this tool call
+                            actor_info.invalidate_message_with_tool_call(&tool_update.id);
                         }
                     }
                 }
@@ -627,8 +805,6 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                         self.component
                             .chat_history_map
                             .insert(agent_scope, AssistantInfo::new(agent_spawned.name, None));
-                        self.component.is_modified = true;
-                        return Some(TuiMessage::Redraw);
                     }
                 }
                 None

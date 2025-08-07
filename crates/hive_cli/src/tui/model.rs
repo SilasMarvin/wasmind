@@ -104,7 +104,7 @@ where
                 .add_port(
                     Box::new(PollBroadcastWrapper { rx }),
                     Duration::from_millis(20),
-                    1024,
+                    4096,
                 )
                 .tick_interval(Duration::from_millis(350))
                 .poll_timeout(Duration::from_millis(20)),
@@ -128,7 +128,6 @@ where
     T: TerminalAdapter,
 {
     fn update(&mut self, msg: Option<TuiMessage>) -> Option<TuiMessage> {
-        self.redraw = true;
         if let Some(msg) = msg {
             // Set redraw
             match msg {
@@ -158,7 +157,9 @@ where
                     }
                     self.redraw = true;
                 }
-                TuiMessage::Redraw => (),
+                TuiMessage::Redraw => {
+                    self.redraw = true;
+                }
                 TuiMessage::Graph(graph_message) => match graph_message {
                     GraphTuiMessage::SelectedAgent(scope) => {
                         self.active_scope = Scope::try_from(scope.as_str()).unwrap();

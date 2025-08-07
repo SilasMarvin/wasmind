@@ -356,7 +356,6 @@ impl GraphAreaComponent {
                 state: State::None,
                 props: Props::default(),
                 root_node: None,
-                is_modified: false,
                 height: 0,
                 stats,
                 scroll_offset: 0,
@@ -378,7 +377,6 @@ struct GraphArea {
     state: State,
     root_node: Option<AgentNode>,
     height: u32,
-    is_modified: bool,
     stats: TotalStats,
     scroll_offset: u32,
     viewport_height: u16,
@@ -391,7 +389,7 @@ impl GraphArea {
         if self.viewport_height == 0 {
             return;
         }
-        
+
         if let Some(ref root) = self.root_node {
             let mut y_position = 0;
             if let Some(selected_y) = root.find_selected_y_position(&mut y_position) {
@@ -524,7 +522,8 @@ fn render_tree_node(
                 }
 
                 // Draw the elbow (└── or ├──) only if it's actually in the viewport
-                if child_elbow_y_absolute >= viewport_start && child_elbow_y_absolute < viewport_end {
+                if child_elbow_y_absolute >= viewport_start && child_elbow_y_absolute < viewport_end
+                {
                     if child_elbow_y >= area.y && child_elbow_y < area.y + area.height {
                         let branch = if is_last_child {
                             "└── "
@@ -626,8 +625,6 @@ impl MockComponent for GraphArea {
                 Clear.render(stats_area, frame.buffer_mut());
                 frame.render_widget(stats_paragraph, stats_area);
             }
-
-            self.is_modified = false;
         }
     }
 
@@ -651,10 +648,6 @@ impl MockComponent for GraphArea {
 impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
     fn on(&mut self, ev: Event<MessageEnvelope>) -> Option<TuiMessage> {
         let msg = match ev {
-            Event::Tick => {
-                self.component.is_modified = true;
-                Some(TuiMessage::Redraw)
-            }
             Event::Keyboard(key_event) => {
                 if let Some(action) = self.config.graph.key_bindings.get(&key_event) {
                     let scope = match action {
@@ -696,7 +689,7 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                             let scope = &envelope.from_scope;
                             root.increment_metrics(scope, metrics);
                         }
-                        Some(TuiMessage::Redraw)
+                        None
                     } else {
                         None
                     }
@@ -710,7 +703,7 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                             let scope = &envelope.from_scope;
                             root.increment_metrics(scope, metrics);
                         }
-                        Some(TuiMessage::Redraw)
+                        None
                     } else {
                         None
                     }
@@ -746,8 +739,7 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                         // Center on the newly created root node
                         self.component.center_on_selected();
                     }
-
-                    Some(TuiMessage::Redraw)
+                    None
                 } else if let Some(agent_status_update) =
                     parse_common_message_as::<StatusUpdate>(&envelope)
                 {
@@ -765,7 +757,7 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                             }
                         } else {
                             root.set_status(&agent_scope, &agent_status_update.status);
-                            Some(TuiMessage::Redraw)
+                            None
                         }
                     } else {
                         None
@@ -795,10 +787,6 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
             }
             _ => None,
         };
-
-        if msg.is_some() {
-            self.component.is_modified = true;
-        }
 
         msg
     }

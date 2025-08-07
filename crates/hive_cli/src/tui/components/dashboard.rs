@@ -113,6 +113,10 @@ impl MockComponent for Dashboard {
 
 impl Component<TuiMessage, MessageEnvelope> for DashboardComponent {
     fn on(&mut self, ev: Event<MessageEnvelope>) -> Option<TuiMessage> {
+        if let Event::Tick = &ev {
+            return Some(TuiMessage::Redraw);
+        }
+
         // Handle keyboard events
         if let Event::Keyboard(key_event) = &ev {
             if let Some(action) = self.config.dashboard.key_bindings.get(&key_event) {
