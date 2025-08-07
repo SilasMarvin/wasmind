@@ -1,6 +1,5 @@
 use tokio::sync::broadcast;
 
-pub mod agent;
 mod manager;
 
 use hive_actor_loader::LoadedActor;
