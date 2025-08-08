@@ -13,7 +13,7 @@ use hive::actors::MessageEnvelope;
 use hive::context::HiveContext;
 use hive_actor_utils_common_messages::actors::Exit;
 use hive_actor_utils_common_messages::assistant::AddMessage;
-use hive_llm_types::types::ChatMessage;
+use hive_llm_types::ChatMessage;
 
 use super::components::graph::GraphTuiMessage;
 

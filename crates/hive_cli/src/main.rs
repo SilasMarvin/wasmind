@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use hive_actor_utils_common_messages::assistant::AddMessage;
 use hive_actor_utils_common_messages::litellm::BaseUrlUpdate;
-use hive_llm_types::types::ChatMessage;
+use hive_llm_types::ChatMessage;
 
 use hive_cli::{Error, TuiResult, config, init_logger_with_path, litellm_manager, tui};
 

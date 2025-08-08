@@ -62,10 +62,7 @@ impl tools::Tool for CommandTool {
                     let error_msg = format!("Failed to parse command parameters: {}", e);
                     let ui_display = UIDisplayInfo {
                         collapsed: "Parameter Error".to_string(),
-                        expanded: Some(format!(
-                            "Parameter Error:\n{}",
-                            error_msg
-                        )),
+                        expanded: Some(format!("Parameter Error:\n{}", error_msg)),
                     };
 
                     self.send_error_result(&tool_call.tool_call.id, error_msg, ui_display);
@@ -145,19 +142,12 @@ fn format_command_outcome_for_ui_display(command: &str, outcome: CommandOutcome)
             format!("Command:\n{}", command)
         }
         CommandOutcome::Failed { exit_code, .. } => {
-            format!(
-                "Command failed (exit {}):\n{}",
-                exit_code,
-                command
-            )
+            format!("Command failed (exit {}):\n{}", exit_code, command)
         }
         CommandOutcome::Timeout => {
             format!("Command timed out:\n{}", command)
         }
-        CommandOutcome::Signal => format!(
-            "Command terminated by signal:\n{}",
-            command
-        ),
+        CommandOutcome::Signal => format!("Command terminated by signal:\n{}", command),
         CommandOutcome::Error(_) => format!("Command error:\n{}", command),
     };
 
@@ -588,10 +578,10 @@ mod tests {
     fn test_timeout_validation() {
         // Test timeout bounds in handle_call logic
         let tool_call = ExecuteTool {
-            tool_call: hive_llm_types::types::ToolCall {
+            tool_call: hive_actor_utils::llm_client_types::ToolCall {
                 id: "test-id".to_string(),
                 tool_type: "function".to_string(),
-                function: hive_llm_types::types::Function {
+                function: hive_actor_utils::llm_client_types::Function {
                     name: "execute_command".to_string(),
                     arguments: r#"{"command": "echo test", "timeout": 700}"#.to_string(),
                 },

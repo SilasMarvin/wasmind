@@ -1,27 +1,28 @@
 # Hive Actor Bindings
 
-WebAssembly Interface Type (WIT) definitions and bindings for Hive actor communication. This crate contains the interface specifications that define how actors interact with the Hive system and each other.
+WebAssembly Interface Type (WIT) definitions for Hive actor communication. This crate contains the interface specifications that define how actors interact with the Hive system and each other.
 
-[![docs.rs](https://docs.rs/hive_actor_bindings/badge.svg)](https://docs.rs/hive_actor_bindings)
+No Rust is exported from this crate! It is designed to be included as a component dependency. Add the following lines to your Cargo.toml:
 
-## What This Crate Contains
+```
+[package.metadata.component.target.dependencies]
+"hive:actor" = "0.1" 
+```
 
-**WIT Interface Definitions** (`wit/world.wit`): Core actor interface specifications:
-- **Actor Model** - `message-envelope`, stateful `actor` resource, lifecycle methods
-- **Messaging System** - Broadcast communication patterns between actors  
-- **Capability Imports** - HTTP client, command execution, agent spawning, logging
-- **Tool System** - Interface for exposing actor capabilities as callable tools
+You can then import these interfaces in your WIT definition. E.G:
 
-**Generated Bindings**: Rust bindings are auto-generated from the WIT definitions using `wit-bindgen`. These bindings provide type-safe interfaces for actor development.
+```
+world your-world {
+  import hive:actor/host-info@0.1.0;
+  import hive:actor/messaging@0.1.0;
+  import hive:actor/http@0.1.0;
+  import hive:actor/logger@0.1.0;
 
-## Usage
+  ... your exports
+}
+```
 
-This crate is primarily used internally by:
-- **Actor developers** - Indirectly through `hive_actor_utils` which re-exports the bindings
-- **Hive runtime** - For loading and executing WASM actor components
-- **Build system** - As a component dependency for actor compilation
-
-**Actor developers** should use [`hive_actor_utils`](../hive_actor_utils/) instead of importing this crate directly, as it provides higher-level abstractions and development tools.
+See the entire interface in `wit/world.wit`.
 
 ## Interface Overview
 
@@ -35,4 +36,3 @@ The WIT definitions specify how actors:
 
 - **🔧 [Actor Development Utils](../hive_actor_utils/)** - High-level abstractions for building actors
 - **🎭 [Example Actors](../../actors/)** - Reference implementations using these bindings
-- **📖 [API Documentation](https://docs.rs/hive_actor_bindings)** - Generated binding documentation

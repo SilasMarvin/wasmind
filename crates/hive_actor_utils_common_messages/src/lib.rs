@@ -59,7 +59,7 @@ pub mod assistant {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PendingToolCall {
-        pub tool_call: hive_llm_types::types::ToolCall,
+        pub tool_call: hive_llm_types::ToolCall,
         pub result: Option<Result<tools::ToolCallResult, tools::ToolCallResult>>,
     }
 
@@ -139,7 +139,7 @@ pub mod assistant {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct AddMessage {
         pub agent: Scope,
-        pub message: hive_llm_types::types::ChatMessage,
+        pub message: hive_llm_types::ChatMessage,
     }
 
     impl Message for AddMessage {
@@ -148,9 +148,9 @@ pub mod assistant {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ChatState {
-        pub system: hive_llm_types::types::SystemChatMessage,
-        pub tools: Vec<hive_llm_types::types::Tool>,
-        pub messages: Vec<hive_llm_types::types::ChatMessage>,
+        pub system: hive_llm_types::SystemChatMessage,
+        pub tools: Vec<hive_llm_types::Tool>,
+        pub messages: Vec<hive_llm_types::ChatMessage>,
     }
 
     // hive.common.assistant.Request
@@ -167,7 +167,7 @@ pub mod assistant {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Response {
         pub request_id: String,
-        pub message: hive_llm_types::types::AssistantChatMessage,
+        pub message: hive_llm_types::AssistantChatMessage,
     }
 
     impl Message for Response {
@@ -312,7 +312,7 @@ pub mod tools {
     // hive.common.tools.ToolsAvailable
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ToolsAvailable {
-        pub tools: Vec<hive_llm_types::types::Tool>,
+        pub tools: Vec<hive_llm_types::Tool>,
     }
 
     impl Message for ToolsAvailable {
@@ -322,7 +322,7 @@ pub mod tools {
     // hive.common.tools.ExecuteToolCall
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ExecuteTool {
-        pub tool_call: hive_llm_types::types::ToolCall,
+        pub tool_call: hive_llm_types::ToolCall,
     }
 
     impl Message for ExecuteTool {

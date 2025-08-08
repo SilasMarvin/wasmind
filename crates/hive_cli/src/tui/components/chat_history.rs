@@ -8,7 +8,7 @@ use hive_actor_utils_common_messages::{
     assistant::{AddMessage, ChatState, ChatStateUpdated, Request as AssistantRequest},
     tools::{ToolCallStatus, ToolCallStatusUpdate},
 };
-use hive_llm_types::types::{AssistantChatMessage, ChatMessage, ToolCall};
+use hive_llm_types::{AssistantChatMessage, ChatMessage, ToolCall};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Alignment;
 use ratatui::style::{Color, Style};
@@ -46,7 +46,6 @@ struct CachedParagraph {
     height: Option<u16>,
     buffer: Option<Buffer>,
 }
-
 
 impl CachedParagraph {
     fn new(paragraph: Paragraph<'static>) -> Self {
@@ -93,11 +92,9 @@ impl CacheableRenderItem for CachedParagraph {
     }
 }
 
-
 // =============================================================================
 // WIDGET CREATION FUNCTIONS
 // =============================================================================
-
 
 /// Creates a user message widget
 fn create_user_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) {
@@ -790,7 +787,7 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                             actor_info
                                 .tool_call_updates
                                 .insert(tool_update.id.clone(), tool_update.status);
-                            
+
                             // Invalidate cache for the specific message containing this tool call
                             actor_info.invalidate_message_with_tool_call(&tool_update.id);
                         }

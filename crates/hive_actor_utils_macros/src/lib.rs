@@ -168,9 +168,9 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
                     &::hive_actor_utils::tools::macros::__private::serde_json::to_string(&
                         ::hive_actor_utils::messages::common_messages::tools::ToolsAvailable {
                             tools: vec![
-                                ::hive_actor_utils::tools::macros::__private::hive_llm_types::types::Tool {
+                                ::hive_actor_utils::tools::macros::__private::hive_llm_types::Tool {
                                     tool_type: "function".to_string(),
-                                    function: ::hive_actor_utils::tools::macros::__private::hive_llm_types::types::ToolFunctionDefinition {
+                                    function: ::hive_actor_utils::tools::macros::__private::hive_llm_types::ToolFunctionDefinition {
                                         name: #tool_name.to_string(),
                                         description: #tool_desc.to_string(),
                                         parameters: ::hive_actor_utils::tools::macros::__private::serde_json::from_str(& #tool_schema).expect("schema should be valid JSON")

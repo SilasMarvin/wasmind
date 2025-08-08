@@ -348,17 +348,17 @@ impl GeneratedActorTrait for FileInteractionActor {
     fn new(scope: String, _config_str: String) -> Self {
         // Broadcast available tools
         let tools = vec![
-            hive_llm_types::types::Tool {
+            hive_actor_utils::llm_client_types::Tool {
                 tool_type: "function".to_string(),
-                function: hive_llm_types::types::ToolFunctionDefinition {
+                function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
                     name: READ_FILE_NAME.to_string(),
                     description: READ_FILE_DESCRIPTION.to_string(),
                     parameters: serde_json::from_str(READ_FILE_SCHEMA).unwrap(),
                 },
             },
-            hive_llm_types::types::Tool {
+            hive_actor_utils::llm_client_types::Tool {
                 tool_type: "function".to_string(),
-                function: hive_llm_types::types::ToolFunctionDefinition {
+                function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
                     name: EDIT_FILE_NAME.to_string(),
                     description: EDIT_FILE_DESCRIPTION.to_string(),
                     parameters: serde_json::from_str(EDIT_FILE_SCHEMA).unwrap(),

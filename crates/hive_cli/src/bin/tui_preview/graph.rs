@@ -8,7 +8,7 @@ use hive_actor_utils_common_messages::{
     assistant::{ChatState, ChatStateUpdated, Status, StatusUpdate, WaitReason},
 };
 use hive_cli::{TuiResult, tui};
-use hive_llm_types::types::{ChatMessage, SystemChatMessage};
+use hive_llm_types::{ChatMessage, SystemChatMessage};
 
 use crate::utils::create_spawn_agent_message;
 
