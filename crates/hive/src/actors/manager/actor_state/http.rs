@@ -56,7 +56,6 @@ impl http::HostRequest for ActorState {
             retry_config: None,
         };
 
-        
         self.table.push(request_resource).unwrap()
     }
 

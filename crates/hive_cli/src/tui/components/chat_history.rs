@@ -273,15 +273,13 @@ impl ChatMessageWidgetState {
             ChatMessage::Tool(_) => vec![],
         };
         let mut total_height = 0;
-        let last_widget_count = widgets.iter().count();
-        for (i, (widget, height)) in widgets.into_iter().enumerate() {
-            total_height += height
-                + if i == last_widget_count - 1 {
-                    0
-                } else {
-                    MESSAGE_GAP
-                };
+        for (widget, height) in widgets.into_iter() {
+            total_height += height;
             self.widgets.push((widget, height));
+        }
+        // Add MESSAGE_GAP between widgets if there are multiple
+        if self.widgets.len() > 1 {
+            total_height += (self.widgets.len() as u16 - 1) * MESSAGE_GAP;
         }
         self.height = Some(total_height);
     }
@@ -311,10 +309,14 @@ impl CacheableRenderItem for ChatMessageWidgetState {
             let mut buff = Buffer::empty(buffer_area);
 
             let mut render_area = buffer_area;
-            for (widget, widget_height) in &self.widgets {
+            for (i, (widget, widget_height)) in self.widgets.iter().enumerate() {
                 render_area.height = *widget_height;
                 widget.render_ref(render_area, &mut buff);
                 render_area.y += widget_height;
+                // Add MESSAGE_GAP between widgets (but not after the last one)
+                if i < self.widgets.len() - 1 {
+                    render_area.y += MESSAGE_GAP;
+                }
                 render_area.height = render_area.height.saturating_sub(*widget_height);
             }
 
@@ -474,7 +476,7 @@ impl AssistantInfo {
         y_offset: &mut u16,
     ) {
         let height = item.get_height(area, context);
-        
+
         // Check visibility
         if *y_offset + height > scroll_offset && *y_offset < scroll_offset + area.height {
             let buffer = item.get_buffer(area, context);

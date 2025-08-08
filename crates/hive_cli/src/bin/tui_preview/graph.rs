@@ -4,8 +4,11 @@ use hive_actor_utils::STARTING_SCOPE;
 use hive_actor_utils::common_messages::{
     Scope,
     assistant::{ChatState, ChatStateUpdated, Status, StatusUpdate, WaitReason},
+    tools::{
+        AwaitingSystemDetails, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo,
+    },
 };
-use hive_actor_utils::llm_client_types::{ChatMessage, SystemChatMessage};
+use hive_actor_utils::llm_client_types::{ChatMessage, Function, SystemChatMessage, ToolCall};
 use hive_cli::{TuiResult, tui};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -61,6 +64,79 @@ pub fn spawn_agent(scope: &Scope, coordinator: &mut HiveCoordinator) -> TuiResul
     } else {
         Ok(agent_scope)
     }
+}
+
+fn create_sample_tool_calls() -> Vec<ToolCall> {
+    vec![
+        ToolCall {
+            id: "tool_call_1_received".to_string(),
+            tool_type: "function".to_string(),
+            function: Function {
+                name: "read_file".to_string(),
+                arguments: r#"{"path": "/tmp/test.txt"}"#.to_string(),
+            },
+            index: Some(0),
+        },
+        ToolCall {
+            id: "tool_call_2_awaiting".to_string(),
+            tool_type: "function".to_string(),
+            function: Function {
+                name: "execute_bash".to_string(),
+                arguments: r#"{"command": "ls -la"}"#.to_string(),
+            },
+            index: Some(1),
+        },
+        ToolCall {
+            id: "tool_call_3_done".to_string(),
+            tool_type: "function".to_string(),
+            function: Function {
+                name: "search_files".to_string(),
+                arguments: r#"{"pattern": "TODO", "path": "./src"}"#.to_string(),
+            },
+            index: Some(2),
+        },
+    ]
+}
+
+fn create_tool_status_updates() -> Vec<ToolCallStatusUpdate> {
+    vec![
+        // First tool call - Received state
+        ToolCallStatusUpdate {
+            id: "tool_call_1_received".to_string(),
+            status: ToolCallStatus::Received {
+                display_info: UIDisplayInfo {
+                    collapsed: "Reading file /tmp/test.txt...".to_string(),
+                    expanded: Some("Attempting to read the contents of /tmp/test.txt to analyze the data.".to_string()),
+                },
+            },
+        },
+        // Second tool call - AwaitingSystem state
+        ToolCallStatusUpdate {
+            id: "tool_call_2_awaiting".to_string(),
+            status: ToolCallStatus::AwaitingSystem {
+                details: AwaitingSystemDetails {
+                    required_scope: Some("bash_executor".to_string()),
+                    ui_display_info: UIDisplayInfo {
+                        collapsed: "Awaiting system approval for bash command...".to_string(),
+                        expanded: Some("Waiting for system approval to execute: ls -la\nThis command will list all files in the current directory.".to_string()),
+                    },
+                },
+            },
+        },
+        // Third tool call - Done state (success)
+        ToolCallStatusUpdate {
+            id: "tool_call_3_done".to_string(),
+            status: ToolCallStatus::Done {
+                result: Ok(ToolCallResult {
+                    content: "Found 42 TODO items in 8 files:\n- src/main.rs: 5 items\n- src/utils.rs: 3 items\n- src/handlers.rs: 12 items\n...".to_string(),
+                    ui_display_info: UIDisplayInfo {
+                        collapsed: "Search completed: 42 TODOs found".to_string(),
+                        expanded: Some("Search Results:\n\nFound 42 TODO items across 8 files in ./src:\n\n1. src/main.rs (5 items):\n   - Line 23: TODO: Implement error handling\n   - Line 45: TODO: Add logging\n   - Line 67: TODO: Optimize performance\n   - Line 89: TODO: Write tests\n   - Line 101: TODO: Add documentation\n\n2. src/utils.rs (3 items):\n   - Line 12: TODO: Refactor this function\n   - Line 34: TODO: Add input validation\n   - Line 56: TODO: Handle edge cases\n\n[... more results ...]".to_string()),
+                    },
+                }),
+            },
+        },
+    ]
 }
 
 pub async fn run() -> TuiResult<()> {
@@ -119,6 +195,12 @@ pub async fn run() -> TuiResult<()> {
         "\n\n## 6. Best Practices Summary\n\n* Always implement timeouts\n* Use circuit breakers for external calls\n* Implement proper retry logic with backoff\n* Use distributed tracing\n* Log all important events\n".repeat(7),
         "\n\nI hope this helps with your distributed systems architecture! Let me know if you need more specific examples or have questions about any of these patterns. "
     );
+    // Create sample tool calls for the second assistant message
+    let tool_calls = create_sample_tool_calls();
+
+    // Create an assistant message with tool calls
+    let assistant_with_tools_message = ChatMessage::assistant_with_tools(tool_calls);
+
     let chat_state = ChatState {
         system: SystemChatMessage {
             content: large_system_content,
@@ -127,11 +209,18 @@ pub async fn run() -> TuiResult<()> {
         messages: vec![
             ChatMessage::user(user_content),
             ChatMessage::assistant(assistant_content),
+            assistant_with_tools_message,
         ],
     };
 
     let chat_update = ChatStateUpdated { chat_state };
     coordinator.broadcast_common_message(chat_update, false)?;
+
+    // Broadcast tool call status updates to show different states
+    let tool_status_updates = create_tool_status_updates();
+    for status_update in tool_status_updates {
+        coordinator.broadcast_common_message(status_update, false)?;
+    }
 
     tokio::time::sleep(Duration::from_secs(150)).await;
 

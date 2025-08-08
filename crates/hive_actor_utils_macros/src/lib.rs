@@ -114,8 +114,7 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
 
     if let Err(e) = serde_json::from_str::<serde_json::Value>(&attrs.schema) {
         return TokenStream::from(
-            syn::Error::new_spanned(&input, format!("Invalid JSON schema: {e}"))
-                .to_compile_error(),
+            syn::Error::new_spanned(&input, format!("Invalid JSON schema: {e}")).to_compile_error(),
         );
     }
 

@@ -3,13 +3,13 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
 };
+#[cfg(feature = "clipboard")]
+use tui_realm_textarea::TEXTAREA_CMD_PASTE;
 use tui_realm_textarea::{
     INACTIVE_BORDERS, TEXTAREA_CMD_CLEAR, TEXTAREA_CMD_MOVE_WORD_BACK,
     TEXTAREA_CMD_MOVE_WORD_FORWARD, TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO,
     TEXTAREA_CURSOR_LINE_STYLE, TITLE_STYLE, TextArea,
 };
-#[cfg(feature = "clipboard")]
-use tui_realm_textarea::TEXTAREA_CMD_PASTE;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, MockComponent,
     command::{Cmd, Direction, Position},

@@ -28,7 +28,7 @@ impl command::HostCmd for ActorState {
                 timeout_seconds: None,
             })),
         };
-        
+
         self.table.push(command_resource).unwrap()
     }
 
