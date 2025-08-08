@@ -409,6 +409,7 @@ impl MockComponent for TextArea<'_> {
             // render widget
             area.x += 3;
             area.y += 1;
+            area.height -= 2;
             area.width -= 4;
             self.widget.set_block(Block::new());
             frame.render_widget(&self.widget, area);
@@ -420,6 +421,7 @@ impl MockComponent for TextArea<'_> {
             // set block
             area.y -= 1;
             area.width += 4;
+            area.height += 2;
             if let Some(block) = self.get_block() {
                 block.render(area, frame.buffer_mut());
             }

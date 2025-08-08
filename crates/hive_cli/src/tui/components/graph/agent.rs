@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use hive::{actors::MessageEnvelope, scope::Scope};
 use hive_actor_utils::common_messages::assistant::Status as AgentStatus;
 use ratatui::{
@@ -17,6 +19,8 @@ use tuirealm::{
 };
 
 use crate::tui::{model::TuiMessage, throbber_in_title_ext::ThrobberInTitleExt, utils};
+
+const MIN_THROBBER_UPDATE_GAP: Duration = Duration::from_millis(300);
 
 pub const WIDGET_WIDTH: u16 = 50;
 pub const WIDGET_HEIGHT: u16 = 6;
@@ -72,6 +76,7 @@ impl AgentComponent {
                 status: None,
                 context_size: 0,
                 throbber_state: ThrobberState::default(),
+                last_throbber_update: Instant::now(),
             },
         }
     }
@@ -126,6 +131,7 @@ pub struct Agent {
     context_size: u64,
     status: Option<AgentStatus>,
     throbber_state: ThrobberState,
+    last_throbber_update: Instant,
 }
 
 impl Agent {
@@ -171,7 +177,10 @@ impl Agent {
                 && let Some(throbber_set) = get_throbber_for_agent_status(status)
             {
                 let throbber = Throbber::default().throbber_set(throbber_set);
-                self.throbber_state.calc_next();
+                if self.last_throbber_update.elapsed() >= MIN_THROBBER_UPDATE_GAP {
+                    self.throbber_state.calc_next();
+                    self.last_throbber_update = Instant::now();
+                }
                 div.render_with_throbber(frame, area, loc, throbber, &mut self.throbber_state);
             } else {
                 frame.render_widget_ref(div, area);

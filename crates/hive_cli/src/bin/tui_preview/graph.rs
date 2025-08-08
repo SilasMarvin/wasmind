@@ -90,7 +90,7 @@ pub async fn run() -> TuiResult<()> {
     // Create VERY large sample chat state for testing scrolling performance
     let large_system_content = format!(
         "{}{}{}{}{}{}{}",
-        "You are an advanced AI assistant with extensive capabilities in software development, data analysis, creative writing, and problem-solving. ".repeat(5),
+        "You are an advanced AI assistant with extensive capabilities in software development, data analysis, creative writing, and problem-solving. ".repeat(50),
         "\n\n[MARKER-1] Your responses should be thorough, well-structured, and demonstrate deep understanding of the topics discussed. ".repeat(3),
         "[MARKER-2] When providing code examples, include detailed explanations and consider edge cases. ".repeat(4),
         "\n\n[MARKER-3] For complex problems, break them down into manageable steps and provide clear reasoning for your approach. ".repeat(3),

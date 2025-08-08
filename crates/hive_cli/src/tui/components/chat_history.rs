@@ -472,11 +472,9 @@ impl AssistantInfo {
         buf: &mut Buffer,
         scroll_offset: u16,
         y_offset: &mut u16,
-        total_content_height: &mut u16,
     ) {
         let height = item.get_height(area, context);
-        *total_content_height += height + MESSAGE_GAP;
-
+        
         // Check visibility
         if *y_offset + height > scroll_offset && *y_offset < scroll_offset + area.height {
             let buffer = item.get_buffer(area, context);
@@ -518,7 +516,6 @@ impl AssistantInfo {
 
     // This render function tracks total content height and supports scrolling
     fn render_ref_mut(&mut self, area: Rect, buf: &mut Buffer, scroll_offset: u16) -> u16 {
-        let mut total_content_height = 0;
         let mut y_offset = 0;
 
         // Create or get cached title
@@ -537,7 +534,6 @@ impl AssistantInfo {
             buf,
             scroll_offset,
             &mut y_offset,
-            &mut total_content_height,
         );
 
         if self.chat_message_widget_state.is_empty() && self.pending_user_message.is_none() {
@@ -574,7 +570,6 @@ impl AssistantInfo {
                 buf,
                 scroll_offset,
                 &mut y_offset,
-                &mut total_content_height,
             );
         } else {
             // Render chat history
@@ -586,7 +581,6 @@ impl AssistantInfo {
                     buf,
                     scroll_offset,
                     &mut y_offset,
-                    &mut total_content_height,
                 );
             }
 
@@ -616,12 +610,12 @@ impl AssistantInfo {
                     buf,
                     scroll_offset,
                     &mut y_offset,
-                    &mut total_content_height,
                 );
             }
         }
 
-        total_content_height
+        // Subtract the trailing MESSAGE_GAP since there's no gap after the last item
+        y_offset.saturating_sub(MESSAGE_GAP)
     }
 }
 
