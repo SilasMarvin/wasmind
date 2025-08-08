@@ -69,11 +69,13 @@ The Assistant Actor processes several message types:
 
 ### Incoming Messages
 
+**Scope Behavior**: This actor listens to messages that target its own scope via the `agent` field in message structures.
+
 #### `assistant::AddMessage`
 Adds user or system messages to the pending conversation.
 ```rust
 AddMessage {
-    agent: "assistant-scope",
+    agent: "assistant-scope",  // Must match this assistant's scope
     message: ChatMessage::User(UserChatMessage {
         content: "Hello, world!".to_string(),
     }),
@@ -134,7 +136,7 @@ SystemPromptContribution {
 Interrupts the assistant and forces it to a specific status, providing external control over state. See [State Management](#state-management) for details on available states.
 ```rust
 InterruptAndForceStatus {
-    agent: "assistant-scope".to_string(),
+    agent: "assistant-scope".to_string(), // Must match this assistant's scope
     status: Status::Wait {
         reason: WaitReason::WaitingForSystemInput {
             required_scope: Some("manager-scope".to_string()),

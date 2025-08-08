@@ -33,6 +33,7 @@ This actor is essential for health monitoring systems that need to detect and es
 ## Messages Listened For
 
 - `tools::ExecuteTool` - Receives tool execution requests for flagging issues
+  - **Scope**: Only listens to messages from its own scope (standard tool actor behavior)
   - Handles `flag_issue` tool calls with issue summary describing the problem
 
 ## Messages Broadcast

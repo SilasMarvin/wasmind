@@ -33,6 +33,7 @@ This actor is essential for building coordinated multi-agent systems where timin
 ## Messages Listened For
 
 - `tools::ExecuteTool` - Receives tool execution requests for initiating wait periods
+  - **Scope**: Only listens to messages from its own scope (standard tool actor behavior)
   - Handles `wait` tool calls with optional reason for waiting
 
 ## Messages Broadcast

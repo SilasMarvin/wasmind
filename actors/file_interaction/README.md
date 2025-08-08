@@ -47,6 +47,7 @@ This actor is essential for AI agents that need to work with files as part of de
 ## Messages Listened For
 
 - `tools::ExecuteTool` - Receives tool execution requests for file operations
+  - **Scope**: Only listens to messages from its own scope (standard tool actor behavior)
   - Handles `read_file` tool calls for reading file content with optional line ranges
   - Handles `edit_file` tool calls for creating new files or editing existing ones
 

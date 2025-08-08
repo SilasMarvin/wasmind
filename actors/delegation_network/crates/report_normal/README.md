@@ -32,6 +32,7 @@ This actor is typically used in conjunction with the check_health actor system t
 ## Messages Listened For
 
 - `tools::ExecuteTool` - Receives tool execution requests for reporting normal status
+  - **Scope**: Only listens to messages from its own scope (standard tool actor behavior)
   - Handles `report_normal` tool calls with no parameters required
 
 ## Messages Broadcast

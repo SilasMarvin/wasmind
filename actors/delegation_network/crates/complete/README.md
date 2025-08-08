@@ -34,6 +34,7 @@ This actor is essential for delegation networks where agents need to formally co
 ## Messages Listened For
 
 - `tools::ExecuteTool` - Receives tool execution requests for task completion
+  - **Scope**: Only listens to messages from its own scope (standard tool actor behavior)
   - Handles `complete` tool calls with task summary and success status
 
 ## Messages Broadcast

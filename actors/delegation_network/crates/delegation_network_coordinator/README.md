@@ -22,6 +22,8 @@ This actor is essential for delegation networks to maintain structural integrity
 
 ## Messages Listened For
 
+**This actor listens to messages from ALL scopes to coordinate the entire network**
+
 - `delegation_network::AgentSpawned` - Tracks when new agents are created in the network
   - Updates internal registry of active agents and their relationships
   

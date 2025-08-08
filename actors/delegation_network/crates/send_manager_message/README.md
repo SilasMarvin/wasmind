@@ -34,6 +34,7 @@ This actor is essential for subordinate agents in delegation networks who need t
 ## Messages Listened For
 
 - `tools::ExecuteTool` - Receives tool execution requests for sending messages to managers
+  - **Scope**: Only listens to messages from its own scope (standard tool actor behavior)
   - Handles `send_manager_message` tool calls with message content and optional wait flag
 
 ## Messages Broadcast

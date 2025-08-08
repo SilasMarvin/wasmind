@@ -37,6 +37,7 @@ This actor is essential for building sophisticated delegation networks where age
 ## Messages Listened For
 
 - `tools::ExecuteTool` - Receives tool execution requests for creating new agents
+  - **Scope**: Only listens to messages from its own scope (standard tool actor behavior)
   - Handles `spawn_agent` tool calls with agent definitions including role, task, and type
 
 ## Messages Broadcast

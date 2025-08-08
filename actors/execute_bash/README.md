@@ -37,6 +37,7 @@ This actor is essential for AI agents that need to interact with the underlying 
 ## Messages Listened For
 
 - `tools::ExecuteTool` - Receives tool execution requests when the AI agent wants to run a command
+  - **Scope**: Only listens to messages from its own scope (standard tool actor behavior)
   - Contains the bash command to execute along with optional parameters like working directory and timeout
 
 ## Messages Broadcast

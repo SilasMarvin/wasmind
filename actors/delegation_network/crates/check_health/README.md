@@ -22,6 +22,8 @@ This actor is valuable for delegation networks that need automated supervision a
 
 ## Messages Listened For
 
+**Scope**: Only listens to messages from its own scope (standard tool actor behavior)
+
 - `assistant::Request` - Captures conversation requests from the monitored agent
   - Stores the chat state and messages for analysis
   

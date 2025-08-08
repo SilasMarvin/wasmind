@@ -36,6 +36,7 @@ This actor is ideal for AI agents managing complex projects that benefit from st
 ## Messages Listened For
 
 - `tools::ExecuteTool` - Receives tool execution requests for creating and updating plans
+  - **Scope**: Only listens to messages from its own scope (standard tool actor behavior)
   - Handles `planner` tool calls with task plans including title and task list
 
 ## Messages Broadcast
