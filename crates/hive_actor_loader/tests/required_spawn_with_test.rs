@@ -6,8 +6,6 @@ use tempfile::TempDir;
 
 #[tokio::test]
 async fn test_required_spawn_with_basic_functionality() {
-    // Test that required_spawn_with from manifest propagates to LoadedActor
-
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![Actor {
@@ -50,12 +48,9 @@ async fn test_required_spawn_with_basic_functionality() {
 
 #[tokio::test]
 async fn test_required_spawn_with_global_override() {
-    // Test user can override required_spawn_with via global config
-
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![
-        // Main actor
         Actor {
             name: "coordinator_instance".to_string(),
             source: ActorSource::Path(PathSource {
@@ -70,7 +65,6 @@ async fn test_required_spawn_with_global_override() {
             auto_spawn: false,
             required_spawn_with: vec![],
         },
-        // Global override for logger with required_spawn_with
         Actor {
             name: "logger".to_string(),
             source: ActorSource::Path(PathSource {
@@ -101,7 +95,6 @@ async fn test_required_spawn_with_global_override() {
 
 #[tokio::test]
 async fn test_required_spawn_with_actor_override() {
-    // Test required_spawn_with can be overridden via actor_overrides
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![Actor {
@@ -119,7 +112,6 @@ async fn test_required_spawn_with_actor_override() {
         required_spawn_with: vec![],
     }];
 
-    // Override required_spawn_with via actor_overrides
     let actor_overrides = vec![ActorOverride {
         name: "logger".to_string(),
         source: None,
@@ -148,34 +140,29 @@ async fn test_required_spawn_with_actor_override() {
 
 #[tokio::test]
 async fn test_required_spawn_with_empty_override() {
-    // Test overriding to empty list vs non-empty
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
-    let actors = vec![
-        // Main actor that depends on logger
-        Actor {
-            name: "coordinator_instance".to_string(),
-            source: ActorSource::Path(PathSource {
-                path: test_actors_path
-                    .join("coordinator")
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                package: None,
-            }),
-            config: None,
-            auto_spawn: false,
-            required_spawn_with: vec![],
-        },
-    ];
+    let actors = vec![Actor {
+        name: "coordinator_instance".to_string(),
+        source: ActorSource::Path(PathSource {
+            path: test_actors_path
+                .join("coordinator")
+                .to_str()
+                .unwrap()
+                .to_string(),
+            package: None,
+        }),
+        config: None,
+        auto_spawn: false,
+        required_spawn_with: vec![],
+    }];
 
-    // Override logger's required_spawn_with to empty list
     let actor_overrides = vec![ActorOverride {
         name: "logger".to_string(),
-        source: None, // logger is a dependency, so it will get its source from the manifest dependency
+        source: None,
         config: None,
         auto_spawn: None,
-        required_spawn_with: Some(vec![]), // Explicitly override to empty
+        required_spawn_with: Some(vec![]),
     }];
 
     let resolver = DependencyResolver::default();
@@ -192,28 +179,23 @@ async fn test_required_spawn_with_empty_override() {
 
 #[tokio::test]
 async fn test_required_spawn_with_precedence() {
-    // Test precedence: manifest < global actor < actor_override
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
-    let actors = vec![
-        // Main actor
-        Actor {
-            name: "coordinator_instance".to_string(),
-            source: ActorSource::Path(PathSource {
-                path: test_actors_path
-                    .join("coordinator")
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                package: None,
-            }),
-            config: None,
-            auto_spawn: false,
-            required_spawn_with: vec!["from_main".to_string()], // This should be used for coordinator
-        },
-    ];
+    let actors = vec![Actor {
+        name: "coordinator_instance".to_string(),
+        source: ActorSource::Path(PathSource {
+            path: test_actors_path
+                .join("coordinator")
+                .to_str()
+                .unwrap()
+                .to_string(),
+            package: None,
+        }),
+        config: None,
+        auto_spawn: false,
+        required_spawn_with: vec!["from_main".to_string()],
+    }];
 
-    // Actor override should have highest precedence
     let actor_overrides = vec![ActorOverride {
         name: "logger".to_string(),
         source: None,
@@ -240,11 +222,9 @@ async fn test_required_spawn_with_precedence() {
 
 #[tokio::test]
 async fn test_required_spawn_with_with_complex_actor() {
-    // Test with an actor that has its own manifest-defined required_spawn_with
     let temp_dir = TempDir::new().unwrap();
     let workspace_path = temp_dir.path();
 
-    // Create a test actor with required_spawn_with in its manifest
     let package_dir = workspace_path.join("crates").join("test_package");
     fs::create_dir_all(&package_dir).unwrap();
 
@@ -263,7 +243,6 @@ auto_spawn = false
 
     fs::write(package_dir.join("Hive.toml"), manifest_content).unwrap();
 
-    // Create helper and monitor actors
     let helper_dir = workspace_path.join("crates").join("helper_actor");
     fs::create_dir_all(&helper_dir).unwrap();
     fs::write(helper_dir.join("Hive.toml"), r#"actor_id = "test:helper""#).unwrap();
@@ -311,11 +290,9 @@ auto_spawn = false
 
 #[tokio::test]
 async fn test_required_spawn_with_override_precedence_chain() {
-    // Test that required_spawn_with overrides work with both global actors and actor_overrides
     let temp_dir = TempDir::new().unwrap();
     let workspace_path = temp_dir.path();
 
-    // Create test actor with manifest required_spawn_with
     let package_dir = workspace_path.join("crates").join("main_actor");
     fs::create_dir_all(&package_dir).unwrap();
 
@@ -329,26 +306,21 @@ source = { path = "../dep_actor" }
 
     fs::write(package_dir.join("Hive.toml"), manifest_content).unwrap();
 
-    // Create dependency actor
     let dep_dir = workspace_path.join("crates").join("dep_actor");
     fs::create_dir_all(&dep_dir).unwrap();
     fs::write(dep_dir.join("Hive.toml"), r#"actor_id = "test:dep""#).unwrap();
 
-    let actors = vec![
-        // Main actor - its required_spawn_with should not be overridden
-        Actor {
-            name: "main_instance".to_string(),
-            source: ActorSource::Path(PathSource {
-                path: workspace_path.to_str().unwrap().to_string(),
-                package: Some("crates/main_actor".to_string()),
-            }),
-            config: None,
-            auto_spawn: false,
-            required_spawn_with: vec!["user_specified".to_string()], // This should override manifest
-        },
-    ];
+    let actors = vec![Actor {
+        name: "main_instance".to_string(),
+        source: ActorSource::Path(PathSource {
+            path: workspace_path.to_str().unwrap().to_string(),
+            package: Some("crates/main_actor".to_string()),
+        }),
+        config: None,
+        auto_spawn: false,
+        required_spawn_with: vec!["user_specified".to_string()],
+    }];
 
-    // Actor override should beat global
     let actor_overrides = vec![ActorOverride {
         name: "dep".to_string(),
         source: None,

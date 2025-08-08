@@ -45,7 +45,6 @@ source = { path = "../actor_a" }
         required_spawn_with: vec![],
     }];
 
-    // Attempt to resolve dependencies
     let resolver = DependencyResolver::default();
     let result = resolver.resolve_all(user_actors, vec![]).await;
 
@@ -127,7 +126,6 @@ source = { path = "../actor_a" }
         required_spawn_with: vec![],
     }];
 
-    // Attempt to resolve dependencies
     let resolver = DependencyResolver::default();
     let result = resolver.resolve_all(user_actors, vec![]).await;
 

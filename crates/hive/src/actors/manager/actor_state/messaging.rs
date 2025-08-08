@@ -4,7 +4,6 @@ use super::ActorState;
 
 impl messaging::Host for ActorState {
     async fn broadcast(&mut self, message_type: String, payload: Vec<u8>) {
-        // Use current message ID as parent, or generate root if no current message
         let id = self
             .current_message_id
             .as_ref()

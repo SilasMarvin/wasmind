@@ -20,6 +20,3 @@ delegation_network_common_types = { path = "../common_types" }
 
 [package.metadata.component.target.dependencies]
 "hive:actor" = { path = "../../../../crates/hive_actor_bindings/wit" }
-
-[profile.release]
-opt-level = "s"

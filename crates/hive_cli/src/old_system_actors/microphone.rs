@@ -38,7 +38,6 @@ pub enum Error {
 
 pub type MResult<T> = Result<T, Error>;
 
-// Define the model path as a constant
 const MODEL_PATH: &str = "/Users/silasmarvin/github/hive/models/ggml-tiny.bin";
 
 // Catch whipser logs so we don't just spam stderr
@@ -298,12 +297,10 @@ fn record_audio(
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
 
-    // Run the model
     state
         .full(params, &samples_for_whisper[0][..])
         .expect("failed to run model");
 
-    // Get the transcribed text
     let num_segments = state
         .full_n_segments()
         .expect("Failed to get number of segments");

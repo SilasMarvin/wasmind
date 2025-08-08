@@ -89,7 +89,6 @@ pub enum ChatMessage {
     Tool(ToolChatMessage),
 }
 
-// Helper functions for creating messages
 impl ChatMessage {
     pub fn system(content: impl Into<String>) -> Self {
         Self::System(SystemChatMessage {

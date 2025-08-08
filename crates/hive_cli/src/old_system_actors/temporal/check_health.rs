@@ -51,7 +51,6 @@ impl CheckHealthActor {
     pub fn handle_assistant_request(&mut self, assistant_request: AssistantChatState) {
         self.last_assistant_request = Some(assistant_request);
         
-        // Calculate how long to sleep based on when we last spawned a task
         let sleep_duration = if let Some(last_spawned) = self.last_spawned_time {
             let elapsed = last_spawned.elapsed();
             if elapsed < self.check_interval {
@@ -63,18 +62,15 @@ impl CheckHealthActor {
             self.check_interval
         };
         
-        // Abort any existing task
         if let Some(handle) = self.health_check_task.take() {
             handle.abort();
         }
         
-        // Spawn new task with calculated sleep duration
         self.spawn_health_check_task(sleep_duration);
         self.last_spawned_time = Some(Instant::now());
     }
     
     fn spawn_health_check_task(&mut self, sleep_duration: Duration) {
-        // Only spawn if we have an assistant request to process
         if let Some(assistant_request) = self.last_assistant_request.clone() {
             let tx = self.tx.clone();
             let config = self.config.clone();

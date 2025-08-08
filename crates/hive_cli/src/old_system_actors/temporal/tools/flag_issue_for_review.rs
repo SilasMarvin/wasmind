@@ -60,7 +60,6 @@ impl Tool for FlagIssueForReviewTool {
     type Params = FlagIssueParams;
 
     async fn execute_tool_call(&mut self, tool_call: ToolCall, params: Self::Params) {
-        // Broadcast interrupt and wait for manager
         self.broadcast_with_scope(
             &self.og_scope,
             Message::Agent(AgentMessage {
@@ -73,7 +72,6 @@ impl Tool for FlagIssueForReviewTool {
             }),
         );
 
-        // Broadcast new message to manager
         self.broadcast_with_scope(
             &self.og_parent_scope,
             Message::Agent(AgentMessage {

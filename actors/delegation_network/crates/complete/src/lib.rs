@@ -47,7 +47,6 @@ impl tools::Tool for CompleteTool {
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
-        // Parse the tool parameters
         let params: CompleteInput =
             match serde_json::from_str(&tool_call.tool_call.function.arguments) {
                 Ok(params) => params,
@@ -65,7 +64,6 @@ impl tools::Tool for CompleteTool {
                 }
             };
 
-        // Send status update request to mark the agent as done
         let status_update_request = RequestStatusUpdate {
             agent: self.scope.clone(),
             status: Status::Done {

@@ -46,7 +46,6 @@ impl ActorState {
     ) -> Self {
         let mut builder = WasiCtxBuilder::new();
 
-        // TODO: Allow for configuration that specifies whether we give system access or cwd access
         builder
             .preopened_dir(
                 "/",
@@ -55,7 +54,6 @@ impl ActorState {
                 wasmtime_wasi::FilePerms::all(),
             )
             .unwrap();
-        // }
 
         ActorState {
             actor_id,

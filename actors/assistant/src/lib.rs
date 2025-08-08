@@ -101,24 +101,20 @@ pub struct Assistant {
 
 impl Assistant {
     fn submit_and_process(&mut self, request_id: String) {
-        // Generate system prompt
         let system_prompt = self.render_system_prompt();
 
-        // Make the completion request with automatic retry
         match self.make_completion_request(
             &system_prompt,
             &self.chat_history,
             Some(&self.available_tools),
         ) {
             Ok(response) => {
-                // Process the response
                 if let Some(choice) = response.choices.first() {
                     match &choice.message {
                         ChatMessage::Assistant(assistant_msg) => {
-                            // Add response to chat history
                             self.add_chat_messages([choice.message.clone()]);
 
-                            // Broadcast the response for other actors to handle
+                            // Notify other components that we have a response ready
                             let _ = Self::broadcast_common_message(assistant::Response {
                                 request_id,
                                 message: assistant_msg.clone(),
@@ -180,7 +176,6 @@ impl Assistant {
         messages: &[ChatMessage],
         tools: Option<&[Tool]>,
     ) -> Result<ChatResponse, String> {
-        // Check if we have a base URL from LiteLLM
         let base_url = self.base_url.as_ref().ok_or_else(|| {
             "No LiteLLM base URL available! This should be impossible to reach. Please report this as a bug".to_string()
         })?;
@@ -198,7 +193,6 @@ impl Assistant {
             },
         });
 
-        // Build the request
         let mut all_messages = vec![ChatMessage::system(system_prompt)];
         all_messages.extend_from_slice(messages);
 
@@ -208,11 +202,10 @@ impl Assistant {
             tools: tools.map(|t| t.to_vec()),
         };
 
-        // Serialize to JSON
         let body = serde_json::to_vec(&request)
             .map_err(|e| format!("Failed to serialize request: {}", e))?;
 
-        // Make HTTP request using our interface with automatic retry
+        // Retry logic handles transient network failures and rate limiting
         let request = bindings::hive::actor::http::Request::new(
             "POST",
             &format!("{}/v1/chat/completions", base_url),
@@ -286,21 +279,17 @@ impl Assistant {
     }
 
     fn submit(&mut self, submit_if_pending_message_is_empty: bool) {
-        // Check if we have any pending messages to submit
         if !submit_if_pending_message_is_empty && !self.pending_message.has_content() {
             return;
         }
 
-        // Add pending messages to chat history
         let new_messages = self.pending_message.to_chat_messages();
         if !new_messages.is_empty() {
             self.add_chat_messages(new_messages);
         }
 
-        // Generate a unique request ID for this submission
         let request_id = format!("req_{}", hive_actor_utils::utils::generate_id(6));
 
-        // Set status to processing with the request ID
         self.set_status(
             Status::Processing {
                 request_id: request_id.clone(),

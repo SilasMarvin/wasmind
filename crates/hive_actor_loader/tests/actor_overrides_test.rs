@@ -4,7 +4,6 @@ use std::path::PathBuf;
 
 #[tokio::test]
 async fn test_actor_overrides_config_only() {
-    // Test [actor_overrides.NAME.config] syntax for config-only overrides
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![Actor {
@@ -22,7 +21,6 @@ async fn test_actor_overrides_config_only() {
         required_spawn_with: vec![],
     }];
 
-    // Create actor override for the logger dependency
     let mut logger_config = toml::Table::new();
     logger_config.insert(
         "level".to_string(),
@@ -35,10 +33,10 @@ async fn test_actor_overrides_config_only() {
 
     let actor_overrides = vec![ActorOverride {
         name: "logger".to_string(),
-        source: None, // No source override
+        source: None,
         config: Some(logger_config),
-        auto_spawn: None,          // No auto_spawn override
-        required_spawn_with: None, // No required_spawn_with override
+        auto_spawn: None,
+        required_spawn_with: None,
     }];
 
     let resolver = DependencyResolver::default();
@@ -47,14 +45,12 @@ async fn test_actor_overrides_config_only() {
     assert!(result.is_ok(), "Resolution should succeed: {result:?}");
     let resolved = result.unwrap();
 
-    // Should have coordinator + logger dependency
     assert_eq!(resolved.len(), 2);
     assert!(resolved.contains_key("coordinator_instance"));
     assert!(resolved.contains_key("logger"));
 
     let logger = &resolved["logger"];
 
-    // Config should be overridden
     let logger_config = logger.config.as_ref().unwrap();
     assert_eq!(
         logger_config.get("level").unwrap().as_str().unwrap(),
@@ -65,7 +61,6 @@ async fn test_actor_overrides_config_only() {
         "json"
     );
 
-    // Other properties should remain from manifest/defaults
     assert!(logger.auto_spawn); // From manifest default
     assert_eq!(logger.actor_id, "test:logger"); // From manifest
 }
@@ -75,25 +70,21 @@ async fn test_actor_overrides_for_existing_dependency() {
     // Test that actor_overrides can modify existing dependencies
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
-    let actors = vec![
-        // Main actor that has a logger dependency
-        Actor {
-            name: "coordinator_instance".to_string(),
-            source: ActorSource::Path(PathSource {
-                path: test_actors_path
-                    .join("coordinator")
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-                package: None,
-            }),
-            config: None,
-            auto_spawn: false,
-            required_spawn_with: vec![],
-        },
-    ];
+    let actors = vec![Actor {
+        name: "coordinator_instance".to_string(),
+        source: ActorSource::Path(PathSource {
+            path: test_actors_path
+                .join("coordinator")
+                .to_str()
+                .unwrap()
+                .to_string(),
+            package: None,
+        }),
+        config: None,
+        auto_spawn: false,
+        required_spawn_with: vec![],
+    }];
 
-    // Override the logger dependency from coordinator
     let mut override_config = toml::Table::new();
     override_config.insert(
         "level".to_string(),
@@ -106,9 +97,9 @@ async fn test_actor_overrides_for_existing_dependency() {
 
     let actor_overrides = vec![ActorOverride {
         name: "logger".to_string(),
-        source: None, // Keep dependency source
+        source: None,
         config: Some(override_config),
-        auto_spawn: Some(false), // Override auto_spawn to false
+        auto_spawn: Some(false),
         required_spawn_with: None,
     }];
 
@@ -120,7 +111,6 @@ async fn test_actor_overrides_for_existing_dependency() {
 
     let logger = &resolved["logger"];
 
-    // Source should remain from dependency manifest (coordinator/../logger)
     match &logger.source {
         ActorSource::Path(path_source) => {
             assert!(path_source.path.contains("coordinator/../logger"));
@@ -128,7 +118,6 @@ async fn test_actor_overrides_for_existing_dependency() {
         _ => panic!("Expected path source"),
     }
 
-    // Config should be from actor_override
     let logger_config = logger.config.as_ref().unwrap();
     assert_eq!(
         logger_config.get("level").unwrap().as_str().unwrap(),
@@ -139,10 +128,8 @@ async fn test_actor_overrides_for_existing_dependency() {
         "override"
     );
 
-    // auto_spawn should be from actor_override (false instead of manifest default true)
     assert!(!logger.auto_spawn);
 
-    // actor_id should be from the dependency source
     assert_eq!(logger.actor_id, "test:logger");
 }
 
@@ -289,7 +276,6 @@ async fn test_user_defined_actor_separate_from_dependencies() {
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![
-        // Main actor that has a logger dependency
         Actor {
             name: "coordinator_instance".to_string(),
             source: ActorSource::Path(PathSource {

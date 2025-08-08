@@ -26,14 +26,12 @@ bindgen!({
     path: "../hive_actor_bindings/wit/world.wit"
 });
 
-// TODO: Implement equality
 impl PartialEq for MessageEnvelope {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-// TODO: Implement order
 impl PartialOrd for MessageEnvelope {
     fn partial_cmp(&self, _other: &Self) -> Option<std::cmp::Ordering> {
         None
@@ -124,7 +122,6 @@ impl Manager {
                 loop {
                     match self.rx.recv().await {
                         Ok(msg) => {
-                            // This message doesn't hold anything so we just need to check if the message_type matches
                             if msg.from_scope == self.scope
                                 && msg.message_type == actors::Exit::MESSAGE_TYPE
                             {
@@ -136,7 +133,6 @@ impl Manager {
                                     correlation_id = msg.id
                                 );
 
-                                // Set current message ID for correlation
                                 self.store.data_mut().current_message_id = Some(msg.id.clone());
 
                                 if let Err(e) = self
@@ -150,7 +146,6 @@ impl Manager {
                                     tracing::error!("Calling handle_message: {e:?}");
                                 }
 
-                                // Clear current message ID
                                 self.store.data_mut().current_message_id = None;
                             }
                         }

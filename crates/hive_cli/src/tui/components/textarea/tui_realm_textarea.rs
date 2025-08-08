@@ -406,7 +406,6 @@ impl MockComponent for TextArea<'_> {
                 self.widget.set_cursor_style(style);
             }
 
-            // render widget
             area.x += 3;
             area.y += 1;
             area.height -= 2;
@@ -418,7 +417,6 @@ impl MockComponent for TextArea<'_> {
             let span = Span::raw(" > ");
             span.render(area, frame.buffer_mut());
 
-            // set block
             area.y -= 1;
             area.width += 4;
             area.height += 2;

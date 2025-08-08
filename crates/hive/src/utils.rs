@@ -18,12 +18,10 @@ pub fn parse_common_message_as<T>(envelope: &MessageEnvelope) -> Option<T>
 where
     T: DeserializeOwned + Message,
 {
-    // Check if message type matches
     if envelope.message_type != T::MESSAGE_TYPE {
         return None;
     }
 
-    // Try to deserialize the payload
     serde_json::from_slice(&envelope.payload).ok()
 }
 
@@ -46,7 +44,6 @@ pub fn generate_root_correlation_id() -> String {
 
 /// Generate a child correlation ID from a parent ID (format: "parent:child")
 pub fn generate_child_correlation_id(parent_id: &str) -> String {
-    // Extract just the child part from the parent ID (after the colon)
     let parent_child_id = parent_id.split(':').next_back().unwrap_or(parent_id);
     format!("{}:{}", parent_child_id, generate_short_id())
 }

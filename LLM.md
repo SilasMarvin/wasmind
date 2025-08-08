@@ -130,3 +130,62 @@ This will generate the WASM component in `target/wasm32-wasip1/debug/` directory
 **Current Examples**: Delegation network demonstrates hierarchical coordination patterns
 **Future Potential**: Many more actor types and coordination patterns possible
 **Core Goal**: Building flexible actor orchestration capabilities
+
+## Writing Good Comments
+
+### Comment Quality Guidelines
+
+When working on the Hive codebase, follow these principles for writing valuable comments:
+
+#### What TO Comment
+- **Why, not what**: Explain the reasoning behind non-obvious code decisions
+- **Business logic**: Document domain-specific rules or requirements
+- **Complex algorithms**: Break down intricate logic into understandable steps
+- **API contracts**: Document expected behavior, preconditions, and edge cases
+- **TODOs and FIXMEs**: Track known issues and future improvements
+- **Workarounds**: Explain why unusual approaches were necessary
+
+#### What NOT to Comment
+- **Obvious operations**: Don't describe what the code clearly shows
+- **Language constructs**: Avoid explaining basic Rust syntax
+- **Simple assignments**: `let x = 5;` doesn't need a comment
+- **Standard patterns**: Common iterator chains, error handling, etc.
+- **Getters/setters**: Simple property access doesn't need explanation
+
+#### Examples
+
+**Good Comments:**
+```rust
+// Use exponential backoff to avoid overwhelming the API during transient failures
+let delay = Duration::from_millis(100 * (2_u64.pow(attempt)));
+
+// Actor IDs must be unique within a scope to prevent message routing conflicts
+if self.scope_actors.contains(&actor_id) {
+    return Err(DuplicateActorError);
+}
+
+// TODO: Replace this with proper async I/O once tokio 1.35+ is available
+let result = std::thread::spawn(move || blocking_operation()).join();
+```
+
+**Poor Comments:**
+```rust
+// Set the port to 8080
+let port = 8080;
+
+// Loop through the actors
+for actor in actors {
+    // Call the method
+    actor.handle_message();
+}
+
+// Get the length
+let len = vec.len();
+```
+
+#### Comment Style
+- Use `//` for single-line comments
+- Use `///` for public API documentation
+- Keep comments up-to-date with code changes
+- Write in complete sentences with proper grammar
+- Focus on clarity and conciseness

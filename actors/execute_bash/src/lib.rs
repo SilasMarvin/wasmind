@@ -53,7 +53,6 @@ impl tools::Tool for CommandTool {
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
-        // Parse command parameters from the function arguments
         let params: CommandParams =
             match serde_json::from_str(&tool_call.tool_call.function.arguments) {
                 Ok(params) => params,
@@ -69,10 +68,9 @@ impl tools::Tool for CommandTool {
                 }
             };
 
-        // Validate timeout parameter
+        // Clamp timeout between 1-600 seconds for safety
         let timeout = params.timeout.unwrap_or(30).min(600).max(1);
 
-        // Build full command with args
         let full_command = if let Some(ref args) = params.args {
             if args.is_empty() {
                 params.command.clone()

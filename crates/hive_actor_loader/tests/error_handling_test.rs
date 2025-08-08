@@ -7,8 +7,6 @@ use url::Url;
 
 #[tokio::test]
 async fn test_circular_dependency_error() {
-    // This would require setting up test actors with circular dependencies
-    // For now, we verify the resolver can handle non-circular cases
     let resolver = DependencyResolver::default();
     let result = resolver.resolve_all(vec![], vec![]).await;
     assert!(result.is_ok());
@@ -31,12 +29,10 @@ async fn test_invalid_path_error() {
     let resolver = DependencyResolver::default();
     let result = resolver.resolve_all(actors, vec![]).await;
 
-    // Should fail because the path doesn't exist (and therefore no Hive.toml exists)
     assert!(result.is_err());
     let error = result.unwrap_err();
     let error_msg = error.to_string();
 
-    // Should be a MissingManifest error since the path doesn't exist
     assert!(error_msg.contains("missing required Hive.toml manifest file"));
     assert!(error_msg.contains("nonexistent_actor"));
 }
@@ -45,7 +41,6 @@ async fn test_invalid_path_error() {
 async fn test_manifest_load_error() {
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
-    // Test with a valid path that should load successfully
     let actors = vec![Actor {
         name: "test_actor".to_string(),
         source: ActorSource::Path(PathSource {
@@ -68,8 +63,6 @@ async fn test_manifest_load_error() {
 
 #[tokio::test]
 async fn test_git_source_requires_manifest() {
-    // Test that git sources fail when the repository doesn't exist
-
     let actors = vec![Actor {
         name: "git_actor".to_string(),
         source: ActorSource::Git(Repository {
@@ -85,12 +78,10 @@ async fn test_git_source_requires_manifest() {
     let resolver = DependencyResolver::default();
     let result = resolver.resolve_all(actors, vec![]).await;
 
-    // Should fail - ALL actors now require Hive.toml manifests
     assert!(result.is_err());
     let error = result.unwrap_err();
     let error_msg = error.to_string();
 
-    // Should be a ManifestLoad error (git clone fails for non-existent repo)
     assert!(error_msg.contains("Failed to load manifest for actor 'git_actor'"));
     assert!(error_msg.contains("git: https://github.com/example/repo"));
     assert!(error_msg.contains("Repository not found"));
@@ -101,7 +92,6 @@ async fn test_dependency_resolution_with_path_sources() {
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![
-        // Path source with dependencies
         Actor {
             name: "coordinator_instance".to_string(),
             source: ActorSource::Path(PathSource {
@@ -116,7 +106,6 @@ async fn test_dependency_resolution_with_path_sources() {
             auto_spawn: false,
             required_spawn_with: vec![],
         },
-        // Another path source without dependencies
         Actor {
             name: "simple_service".to_string(),
             source: ActorSource::Path(PathSource {
@@ -139,18 +128,15 @@ async fn test_dependency_resolution_with_path_sources() {
     assert!(result.is_ok());
     let resolved = result.unwrap();
 
-    // Should have coordinator + its logger dependency + simple service
     assert_eq!(resolved.len(), 3);
     assert!(resolved.contains_key("coordinator_instance"));
     assert!(resolved.contains_key("logger")); // Dependency of coordinator
     assert!(resolved.contains_key("simple_service"));
 
-    // Check auto_spawn settings
     assert!(!resolved["coordinator_instance"].auto_spawn);
     assert!(resolved["logger"].auto_spawn); // From manifest
     assert!(resolved["simple_service"].auto_spawn); // From user config
 
-    // Check actor IDs from manifests
     assert_eq!(
         resolved["coordinator_instance"].actor_id,
         "test:coordinator"
@@ -161,11 +147,9 @@ async fn test_dependency_resolution_with_path_sources() {
 
 #[tokio::test]
 async fn test_package_manifest_loading() {
-    // Create a test workspace structure
     let temp_dir = TempDir::new().unwrap();
     let workspace_path = temp_dir.path();
 
-    // Create crates/test_package/Hive.toml
     let package_dir = workspace_path.join("crates").join("test_package");
     fs::create_dir_all(&package_dir).unwrap();
 
@@ -179,13 +163,10 @@ auto_spawn = true
 
     fs::write(package_dir.join("Hive.toml"), manifest_content).unwrap();
 
-    // Also create the helper actor manifest
-    // The path "../helper_actor" from crates/test_package means we need it at crates/helper_actor
     let helper_dir = workspace_path.join("crates").join("helper_actor");
     fs::create_dir_all(&helper_dir).unwrap();
     fs::write(helper_dir.join("Hive.toml"), r#"actor_id = "test:helper""#).unwrap();
 
-    // Test loading manifest with package specification
     let actors = vec![Actor {
         name: "package_actor_instance".to_string(),
         source: ActorSource::Path(PathSource {
@@ -206,7 +187,6 @@ auto_spawn = true
     );
     let resolved = result.unwrap();
 
-    // Should have the main actor + its helper dependency
     assert_eq!(resolved.len(), 2);
     assert!(resolved.contains_key("package_actor_instance"));
     assert!(resolved.contains_key("helper"));
@@ -218,7 +198,6 @@ auto_spawn = true
     );
     assert_eq!(resolved["helper"].actor_id, "test:helper");
 
-    // Check auto_spawn from dependency manifest
     assert!(resolved["helper"].auto_spawn);
 }
 
@@ -227,7 +206,6 @@ async fn test_package_manifest_not_found() {
     let temp_dir = TempDir::new().unwrap();
     let workspace_path = temp_dir.path();
 
-    // Create workspace structure but NO Hive.toml
     let package_dir = workspace_path
         .join("crates")
         .join("missing_manifest_package");
@@ -247,7 +225,6 @@ async fn test_package_manifest_not_found() {
     let resolver = DependencyResolver::default();
     let result = resolver.resolve_all(actors, vec![]).await;
 
-    // Should fail because Hive.toml is missing
     assert!(result.is_err());
     let error = result.unwrap_err();
     let error_msg = error.to_string();

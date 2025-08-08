@@ -126,7 +126,6 @@ where
 {
     fn update(&mut self, msg: Option<TuiMessage>) -> Option<TuiMessage> {
         if let Some(msg) = msg {
-            // Set redraw
             match msg {
                 TuiMessage::Batch(batch) => {
                     for msg in batch {

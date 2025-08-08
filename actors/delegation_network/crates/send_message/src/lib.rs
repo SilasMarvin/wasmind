@@ -88,7 +88,6 @@ impl tools::Tool for SendMessageTool {
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
-        // Parse the tool parameters
         let params: SendMessageInput = match serde_json::from_str(&tool_call.tool_call.function.arguments) {
             Ok(params) => params,
             Err(e) => {
@@ -105,13 +104,12 @@ impl tools::Tool for SendMessageTool {
             }
         };
 
-        // Create the message to send to the agent
         let add_message = AddMessage {
             agent: params.agent_id.clone(),
             message: ChatMessage::system(&params.message),
         };
 
-        // Send the message to the target agent
+        // Deliver message to the target agent
         let _ = Self::broadcast_common_message(add_message);
 
         // If wait is true, send a status update request to make the agent wait for a response

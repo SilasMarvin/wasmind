@@ -251,7 +251,7 @@ impl LiteLLMManager {
     pub async fn start(&mut self) -> Result<(), LiteLLMError> {
         info!("Starting LiteLLM Docker container...");
 
-        // Check if Docker is available
+        // Docker is required for containerized LiteLLM deployment
         Self::check_docker_available().await?;
 
         // Stop any existing container with our name

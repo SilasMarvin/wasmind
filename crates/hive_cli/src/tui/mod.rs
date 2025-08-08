@@ -60,7 +60,6 @@ fn start_model(
         );
     }
 
-    // Setup model
     let mut model = Model::new(config, rx, initial_prompt, context);
     // Enter alternate screen
     let _ = model.terminal.enter_alternate_screen();
@@ -68,7 +67,6 @@ fn start_model(
     // Main loop
     // NOTE: loop until quit; quit is set in update if AppClose is received from counter
     while !model.quit {
-        // Tick
         match model.app.tick(PollStrategy::Once) {
             Err(err) => {
                 tracing::error!("{err:?}");
@@ -81,7 +79,6 @@ fn start_model(
             }
             _ => {}
         }
-        // Redraw
         if model.redraw {
             model.view();
             model.redraw = false;

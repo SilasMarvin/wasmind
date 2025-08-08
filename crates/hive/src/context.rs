@@ -133,13 +133,11 @@ impl HiveContext {
             tracking.insert(scope.clone(), actors_spawned);
         }
 
-        // Store parent relationship
         {
             let mut parents = self.scope_parents.lock().unwrap();
             parents.insert(scope.clone(), parent_scope.clone());
         }
 
-        // Broadcast AgentSpawned message
         let agent_spawned = AgentSpawned {
             agent_id: scope.to_string(),
             name: agent_name,

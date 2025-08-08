@@ -53,7 +53,6 @@ struct Scrollable {
 
 impl MockComponent for Scrollable {
     fn view(&mut self, frame: &mut Frame, area: Rect) {
-        // Check if visible
         if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
             // Check if we need to re-render (child is modified or area changed)
             let should_rerender = self.child.is_modified()
@@ -86,7 +85,6 @@ impl MockComponent for Scrollable {
                     true // If no previous area, assume at bottom
                 };
 
-                // Update content height
                 self.content_height = new_content_height;
 
                 // Auto-scroll to bottom if user was previously at bottom and content grew

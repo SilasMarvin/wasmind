@@ -4,15 +4,12 @@ use std::{
 };
 
 use bindings::{
-    exports::hive::actor::actor::MessageEnvelope,
-    hive::actor::agent::get_parent_scope_of,
-    hive::actor::logger::{LogLevel, log},
+    exports::hive::actor::actor::MessageEnvelope, hive::actor::agent::get_parent_scope_of,
 };
 use delegation_network_common_types::{AgentSpawned, AgentType};
 use hive_actor_utils::{
-    STARTING_SCOPE,
     common_messages::{
-        assistant::{AddMessage, Status, StatusUpdate, WaitReason},
+        assistant::{AddMessage, Status, StatusUpdate},
         tools::ExecuteTool,
     },
     llm_client_types::{ChatMessage, SystemChatMessage},

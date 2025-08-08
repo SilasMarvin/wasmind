@@ -82,12 +82,10 @@ impl HiveCoordinator {
                             self.handle_actor_ready(msg)?;
                         }
                         actors::Exit::MESSAGE_TYPE => {
-                            // Check if it's the STARTING_SCOPE exiting
                             if msg.from_scope == STARTING_SCOPE {
                                 tracing::info!("Starting scope exited, shutting down system");
                                 return Ok(());
                             }
-                            // Otherwise it's just a scoped shutdown
                             tracing::info!("Scope {} is shutting down", msg.from_scope);
                         }
                         _ => {}
@@ -105,16 +103,13 @@ impl HiveCoordinator {
     }
 
     fn handle_actor_ready(&mut self, msg: MessageEnvelope) -> HiveResult<()> {
-        // Get scope from message
         let scope = msg.from_scope.clone();
 
-        // Track this actor as ready
         self.ready_actors
             .entry(scope.clone())
             .or_default()
             .insert(msg.from_actor_id.clone());
 
-        // Check if all actors for this scope are ready
         if let Some(expected_actors) = self.context.scope_tracking.lock().unwrap().get(&scope) {
             let ready_count = self.ready_actors.get(&scope).map(|s| s.len()).unwrap_or(0);
             let expected_count = expected_actors.len();
@@ -127,10 +122,8 @@ impl HiveCoordinator {
             );
 
             if ready_count == expected_count {
-                // All actors for this scope are ready
                 tracing::info!("All actors ready for scope {}", scope);
 
-                // Broadcast AllActorsReady for this scope
                 let all_ready_msg = MessageEnvelope {
                     id: crate::utils::generate_root_correlation_id(),
                     message_type: actors::AllActorsReady::MESSAGE_TYPE.to_string(),
@@ -145,7 +138,6 @@ impl HiveCoordinator {
                     tracing::error!("Failed to broadcast AllActorsReady: {}", e);
                 }
 
-                // Broadcast replyable messages
                 for message in &self.replayable {
                     if let Err(e) = self.context.tx.send(message.clone()) {
                         tracing::error!("Failed to broadcast Replayable Message: {}", e);

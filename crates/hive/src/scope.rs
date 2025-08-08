@@ -13,9 +13,8 @@ static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 pub fn new_scope() -> Scope {
     #[cfg(feature = "test-utils")]
     {
-        // In tests, use deterministic scopes based on atomic counter
         let counter = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-        format!("{:06X}", counter % 0xFFFFFF) // 6-character hex, cycling at 16M
+        format!("{:06X}", counter % 0xFFFFFF)
     }
     #[cfg(not(feature = "test-utils"))]
     {
@@ -45,7 +44,6 @@ mod tests {
     #[test]
     #[cfg(feature = "test-utils")]
     fn test_deterministic_scope_in_tests() {
-        // In test mode, scopes should be deterministic
         let scope1 = new_scope();
         let scope2 = new_scope();
         assert_ne!(scope1, scope2);

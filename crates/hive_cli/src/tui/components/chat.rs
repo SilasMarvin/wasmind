@@ -65,7 +65,6 @@ struct ChatArea {
 
 impl MockComponent for ChatArea {
     fn view(&mut self, frame: &mut Frame, mut area: Rect) {
-        // Check if visible
         if self.props.get_or(Attribute::Display, AttrValue::Flag(true)) == AttrValue::Flag(true) {
             let textarea_height = self.llm_textarea.get_height(area);
 

@@ -180,7 +180,6 @@ impl tools::Tool for PlannerTool {
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
-        // Parse the tool parameters
         let action: PlannerAction = match serde_json::from_str(&tool_call.tool_call.function.arguments) {
             Ok(action) => action,
             Err(e) => {

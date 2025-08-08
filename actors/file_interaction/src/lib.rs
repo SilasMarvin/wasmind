@@ -346,7 +346,6 @@ struct FileInteractionActor {
 
 impl GeneratedActorTrait for FileInteractionActor {
     fn new(scope: String, _config_str: String) -> Self {
-        // Broadcast available tools
         let tools = vec![
             hive_actor_utils::llm_client_types::Tool {
                 tool_type: "function".to_string(),
@@ -368,7 +367,6 @@ impl GeneratedActorTrait for FileInteractionActor {
 
         let _ = Self::broadcast_common_message(ToolsAvailable { tools });
 
-        // Broadcast usage guide to Tools section
         let _ = Self::broadcast_common_message(SystemPromptContribution {
             agent: scope.clone(),
             key: "file_interaction:usage_guide".to_string(),
@@ -384,7 +382,6 @@ impl GeneratedActorTrait for FileInteractionActor {
     }
 
     fn handle_message(&mut self, message: MessageEnvelope) {
-        // Only handle messages from our own scope
         if message.from_scope != self.scope {
             return;
         }
@@ -405,12 +402,9 @@ impl GeneratedActorTrait for FileInteractionActor {
 }
 
 impl FileInteractionActor {
-    /// Broadcast unified system prompt contribution for all cached files
     fn update_unified_files_system_prompt(&self) {
-        // Collect all files from cache
         let mut files = Vec::new();
         for (path, entry) in &self.cache {
-            // Always use numbered content for consistent formatting
             let content = entry.content.get_numbered_content();
 
             files.push(serde_json::json!({
@@ -419,7 +413,6 @@ impl FileInteractionActor {
             }));
         }
 
-        // Sort files by path for consistent ordering
         files.sort_by(|a, b| {
             a["path"]
                 .as_str()
@@ -451,7 +444,6 @@ impl FileInteractionActor {
     fn handle_read_file(&mut self, execute_tool: ExecuteTool) {
         let tool_call_id = &execute_tool.tool_call.id;
 
-        // Parse parameters
         let params: ReadFileParams =
             match serde_json::from_str(&execute_tool.tool_call.function.arguments) {
                 Ok(params) => params,
@@ -461,7 +453,10 @@ impl FileInteractionActor {
                         format!("Failed to parse read_file parameters: {}", e),
                         UIDisplayInfo {
                             collapsed: "Parameters: Invalid format".to_string(),
-                            expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", e)),
+                            expanded: Some(format!(
+                                "Error: Failed to parse parameters\n\nDetails: {}",
+                                e
+                            )),
                         },
                     );
                     return;
@@ -493,7 +488,10 @@ impl FileInteractionActor {
                     format!("Invalid end_line: {} - lines are 1-indexed.", end_line),
                     UIDisplayInfo {
                         collapsed: format!("{}: Invalid line number", params.path),
-                        expanded: Some(format!("File: {}\nError: end_line must be positive (was: {})", params.path, end_line)),
+                        expanded: Some(format!(
+                            "File: {}\nError: end_line must be positive (was: {})",
+                            params.path, end_line
+                        )),
                     },
                 );
                 return;
@@ -503,10 +501,8 @@ impl FileInteractionActor {
         let start_line = params.start_line.map(|x| x as usize);
         let end_line = params.end_line.map(|x| x as usize);
 
-        // Execute the read
         match self.get_or_read_file_content(&params.path, start_line, end_line) {
             Ok(content) => {
-                // Update unified system prompt contribution for all files
                 self.update_unified_files_system_prompt();
 
                 let message = match (start_line, end_line) {
@@ -516,18 +512,22 @@ impl FileInteractionActor {
                     _ => format!("Read file: {}", params.path),
                 };
 
-                // Create informative collapsed text
                 let line_count = content.lines().count();
                 let collapsed = match (start_line, end_line) {
                     (Some(start), Some(end)) => {
-                        format!("{}: {} lines ({}–{})", params.path, end - start + 1, start, end)
+                        format!(
+                            "{}: {} lines ({}–{})",
+                            params.path,
+                            end - start + 1,
+                            start,
+                            end
+                        )
                     }
                     _ => {
                         format!("{}: {} lines", params.path, line_count)
                     }
                 };
 
-                // Expanded shows the full file path and complete content
                 let expanded = format!("File: {}\n\n{}", params.path, content);
 
                 self.send_success_result(
@@ -545,7 +545,10 @@ impl FileInteractionActor {
                     e.to_string(),
                     UIDisplayInfo {
                         collapsed: format!("{}: Read failed", params.path),
-                        expanded: Some(format!("File: {}\nOperation: Read\nError: {}", params.path, e)),
+                        expanded: Some(format!(
+                            "File: {}\nOperation: Read\nError: {}",
+                            params.path, e
+                        )),
                     },
                 );
             }
@@ -555,24 +558,24 @@ impl FileInteractionActor {
     fn handle_edit_file(&mut self, execute_tool: ExecuteTool) {
         let tool_call_id = &execute_tool.tool_call.id;
 
-        // Parse parameters
-        let params: EditFileParams =
-            match serde_json::from_str(&execute_tool.tool_call.function.arguments) {
-                Ok(params) => params,
-                Err(e) => {
-                    self.send_error_result(
-                        tool_call_id,
-                        format!("Failed to parse edit_file parameters: {}", e),
-                        UIDisplayInfo {
-                            collapsed: "Parameters: Invalid format".to_string(),
-                            expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", e)),
-                        },
-                    );
-                    return;
-                }
-            };
+        let params = match serde_json::from_str(&execute_tool.tool_call.function.arguments) {
+            Ok(params) => params,
+            Err(e) => {
+                self.send_error_result(
+                    tool_call_id,
+                    format!("Failed to parse edit_file parameters: {}", e),
+                    UIDisplayInfo {
+                        collapsed: "Parameters: Invalid format".to_string(),
+                        expanded: Some(format!(
+                            "Error: Failed to parse parameters\n\nDetails: {}",
+                            e
+                        )),
+                    },
+                );
+                return;
+            }
+        };
 
-        // Parse edits
         let edits = match self.parse_edits_from_params(&params) {
             Ok(edits) => edits,
             Err(e) => {
@@ -581,23 +584,21 @@ impl FileInteractionActor {
                     e.to_string(),
                     UIDisplayInfo {
                         collapsed: format!("{}: Parse error", params.path),
-                        expanded: Some(format!("File: {}\nOperation: Edit\nError parsing edits: {}", params.path, e)),
+                        expanded: Some(format!(
+                            "File: {}\nOperation: Edit\nError parsing edits: {}",
+                            params.path, e
+                        )),
                     },
                 );
                 return;
             }
         };
 
-        // Get the number of edits before moving the vector
         let edits_count = edits.len();
-
-        // Execute the edits
         match self.apply_edits(&params.path, edits) {
             Ok(message) => {
-                // Update unified system prompt contribution for all files
                 self.update_unified_files_system_prompt();
 
-                // Create informative collapsed text showing what was changed
                 let edit_summary = if edits_count == 1 {
                     "1 edit"
                 } else {
@@ -605,9 +606,10 @@ impl FileInteractionActor {
                 };
                 let collapsed = format!("{}: {} applied", params.path, edit_summary);
 
-                // Expanded shows the full operation details
-                let expanded = format!("File: {}\nOperation: Edit\nChanges: {} operations applied\n\nResult: {}", 
-                    params.path, edits_count, message);
+                let expanded = format!(
+                    "File: {}\nOperation: Edit\nChanges: {} operations applied\n\nResult: {}",
+                    params.path, edits_count, message
+                );
 
                 self.send_success_result(
                     tool_call_id,
@@ -624,7 +626,10 @@ impl FileInteractionActor {
                     e.to_string(),
                     UIDisplayInfo {
                         collapsed: format!("{}: Edit failed", params.path),
-                        expanded: Some(format!("File: {}\nOperation: Edit\nError: {}", params.path, e)),
+                        expanded: Some(format!(
+                            "File: {}\nOperation: Edit\nError: {}",
+                            params.path, e
+                        )),
                     },
                 );
             }
@@ -669,18 +674,12 @@ impl FileInteractionActor {
         let canonical_path = wasm_safe_normalize_path(path_ref)
             .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
 
-        // Check if we need to read or can use cache
         let needs_read = match (start_line, end_line) {
-            (None, None) => {
-                // Full file read - check if modified
-                self.has_been_modified(&canonical_path)?
-            }
+            (None, None) => self.has_been_modified(&canonical_path)?,
             (Some(start), Some(end)) => {
-                // Partial read - check if we have this slice or file was modified
                 if self.has_been_modified(&canonical_path)? {
                     true
                 } else if let Some(entry) = self.cache.get(&canonical_path) {
-                    // Check if we already have this slice
                     match &entry.content {
                         FileContent::Full(_) => false, // We have the full file
                         FileContent::Partial { slices, .. } => {
@@ -727,23 +726,18 @@ impl FileInteractionActor {
         let canonical_path = wasm_safe_normalize_path(path_ref)
             .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
 
-        // Check if we can merge with existing partial content
         if let (Some(start), Some(end)) = (start_line, end_line) {
             if let Some(existing_entry) = self.cache.get(&canonical_path).cloned() {
-                // Only merge if file hasn't been modified and we have partial content
                 if !self.has_been_modified(path_ref)? {
                     if let FileContent::Partial { slices, .. } = &existing_entry.content {
-                        // Check if we already have this exact slice
                         let already_covered = slices
                             .iter()
                             .any(|slice| slice.start_line <= start && slice.end_line >= end);
 
                         if already_covered {
-                            // We already have this slice, no need to read again
                             return Ok(());
                         }
 
-                        // Read the file and create new slice to merge
                         let contents = fs::read_to_string(path_ref).map_err(|e| {
                             format!("Failed to read file '{}': {}", path_ref.display(), e)
                         })?;
@@ -751,7 +745,6 @@ impl FileInteractionActor {
                         let lines: Vec<&str> = contents.lines().collect();
                         let total_lines = lines.len();
 
-                        // Validate line numbers
                         if start < 1 || start > total_lines || end < start {
                             return Err(format!(
                                 "Invalid line range: {}-{} (file has {} lines)",
@@ -759,7 +752,6 @@ impl FileInteractionActor {
                             ));
                         }
 
-                        // Create new slice
                         let slice_lines: Vec<String> = lines[(start - 1)..lines.len().min(end)]
                             .iter()
                             .enumerate()
@@ -772,7 +764,6 @@ impl FileInteractionActor {
                             content: slice_lines.join("\n"),
                         };
 
-                        // Merge with existing entry
                         let mut updated_entry = existing_entry;
                         updated_entry.content.merge_slice(new_slice);
                         self.cache.insert(canonical_path, updated_entry);
@@ -781,8 +772,6 @@ impl FileInteractionActor {
                 }
             }
         }
-
-        // Fall back to normal read/cache logic (full read or fresh partial read)
 
         let metadata = fs::metadata(path_ref).map_err(|e| {
             format!(
@@ -801,7 +790,6 @@ impl FileInteractionActor {
             )
         })?;
 
-        // Check if file is absolutely too large to even attempt reading
         if file_size > MAX_FILE_SIZE_BYTES {
             return Err(format!(
                 "File '{}' is too large ({} bytes). Maximum file size is {} bytes.",
@@ -817,10 +805,8 @@ impl FileInteractionActor {
         let lines: Vec<&str> = contents.lines().collect();
         let total_lines = lines.len();
 
-        // Determine if we're reading the full file or a slice
         let content = match (start_line, end_line) {
             (None, None) => {
-                // Check if file is small enough for automatic full read
                 if file_size > SMALL_FILE_SIZE_BYTES {
                     let metadata = serde_json::json!({
                         "path": path_ref.display().to_string(),
@@ -835,7 +821,6 @@ impl FileInteractionActor {
                 FileContent::Full(contents)
             }
             (Some(start), Some(end)) => {
-                // Validate line numbers
                 if start < 1 || start > total_lines || end < start {
                     return Err(format!(
                         "Invalid line range: {}-{} (file has {} lines)",
@@ -843,7 +828,6 @@ impl FileInteractionActor {
                     ));
                 }
 
-                // Create numbered content for the slice
                 let slice_lines: Vec<String> = lines[(start - 1)..lines.len().min(end)]
                     .iter()
                     .enumerate()
@@ -965,7 +949,6 @@ impl FileInteractionActor {
     fn apply_edits(&mut self, path: &str, mut edits: Vec<Edit>) -> Result<String, String> {
         let path_ref = Path::new(path);
 
-        // Check if path is absolute first
         if !path_ref.is_absolute() {
             return Err(format!(
                 "Relative paths are not supported. Please use an absolute path starting with '/'. Got: '{}'",
@@ -973,21 +956,17 @@ impl FileInteractionActor {
             ));
         }
 
-        // Check if the file exists
         if !path_ref.exists() {
-            // Create parent directories if needed
             if let Some(parent) = path_ref.parent() {
                 fs::create_dir_all(parent)
                     .map_err(|e| format!("Failed to create directory: {}", e))?;
             }
-            // Create an empty file - we'll populate it with the edits
             fs::File::create(&path).map_err(|e| format!("Failed to create file: {}", e))?;
         }
 
         let canonical_path = wasm_safe_normalize_path(path_ref)
             .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
 
-        // Check the file's modification time if it's in cache
         if let Some(entry) = self.cache.get(&canonical_path) {
             let metadata = fs::metadata(&canonical_path)
                 .map_err(|e| format!("Failed to read file metadata: {}", e))?;
@@ -1002,15 +981,12 @@ impl FileInteractionActor {
                 ));
             }
         }
-        // Note: We no longer require files to be read first before editing
 
-        // Read the file into a Vec<String>
         let content = fs::read_to_string(&canonical_path)
             .map_err(|e| format!("Failed to read file: {}", e))?;
         let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
         let is_empty_file = lines.is_empty();
 
-        // For empty files, only allow single edit operations that create content
         if is_empty_file && edits.len() > 1 {
             return Err(format!(
                 "Cannot apply multiple edits to a new/empty file. For new files, use a single edit operation to create the initial content. Found {} edits.",
@@ -1018,13 +994,10 @@ impl FileInteractionActor {
             ));
         }
 
-        // Sort edits in descending order by start_line to preserve line numbers during editing
         edits.sort_by(|a, b| b.start_line.cmp(&a.start_line));
 
-        // Apply each edit
         for edit in edits {
             let current_total_lines = lines.len();
-
             // Validate line numbers based on current line count
             if edit.start_line < 1 || edit.start_line > current_total_lines + 1 {
                 return Err(format!(
@@ -1033,9 +1006,7 @@ impl FileInteractionActor {
                 ));
             }
 
-            // Handle insertion (end_line = start_line - 1)
             if edit.end_line == edit.start_line - 1 {
-                // Insert new lines at the position
                 let new_lines: Vec<String> =
                     edit.new_content.lines().map(|s| s.to_string()).collect();
                 let insert_pos = edit.start_line - 1;
@@ -1043,7 +1014,6 @@ impl FileInteractionActor {
                     lines.insert(insert_pos + i, line);
                 }
             } else {
-                // Replace or delete lines
                 if edit.end_line < edit.start_line || edit.end_line > current_total_lines {
                     return Err(format!(
                         "Invalid line numbers for edit: start={}, end={}, current_lines={}",
@@ -1051,12 +1021,10 @@ impl FileInteractionActor {
                     ));
                 }
 
-                // Remove the old lines
                 for _ in edit.start_line..=edit.end_line {
                     lines.remove(edit.start_line - 1);
                 }
 
-                // Insert new content if not deleting
                 if !edit.new_content.is_empty() {
                     let new_lines: Vec<String> =
                         edit.new_content.lines().map(|s| s.to_string()).collect();
@@ -1067,7 +1035,6 @@ impl FileInteractionActor {
             }
         }
 
-        // Write the modified content back to disk
         let new_content = if lines.is_empty() {
             String::new()
         } else {
@@ -1076,7 +1043,6 @@ impl FileInteractionActor {
         fs::write(&canonical_path, &new_content)
             .map_err(|e| format!("Failed to write file: {}", e))?;
 
-        // Update the cache with new content
         let _ = self.read_and_cache_file(&canonical_path, None, None);
 
         Ok(format!(

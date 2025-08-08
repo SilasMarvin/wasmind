@@ -148,7 +148,6 @@ impl tools::Tool for SpawnAgentTool {
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
-        // Parse the tool parameters
         let params: SpawnAgentsInput =
             match serde_json::from_str(&tool_call.tool_call.function.arguments) {
                 Ok(params) => params,

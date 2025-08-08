@@ -31,7 +31,6 @@ impl Tool for ReportProgressNormal {
 
     type Params = serde_json::Value;
 
-    // This tool only shuts down the temporal agent that was spawned
     async fn execute_tool_call(&mut self, tool_call: ToolCall, _params: Self::Params) {
         self.broadcast(Message::Exit);
 

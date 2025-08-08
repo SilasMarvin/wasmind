@@ -219,21 +219,14 @@ fn get_app_strategy() -> Result<impl AppStrategy, Error> {
 }
 
 pub fn get_config_dir() -> Result<PathBuf, Error> {
-    // Create an instance of Etcetera for your application "hive".
-    // The etcetera crate will determine the correct base config directory depending on the OS.
     Ok(get_app_strategy()?.config_dir())
 }
 
 pub fn get_cache_dir() -> Result<PathBuf, Error> {
-    // On Linux/macOS, this will be: $HOME/.cache/hive/
-    // On Windows, this will typically be: %LOCALAPPDATA%\hive\
     Ok(get_app_strategy()?.cache_dir())
 }
 
 pub fn get_config_file_path() -> Result<PathBuf, Error> {
-    // This returns the complete path to the config file "config.toml".
-    // On Linux/macOS, this will be: $HOME/.config/hive/config.toml
-    // On Windows, this will typically be: %APPDATA%\hive\config.toml
     Ok(get_config_dir()?.join("config.toml"))
 }
 
@@ -281,14 +274,11 @@ pub fn get_actors_cache_dir() -> Result<PathBuf, Error> {
 }
 
 pub fn get_log_file_path() -> Result<PathBuf, Error> {
-    // Log file goes in the data directory
     let data_dir = get_data_dir()?;
     Ok(data_dir.join("hive.log"))
 }
 
 pub fn get_data_dir() -> Result<PathBuf, Error> {
-    // On Linux/macOS, this will be: $HOME/.local/share/hive/
-    // On Windows, this will typically be: %APPDATA%\hive\
     Ok(get_app_strategy()?.data_dir())
 }
 

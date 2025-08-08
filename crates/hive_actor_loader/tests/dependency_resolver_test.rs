@@ -115,7 +115,6 @@ async fn test_global_configuration_override() {
     );
 
     let actors = vec![
-        // Define the coordinator
         Actor {
             name: "my_coordinator".to_string(),
             source: ActorSource::Path(PathSource {
@@ -173,7 +172,6 @@ async fn test_global_source_and_auto_spawn_overrides() {
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![
-        // Define the coordinator
         Actor {
             name: "my_coordinator".to_string(),
             source: ActorSource::Path(PathSource {

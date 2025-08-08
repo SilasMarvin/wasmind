@@ -138,15 +138,12 @@ impl http::HostRequest for ActorState {
         for attempt in 0..max_attempts {
             let mut builder = req_resource.builder.try_clone().unwrap();
 
-            // Apply timeout if set
             if let Some(timeout_seconds) = timeout_seconds {
                 builder = builder.timeout(Duration::from_secs(timeout_seconds as u64));
             }
 
-            // Send the request
             match builder.send().await {
                 Ok(resp) => {
-                    // Success! Extract response parts
                     let status = resp.status().as_u16();
 
                     // Convert headers
@@ -160,7 +157,6 @@ impl http::HostRequest for ActorState {
                         headers: headers_vec,
                     };
 
-                    // Get body
                     let body = match resp.bytes().await {
                         Ok(bytes) => bytes.to_vec(),
                         Err(e) => return Err(http::RequestError::NetworkError(e.to_string())),
