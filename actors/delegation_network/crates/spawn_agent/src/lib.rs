@@ -157,8 +157,8 @@ impl tools::Tool for SpawnAgentTool {
                     let error_result = ToolCallResult {
                         content: error_msg.clone(),
                         ui_display_info: UIDisplayInfo {
-                            collapsed: "Parameter Error".to_string(),
-                            expanded: Some(format!("Parameter Error:\n{}", error_msg)),
+                            collapsed: "Parameters: Invalid format".to_string(),
+                            expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", error_msg)),
                         },
                     };
                     self.send_error_result(&tool_call.tool_call.id, error_result);
@@ -171,8 +171,8 @@ impl tools::Tool for SpawnAgentTool {
             let error_result = ToolCallResult {
                 content: "No agents specified in 'agents_to_spawn' array. At least one agent must be provided.".to_string(),
                 ui_display_info: UIDisplayInfo {
-                    collapsed: "Spawn failed".to_string(),
-                    expanded: Some("No agents were specified for spawning".to_string()),
+                    collapsed: "No agents: Empty list provided".to_string(),
+                    expanded: Some("Error: No agents were specified for spawning\n\nAt least one agent must be provided in the agents_to_spawn array.".to_string()),
                 },
             };
             self.send_error_result(&tool_call.tool_call.id, error_result);
@@ -198,8 +198,8 @@ impl tools::Tool for SpawnAgentTool {
                         let error_result = ToolCallResult {
                             content: format!("Failed to spawn agent: {}", e),
                             ui_display_info: UIDisplayInfo {
-                                collapsed: "Spawn failed".to_string(),
-                                expanded: Some(format!("Failed to spawn agent: {}", e)),
+                                collapsed: format!("Agent spawn: Failed to create {:?}", agent_def.agent_type),
+                                expanded: Some(format!("Operation: Create agent\nAgent Type: {:?}\nError: {}", agent_def.agent_type, e)),
                             },
                         };
                         self.send_error_result(&tool_call.tool_call.id, error_result);
@@ -280,15 +280,12 @@ impl tools::Tool for SpawnAgentTool {
             content: success_message.clone(),
             ui_display_info: UIDisplayInfo {
                 collapsed: format!(
-                    "Spawned {} agent{}",
+                    "{} agent{} created: {}",
                     params.agents_to_spawn.len(),
-                    if params.agents_to_spawn.len() == 1 {
-                        ""
-                    } else {
-                        "s"
-                    }
+                    if params.agents_to_spawn.len() == 1 { "" } else { "s" },
+                    spawned_agents.join(", ")
                 ),
-                expanded: Some(success_message),
+                expanded: Some(format!("Operation: Create agents\n\n{}", success_message)),
             },
         };
 

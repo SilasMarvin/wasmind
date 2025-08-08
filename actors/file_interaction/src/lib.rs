@@ -460,8 +460,8 @@ impl FileInteractionActor {
                         tool_call_id,
                         format!("Failed to parse read_file parameters: {}", e),
                         UIDisplayInfo {
-                            collapsed: "Parameter Error".to_string(),
-                            expanded: Some(format!("Failed to parse parameters:\n{}", e)),
+                            collapsed: "Parameters: Invalid format".to_string(),
+                            expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", e)),
                         },
                     );
                     return;
@@ -475,10 +475,10 @@ impl FileInteractionActor {
                     tool_call_id,
                     format!("Invalid start_line: {} - lines are 1-indexed.", start_line),
                     UIDisplayInfo {
-                        collapsed: "Invalid Line Number".to_string(),
+                        collapsed: format!("{}: Invalid line number", params.path),
                         expanded: Some(format!(
-                            "start_line must be positive (was: {})",
-                            start_line
+                            "File: {}\nError: start_line must be positive (was: {})",
+                            params.path, start_line
                         )),
                     },
                 );
@@ -492,8 +492,8 @@ impl FileInteractionActor {
                     tool_call_id,
                     format!("Invalid end_line: {} - lines are 1-indexed.", end_line),
                     UIDisplayInfo {
-                        collapsed: "Invalid Line Number".to_string(),
-                        expanded: Some(format!("end_line must be positive (was: {})", end_line)),
+                        collapsed: format!("{}: Invalid line number", params.path),
+                        expanded: Some(format!("File: {}\nError: end_line must be positive (was: {})", params.path, end_line)),
                     },
                 );
                 return;
@@ -516,12 +516,26 @@ impl FileInteractionActor {
                     _ => format!("Read file: {}", params.path),
                 };
 
+                // Create informative collapsed text
+                let line_count = content.lines().count();
+                let collapsed = match (start_line, end_line) {
+                    (Some(start), Some(end)) => {
+                        format!("{}: {} lines ({}–{})", params.path, end - start + 1, start, end)
+                    }
+                    _ => {
+                        format!("{}: {} lines", params.path, line_count)
+                    }
+                };
+
+                // Expanded shows the full file path and complete content
+                let expanded = format!("File: {}\n\n{}", params.path, content);
+
                 self.send_success_result(
                     tool_call_id,
                     message,
                     UIDisplayInfo {
-                        collapsed: format!("Read: {}", params.path),
-                        expanded: Some(content),
+                        collapsed,
+                        expanded: Some(expanded),
                     },
                 );
             }
@@ -530,8 +544,8 @@ impl FileInteractionActor {
                     tool_call_id,
                     e.to_string(),
                     UIDisplayInfo {
-                        collapsed: "Read Error".to_string(),
-                        expanded: Some(e.to_string()),
+                        collapsed: format!("{}: Read failed", params.path),
+                        expanded: Some(format!("File: {}\nOperation: Read\nError: {}", params.path, e)),
                     },
                 );
             }
@@ -550,8 +564,8 @@ impl FileInteractionActor {
                         tool_call_id,
                         format!("Failed to parse edit_file parameters: {}", e),
                         UIDisplayInfo {
-                            collapsed: "Parameter Error".to_string(),
-                            expanded: Some(format!("Failed to parse parameters:\n{}", e)),
+                            collapsed: "Parameters: Invalid format".to_string(),
+                            expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", e)),
                         },
                     );
                     return;
@@ -566,13 +580,16 @@ impl FileInteractionActor {
                     tool_call_id,
                     e.to_string(),
                     UIDisplayInfo {
-                        collapsed: "Edit Parse Error".to_string(),
-                        expanded: Some(e.to_string()),
+                        collapsed: format!("{}: Parse error", params.path),
+                        expanded: Some(format!("File: {}\nOperation: Edit\nError parsing edits: {}", params.path, e)),
                     },
                 );
                 return;
             }
         };
+
+        // Get the number of edits before moving the vector
+        let edits_count = edits.len();
 
         // Execute the edits
         match self.apply_edits(&params.path, edits) {
@@ -580,12 +597,24 @@ impl FileInteractionActor {
                 // Update unified system prompt contribution for all files
                 self.update_unified_files_system_prompt();
 
+                // Create informative collapsed text showing what was changed
+                let edit_summary = if edits_count == 1 {
+                    "1 edit"
+                } else {
+                    &format!("{} edits", edits_count)
+                };
+                let collapsed = format!("{}: {} applied", params.path, edit_summary);
+
+                // Expanded shows the full operation details
+                let expanded = format!("File: {}\nOperation: Edit\nChanges: {} operations applied\n\nResult: {}", 
+                    params.path, edits_count, message);
+
                 self.send_success_result(
                     tool_call_id,
                     message.clone(),
                     UIDisplayInfo {
-                        collapsed: format!("Edited: {}", params.path),
-                        expanded: Some(message),
+                        collapsed,
+                        expanded: Some(expanded),
                     },
                 );
             }
@@ -594,8 +623,8 @@ impl FileInteractionActor {
                     tool_call_id,
                     e.to_string(),
                     UIDisplayInfo {
-                        collapsed: "Edit Error".to_string(),
-                        expanded: Some(e.to_string()),
+                        collapsed: format!("{}: Edit failed", params.path),
+                        expanded: Some(format!("File: {}\nOperation: Edit\nError: {}", params.path, e)),
                     },
                 );
             }

@@ -105,8 +105,8 @@ fn create_tool_status_updates() -> Vec<ToolCallStatusUpdate> {
             id: "tool_call_1_received".to_string(),
             status: ToolCallStatus::Received {
                 display_info: UIDisplayInfo {
-                    collapsed: "Reading file /tmp/test.txt...".to_string(),
-                    expanded: Some("Attempting to read the contents of /tmp/test.txt to analyze the data.".to_string()),
+                    collapsed: "/tmp/test.txt: Reading in progress...".to_string(),
+                    expanded: Some("File: /tmp/test.txt\nOperation: Read file\nStatus: Reading file contents to analyze the data".to_string()),
                 },
             },
         },
@@ -117,8 +117,8 @@ fn create_tool_status_updates() -> Vec<ToolCallStatusUpdate> {
                 details: AwaitingSystemDetails {
                     required_scope: Some("bash_executor".to_string()),
                     ui_display_info: UIDisplayInfo {
-                        collapsed: "Awaiting system approval for bash command...".to_string(),
-                        expanded: Some("Waiting for system approval to execute: ls -la\nThis command will list all files in the current directory.".to_string()),
+                        collapsed: "ls -la: Awaiting system approval".to_string(),
+                        expanded: Some("Command: ls -la\nStatus: Waiting for system approval to execute\nDescription: This command will list all files in the current directory with detailed information.".to_string()),
                     },
                 },
             },
@@ -130,8 +130,8 @@ fn create_tool_status_updates() -> Vec<ToolCallStatusUpdate> {
                 result: Ok(ToolCallResult {
                     content: "Found 42 TODO items in 8 files:\n- src/main.rs: 5 items\n- src/utils.rs: 3 items\n- src/handlers.rs: 12 items\n...".to_string(),
                     ui_display_info: UIDisplayInfo {
-                        collapsed: "Search completed: 42 TODOs found".to_string(),
-                        expanded: Some("Search Results:\n\nFound 42 TODO items across 8 files in ./src:\n\n1. src/main.rs (5 items):\n   - Line 23: TODO: Implement error handling\n   - Line 45: TODO: Add logging\n   - Line 67: TODO: Optimize performance\n   - Line 89: TODO: Write tests\n   - Line 101: TODO: Add documentation\n\n2. src/utils.rs (3 items):\n   - Line 12: TODO: Refactor this function\n   - Line 34: TODO: Add input validation\n   - Line 56: TODO: Handle edge cases\n\n[... more results ...]".to_string()),
+                        collapsed: "./src: 42 TODOs found in 8 files".to_string(),
+                        expanded: Some("Operation: Search for TODO items\nPattern: TODO\nPath: ./src\n\nResults: Found 42 TODO items across 8 files:\n\n1. src/main.rs (5 items):\n   - Line 23: TODO: Implement error handling\n   - Line 45: TODO: Add logging\n   - Line 67: TODO: Optimize performance\n   - Line 89: TODO: Write tests\n   - Line 101: TODO: Add documentation\n\n2. src/utils.rs (3 items):\n   - Line 12: TODO: Refactor this function\n   - Line 34: TODO: Add input validation\n   - Line 56: TODO: Handle edge cases\n\n[... more results ...]".to_string()),
                     },
                 }),
             },

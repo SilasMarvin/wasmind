@@ -56,8 +56,8 @@ impl tools::Tool for CompleteTool {
                     let error_result = ToolCallResult {
                         content: error_msg.clone(),
                         ui_display_info: UIDisplayInfo {
-                            collapsed: "❌ Parameter Error".to_string(),
-                            expanded: Some(format!("❌ Parameter Error:\n{}", error_msg)),
+                            collapsed: "Parameters: Invalid format".to_string(),
+                            expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", error_msg)),
                         },
                     };
                     self.send_error_result(&tool_call.tool_call.id, error_result);
@@ -120,8 +120,14 @@ impl tools::Tool for CompleteTool {
         let result = ToolCallResult {
             content: result_message,
             ui_display_info: UIDisplayInfo {
-                collapsed: format!("{}: {}", status_text, params.summary),
-                expanded: Some(params.summary.clone()),
+                collapsed: format!("Task {}: {}", if params.success { "completed" } else { "failed" }, 
+                    if params.summary.len() > 50 { 
+                        format!("{}...", &params.summary[..47])
+                    } else { 
+                        params.summary.to_string()
+                    }
+                ),
+                expanded: Some(format!("Task Completion\nStatus: {}\nSummary: {}", status_text, params.summary)),
             },
         };
 

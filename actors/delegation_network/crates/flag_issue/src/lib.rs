@@ -98,8 +98,8 @@ impl FlagIssueTool {
                 result: Err(ToolCallResult {
                     content: error_msg.clone(),
                     ui_display_info: UIDisplayInfo {
-                        collapsed: "Error".to_string(),
-                        expanded: Some(error_msg),
+                        collapsed: "Parameters: Invalid format".to_string(),
+                        expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", error_msg)),
                     },
                 }),
             },
@@ -125,11 +125,14 @@ impl FlagIssueTool {
         let result = ToolCallResult {
             content: format!("Agent flagged for issue: {}", issue_summary),
             ui_display_info: UIDisplayInfo {
-                collapsed: "Issue flagged".to_string(),
-                expanded: Some(format!(
-                    "Agent flagged for problematic behavior: {}",
-                    issue_summary
-                )),
+                collapsed: format!("Issue reported: {}", 
+                    if issue_summary.len() > 40 { 
+                        format!("{}...", &issue_summary[..37])
+                    } else { 
+                        issue_summary.to_string()
+                    }
+                ),
+                expanded: Some(format!("Operation: Report problem\nAgent paused for manager review\n\nIssue: {}", issue_summary)),
             },
         };
 

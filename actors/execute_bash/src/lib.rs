@@ -7,7 +7,6 @@ use hive_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
-mod icons;
 
 const MAX_COMMAND_OUTPUT_CHARS: usize = 16_384;
 const TRUNCATION_HEAD_CHARS: usize = 4_000; // Keep first 4k chars
@@ -61,8 +60,8 @@ impl tools::Tool for CommandTool {
                 Err(e) => {
                     let error_msg = format!("Failed to parse command parameters: {}", e);
                     let ui_display = UIDisplayInfo {
-                        collapsed: "Parameter Error".to_string(),
-                        expanded: Some(format!("Parameter Error:\n{}", error_msg)),
+                        collapsed: "Parameters: Invalid format".to_string(),
+                        expanded: Some(format!("Command: execute_command\nError: Failed to parse parameters\n\nDetails: {}", e)),
                     };
 
                     self.send_error_result(&tool_call.tool_call.id, error_msg, ui_display);
@@ -138,29 +137,55 @@ fn smart_truncate(text: &str) -> String {
 /// Create UI display info for command execution
 fn format_command_outcome_for_ui_display(command: &str, outcome: CommandOutcome) -> UIDisplayInfo {
     let collapsed = match &outcome {
-        CommandOutcome::Success { .. } => {
-            format!("Command:\n{}", command)
+        CommandOutcome::Success { stdout, stderr } => {
+            let output_summary = if stdout.is_empty() && stderr.is_empty() {
+                "No output".to_string()
+            } else {
+                let stdout_lines = stdout.lines().count();
+                let stderr_lines = stderr.lines().count();
+                if stderr_lines > 0 {
+                    format!("{} lines output, {} lines stderr", stdout_lines, stderr_lines)
+                } else {
+                    format!("{} lines output", stdout_lines)
+                }
+            };
+            format!("{}: Success ({})", command, output_summary)
         }
-        CommandOutcome::Failed { exit_code, .. } => {
-            format!("Command failed (exit {}):\n{}", exit_code, command)
+        CommandOutcome::Failed { exit_code, stdout, stderr } => {
+            let output_info = if stdout.is_empty() && stderr.is_empty() {
+                "no output".to_string()
+            } else {
+                let total_lines = stdout.lines().count() + stderr.lines().count();
+                format!("{} lines output", total_lines)
+            };
+            format!("{}: Failed (exit {}, {})", command, exit_code, output_info)
         }
         CommandOutcome::Timeout => {
-            format!("Command timed out:\n{}", command)
+            format!("{}: Timed out", command)
         }
-        CommandOutcome::Signal => format!("Command terminated by signal:\n{}", command),
-        CommandOutcome::Error(_) => format!("Command error:\n{}", command),
+        CommandOutcome::Signal => {
+            format!("{}: Terminated by signal", command)
+        }
+        CommandOutcome::Error(error) => {
+            format!("{}: Error ({})", command, error.lines().next().unwrap_or("unknown error"))
+        }
     };
 
+    // For expanded view, show the full command and complete output
     let expanded = match &outcome {
         CommandOutcome::Success { stdout, stderr }
         | CommandOutcome::Failed { stdout, stderr, .. } => {
-            format_command_output(&collapsed, stdout, stderr)
+            let header = format!("Command: {}", command);
+            format_command_output(&header, stdout, stderr)
         }
-        CommandOutcome::Timeout | CommandOutcome::Signal => {
-            format!("{}\n(no output)", collapsed)
+        CommandOutcome::Timeout => {
+            format!("Command: {}\n\nResult: Execution timed out (no output)", command)
+        }
+        CommandOutcome::Signal => {
+            format!("Command: {}\n\nResult: Terminated by signal (no output)", command)
         }
         CommandOutcome::Error(error) => {
-            format!("{}\n\n{}", collapsed, error)
+            format!("Command: {}\n\nError: {}", command, error)
         }
     };
 
@@ -513,8 +538,7 @@ mod tests {
         };
 
         let display = format_command_outcome_for_ui_display("ls", outcome);
-        assert!(display.collapsed.contains("✓"));
-        assert!(display.collapsed.contains("Command succeeded"));
+        assert!(display.collapsed.contains("Success"));
         assert!(display.collapsed.contains("ls"));
 
         let expanded = display.expanded.unwrap();
@@ -531,8 +555,7 @@ mod tests {
         };
 
         let display = format_command_outcome_for_ui_display("cat /etc/shadow", outcome);
-        assert!(display.collapsed.contains("✗"));
-        assert!(display.collapsed.contains("Command failed"));
+        assert!(display.collapsed.contains("Failed"));
         assert!(display.collapsed.contains("exit 1"));
 
         let expanded = display.expanded.unwrap();
@@ -545,8 +568,7 @@ mod tests {
         let outcome = CommandOutcome::Timeout;
         let display = format_command_outcome_for_ui_display("sleep 100", outcome);
 
-        assert!(display.collapsed.contains("◐"));
-        assert!(display.collapsed.contains("Command timed out"));
+        assert!(display.collapsed.contains("Timed out"));
         assert!(display.collapsed.contains("sleep 100"));
 
         let expanded = display.expanded.unwrap();
@@ -558,8 +580,7 @@ mod tests {
         let outcome = CommandOutcome::Signal;
         let display = format_command_outcome_for_ui_display("kill -9 $$", outcome);
 
-        assert!(display.collapsed.contains("◆"));
-        assert!(display.collapsed.contains("Command terminated by signal"));
+        assert!(display.collapsed.contains("Terminated by signal"));
     }
 
     #[test]
@@ -567,8 +588,7 @@ mod tests {
         let outcome = CommandOutcome::Error("Failed to spawn bash command".to_string());
         let display = format_command_outcome_for_ui_display("bad command", outcome);
 
-        assert!(display.collapsed.contains("!"));
-        assert!(display.collapsed.contains("Command error"));
+        assert!(display.collapsed.contains("Error"));
 
         let expanded = display.expanded.unwrap();
         assert!(expanded.contains("Failed to spawn bash command"));
