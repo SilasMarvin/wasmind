@@ -233,18 +233,19 @@ pub mod assistant {
         }
     }
 
-    impl ToString for Section {
-        fn to_string(&self) -> String {
-            match self {
-                Section::Identity => "identity".to_string(),
-                Section::Context => "context".to_string(),
-                Section::Capabilities => "capabilities".to_string(),
-                Section::Guidelines => "guidelines".to_string(),
-                Section::Tools => "tools".to_string(),
-                Section::Instructions => "instructions".to_string(),
-                Section::SystemContext => "system_context".to_string(),
-                Section::Custom(name) => name.clone(),
-            }
+    impl std::fmt::Display for Section {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let s = match self {
+                Section::Identity => "identity",
+                Section::Context => "context",
+                Section::Capabilities => "capabilities",
+                Section::Guidelines => "guidelines",
+                Section::Tools => "tools",
+                Section::Instructions => "instructions",
+                Section::SystemContext => "system_context",
+                Section::Custom(name) => name,
+            };
+            write!(f, "{s}")
         }
     }
 

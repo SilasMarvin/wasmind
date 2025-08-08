@@ -159,7 +159,7 @@ where
                 }
                 TuiMessage::Graph(graph_message) => match graph_message {
                     GraphTuiMessage::SelectedAgent(scope) => {
-                        self.active_scope = Scope::try_from(scope.as_str()).unwrap();
+                        self.active_scope = Scope::from(scope.as_str());
                         assert!(
                             self.app
                                 .attr(

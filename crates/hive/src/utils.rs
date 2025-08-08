@@ -47,7 +47,7 @@ pub fn generate_root_correlation_id() -> String {
 /// Generate a child correlation ID from a parent ID (format: "parent:child")
 pub fn generate_child_correlation_id(parent_id: &str) -> String {
     // Extract just the child part from the parent ID (after the colon)
-    let parent_child_id = parent_id.split(':').last().unwrap_or(parent_id);
+    let parent_child_id = parent_id.split(':').next_back().unwrap_or(parent_id);
     format!("{}:{}", parent_child_id, generate_short_id())
 }
 

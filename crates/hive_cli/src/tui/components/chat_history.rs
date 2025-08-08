@@ -273,8 +273,14 @@ impl ChatMessageWidgetState {
             ChatMessage::Tool(_) => vec![],
         };
         let mut total_height = 0;
+        let last_widget_count = widgets.iter().count();
         for (i, (widget, height)) in widgets.into_iter().enumerate() {
-            total_height += height + if i > 0 { MESSAGE_GAP } else { 0 };
+            total_height += height
+                + if i == last_widget_count - 1 {
+                    0
+                } else {
+                    MESSAGE_GAP
+                };
             self.widgets.push((widget, height));
         }
         self.height = Some(total_height);
@@ -308,10 +314,8 @@ impl CacheableRenderItem for ChatMessageWidgetState {
             for (widget, widget_height) in &self.widgets {
                 render_area.height = *widget_height;
                 widget.render_ref(render_area, &mut buff);
-                render_area.y += widget_height + MESSAGE_GAP;
-                render_area.height = render_area
-                    .height
-                    .saturating_sub(widget_height + MESSAGE_GAP);
+                render_area.y += widget_height;
+                render_area.height = render_area.height.saturating_sub(*widget_height);
             }
 
             self.buffer = Some(buff);
@@ -436,8 +440,7 @@ impl AssistantInfo {
             // Bounds checking before attempting copy
             if source_y >= message_buffer.area.height {
                 tracing::error!(
-                    "Source Y out of bounds: source_y={}, message_buffer.height={}",
-                    source_y,
+                    "Source Y out of bounds: source_y={source_y}, message_buffer.height={}",
                     message_buffer.area.height
                 );
                 continue;
@@ -445,8 +448,7 @@ impl AssistantInfo {
 
             if dest_y >= buf.area.height {
                 tracing::error!(
-                    "Dest Y out of bounds: dest_y={}, buf.height={}",
-                    dest_y,
+                    "Dest Y out of bounds: dest_y={dest_y}, buf.height={}",
                     buf.area.height
                 );
                 continue;
@@ -493,28 +495,15 @@ impl AssistantInfo {
         area: Rect,
         buf: &mut Buffer,
     ) {
-        let top_clipping = if y_offset < scroll_offset {
-            scroll_offset - y_offset
-        } else {
-            0
-        };
+        let top_clipping = scroll_offset.saturating_sub(y_offset);
 
-        let bottom_clipping = if y_offset + item_height > scroll_offset + area.height {
-            (y_offset + item_height) - (scroll_offset + area.height)
-        } else {
-            0
-        };
+        let bottom_clipping = (y_offset + item_height).saturating_sub(scroll_offset + area.height);
 
         let visible_height = item_height - top_clipping - bottom_clipping;
 
         if visible_height > 0 {
             let source_start_line = top_clipping;
-            let dest_start_line = area.y
-                + if y_offset > scroll_offset {
-                    y_offset - scroll_offset
-                } else {
-                    0
-                };
+            let dest_start_line = area.y + y_offset.saturating_sub(scroll_offset);
 
             Self::copy_buffer_lines(
                 item_buffer,
@@ -665,7 +654,6 @@ impl ChatHistoryComponent {
                     STARTING_SCOPE.to_string(),
                     manager_assistant_info,
                 )]),
-                is_modified: false,
                 scroll_offset: 0,
                 content_height: 0,
                 last_render_area: None,
@@ -678,7 +666,6 @@ struct ChatHistory {
     props: Props,
     state: State,
     chat_history_map: HashMap<Scope, AssistantInfo>,
-    is_modified: bool,
     scroll_offset: u16,
     content_height: u16,
     last_render_area: Option<Rect>,
@@ -699,19 +686,29 @@ impl MockComponent for ChatHistory {
             && let Some(active_scope) = self.props.get(Attribute::Custom(SCOPE_ATTR))
         {
             let active_scope = active_scope.unwrap_string();
-            let active_scope = Scope::try_from(active_scope.as_str()).unwrap();
+            let active_scope = Scope::from(active_scope.as_str());
 
             if let Some(info) = self.chat_history_map.get_mut(&active_scope) {
+                // Check if we are scrolled all the way down
+                let last_content_height = self.content_height;
+                let is_scrolled_to_bottom = self
+                    .content_height
+                    .saturating_sub(self.last_render_area.map(|a| a.height).unwrap_or(0))
+                    == self.scroll_offset;
+
                 // Store render area and get total content height
                 self.last_render_area = Some(area);
                 self.content_height =
                     info.render_ref_mut(area, frame.buffer_mut(), self.scroll_offset);
-                self.is_modified = false;
+
+                if is_scrolled_to_bottom && last_content_height != self.content_height {
+                    self.scroll_offset = self
+                        .content_height
+                        .saturating_sub(self.last_render_area.map(|a| a.height).unwrap_or(0));
+                    info.render_ref_mut(area, frame.buffer_mut(), self.scroll_offset);
+                }
             } else {
-                tracing::error!(
-                    "Trying to retrieve a scope that does not exist: {}",
-                    active_scope
-                );
+                tracing::error!("Trying to retrieve a scope that does not exist: {active_scope}");
             }
         }
     }
@@ -722,7 +719,6 @@ impl MockComponent for ChatHistory {
 
     fn attr(&mut self, attr: Attribute, value: AttrValue) {
         self.props.set(attr, value);
-        self.is_modified = true;
     }
 
     fn state(&self) -> State {
@@ -755,7 +751,7 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                     }
                 }
                 // Handle AssistantRequest to clear pending message
-                else if let Some(_) = parse_common_message_as::<AssistantRequest>(&envelope) {
+                else if parse_common_message_as::<AssistantRequest>(&envelope).is_some() {
                     {
                         let scope = &envelope.from_scope;
                         if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
@@ -808,29 +804,24 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
             }
             Event::Mouse(mouse_event) => match mouse_event.kind {
                 tuirealm::event::MouseEventKind::ScrollDown => {
-                    // Scroll down (increase offset)
-                    let scroll_speed = 3; // Lines to scroll per event
+                    let scroll_speed = 3;
                     let max_offset = self.component.content_height.saturating_sub(
                         self.component
                             .last_render_area
                             .map(|a| a.height)
                             .unwrap_or(0),
                     );
-
                     self.component.scroll_offset = self
                         .component
                         .scroll_offset
                         .saturating_add(scroll_speed)
                         .min(max_offset);
-
                     Some(TuiMessage::Redraw)
                 }
                 tuirealm::event::MouseEventKind::ScrollUp => {
-                    // Scroll up (decrease offset)
-                    let scroll_speed = 3; // Lines to scroll per event
+                    let scroll_speed = 3;
                     self.component.scroll_offset =
                         self.component.scroll_offset.saturating_sub(scroll_speed);
-
                     Some(TuiMessage::Redraw)
                 }
                 _ => None,

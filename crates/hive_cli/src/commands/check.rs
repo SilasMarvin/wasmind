@@ -52,7 +52,7 @@ pub async fn show_status(config_path: Option<PathBuf>) -> TuiResult<()> {
         Ok(actors) => actors,
         Err(e) => {
             println!("{} Dependency resolution failed:", icons::FAILED_ICON);
-            println!("  {}", e);
+            println!("  {e}");
             return Ok(());
         }
     };
@@ -160,7 +160,7 @@ fn format_toml_table_proper(table: &toml::Table, section_prefix: String, _depth:
     for (key, value) in table.iter() {
         if !matches!(value, toml::Value::Table(_)) {
             let formatted_value = format_toml_value_for_display(value);
-            result.push(format!("{} = {}", key, formatted_value));
+            result.push(format!("{key} = {formatted_value}"));
         }
     }
 
@@ -174,11 +174,11 @@ fn format_toml_table_proper(table: &toml::Table, section_prefix: String, _depth:
             let section_name = if section_prefix.is_empty() {
                 key.clone()
             } else {
-                format!("{}.{}", section_prefix, key)
+                format!("{section_prefix}.{key}")
             };
 
             // Add section header
-            result.push(format!("[{}]", section_name));
+            result.push(format!("[{section_name}]"));
 
             // Recursively format nested table
             let nested_content = format_toml_table_proper(nested_table, section_name, 0);
@@ -195,7 +195,7 @@ fn format_toml_value_for_display(value: &toml::Value) -> String {
     match value {
         toml::Value::String(s) => {
             let truncated = truncate_string(s, 100); // Longer limit for analysis tool
-            format!("\"{}\"", truncated)
+            format!("\"{truncated}\"")
         }
         toml::Value::Integer(i) => i.to_string(),
         toml::Value::Float(f) => f.to_string(),
@@ -340,14 +340,14 @@ fn display_actor_info(actor: &ResolvedActor, analysis: &StartupAnalysis) {
             }
         }
     };
-    println!("   Source: {}", source_str);
+    println!("   Source: {source_str}");
 
     if let Some(config) = &actor.config {
         let config_display = format_config_compact(config);
         println!("   Effective config:");
         println!("   ┌─────────────────────────────");
         for line in config_display.lines() {
-            println!("   │ {}", line);
+            println!("   │ {line}");
         }
         println!("   └─────────────────────────────");
     } else {

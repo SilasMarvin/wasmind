@@ -14,7 +14,7 @@ impl agent::Host for ActorState {
             .await
         {
             Ok(scope) => Ok(scope.to_string()),
-            Err(e) => Err(format!("Failed to spawn agent: {}", e)),
+            Err(e) => Err(format!("Failed to spawn agent: {e}")),
         }
     }
 

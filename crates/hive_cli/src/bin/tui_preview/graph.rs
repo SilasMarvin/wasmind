@@ -77,7 +77,7 @@ pub async fn run() -> TuiResult<()> {
     );
 
     coordinator
-        .start_hive(&vec![], "Root Agent".to_string())
+        .start_hive(&[], "Root Agent".to_string())
         .await?;
 
     tui.run();
@@ -94,7 +94,7 @@ pub async fn run() -> TuiResult<()> {
         "\n\n[MARKER-1] Your responses should be thorough, well-structured, and demonstrate deep understanding of the topics discussed. ".repeat(3),
         "[MARKER-2] When providing code examples, include detailed explanations and consider edge cases. ".repeat(4),
         "\n\n[MARKER-3] For complex problems, break them down into manageable steps and provide clear reasoning for your approach. ".repeat(3),
-        "[MARKER-4] This is a very long system message designed to test the scrolling performance of the new efficient chat history implementation. ".repeat(1),
+        "[MARKER-4] This is a very long system message designed to test the scrolling performance of the new efficient chat history implementation. ",
         "\n\n[MARKER-5] Additional context about your capabilities and how you should respond to queries goes here. ".repeat(4),
         "[MARKER-6] Remember to always be helpful, harmless, and honest in your responses. [END-MARKER]".repeat(6)
     );
@@ -117,7 +117,7 @@ pub async fn run() -> TuiResult<()> {
         "\n\n## 5. Monitoring and Observability\n\nUse distributed tracing with tools like Jaeger or Zipkin. Implement structured logging with correlation IDs. ".repeat(8),
         "\n\nThis is a comprehensive response that demonstrates how assistant messages with technical content, code examples, and detailed explanations would appear in the chat interface during scrolling. ".repeat(2),
         "\n\n## 6. Best Practices Summary\n\n* Always implement timeouts\n* Use circuit breakers for external calls\n* Implement proper retry logic with backoff\n* Use distributed tracing\n* Log all important events\n".repeat(7),
-        "\n\nI hope this helps with your distributed systems architecture! Let me know if you need more specific examples or have questions about any of these patterns. ".repeat(1)
+        "\n\nI hope this helps with your distributed systems architecture! Let me know if you need more specific examples or have questions about any of these patterns. "
     );
     let chat_state = ChatState {
         system: SystemChatMessage {

@@ -1,11 +1,11 @@
-use tokio::sync::broadcast;
-
-mod manager;
-
 use hive_actor_loader::LoadedActor;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::broadcast;
+
+mod manager;
+
 // Re-exports for convenience
 pub use manager::exports::hive::actor::actor::MessageEnvelope;
 

@@ -44,7 +44,7 @@ async fn test_actor_overrides_config_only() {
     let resolver = DependencyResolver::default();
     let result = resolver.resolve_all(actors, actor_overrides).await;
 
-    assert!(result.is_ok(), "Resolution should succeed: {:?}", result);
+    assert!(result.is_ok(), "Resolution should succeed: {result:?}");
     let resolved = result.unwrap();
 
     // Should have coordinator + logger dependency
@@ -66,7 +66,7 @@ async fn test_actor_overrides_config_only() {
     );
 
     // Other properties should remain from manifest/defaults
-    assert_eq!(logger.auto_spawn, true); // From manifest default
+    assert!(logger.auto_spawn); // From manifest default
     assert_eq!(logger.actor_id, "test:logger"); // From manifest
 }
 
@@ -140,7 +140,7 @@ async fn test_actor_overrides_for_existing_dependency() {
     );
 
     // auto_spawn should be from actor_override (false instead of manifest default true)
-    assert_eq!(logger.auto_spawn, false);
+    assert!(!logger.auto_spawn);
 
     // actor_id should be from the dependency source
     assert_eq!(logger.actor_id, "test:logger");
@@ -212,7 +212,7 @@ async fn test_actor_overrides_all_fields() {
     );
 
     // auto_spawn should be overridden to false
-    assert_eq!(logger.auto_spawn, false);
+    assert!(!logger.auto_spawn);
 
     // required_spawn_with should be overridden
     assert_eq!(logger.required_spawn_with, vec!["coordinator_instance"]);
@@ -277,7 +277,7 @@ async fn test_actor_overrides_partial_fields() {
     );
 
     // auto_spawn should be overridden to false (manifest default is true)
-    assert_eq!(logger.auto_spawn, false);
+    assert!(!logger.auto_spawn);
 
     // actor_id should be from original source
     assert_eq!(logger.actor_id, "test:logger");
@@ -368,7 +368,7 @@ async fn test_user_defined_actor_separate_from_dependencies() {
             .unwrap(),
         "override_value"
     );
-    assert_eq!(logger.auto_spawn, false);
+    assert!(!logger.auto_spawn);
     assert_eq!(logger.actor_id, "test:logger");
 
     // Custom service should use user definition
@@ -377,7 +377,7 @@ async fn test_user_defined_actor_separate_from_dependencies() {
         custom_config.get("custom").unwrap().as_str().unwrap(),
         "service"
     );
-    assert_eq!(custom_service.auto_spawn, true);
+    assert!(custom_service.auto_spawn);
     assert_eq!(custom_service.actor_id, "test:simple-actor");
 }
 

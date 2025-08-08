@@ -700,9 +700,8 @@ mod tests {
         );
 
         // Check that require_tool_call was preserved
-        assert_eq!(
-            merged.get("require_tool_call").unwrap().as_bool().unwrap(),
-            true
+        assert!(
+            merged.get("require_tool_call").unwrap().as_bool().unwrap()
         );
 
         // Check that system_prompt.defaults was preserved
@@ -867,9 +866,8 @@ required_spawn_with = []
         );
 
         // Check that require_tool_call was preserved from dependency config
-        assert_eq!(
-            config.get("require_tool_call").unwrap().as_bool().unwrap(),
-            true
+        assert!(
+            config.get("require_tool_call").unwrap().as_bool().unwrap()
         );
 
         // Check that system_prompt.defaults were preserved

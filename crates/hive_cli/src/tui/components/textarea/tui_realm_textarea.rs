@@ -351,17 +351,15 @@ impl<'a> TextArea<'a> {
                         .borders(borders.sides),
                 );
             }
-        } else {
-            if let Some(AttrValue::Borders(borders)) =
-                self.query(Attribute::Custom(INACTIVE_BORDERS))
-            {
-                return Some(
-                    block
-                        .border_style(borders.style())
-                        .border_type(borders.modifiers)
-                        .borders(borders.sides),
-                );
-            }
+        } else if let Some(AttrValue::Borders(borders)) =
+            self.query(Attribute::Custom(INACTIVE_BORDERS))
+        {
+            return Some(
+                block
+                    .border_style(borders.style())
+                    .border_type(borders.modifiers)
+                    .borders(borders.sides),
+            );
         }
 
         None

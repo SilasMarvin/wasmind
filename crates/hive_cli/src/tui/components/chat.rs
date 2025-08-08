@@ -82,7 +82,7 @@ impl MockComponent for ChatArea {
                 .constraints(
                     [
                         Constraint::Percentage(100),
-                        Constraint::Min(1),
+                        Constraint::Min(2),
                         Constraint::Min(textarea_height as u16),
                     ]
                     .as_ref(),

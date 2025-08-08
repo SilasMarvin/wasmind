@@ -41,7 +41,7 @@ pub fn generate_actor_trait(_input: TokenStream) -> TokenStream {
 pub fn actor_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
-    let actor_name = syn::Ident::new(&format!("{}Actor", name), name.span());
+    let actor_name = syn::Ident::new(&format!("{name}Actor"), name.span());
 
     let expanded = quote! {
         const _: () = {
@@ -104,7 +104,7 @@ struct ToolAttributes {
 pub fn tool_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
-    let actor_name = syn::Ident::new(&format!("{}Actor", name), name.span());
+    let actor_name = syn::Ident::new(&format!("{name}Actor"), name.span());
 
     // Parse attributes
     let attrs = parse_tool_attributes(&input);
@@ -114,7 +114,7 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
 
     if let Err(e) = serde_json::from_str::<serde_json::Value>(&attrs.schema) {
         return TokenStream::from(
-            syn::Error::new_spanned(&input, format!("Invalid JSON schema: {}", e))
+            syn::Error::new_spanned(&input, format!("Invalid JSON schema: {e}"))
                 .to_compile_error(),
         );
     }

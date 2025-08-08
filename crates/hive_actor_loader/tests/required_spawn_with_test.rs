@@ -28,7 +28,7 @@ async fn test_required_spawn_with_basic_functionality() {
     let resolver = DependencyResolver::default();
     let result = resolver.resolve_all(actors, vec![]).await;
 
-    assert!(result.is_ok(), "Resolution should succeed: {:?}", result);
+    assert!(result.is_ok(), "Resolution should succeed: {result:?}");
     let resolved = result.unwrap();
 
     // Should have coordinator + logger dependency
@@ -292,8 +292,7 @@ auto_spawn = false
 
     assert!(
         result.is_ok(),
-        "Failed to resolve actor with manifest required_spawn_with: {:?}",
-        result
+        "Failed to resolve actor with manifest required_spawn_with: {result:?}"
     );
     let resolved = result.unwrap();
 

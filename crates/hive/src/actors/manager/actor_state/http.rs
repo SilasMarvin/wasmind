@@ -26,7 +26,7 @@ impl Clone for HttpRequestResource {
         Self {
             client: self.client.clone(),
             builder: self.builder.try_clone().unwrap(),
-            timeout_seconds: self.timeout_seconds.clone(),
+            timeout_seconds: self.timeout_seconds,
             retry_config: self.retry_config.clone(),
         }
     }
@@ -56,8 +56,8 @@ impl http::HostRequest for ActorState {
             retry_config: None,
         };
 
-        let resource = self.table.push(request_resource).unwrap();
-        resource
+        
+        self.table.push(request_resource).unwrap()
     }
 
     async fn header(

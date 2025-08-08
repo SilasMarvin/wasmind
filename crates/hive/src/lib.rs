@@ -12,18 +12,6 @@ use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
-    Config {
-        #[snafu(source)]
-        source: hive_config::Error,
-    },
-
-    #[snafu(transparent)]
-    ActorLoader {
-        #[snafu(source)]
-        source: hive_actor_loader::Error,
-    },
-
     #[snafu(display("Serialization error: {message}"))]
     Serialization {
         message: String,

@@ -84,7 +84,7 @@ impl HiveContext {
                 if actor.auto_spawn()
                     || actor_names
                         .iter()
-                        .any(|s| &s.as_ref() == &logical_name.as_str())
+                        .any(|s| s.as_ref() == logical_name.as_str())
                 {
                     let mut actors_to_spawn = actor.required_spawn_with();
                     actors_to_spawn.push(logical_name.as_str());

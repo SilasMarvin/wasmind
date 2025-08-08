@@ -13,7 +13,7 @@ pub async fn run() -> TuiResult<()> {
     let tui = tui::Tui::new(tui_config, coordinator.get_sender(), None, context.clone());
 
     coordinator
-        .start_hive(&vec![], "Root Agent".to_string())
+        .start_hive(&[], "Root Agent".to_string())
         .await?;
 
     tui.run();

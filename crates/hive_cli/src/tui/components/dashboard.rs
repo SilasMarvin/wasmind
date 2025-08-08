@@ -15,7 +15,7 @@ use super::splash::SplashComponent;
 
 pub const DASHBOARD_SCOPE: &str = "DASHBD";
 
-pub const SCOPE_ATTR: &'static str = "SCOPE_ATTR";
+pub const SCOPE_ATTR: &str = "SCOPE_ATTR";
 
 /// Actions the user can bind keys to
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -119,7 +119,7 @@ impl Component<TuiMessage, MessageEnvelope> for DashboardComponent {
 
         // Handle keyboard events
         if let Event::Keyboard(key_event) = &ev {
-            if let Some(action) = self.config.dashboard.key_bindings.get(&key_event) {
+            if let Some(action) = self.config.dashboard.key_bindings.get(key_event) {
                 match action {
                     DashboardUserAction::Exit => {
                         return Some(TuiMessage::Exit);
@@ -131,7 +131,7 @@ impl Component<TuiMessage, MessageEnvelope> for DashboardComponent {
         // Handle MessageEnvelope events
         if let Event::User(envelope) = &ev {
             // Check for AgentSpawned messages
-            if let Some(_) = parse_common_message_as::<AddMessage>(envelope) {
+            if parse_common_message_as::<AddMessage>(envelope).is_some() {
                 // Hide splash screen when we get a starting message
                 self.component.show_splash = false;
 

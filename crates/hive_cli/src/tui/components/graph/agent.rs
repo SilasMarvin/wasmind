@@ -168,7 +168,7 @@ impl Agent {
             if !trim_top
                 && let Some(loc) = maybe_loc
                 && let Some(status) = &self.status
-                && let Some(throbber_set) = get_throbber_for_agent_status(&status)
+                && let Some(throbber_set) = get_throbber_for_agent_status(status)
             {
                 let throbber = Throbber::default().throbber_set(throbber_set);
                 self.throbber_state.calc_next();

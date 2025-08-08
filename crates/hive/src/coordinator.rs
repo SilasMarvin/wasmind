@@ -111,7 +111,7 @@ impl HiveCoordinator {
         // Track this actor as ready
         self.ready_actors
             .entry(scope.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(msg.from_actor_id.clone());
 
         // Check if all actors for this scope are ready

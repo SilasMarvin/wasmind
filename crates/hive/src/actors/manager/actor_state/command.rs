@@ -28,8 +28,8 @@ impl command::HostCmd for ActorState {
                 timeout_seconds: None,
             })),
         };
-        let resource = self.table.push(command_resource).unwrap();
-        resource
+        
+        self.table.push(command_resource).unwrap()
     }
 
     async fn env(

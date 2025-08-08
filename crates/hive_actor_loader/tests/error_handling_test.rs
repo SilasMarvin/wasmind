@@ -202,8 +202,7 @@ auto_spawn = true
 
     assert!(
         result.is_ok(),
-        "Failed to resolve package actor: {:?}",
-        result
+        "Failed to resolve package actor: {result:?}"
     );
     let resolved = result.unwrap();
 

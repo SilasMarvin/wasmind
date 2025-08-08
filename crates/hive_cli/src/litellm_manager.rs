@@ -366,7 +366,7 @@ impl LiteLLMManager {
 
         // Add environment variables
         for (key, value) in env_vars {
-            cmd.arg("-e").arg(format!("{}={}", key, value));
+            cmd.arg("-e").arg(format!("{key}={value}"));
         }
 
         // Use the provided config content
@@ -392,7 +392,7 @@ impl LiteLLMManager {
 
         if !output.status.success() {
             return Err(LiteLLMError::ContainerStartFailed {
-                message: format!("Docker run failed: {}", stderr),
+                message: format!("Docker run failed: {stderr}"),
                 location: location!(),
             });
         }
@@ -406,7 +406,7 @@ impl LiteLLMManager {
     pub async fn wait_for_health(&self) -> Result<(), LiteLLMError> {
         let base_url = self.config.get_base_url();
         let client = reqwest::Client::new();
-        let health_url = format!("{}/health", base_url);
+        let health_url = format!("{base_url}/health");
         let max_attempts = 30;
         let delay = Duration::from_secs(1);
 

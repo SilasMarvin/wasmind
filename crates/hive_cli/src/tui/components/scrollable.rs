@@ -1,6 +1,5 @@
 use hive::actors::MessageEnvelope;
 use ratatui::buffer::Buffer;
-use std::u16;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},

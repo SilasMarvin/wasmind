@@ -60,9 +60,10 @@ impl TryFrom<&str> for GraphUserAction {
     }
 }
 
+#[allow(clippy::vec_box)]
 struct AgentNode {
     component: AgentComponent,
-    spawned_agents: Vec<Box<AgentNode>>,
+    spawned_agents: Vec<AgentNode>,
 }
 
 impl AgentNode {
@@ -175,7 +176,7 @@ impl AgentNode {
     fn increment_metrics(&mut self, scope: &Scope, metrics: AgentMetrics) -> bool {
         if self.scope() == scope {
             self.component.increment_metrics(metrics);
-            return true;
+            true
         } else {
             self.spawned_agents
                 .iter_mut()
@@ -184,10 +185,10 @@ impl AgentNode {
     }
 
     fn count(&self) -> u32 {
-        return 1 + self
+        1 + self
             .spawned_agents
             .iter()
-            .fold(0, |acc, spa| acc + spa.count());
+            .fold(0, |acc, spa| acc + spa.count())
     }
 
     fn scope(&self) -> &Scope {
@@ -197,7 +198,7 @@ impl AgentNode {
     fn set_status(&mut self, scope: &Scope, status: &AgentStatus) -> bool {
         if self.scope() == scope {
             self.component.set_status(status.clone());
-            return true;
+            true
         } else {
             self.spawned_agents
                 .iter_mut()
@@ -205,9 +206,10 @@ impl AgentNode {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     fn insert(&mut self, parent_scope: &Scope, node: AgentNode) -> Result<(), AgentNode> {
         if self.scope() == parent_scope {
-            self.spawned_agents.push(Box::new(node));
+            self.spawned_agents.push(node);
             return Ok(());
         }
 
@@ -482,7 +484,7 @@ fn render_tree_node(
         let parent_end_viewport =
             node_start as i32 - viewport_start as i32 + agent::WIDGET_HEIGHT as i32;
         let parent_end_viewport = if parent_end_viewport < 0 {
-            0 + area.y
+            area.y
         } else {
             parent_end_viewport as u16 + area.y
         };
@@ -524,18 +526,19 @@ fn render_tree_node(
                 }
 
                 // Draw the elbow (└── or ├──) only if it's actually in the viewport
-                if child_elbow_y_absolute >= viewport_start && child_elbow_y_absolute < viewport_end
+                if child_elbow_y_absolute >= viewport_start
+                    && child_elbow_y_absolute < viewport_end
+                    && child_elbow_y >= area.y
+                    && child_elbow_y < area.y + area.height
                 {
-                    if child_elbow_y >= area.y && child_elbow_y < area.y + area.height {
-                        let branch = if is_last_child {
-                            "└── "
-                        } else {
-                            "├── "
-                        };
-                        let branch_widget = Paragraph::new(Span::raw(branch));
-                        let branch_area = Rect::new(line_x, child_elbow_y, 4, 1);
-                        frame.render_widget(branch_widget, branch_area);
-                    }
+                    let branch = if is_last_child {
+                        "└── "
+                    } else {
+                        "├── "
+                    };
+                    let branch_widget = Paragraph::new(Span::raw(branch));
+                    let branch_area = Rect::new(line_x, child_elbow_y, 4, 1);
+                    frame.render_widget(branch_widget, branch_area);
                 }
             }
 
@@ -649,7 +652,7 @@ impl MockComponent for GraphArea {
 
 impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
     fn on(&mut self, ev: Event<MessageEnvelope>) -> Option<TuiMessage> {
-        let msg = match ev {
+        match ev {
             Event::Keyboard(key_event) => {
                 if let Some(action) = self.config.graph.key_bindings.get(&key_event) {
                     let scope = match action {
@@ -657,14 +660,12 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                             .component
                             .root_node
                             .as_mut()
-                            .map(|root| root.select_next())
-                            .flatten(),
+                            .and_then(|root| root.select_next()),
                         GraphUserAction::SelectUp => self
                             .component
                             .root_node
                             .as_mut()
-                            .map(|root| root.select_previous())
-                            .flatten(),
+                            .and_then(|root| root.select_previous()),
                     };
 
                     if scope.is_some() {
@@ -672,10 +673,8 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                         self.component.center_on_selected();
                     }
 
-                    scope.and_then(|scope| {
-                        Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
-                            scope.to_string(),
-                        )))
+                    scope.map(|scope| {
+                        TuiMessage::Graph(GraphTuiMessage::SelectedAgent(scope.to_string()))
                     })
                 } else {
                     None
@@ -683,7 +682,7 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
             }
             Event::User(envelope) => {
                 // Handle AssistantRequest messages
-                if let Some(_) = parse_common_message_as::<AssistantRequest>(&envelope) {
+                if parse_common_message_as::<AssistantRequest>(&envelope).is_some() {
                     if let Some(root) = &mut self.component.root_node {
                         let metrics = AgentMetrics::with_completion_request();
                         self.component.stats.aggregated_agent_metrics += metrics;
@@ -697,7 +696,7 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                     }
                 }
                 // Handle AssistantToolCall messages
-                else if let Some(_) = parse_common_message_as::<ExecuteTool>(&envelope) {
+                else if parse_common_message_as::<ExecuteTool>(&envelope).is_some() {
                     if let Some(root) = &mut self.component.root_node {
                         let metrics = AgentMetrics::with_tool_call();
                         self.component.stats.aggregated_agent_metrics += metrics;
@@ -758,7 +757,7 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                                 None
                             }
                         } else {
-                            root.set_status(&agent_scope, &agent_status_update.status);
+                            root.set_status(agent_scope, &agent_status_update.status);
                             None
                         }
                     } else {
@@ -788,8 +787,6 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                 }
             }
             _ => None,
-        };
-
-        msg
+        }
     }
 }

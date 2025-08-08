@@ -61,8 +61,7 @@ source = { path = "../actor_a" }
 
     assert!(
         is_circular_dep || is_conflicting_sources,
-        "Expected circular dependency or conflicting sources error, got: {}",
-        error_msg
+        "Expected circular dependency or conflicting sources error, got: {error_msg}"
     );
 
     // Should contain actor information in the path or context
@@ -70,8 +69,7 @@ source = { path = "../actor_a" }
         error_msg.contains("dep_a")
             || error_msg.contains("dep_b")
             || error_msg.contains("main_actor"),
-        "Expected actor names in error message, got: {}",
-        error_msg
+        "Expected actor names in error message, got: {error_msg}"
     );
 }
 
@@ -143,14 +141,12 @@ source = { path = "../actor_a" }
 
     assert!(
         is_circular_dep || is_conflicting_sources,
-        "Expected circular dependency or conflicting sources error, got: {}",
-        error_msg
+        "Expected circular dependency or conflicting sources error, got: {error_msg}"
     );
 
     // Should contain dependency information showing the complex relationship
     assert!(
         error_msg.contains("dep_a") || error_msg.contains("dep_b") || error_msg.contains("dep_c"),
-        "Expected dependency names in error message for deep cycle, got: {}",
-        error_msg
+        "Expected dependency names in error message for deep cycle, got: {error_msg}"
     );
 }

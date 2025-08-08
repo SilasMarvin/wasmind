@@ -17,14 +17,14 @@ pub enum Error {
 
     #[snafu(transparent)]
     Config {
-        #[snafu(source)]
-        source: hive::hive_config::Error,
+        #[snafu(source(from(hive::hive_config::Error, Box::new)))]
+        source: Box<hive::hive_config::Error>,
     },
 
     #[snafu(transparent)]
     ActorLoader {
-        #[snafu(source)]
-        source: hive::hive_actor_loader::Error,
+        #[snafu(source(from(hive::hive_actor_loader::Error, Box::new)))]
+        source: Box<hive::hive_actor_loader::Error>,
     },
 
     #[snafu(transparent)]

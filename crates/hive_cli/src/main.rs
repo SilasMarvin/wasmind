@@ -12,6 +12,7 @@ use hive_cli::{Error, TuiResult, config, init_logger_with_path, litellm_manager,
 mod cli;
 
 #[tokio::main]
+#[snafu::report]
 async fn main() -> TuiResult<()> {
     let cli = cli::Cli::parse();
 
@@ -27,21 +28,21 @@ async fn main() -> TuiResult<()> {
     match &cli.command {
         Some(cli::Commands::Info) => {
             if let Err(e) = hive_cli::commands::info::show_info() {
-                eprintln!("Error: {}", e);
+                eprintln!("Error: {e}");
                 std::process::exit(1);
             }
             return Ok(());
         }
         Some(cli::Commands::Clean) => {
             if let Err(e) = hive_cli::commands::clean::clean_cache() {
-                eprintln!("Error: {}", e);
+                eprintln!("Error: {e}");
                 std::process::exit(1);
             }
             return Ok(());
         }
         Some(cli::Commands::Check) => {
             if let Err(e) = hive_cli::commands::check::show_status(cli.config.clone()).await {
-                eprintln!("Error: {}", e);
+                eprintln!("Error: {e}");
                 std::process::exit(1);
             }
             return Ok(());
@@ -87,12 +88,11 @@ async fn main() -> TuiResult<()> {
         tracing::info!("Available models: {:?}", litellm_config.list_model_names());
 
         // Error if no starting actors are configured
-        if config.starting_actors.is_empty() {
-            if !config.actors.iter().any(|actor| actor.auto_spawn) {
-                whatever!(
-                    "No starting actors and no auto spawning actors configured - at least one starting actor or auto spawning actor is required"
-                );
-            }
+        if config.starting_actors.is_empty() && !config.actors.iter().any(|actor| actor.auto_spawn)
+        {
+            whatever!(
+                "No starting actors and no auto spawning actors configured - at least one starting actor or auto spawning actor is required"
+            );
         }
 
         // Load terminal interface configuration

@@ -776,8 +776,7 @@ mod tests {
         let wasm_path = result.unwrap();
         assert!(
             wasm_path.exists(),
-            "Built wasm file should exist at {:?}",
-            wasm_path
+            "Built wasm file should exist at {wasm_path:?}"
         );
         assert_eq!(wasm_path.extension().unwrap(), "wasm");
     }
@@ -805,7 +804,7 @@ mod tests {
                 assert_eq!(actor_name, "buildable_fail");
                 assert!(!stderr.is_empty(), "Should have build error output");
             }
-            other => panic!("Expected CommandFailed error, got: {:?}", other),
+            other => panic!("Expected CommandFailed error, got: {other:?}"),
         }
     }
 

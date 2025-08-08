@@ -94,7 +94,7 @@ async fn test_dependency_resolution() {
     let logger = &resolved["logger"];
     assert_eq!(logger.actor_id, "test:logger");
     assert!(logger.is_dependency);
-    assert_eq!(logger.auto_spawn, true);
+    assert!(logger.auto_spawn);
 }
 
 #[tokio::test]
@@ -223,5 +223,5 @@ async fn test_global_source_and_auto_spawn_overrides() {
     }
 
     // auto_spawn should be globally overridden to false
-    assert_eq!(logger.auto_spawn, false);
+    assert!(!logger.auto_spawn);
 }
