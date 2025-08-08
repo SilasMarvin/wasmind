@@ -1,23 +1,23 @@
-use std::collections::HashMap;
-
-use crate::tui::utils::{center_horizontal, create_block_with_title};
-use crate::tui::{icons, model::TuiMessage};
 use hive::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
-use hive_actor_utils_common_messages::{
+use hive_actor_utils::common_messages::{
     actors::AgentSpawned,
     assistant::{AddMessage, ChatState, ChatStateUpdated, Request as AssistantRequest},
     tools::{ToolCallStatus, ToolCallStatusUpdate},
 };
-use hive_llm_types::{AssistantChatMessage, ChatMessage, ToolCall};
+use hive_actor_utils::llm_client_types::{AssistantChatMessage, ChatMessage, ToolCall};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Alignment;
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, WidgetRef, Wrap};
+use std::collections::HashMap;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
+
+use crate::tui::utils::{center_horizontal, create_block_with_title};
+use crate::tui::{icons, model::TuiMessage};
 
 use super::dashboard::SCOPE_ATTR;
 

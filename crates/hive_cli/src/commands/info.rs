@@ -1,14 +1,14 @@
-use crate::{utils, TuiResult};
+use crate::{TuiResult, utils};
 
 pub fn show_info() -> TuiResult<()> {
     println!("Hive Configuration and Cache Information");
     println!("======================================");
 
     // Show config directory
-    let config_dir = hive_config::get_config_dir()?;
+    let config_dir = hive::hive_config::get_config_dir()?;
     println!("Config directory: {}", config_dir.display());
 
-    let config_file = hive_config::get_config_file_path()?;
+    let config_file = hive::hive_config::get_config_file_path()?;
     if config_file.exists() {
         println!("Config file: {} (exists)", config_file.display());
     } else {
@@ -16,10 +16,10 @@ pub fn show_info() -> TuiResult<()> {
     }
 
     // Show cache directory
-    let cache_dir = hive_config::get_cache_dir()?;
+    let cache_dir = hive::hive_config::get_cache_dir()?;
     println!("\nCache directory: {}", cache_dir.display());
 
-    let actors_cache_dir = hive_config::get_actors_cache_dir()?;
+    let actors_cache_dir = hive::hive_config::get_actors_cache_dir()?;
     let cached_count = utils::count_cached_actors(&actors_cache_dir)?;
 
     if cached_count > 0 {
@@ -34,7 +34,7 @@ pub fn show_info() -> TuiResult<()> {
 
     // Show log file location
     println!();
-    let log_file = hive_config::get_log_file_path()?;
+    let log_file = hive::hive_config::get_log_file_path()?;
     if log_file.exists() {
         println!("Log file: {} (exists)", log_file.display());
         if let Ok(metadata) = std::fs::metadata(&log_file) {

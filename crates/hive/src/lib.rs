@@ -4,7 +4,9 @@ pub mod coordinator;
 pub mod scope;
 pub mod utils;
 
-use hive_actor_loader::{ActorLoader, LoadedActor};
+// Re-export the config and loader crates for convenience
+pub use hive_actor_loader;
+pub use hive_config;
 
 use snafu::Snafu;
 
@@ -40,11 +42,3 @@ pub enum Error {
 }
 
 pub type HiveResult<T> = Result<T, Error>;
-
-pub async fn load_actors(
-    actors: Vec<hive_config::Actor>,
-    actor_overrides: Vec<hive_config::ActorOverride>,
-) -> HiveResult<Vec<LoadedActor>> {
-    let actor_loader = ActorLoader::new(None)?;
-    Ok(actor_loader.load_actors(actors, actor_overrides).await?)
-}

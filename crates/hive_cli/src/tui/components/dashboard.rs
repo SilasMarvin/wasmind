@@ -1,7 +1,7 @@
 use crate::config::ParsedTuiConfig;
 use crate::tui::model::TuiMessage;
 use hive::{actors::MessageEnvelope, utils::parse_common_message_as};
-use hive_actor_utils_common_messages::assistant::AddMessage;
+use hive_actor_utils::common_messages::assistant::AddMessage;
 use ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,

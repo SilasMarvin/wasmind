@@ -3,9 +3,9 @@ use hive::coordinator::HiveCoordinator;
 use snafu::whatever;
 use std::sync::Arc;
 
-use hive_actor_utils_common_messages::assistant::AddMessage;
-use hive_actor_utils_common_messages::litellm::BaseUrlUpdate;
-use hive_llm_types::ChatMessage;
+use hive_actor_utils::common_messages::assistant::AddMessage;
+use hive_actor_utils::common_messages::litellm::BaseUrlUpdate;
+use hive_actor_utils::llm_client_types::ChatMessage;
 
 use hive_cli::{Error, TuiResult, config, init_logger_with_path, litellm_manager, tui};
 
@@ -19,7 +19,7 @@ async fn main() -> TuiResult<()> {
     let log_file = if let Some(path) = &cli.log_file {
         path.clone()
     } else {
-        hive_config::get_log_file_path()?
+        hive::hive_config::get_log_file_path()?
     };
     init_logger_with_path(log_file);
 
@@ -53,9 +53,9 @@ async fn main() -> TuiResult<()> {
 
     // Load configuration
     let config = if let Some(config_path) = cli.config {
-        hive_config::load_from_path(config_path)?
+        hive::hive_config::load_from_path(config_path)?
     } else {
-        hive_config::load_default_config()?
+        hive::hive_config::load_default_config()?
     };
 
     // Parse LiteLLM configuration
@@ -99,7 +99,10 @@ async fn main() -> TuiResult<()> {
         let tui_config = crate::config::TuiConfig::from_config(&config)?.parse()?;
 
         // Load the actors
-        let loaded_actors = hive::load_actors(config.actors, config.actor_overrides).await?;
+        let actor_loader = hive::hive_actor_loader::ActorLoader::new(None)?;
+        let loaded_actors = actor_loader
+            .load_actors(config.actors, config.actor_overrides)
+            .await?;
 
         // Create the context
         let context = Arc::new(hive::context::HiveContext::new(loaded_actors));

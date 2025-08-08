@@ -1,7 +1,7 @@
-use crate::{utils, TuiResult};
+use crate::{TuiResult, utils};
 
 pub fn clean_cache() -> TuiResult<()> {
-    let actors_cache_dir = hive_config::get_actors_cache_dir()?;
+    let actors_cache_dir = hive::hive_config::get_actors_cache_dir()?;
 
     if !actors_cache_dir.exists() {
         println!("No actor cache found at {}", actors_cache_dir.display());

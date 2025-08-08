@@ -18,7 +18,13 @@ pub enum Error {
     #[snafu(transparent)]
     Config {
         #[snafu(source)]
-        source: hive_config::Error,
+        source: hive::hive_config::Error,
+    },
+
+    #[snafu(transparent)]
+    ActorLoader {
+        #[snafu(source)]
+        source: hive::hive_actor_loader::Error,
     },
 
     #[snafu(transparent)]

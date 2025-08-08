@@ -10,17 +10,17 @@ license.workspace = true
 
 default-run = "hive_cli"
 
+[features]
+default = ["clipboard"]
+clipboard = ["dep:cli-clipboard"]
+
 [dependencies]
 snafu = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 hive = { path = "../hive" }
-hive_config = { path = "../hive_config" }
 hive_actor_utils = { path = "../hive_actor_utils" }
-hive_actor_utils_common_messages = { path = "../hive_actor_utils_common_messages" }
-hive_llm_types = { path = "../hive_llm_types" }
-hive_actor_loader = { path = "../hive_actor_loader" }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 
@@ -48,3 +48,4 @@ tuirealm = { version = "3", default-features = false, features = [ "derive", "cr
 serde_yaml = { workspace = true }
 tempfile = "3"
 tui-textarea = "^0.7"
+cli-clipboard = { version = "0.4", optional = true }

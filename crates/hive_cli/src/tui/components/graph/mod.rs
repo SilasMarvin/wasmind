@@ -1,10 +1,5 @@
-use crate::{
-    config::ParsedTuiConfig,
-    tui::{model::TuiMessage, utils::create_block_with_title},
-};
-use agent::{AgentComponent, AgentMetrics};
 use hive::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
-use hive_actor_utils_common_messages::{
+use hive_actor_utils::common_messages::{
     actors::{AgentSpawned, Exit},
     assistant::{self, Request as AssistantRequest, Status as AgentStatus, StatusUpdate},
     tools::ExecuteTool,
@@ -21,7 +16,14 @@ use tuirealm::{
     ratatui::layout::Rect,
 };
 
+use crate::{
+    config::ParsedTuiConfig,
+    tui::{model::TuiMessage, utils::create_block_with_title},
+};
+
 mod agent;
+
+use agent::{AgentComponent, AgentMetrics};
 
 const LINE_INDENT: u16 = 5;
 

@@ -8,6 +8,8 @@ use tui_realm_textarea::{
     TEXTAREA_CMD_MOVE_WORD_FORWARD, TEXTAREA_CMD_NEWLINE, TEXTAREA_CMD_REDO, TEXTAREA_CMD_UNDO,
     TEXTAREA_CURSOR_LINE_STYLE, TITLE_STYLE, TextArea,
 };
+#[cfg(feature = "clipboard")]
+use tui_realm_textarea::TEXTAREA_CMD_PASTE;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, MockComponent,
     command::{Cmd, Direction, Position},
@@ -194,7 +196,7 @@ impl Component<TuiMessage, MessageEnvelope> for LLMTextAreaComponent {
                         modifiers: KeyModifiers::CONTROL,
                     } => {
                         self.perform(Cmd::Custom(TEXTAREA_CMD_PASTE));
-                        Some(Msg::None)
+                        Some(TuiMessage::Redraw)
                     }
                     KeyEvent {
                         code: Key::Char('z'),

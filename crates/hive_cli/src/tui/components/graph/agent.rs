@@ -1,6 +1,5 @@
-use crate::tui::{model::TuiMessage, throbber_in_title_ext::ThrobberInTitleExt, utils};
 use hive::{actors::MessageEnvelope, scope::Scope};
-use hive_actor_utils_common_messages::assistant::Status as AgentStatus;
+use hive_actor_utils::common_messages::assistant::Status as AgentStatus;
 use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
@@ -16,6 +15,8 @@ use tuirealm::{
     props::Color,
     ratatui::layout::Rect,
 };
+
+use crate::tui::{model::TuiMessage, throbber_in_title_ext::ThrobberInTitleExt, utils};
 
 pub const WIDGET_WIDTH: u16 = 50;
 pub const WIDGET_HEIGHT: u16 = 6;
@@ -88,12 +89,12 @@ fn format_agent_status(status: &AgentStatus) -> &'static str {
     match status {
         AgentStatus::Processing { .. } => "Processing ⌘",
         AgentStatus::Wait { reason } => match reason {
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForUserInput => "Waiting on user",
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForSystemInput { .. } => "Waiting on system ⌘",
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForAgentCoordination { .. } => "Waiting on coordination ⌘",
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForTools { .. } => "Calling tool ⌘",
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForAllActorsReady => "Waiting on actors ⌘",
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForLiteLLM => "Waiting on LiteLLM ⌘",
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForUserInput => "Waiting on user",
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForSystemInput { .. } => "Waiting on system ⌘",
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForAgentCoordination { .. } => "Waiting on coordination ⌘",
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForTools { .. } => "Calling tool ⌘",
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForAllActorsReady => "Waiting on actors ⌘",
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForLiteLLM => "Waiting on LiteLLM ⌘",
         },
         AgentStatus::Done {..} => "Done",
     }
@@ -103,12 +104,12 @@ fn get_throbber_for_agent_status(status: &AgentStatus) -> Option<throbber::Set> 
     match status {
         AgentStatus::Processing { .. } => Some(BLACK_CIRCLE),
         AgentStatus::Wait { reason } => match reason {
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForUserInput => None,
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForSystemInput { .. } => Some(OGHAM_C),
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForAgentCoordination { .. } => Some(OGHAM_C),
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForTools { .. } => Some(VERTICAL_BLOCK),
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForAllActorsReady => Some(OGHAM_C),
-            hive_actor_utils_common_messages::assistant::WaitReason::WaitingForLiteLLM => Some(OGHAM_C),
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForUserInput => None,
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForSystemInput { .. } => Some(OGHAM_C),
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForAgentCoordination { .. } => Some(OGHAM_C),
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForTools { .. } => Some(VERTICAL_BLOCK),
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForAllActorsReady => Some(OGHAM_C),
+            hive_actor_utils::common_messages::assistant::WaitReason::WaitingForLiteLLM => Some(OGHAM_C),
         },
         AgentStatus::Done {..} => None,
     }

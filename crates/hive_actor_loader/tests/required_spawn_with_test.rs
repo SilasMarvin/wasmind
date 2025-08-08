@@ -7,7 +7,7 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn test_required_spawn_with_basic_functionality() {
     // Test that required_spawn_with from manifest propagates to LoadedActor
-    
+
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![Actor {
@@ -51,7 +51,7 @@ async fn test_required_spawn_with_basic_functionality() {
 #[tokio::test]
 async fn test_required_spawn_with_global_override() {
     // Test user can override required_spawn_with via global config
-    
+
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![

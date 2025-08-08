@@ -8,7 +8,6 @@ async fn test_circular_dependency_detection() {
     // Create a temporary test directory structure with different names to avoid source conflicts
     let temp_dir = TempDir::new().unwrap();
     let test_root = temp_dir.path();
-    
 
     // Create Actor A directory with Hive.toml
     let actor_a_dir = test_root.join("actor_a");
@@ -59,27 +58,28 @@ source = { path = "../actor_a" }
     // Both are valid errors that prevent the cycle from being resolved
     let is_circular_dep = error_msg.contains("Circular dependency detected");
     let is_conflicting_sources = error_msg.contains("Conflicting sources");
-    
+
     assert!(
         is_circular_dep || is_conflicting_sources,
         "Expected circular dependency or conflicting sources error, got: {}",
         error_msg
     );
-    
+
     // Should contain actor information in the path or context
     assert!(
-        error_msg.contains("dep_a") || error_msg.contains("dep_b") || error_msg.contains("main_actor"),
+        error_msg.contains("dep_a")
+            || error_msg.contains("dep_b")
+            || error_msg.contains("main_actor"),
         "Expected actor names in error message, got: {}",
         error_msg
     );
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_deep_circular_dependency() {
     // Test a more complex circular dependency: A -> B -> C -> A with unique logical names
     let temp_dir = TempDir::new().unwrap();
     let test_root = temp_dir.path();
-    
 
     // Create Actor A (depends on B via unique logical name)
     let actor_a_dir = test_root.join("actor_a");
@@ -146,7 +146,7 @@ source = { path = "../actor_a" }
         "Expected circular dependency or conflicting sources error, got: {}",
         error_msg
     );
-    
+
     // Should contain dependency information showing the complex relationship
     assert!(
         error_msg.contains("dep_a") || error_msg.contains("dep_b") || error_msg.contains("dep_c"),

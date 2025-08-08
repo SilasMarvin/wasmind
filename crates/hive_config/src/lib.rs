@@ -53,7 +53,7 @@ pub enum Error {
     },
 
     #[snafu(display("Actor manifest not found: {}", path.display()))]
-    InvalidManifestLocation { 
+    InvalidManifestLocation {
         path: PathBuf,
         #[snafu(implicit)]
         location: Location,
@@ -263,7 +263,8 @@ impl ActorManifest {
         if !manifest_path.exists() {
             return InvalidManifestLocationSnafu {
                 path: manifest_path,
-            }.fail();
+            }
+            .fail();
         }
 
         let content = std::fs::read_to_string(&manifest_path).context(ReadingFileSnafu {

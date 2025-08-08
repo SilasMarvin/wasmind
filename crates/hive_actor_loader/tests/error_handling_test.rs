@@ -17,7 +17,6 @@ async fn test_circular_dependency_error() {
 
 #[tokio::test]
 async fn test_invalid_path_error() {
-    
     let actors = vec![Actor {
         name: "nonexistent_actor".to_string(),
         source: ActorSource::Path(PathSource {
@@ -44,7 +43,6 @@ async fn test_invalid_path_error() {
 
 #[tokio::test]
 async fn test_manifest_load_error() {
-    
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     // Test with a valid path that should load successfully
@@ -71,7 +69,7 @@ async fn test_manifest_load_error() {
 #[tokio::test]
 async fn test_git_source_requires_manifest() {
     // Test that git sources fail when the repository doesn't exist
-    
+
     let actors = vec![Actor {
         name: "git_actor".to_string(),
         source: ActorSource::Git(Repository {
@@ -100,7 +98,6 @@ async fn test_git_source_requires_manifest() {
 
 #[tokio::test]
 async fn test_dependency_resolution_with_path_sources() {
-    
     let test_actors_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_actors");
 
     let actors = vec![
@@ -167,7 +164,6 @@ async fn test_package_manifest_loading() {
     // Create a test workspace structure
     let temp_dir = TempDir::new().unwrap();
     let workspace_path = temp_dir.path();
-    
 
     // Create crates/test_package/Hive.toml
     let package_dir = workspace_path.join("crates").join("test_package");
@@ -231,7 +227,6 @@ auto_spawn = true
 async fn test_package_manifest_not_found() {
     let temp_dir = TempDir::new().unwrap();
     let workspace_path = temp_dir.path();
-    
 
     // Create workspace structure but NO Hive.toml
     let package_dir = workspace_path
@@ -261,4 +256,3 @@ async fn test_package_manifest_not_found() {
     assert!(error_msg.contains("missing required Hive.toml manifest file"));
     assert!(error_msg.contains("missing_manifest_actor"));
 }
-

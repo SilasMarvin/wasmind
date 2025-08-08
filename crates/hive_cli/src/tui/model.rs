@@ -1,5 +1,10 @@
+use hive::actors::MessageEnvelope;
+use hive::context::HiveContext;
 use hive::scope::Scope;
 use hive_actor_utils::STARTING_SCOPE;
+use hive_actor_utils::common_messages::actors::Exit;
+use hive_actor_utils::common_messages::assistant::AddMessage;
+use hive_actor_utils::llm_client_types::ChatMessage;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
@@ -9,11 +14,6 @@ use tuirealm::{Application, AttrValue, Attribute, EventListenerCfg, ListenerErro
 
 use crate::config::ParsedTuiConfig;
 use crate::tui::components::dashboard::{DASHBOARD_SCOPE, DashboardComponent, SCOPE_ATTR};
-use hive::actors::MessageEnvelope;
-use hive::context::HiveContext;
-use hive_actor_utils_common_messages::actors::Exit;
-use hive_actor_utils_common_messages::assistant::AddMessage;
-use hive_llm_types::ChatMessage;
 
 use super::components::graph::GraphTuiMessage;
 

@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use hive::coordinator::HiveCoordinator;
-use hive_actor_loader::LoadedActor;
+use hive::hive_actor_loader::LoadedActor;
 use hive_cli::{TuiResult, tui};
 
 pub async fn run() -> TuiResult<()> {

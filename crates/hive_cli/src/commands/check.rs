@@ -1,7 +1,7 @@
 use crate::TuiResult;
 use crate::tui::icons;
-use hive_actor_loader::dependency_resolver::{DependencyResolver, ResolvedActor};
-use hive_config::{ActorSource, Config};
+use hive::hive_actor_loader::dependency_resolver::{DependencyResolver, ResolvedActor};
+use hive::hive_config::{ActorSource, Config};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -24,16 +24,16 @@ pub async fn show_status(config_path: Option<PathBuf>) -> TuiResult<()> {
             println!("{} Configuration file not found", icons::FAILED_ICON);
             return Ok(());
         }
-        let config = hive_config::load_from_path(path.clone())?;
+        let config = hive::hive_config::load_from_path(path.clone())?;
         (config, path)
     } else {
-        let config_file = hive_config::get_config_file_path()?;
+        let config_file = hive::hive_config::get_config_file_path()?;
         if !config_file.exists() {
             println!("Config: {} (not found)", config_file.display());
             println!("{} No configuration file found", icons::FAILED_ICON);
             return Ok(());
         }
-        let config = hive_config::load_default_config()?;
+        let config = hive::hive_config::load_default_config()?;
         (config, config_file)
     };
     println!(
@@ -45,15 +45,17 @@ pub async fn show_status(config_path: Option<PathBuf>) -> TuiResult<()> {
 
     // Use hive_actor_loader to resolve dependencies
     let resolver = DependencyResolver::default();
-    let resolved_actors =
-        match resolver.resolve_all(config.actors.clone(), config.actor_overrides.clone()).await {
-            Ok(actors) => actors,
-            Err(e) => {
-                println!("{} Dependency resolution failed:", icons::FAILED_ICON);
-                println!("  {}", e);
-                return Ok(());
-            }
-        };
+    let resolved_actors = match resolver
+        .resolve_all(config.actors.clone(), config.actor_overrides.clone())
+        .await
+    {
+        Ok(actors) => actors,
+        Err(e) => {
+            println!("{} Dependency resolution failed:", icons::FAILED_ICON);
+            println!("  {}", e);
+            return Ok(());
+        }
+    };
 
     // Analyze startup behavior
     let startup_analysis = analyze_startup_behavior(&config, &resolved_actors);

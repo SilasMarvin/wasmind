@@ -1,14 +1,13 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
-
 use hive::coordinator::HiveCoordinator;
-use hive_actor_loader::LoadedActor;
+use hive::hive_actor_loader::LoadedActor;
 use hive_actor_utils::STARTING_SCOPE;
-use hive_actor_utils_common_messages::{
+use hive_actor_utils::common_messages::{
     Scope,
     assistant::{ChatState, ChatStateUpdated, Status, StatusUpdate, WaitReason},
 };
+use hive_actor_utils::llm_client_types::{ChatMessage, SystemChatMessage};
 use hive_cli::{TuiResult, tui};
-use hive_llm_types::{ChatMessage, SystemChatMessage};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::utils::create_spawn_agent_message;
 

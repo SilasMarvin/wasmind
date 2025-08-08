@@ -21,7 +21,7 @@ pub enum ConfigError {
     #[snafu(display("Config parsing error: {}", source))]
     ConfigParse {
         #[snafu(source)]
-        source: hive_config::Error,
+        source: hive::hive_config::Error,
     },
 
     #[snafu(display("LiteLLM configuration section is required"))]
@@ -114,7 +114,7 @@ fn default_graph_key_bindings() -> HashMap<String, String> {
 }
 
 impl LiteLLMConfig {
-    pub fn from_config(config: &hive_config::Config) -> Result<Self, ConfigError> {
+    pub fn from_config(config: &hive::hive_config::Config) -> Result<Self, ConfigError> {
         config
             .parse_section::<LiteLLMConfig>("litellm")
             .context(ConfigParseSnafu)?
@@ -245,7 +245,7 @@ pub struct ParsedGraphConfig {
 }
 
 impl TuiConfig {
-    pub fn from_config(config: &hive_config::Config) -> Result<Self, ConfigError> {
+    pub fn from_config(config: &hive::hive_config::Config) -> Result<Self, ConfigError> {
         Ok(config
             .parse_section::<TuiConfig>("tui")
             .context(ConfigParseSnafu)?

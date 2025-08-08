@@ -1,6 +1,3 @@
-// use crate::actors::tui::components::llm_textarea::LLMTextAreaComponent;
-use crate::config::ParsedTuiConfig;
-use crate::tui::{model::TuiMessage, utils};
 use hive::actors::MessageEnvelope;
 use ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::props::{BorderSides, Borders};
@@ -9,6 +6,9 @@ use tuirealm::{
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
+
+use crate::config::ParsedTuiConfig;
+use crate::tui::{model::TuiMessage, utils};
 
 use super::chat_history::ChatHistoryComponent;
 use super::textarea::LLMTextAreaComponent;
