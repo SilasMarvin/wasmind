@@ -46,8 +46,7 @@ impl ActorState {
     ) -> Self {
         let mut builder = WasiCtxBuilder::new();
 
-        // If you need access to the current working directory:
-        // if let Ok(cwd) = std::env::current_dir() {
+        // TODO: Allow for configuration that specifies whether we give system access or cwd access
         builder
             .preopened_dir(
                 "/",

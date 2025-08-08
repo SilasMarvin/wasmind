@@ -57,9 +57,9 @@ impl HiveContext {
     }
 
     /// Spawn a new agent with the specified actors in a new scope
-    pub async fn spawn_agent(
+    pub async fn spawn_agent<S: AsRef<str>>(
         &self,
-        actor_ids: &[&str],
+        actor_ids: &[S],
         agent_name: String,
         parent_scope: Option<Scope>,
     ) -> HiveResult<Scope> {
@@ -70,9 +70,9 @@ impl HiveContext {
     }
 
     /// Spawn a new agent with the specified actors in a specific scope
-    pub async fn spawn_agent_in_scope(
+    pub async fn spawn_agent_in_scope<S: AsRef<str>>(
         &self,
-        actor_names: &[&str],
+        actor_names: &[S],
         scope: Scope,
         agent_name: String,
         parent_scope: Option<Scope>,
@@ -81,7 +81,11 @@ impl HiveContext {
             .actor_executors
             .iter()
             .filter_map(|(logical_name, actor)| {
-                if actor.auto_spawn() || actor_names.contains(&logical_name.as_str()) {
+                if actor.auto_spawn()
+                    || actor_names
+                        .iter()
+                        .any(|s| &s.as_ref() == &logical_name.as_str())
+                {
                     let mut actors_to_spawn = actor.required_spawn_with();
                     actors_to_spawn.push(logical_name.as_str());
                     Some(actors_to_spawn)

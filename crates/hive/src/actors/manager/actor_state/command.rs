@@ -21,10 +21,6 @@ pub struct CommandResourceInner {
 impl command::Host for ActorState {}
 
 impl command::HostCmd for ActorState {
-    // WASM Component Model Resource Ownership:
-    // All builder methods (env, args, timeout, etc.) must consume the input resource
-    // and create a new one. Returning the same resource handle violates ownership
-    // semantics and causes "cannot lower a `borrow` resource into an `own`" errors.
     async fn new(&mut self, command: String) -> wasmtime::component::Resource<CommandResource> {
         let command_resource = CommandResource {
             inner: Arc::new(Mutex::new(CommandResourceInner {
@@ -164,7 +160,7 @@ impl command::HostCmd for ActorState {
             new_command.stdin(std::process::Stdio::null());
 
             (new_command, inner.timeout_seconds)
-        }; // Lock is dropped here
+        };
 
         let child = match new_command.spawn() {
             Ok(child) => child,

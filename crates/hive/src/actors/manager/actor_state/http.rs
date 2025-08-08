@@ -40,16 +40,13 @@ impl http::HostRequest for ActorState {
         method: String,
         url: String,
     ) -> wasmtime::component::Resource<HttpRequestResource> {
-        // Create a new client for each request (could optimize with a shared client later)
         let client = reqwest::Client::new();
 
-        // Parse method
         let method = match Method::from_bytes(method.as_bytes()) {
             Ok(m) => m,
-            Err(_) => Method::GET, // Default to GET if invalid method
+            Err(_) => Method::GET, // Default to GET if invalid method maybe error here in the future
         };
 
-        // Create the request builder
         let builder = client.request(method, url);
 
         let request_resource = HttpRequestResource {
