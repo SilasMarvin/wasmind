@@ -154,10 +154,10 @@ impl ExternalDependencyCache {
         // Check cache first
         {
             let cache = self.cache.lock().unwrap();
-            if let Some(existing_path) = cache.get(&cache_key) {
-                if existing_path.exists() {
-                    return Ok(existing_path.clone());
-                }
+            if let Some(existing_path) = cache.get(&cache_key)
+                && existing_path.exists()
+            {
+                return Ok(existing_path.clone());
             }
         }
 

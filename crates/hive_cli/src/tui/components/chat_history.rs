@@ -407,13 +407,13 @@ impl AssistantInfo {
     fn invalidate_message_with_tool_call(&mut self, tool_call_id: &str) {
         for message in &mut self.chat_message_widget_state {
             // Check if this message contains the tool call
-            if let ChatMessage::Assistant(assistant_msg) = &message.message {
-                if let Some(tool_calls) = &assistant_msg.tool_calls {
-                    for tool_call in tool_calls {
-                        if tool_call.id == tool_call_id {
-                            message.invalidate_cache();
-                            return; // Found it, no need to continue
-                        }
+            if let ChatMessage::Assistant(assistant_msg) = &message.message
+                && let Some(tool_calls) = &assistant_msg.tool_calls
+            {
+                for tool_call in tool_calls {
+                    if tool_call.id == tool_call_id {
+                        message.invalidate_cache();
+                        return; // Found it, no need to continue
                     }
                 }
             }
@@ -739,10 +739,10 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                 if let Some(add_message) = parse_common_message_as::<AddMessage>(&envelope) {
                     {
                         let scope = &add_message.agent;
-                        if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
-                            if let ChatMessage::User(user_msg) = add_message.message {
-                                actor_info.pending_user_message = Some(user_msg.content);
-                            }
+                        if let Some(actor_info) = self.component.chat_history_map.get_mut(scope)
+                            && let ChatMessage::User(user_msg) = add_message.message
+                        {
+                            actor_info.pending_user_message = Some(user_msg.content);
                         }
                     }
                 }

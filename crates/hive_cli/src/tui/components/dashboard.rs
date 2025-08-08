@@ -118,12 +118,12 @@ impl Component<TuiMessage, MessageEnvelope> for DashboardComponent {
         }
 
         // Handle keyboard events
-        if let Event::Keyboard(key_event) = &ev {
-            if let Some(action) = self.config.dashboard.key_bindings.get(key_event) {
-                match action {
-                    DashboardUserAction::Exit => {
-                        return Some(TuiMessage::Exit);
-                    }
+        if let Event::Keyboard(key_event) = &ev
+            && let Some(action) = self.config.dashboard.key_bindings.get(key_event)
+        {
+            match action {
+                DashboardUserAction::Exit => {
+                    return Some(TuiMessage::Exit);
                 }
             }
         }

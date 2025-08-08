@@ -176,9 +176,9 @@ impl http::HostRequest for ActorState {
                     last_error = Some(e);
 
                     // If this is not the last attempt and we have retry config, wait before retrying
-                    if attempt < max_attempts - 1 && retry_config.is_some() {
-                        let retry_config = retry_config.as_ref().unwrap();
-
+                    if attempt < max_attempts - 1
+                        && let Some(retry_config) = retry_config.as_ref()
+                    {
                         // Exponential backoff: delay = base_delay * 2^attempt
                         let delay_ms = retry_config.base_delay_ms * (2_u64.pow(attempt));
                         let delay = Duration::from_millis(delay_ms);
