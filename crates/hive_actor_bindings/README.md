@@ -22,15 +22,13 @@ world your-world {
 }
 ```
 
-See the entire interface in `wit/world.wit`.
+See the entire interface in `wit/world.wit`
 
 ## Interface Overview
 
 The WIT definitions specify how actors:
 - Receive and handle messages via `handle-message`
 - Access system capabilities (HTTP, commands, spawning)
-- Expose tools for LLM function calling
-- Maintain state throughout their lifecycle
 
 ## Links
 

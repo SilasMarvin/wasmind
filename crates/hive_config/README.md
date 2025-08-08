@@ -1,5 +1,7 @@
 # Hive Configuration Specification
 
+Hive uses [TOML](https://toml.io/) for configuration files. Throughout this documentation, we use TOML's dotted key notation (e.g., `[table.subtable]`) for clarity and consistency, though the inline table syntax is equally valid.
+
 Configuration is managed through two key concepts:
 1.  **The User Configuration File:** A TOML file provided by the user that defines which actor *instances* are available to their Hive system, provides runtime configuration, and sets up the environment.
 2.  **The `Hive.toml` Actor Manifest:** A file created by an actor *developer* that declares an actor's canonical identity and its dependencies on other actors.
@@ -32,8 +34,8 @@ source = { path = "./actors/execute_bash" }
 An actor instance definition has the following fields:
 
 *   **`source` (table, required):** Specifies where to load the actor's WASM component from.
-*   **`auto_spawn` (boolean, optional):** If `true`, this actor will be spawned automatically when the Hive system starts. Defaults to `false`.
-*   **`required_spawn_with` (array of strings, optional):** A list of actor logical names that must be spawned together when this actor is spawned. Unlike dependencies, these actors won't spawn automatically but will spawn as a group with their parent. Defaults to an empty list.
+*   **`auto_spawn` (boolean, optional):** If `true`, this actor will be spawned automatically into every new scope including the starting scope. Defaults to `false`.
+*   **`required_spawn_with` (array of strings, optional):** A list of actor logical names that must be spawned together when this actor is spawned. These actors will spawn as a group when the parent spawns. Defaults to an empty list.
 *   **`config` (table, optional):** A free-form table containing configuration values passed to the actor upon creation.
 
 ### Defining the Actor `source`
@@ -45,7 +47,7 @@ The `source` table supports multiple ways to locate actor code, providing flexib
 Loads an actor from a local filesystem path. This is ideal for local development.
 
 *   `path` (string): A relative or absolute path to the actor's directory.
-*   `package` (string, required for cargo workspaces): If the path points to a Rust workspace, this specifies the full subpath to the package directory containing the actor. Hive will look for the `Hive.toml` manifest at `{path}/{package}/`. **Important:** This field is currently required when pointing to cargo workspaces, as Hive needs it to locate the compiled WASM output correctly. This limitation will be improved in future versions. Note: Package support is currently designed for Rust workspaces but will be expanded to other languages in the future.
+*   `package` (string, required for cargo workspaces): If the path points to a Rust workspace, this specifies the full subpath to the package directory containing the actor. Hive will look for the `Hive.toml` manifest at `{path}/{package}/`. 
 
 ```toml
 # Simple path source (single-package project)
@@ -128,9 +130,11 @@ required_spawn_with = ["sender", "receiver"]
 # The keys "sender" and "receiver" are logical names for the dependencies.
 # The Hive system will use the source path to find and load them.
 # Note: Relative paths are resolved from the location of this Hive.toml file.
-[dependencies]
-sender = { source = { path = "../delegation_network_message_sender" } }
-receiver = { source = { path = "../delegation_network_message_receiver" } }
+[dependencies.sender]
+source = { path = "../delegation_network_message_sender" }
+
+[dependencies.receiver]
+source = { path = "../delegation_network_message_receiver" }
 ```
 
 ---
@@ -168,8 +172,8 @@ Your chat bot actor has this `Hive.toml` file:
 # File: ./actors/chatbot/Hive.toml
 actor_id = "my-company:chatbot"
 
-[dependencies]
-logger = { source = { path = "../simple_logger" } }
+[dependencies.logger]
+source = { path = "../simple_logger" }
 ```
 
 This means the chatbot **needs** a logger actor to work.
@@ -257,9 +261,11 @@ output_file = "/var/log/myapp.log"
 
 If your actor's `Hive.toml` has:
 ```toml
-[dependencies]
-logger = { source = { path = "../logger" } }
-database = { source = { path = "../db" } }
+[dependencies.logger]
+source = { path = "../logger" }
+
+[dependencies.database]
+source = { path = "../db" }
 ```
 
 Then you can override `logger` and `database`:
@@ -286,20 +292,13 @@ source = { path = "./my_logger" }
 level = "debug"
 ```
 
-**Fix:** Choose one approach:
+**Fix:** Set the config on `actors.logger`:
 ```toml
 # Option A: Use only [actors] (adds new logger)
 [actors.logger]
 source = { path = "./my_logger" }
 
 [actors.logger.config]
-level = "debug"
-
-# Option B: Use only [actor_overrides] (modifies existing dependency)
-[actor_overrides.logger]
-source = { path = "./my_logger" }
-
-[actor_overrides.logger.config]
 level = "debug"
 ```
 
@@ -369,15 +368,17 @@ This error occurs when an actor's dependency tree contains a cycle. For example,
 ```toml
 # /path/to/actor-a/Hive.toml
 actor_id = "my-co:actor-a"
-[dependencies]
-b_instance = { source = { path = "../actor-b" } }
+
+[dependencies.b_instance]
+source = { path = "../actor-b" }
 ```
 
 ```toml
 # /path/to/actor-b/Hive.toml
 actor_id = "my-co:actor-b"
-[dependencies]
-a_instance = { source = { path = "../actor-a" } }
+
+[dependencies.a_instance]
+source = { path = "../actor-a" }
 ```
 
 **Expected Error:**
@@ -401,21 +402,26 @@ This happens when a top-level actor depends on two different actors that, in tur
 ```toml
 # /path/to/app/Hive.toml
 actor_id = "my-co:app"
-[dependencies]
-parser = { source = { path = "../parser" } }
-validator = { source = { path = "../validator" } }
+
+[dependencies.parser]
+source = { path = "../parser" }
+
+[dependencies.validator]
+source = { path = "../validator" }
 ```
 ```toml
 # /path/to/parser/Hive.toml
 actor_id = "my-co:parser"
-[dependencies]
-tool = { source = { path = "../../tools/common-tool-v1" } }
+
+[dependencies.tool]
+source = { path = "../../tools/common-tool-v1" }
 ```
 ```toml
 # /path/to/validator/Hive.toml
 actor_id = "my-co:validator"
-[dependencies]
-tool = { source = { path = "../../tools/common-tool-v2" } }
+
+[dependencies.tool]
+source = { path = "../../tools/common-tool-v2" }
 ```
 
 **Expected Error:**
