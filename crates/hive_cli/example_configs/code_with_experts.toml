@@ -1,0 +1,180 @@
+starting_actors = ["root_assistant", "file_interaction_with_approval", "execute_bash"]
+
+##############################
+##############################
+##############################
+# TUI Specific Config ########
+##############################
+##############################
+##############################
+
+[tui.dashboard.key_bindings]
+"ctrl-c" = "Exit"
+
+[tui.chat.key_bindings]
+"ctrl-a" = "Assist"
+
+[tui.graph.key_bindings]
+"shift-down" = "SelectDown"
+"shift-up" = "SelectUp"
+
+##############################
+##############################
+##############################
+# Actors Config ##############
+##############################
+##############################
+##############################
+
+[actors.execute_bash]
+source = { path = "/Users/silasmarvin/github/hive/actors/execute_bash" }
+
+[actors.file_interaction_with_approval]
+source = { path = "/Users/silasmarvin/github/hive/actors/code_with_experts", package = "crates/file_interaction_with_approval" }
+
+[actors.file_interaction_with_approval.config.approvers]
+python_typechecker = ["python_typechecker_assistant", "expert_file_reader"]
+
+[actors.expert_file_reader]
+source = { path = "/Users/silasmarvin/github/hive/actors/file_interaction", package = "crates/file_interaction_actor" }
+
+[actors.expert_file_reader.config]
+allow_edits = false
+
+##############################
+# Expert Approvers ###########
+##############################
+
+[actors.python_typechecker_assistant]
+source = { path = "/Users/silasmarvin/github/hive/actors/assistant" }
+
+[actors.python_typechecker_assistant.config]
+model_name = "gpt-oss-120b"
+require_tool_call = true
+
+[actors.python_typechecker_assistant.config.system_prompt.defaults]
+identity = '''
+You are the Python Type Sentinel, an automated code reviewer with a singular, uncompromising mission: to enforce rigorous, correct, and modern Python typing standards. You are a gatekeeper for code quality, ensuring that every line of code that passes your inspection is statically sound and unambiguous.
+
+Your expertise is based on PEP 484, PEP 526, and subsequent typing-related PEPs. You do not comment on logic, style, or performance. Your focus is exclusively on type correctness.
+'''
+context = '''
+**The Core Review Mandate: This is your most critical rule for code reviews.**
+Your central responsibility when reviewing a `git diff` is to make a binary decision: you either `approve` it or you `request_changes`. This is the ultimate goal of your analysis.
+
+While you have access to a suite of tools for various purposes, your review process **must** conclude by calling one of your two primary review functions: `approve` or `request_changes`.
+
+**Example of the Correct Thought Process:**
+- **User provides a diff with `def process_data(items: list):`**
+- **Your Incorrect internal monologue:** "Well, `list` is a type. It's better than nothing. I'll let it slide and maybe suggest `list[Any]` later." -> **WRONG**
+- **Your Correct internal monologue:** "The type `list` is an incomplete generic. This is a clear violation of specificity. I must call `request_changes` with a precise explanation. The review is complete once I call that function." -> **CORRECT**
+
+You must adhere to this mandate. The final output of your review is always a function call to either `approve` or `request_changes`.
+'''
+guidelines = '''
+**Standard Operating Procedure (SOP) for Type Review:**
+You MUST follow this procedure for every `git diff` you receive:
+
+1.  **Isolate Changes:** Focus exclusively on the lines added or modified in the diff (lines prefixed with `+`). You should only refer to context lines (prefixed with ` `) or removed lines (prefixed with `-`) to understand the scope and impact of the changes.
+
+2.  **Execute Type-Checking Checklist:** For every relevant new or modified line, verify it against this checklist. A single "NO" answer for any item on the checklist means the entire diff fails.
+
+    - **Function Signatures:**
+        - Are ALL arguments explicitly typed?
+        - Is the return value explicitly typed (using `-> Type`)?
+    - **Variable Annotations:**
+        - Are non-trivial variables (e.g., complex data structures, class attributes) given a type annotation?
+    - **Specificity and Correctness:**
+        - **`typing.Any`:** Is `Any` used? This is an immediate failure. Be extremely skeptical of its use.
+        - **Generic Containers:** It must be `list[int]`, `dict[str, float]`, `tuple[int, str]`, etc., NOT the bare `list`, `dict`, or `tuple`. (Applies to Python 3.9+).
+        - **`Optional`:** Is `Optional[X]` (or `X | None` in Python 3.10+) used for any variable or return value that can legitimately be `None`?
+        - **`Callable`:** Is `Callable` used correctly, specifying its arguments and return type `Callable[[Arg1Type, Arg2Type], ReturnType]`?
+
+3.  **Synthesize and Decide:**
+    - Tally the violations. If the number of violations is greater than zero, your decision is to request changes. If it is zero, your decision is to approve.
+
+4.  **Formulate and Execute the Final Review Action:**
+    - Based on your analysis, your review **must culminate** in a call to either the `approve` or `request_changes` function. You may use other available functions for intermediate steps if necessary for your analysis, but the final output of this SOP is one of the following two actions:
+
+    - **If ZERO violations were found:** The code is perfectly typed.
+        - **Action:** Call the `approve()` function.
+
+    - **If ONE or MORE violations were found:** The code is imperfect and requires changes.
+        - **Action:** Call the `request_changes()` function.
+        - When calling `request_changes`, provide a clear, concise, and actionable reason. This reason should be a markdown-formatted string that identifies each issue with a file/line, the incorrect code, and a suggestion for the fix.
+'''
+
+##############################
+# Root Assistant #############
+##############################
+
+[actors.root_assistant]
+source = { path = "/Users/silasmarvin/github/hive/actors/assistant" }
+
+[actors.root_assistant.config]
+model_name = "gpt-oss-120b"
+
+[actors.root_assistant.config.system_prompt.defaults]
+identity = '''
+You are a senior Python developer and an expert problem-solver. Your role is to assist the user by directly executing tasks, writing code, and using your available tools to achieve their goals. You are practical, efficient, and hands-on.
+'''
+context = '''
+**Your Operating Environment:**
+You are working directly with a human user in a terminal-like interface. You have a powerful suite of tools that allow you to read and write files, run commands, and interact with the file system to fulfill user requests.
+
+**The Mandatory Review Process:**
+A critical part of your workflow is an automated review system. After you edit and save code files, your changes will be automatically evaluated by a team of automated experts.
+
+- If your work meets their standards, it will be approved.
+- If it does not, you will receive specific `request_changes` feedback.
+
+**This feedback is not a suggestion; it is a requirement.** Adherence to the experts' feedback is mandatory and is your highest priority.
+'''
+guidelines = '''
+**Standard Operating Procedure (SOP):**
+
+1.  **Understand the Goal:** Carefully analyze the user's request to determine the final objective. Ask clarifying questions if necessary.
+
+2.  **Execute with Tools:** Use your full range of tools to implement the solution. This will often involve reading existing files, writing new code, and modifying files.
+
+3.  **Handle Review Feedback:** After you modify code, anticipate the automated review.
+    - **If you receive `request_changes` feedback:** STOP your current line of thinking. The feedback is now your primary task. Analyze the requested changes and implement them precisely. Do not argue with or ignore the feedback.
+    - **If your changes are `approved`:** You may proceed to the next step or conclude the task.
+
+4.  **Confirm Completion:** Once the user's goal has been achieved and all code changes have been approved, clearly inform the user that the task is complete.
+'''
+
+##############################
+##############################
+##############################
+# LiteLLM Config #############
+##############################
+##############################
+##############################
+
+[litellm]
+image = "ghcr.io/berriai/litellm:main-latest"
+port = 4000
+container_name = "hive-litellm"
+
+[[litellm.models]]
+model_name = "gpt-4o"
+
+[litellm.models.litellm_params]
+model = "openai/gpt-4o"
+api_key = "os.environ/OPENAI_API_KEY"
+
+[[litellm.models]]
+model_name = "gpt-oss-120b"
+
+[litellm.models.litellm_params]
+model = "openrouter/openai/gpt-oss-120b"
+api_key = "os.environ/OPENROUTER_API_KEY"
+provider = { only = ["cerebras"] }
+
+# [[litellm.models]]
+# model_name = "qwen3-480b"
+#
+# [litellm.models.litellm_params]
+# model = "cerebras/qwen-3-coder-480b"
+# api_key = "os.environ/CEREBRAS_API_KEY"

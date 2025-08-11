@@ -1,0 +1,7 @@
+actor_id = "hive_code_with_experts:file_interaction_with_approval"
+
+[dependencies.hcwe_approve]
+source = { path = "../../", package = "crates/approve" }
+
+[dependencies.hcwe_request_changes]
+source = { path = "../../", package = "crates/request_changes" }

@@ -1,0 +1,25 @@
+[package]
+name = "file_interaction_with_approval"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+readme.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+hive_actor_utils.workspace = true
+serde.workspace = true
+serde_json = "1"
+toml.workspace = true
+wit-bindgen-rt.workspace = true
+
+code_with_experts_common = { path = "../code_with_experts_common" }
+file_interaction = { path = "../../../file_interaction/crates/file_interaction" }
+
+[package.metadata.component.target.dependencies]
+"hive:actor" = { path = "../../../../crates/hive_actor_bindings/wit" }

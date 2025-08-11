@@ -6,7 +6,6 @@
 
 pub mod dependency_resolver;
 
-use cargo_metadata::MetadataCommand;
 use futures::future::join_all;
 use sha2::{Digest, Sha256};
 use snafu::{Location, ResultExt, Snafu, ensure, location};
@@ -27,6 +26,21 @@ pub enum Error {
     Io {
         source: std::io::Error,
         path: Option<PathBuf>,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Failed to deserialize TOML content: {text}"))]
+    Toml {
+        source: toml::de::Error,
+        text: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Error getting Cargo.toml {key}"))]
+    CargoToml {
+        key: String,
         #[snafu(implicit)]
         location: Location,
     },
@@ -58,13 +72,6 @@ pub enum Error {
         actor_name: String,
         status: std::process::ExitStatus,
         stderr: String,
-        #[snafu(implicit)]
-        location: Location,
-    },
-
-    #[snafu(display("Failed to parse cargo metadata"))]
-    CargoMetadata {
-        source: cargo_metadata::Error,
         #[snafu(implicit)]
         location: Location,
     },
@@ -626,7 +633,10 @@ impl ActorLoader {
         };
 
         let mut cmd = Command::new("cargo-component");
-        cmd.current_dir(&build_dir).arg("build").arg("--release");
+        cmd.current_dir(&build_dir)
+            .arg("rustc")
+            .arg("--crate-type=cdylib")
+            .arg("--release");
 
         if package_name.is_some() {
             info!("Building in package directory: {:?}", build_dir);
@@ -691,22 +701,18 @@ impl ActorLoader {
     fn get_expected_wasm_name(&self, build_dir: &Path) -> Result<String> {
         let manifest_path = build_dir.join("Cargo.toml");
 
-        let metadata = MetadataCommand::new()
-            .manifest_path(&manifest_path)
-            .exec()
-            .context(CargoMetadataSnafu)?;
+        let file_contents = std::fs::read_to_string(&manifest_path).context(IoSnafu {
+            path: Some(manifest_path.to_path_buf()),
+        })?;
+        let toml: toml::Value = toml::from_str(&file_contents).context(TomlSnafu {
+            text: file_contents,
+        })?;
+        let package_name = toml["package"]["name"].as_str().ok_or(Error::CargoToml {
+            location: location!(),
+            key: "package.name".to_string(),
+        })?;
 
-        let package = metadata
-            .packages
-            .iter()
-            .find(|p| p.source.is_none())
-            .ok_or_else(|| Error::MissingRequiredField {
-                actor_name: "<package>".to_string(),
-                field: "name".to_string(),
-                location: location!(),
-            })?;
-
-        Ok(format!("{}.wasm", package.name.replace('-', "_")))
+        Ok(format!("{}.wasm", package_name.replace('-', "_")))
     }
 
     async fn get_actor_version(
@@ -722,25 +728,20 @@ impl ActorLoader {
             actor_path.join("Cargo.toml")
         };
 
-        // Use cargo metadata with explicit manifest path
-        let metadata = MetadataCommand::new()
-            .manifest_path(&manifest_path)
-            .exec()
-            .context(CargoMetadataSnafu)?;
-
-        // Find the package (should be the root package of the manifest we specified)
-        let package = metadata
-            .packages
-            .iter()
-            .find(|p| p.source.is_none())
-            .ok_or_else(|| Error::PackageNotFound {
-                actor_name: actor_name.to_string(),
-                package_name: package_name.unwrap_or("root").to_string(),
-                workspace_path: manifest_path.display().to_string(),
+        let file_contents = std::fs::read_to_string(&manifest_path).context(IoSnafu {
+            path: Some(manifest_path.to_path_buf()),
+        })?;
+        let toml: toml::Value = toml::from_str(&file_contents).context(TomlSnafu {
+            text: file_contents,
+        })?;
+        let package_version = toml["package"]["version"]
+            .as_str()
+            .ok_or(Error::CargoToml {
                 location: location!(),
+                key: "package.version".to_string(),
             })?;
 
-        Ok(package.version.to_string())
+        Ok(package_version.to_string())
     }
 }
 

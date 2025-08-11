@@ -17,13 +17,13 @@ Dynamic loading and dependency resolution system for Hive WASM actor components.
 - Ensure all required actors are available before loading
 
 **Build Management**: Compile actors using the WebAssembly Component Model:
-- Execute `cargo component build` for each actor
+- Execute `cargo component rustc --crate-type="cdylib"` for each actor
 - Manage build artifacts and WASM binary extraction
 - Handle build errors and validation
 
 ## Language Support
 
-**Currently supports Rust actors only.** The loader uses `cargo component build` to compile Rust-based actors into WebAssembly components. Support for additional languages (JavaScript, Python, etc.) is planned for future releases.
+**Currently supports Rust actors only.** The loader uses `cargo component rustc --crate-type="cdylib"` to compile Rust-based actors into WebAssembly components. Support for additional languages (JavaScript, Python, etc.) is planned for future releases.
 
 ## Feature Flags
 

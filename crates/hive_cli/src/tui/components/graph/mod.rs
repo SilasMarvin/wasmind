@@ -349,6 +349,7 @@ impl AgentNode {
 pub struct GraphAreaComponent {
     component: GraphArea,
     config: ParsedTuiConfig,
+    nodes_to_insert: Vec<(Scope, AgentNode)>,
 }
 
 impl GraphAreaComponent {
@@ -366,6 +367,7 @@ impl GraphAreaComponent {
                 viewport_height: 0,
             },
             config,
+            nodes_to_insert: vec![],
         }
     }
 }
@@ -726,20 +728,49 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                     );
                     let mut node = AgentNode::new(agent_component);
 
-                    if let Some(root) = &mut self.component.root_node
-                        && let Some(parent_scope) = parent_scope
-                    {
-                        // Insert into the tree at the parent scope
-                        let _ = root.insert(&parent_scope, node);
-                        self.component.stats.agents_spawned += 1;
-                        self.component.height += 1;
-                    } else {
-                        node.component.component.is_selected = true;
-                        self.component.root_node = Some(node);
-                        self.component.height = 1;
-                        // Center on the newly created root node
-                        self.component.center_on_selected();
+                    // It is possible a node can be sent with a parent scope that does not exist
+                    // yet. This can happen when the constructor for an agent spawns another agent.
+                    // In this situation we store the node in `nodes_to_insert` and try to insert
+                    // again later.
+                    match (&mut self.component.root_node, parent_scope) {
+                        (None, None) => {
+                            node.component.component.is_selected = true;
+                            self.component.root_node = Some(node);
+                            self.component.height = 1;
+                            self.component.center_on_selected();
+                        }
+                        (None, Some(parent_scope)) => {
+                            self.nodes_to_insert.push((parent_scope, node));
+                        }
+                        (Some(_), None) => {
+                            tracing::warn!("Trying to insert a second root node -- ignored");
+                        }
+                        (Some(root), Some(parent_scope)) => {
+                            if let Err(node) = root.insert(&parent_scope, node) {
+                                self.nodes_to_insert.push((parent_scope, node));
+                            } else {
+                                self.component.stats.agents_spawned += 1;
+                                self.component.height += 1;
+                            }
+                        }
                     }
+
+                    if let Some(root) = &mut self.component.root_node {
+                        self.nodes_to_insert = self
+                            .nodes_to_insert
+                            .drain(..)
+                            .filter_map(|(parent_scope, node)| {
+                                if let Err(node) = root.insert(&parent_scope, node) {
+                                    Some((parent_scope, node))
+                                } else {
+                                    self.component.stats.agents_spawned += 1;
+                                    self.component.height += 1;
+                                    None
+                                }
+                            })
+                            .collect();
+                    }
+
                     None
                 } else if let Some(agent_status_update) =
                     parse_common_message_as::<StatusUpdate>(&envelope)

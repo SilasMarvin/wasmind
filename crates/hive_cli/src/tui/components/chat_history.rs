@@ -403,6 +403,11 @@ impl AssistantInfo {
         }
     }
 
+    fn set_pending_user_message(&mut self, message: Option<String>) {
+        self.pending_user_message = message;
+        self.cached_pending = None;
+    }
+
     /// Finds and invalidates cache for message containing specific tool call
     fn invalidate_message_with_tool_call(&mut self, tool_call_id: &str) {
         for message in &mut self.chat_message_widget_state {
@@ -737,64 +742,54 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
             Event::User(envelope) => {
                 // Handle AddMessage for user input
                 if let Some(add_message) = parse_common_message_as::<AddMessage>(&envelope) {
+                    let scope = &add_message.agent;
+                    if let Some(actor_info) = self.component.chat_history_map.get_mut(scope)
+                        && let ChatMessage::User(user_msg) = add_message.message
                     {
-                        let scope = &add_message.agent;
-                        if let Some(actor_info) = self.component.chat_history_map.get_mut(scope)
-                            && let ChatMessage::User(user_msg) = add_message.message
-                        {
-                            actor_info.pending_user_message = Some(user_msg.content);
-                        }
+                        actor_info.set_pending_user_message(Some(user_msg.content));
                     }
                 }
                 // Handle AssistantRequest to clear pending message
                 else if parse_common_message_as::<AssistantRequest>(&envelope).is_some() {
-                    {
-                        let scope = &envelope.from_scope;
-                        if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
-                            actor_info.pending_user_message = None;
-                        }
+                    let scope = &envelope.from_scope;
+                    if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
+                        actor_info.set_pending_user_message(None);
                     }
                 }
                 // Handle ChatStateUpdated
                 else if let Some(chat_updated) =
                     parse_common_message_as::<ChatStateUpdated>(&envelope)
                 {
-                    {
-                        let scope = &envelope.from_scope;
-                        if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
-                            actor_info.chat_message_widget_state =
-                                convert_from_chat_state_to_chat_message_widget_state(
-                                    chat_updated.chat_state,
-                                );
-                        }
+                    let scope = &envelope.from_scope;
+                    if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
+                        actor_info.chat_message_widget_state =
+                            convert_from_chat_state_to_chat_message_widget_state(
+                                chat_updated.chat_state,
+                            );
                     }
                 }
                 // Handle ToolCallStatusUpdate
                 else if let Some(tool_update) =
                     parse_common_message_as::<ToolCallStatusUpdate>(&envelope)
                 {
-                    {
-                        let scope = &envelope.from_scope;
-                        if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
-                            actor_info
-                                .tool_call_updates
-                                .insert(tool_update.id.clone(), tool_update.status);
+                    let scope = &envelope.from_scope;
+                    if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
+                        actor_info
+                            .tool_call_updates
+                            .insert(tool_update.id.clone(), tool_update.status);
 
-                            // Invalidate cache for the specific message containing this tool call
-                            actor_info.invalidate_message_with_tool_call(&tool_update.id);
-                        }
+                        // Invalidate cache for the specific message containing this tool call
+                        actor_info.invalidate_message_with_tool_call(&tool_update.id);
                     }
                 }
                 // Handle AgentSpawned to track new agent creation
                 else if let Some(agent_spawned) =
                     parse_common_message_as::<AgentSpawned>(&envelope)
                 {
-                    {
-                        let agent_scope = agent_spawned.agent_id.clone();
-                        self.component
-                            .chat_history_map
-                            .insert(agent_scope, AssistantInfo::new(agent_spawned.name, None));
-                    }
+                    let agent_scope = agent_spawned.agent_id.clone();
+                    self.component
+                        .chat_history_map
+                        .insert(agent_scope, AssistantInfo::new(agent_spawned.name, None));
                 }
                 None
             }

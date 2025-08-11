@@ -5,20 +5,133 @@ use std::{
     time::SystemTime,
 };
 
-use bindings::exports::hive::actor::actor::MessageEnvelope;
-use hive_actor_utils::common_messages::{
-    assistant::{Section, SystemPromptContent, SystemPromptContribution},
-    tools::{
-        ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, ToolsAvailable,
-        UIDisplayInfo,
-    },
-};
+use hive_actor_utils::common_messages::tools::UIDisplayInfo;
 use serde::{Deserialize, Serialize};
+use similar::TextDiff;
 
-#[allow(warnings)]
-mod bindings;
+// Tool constants
+pub const READ_FILE_NAME: &str = "read_file";
+pub const READ_FILE_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER|CONTENT. You can read a specific chunk by providing start_line and end_line. IMPORTANT: Always use absolute paths (starting with /) - relative paths will fail.";
+pub const READ_FILE_SCHEMA: &str = r#"{
+    "type": "object",
+    "properties": {
+        "path": {
+            "type": "string",
+            "description": "ABSOLUTE path to the file (must start with /). Relative paths are not supported and will cause errors."
+        },
+        "start_line": {
+            "type": "integer",
+            "description": "Optional starting line to read (1-indexed)."
+        },
+        "end_line": {
+            "type": "integer",
+            "description": "Optional ending line to read (inclusive)."
+        }
+    },
+    "required": ["path"]
+}"#;
 
-hive_actor_utils::actors::macros::generate_actor_trait!();
+pub const EDIT_FILE_NAME: &str = "edit_file";
+pub const EDIT_FILE_DESCRIPTION: &str = "Applies a list of edits to a file atomically. This is the primary tool for modifying files AND creating new files. Each edit targets a specific line range. The tool processes edits from the bottom of the file to the top to ensure line number integrity during the operation. To create a new file, use a single edit with start_line=1 and end_line=0. IMPORTANT: Always use absolute paths (starting with /) - relative paths will fail.";
+pub const EDIT_FILE_SCHEMA: &str = r#"{
+    "type": "object",
+    "properties": {
+        "path": {
+            "type": "string",
+            "description": "ABSOLUTE path to the file to edit or create (must start with /). If the file doesn't exist, it will be created (along with any necessary parent directories). Relative paths are not supported and will cause errors."
+        },
+        "edits": {
+            "type": "array",
+            "description": "A list of edits to apply. Processed in reverse order of line number.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "start_line": {
+                        "type": "integer",
+                        "description": "The line number to start the edit on (inclusive). Line numbers start at 1."
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "The line number to end the edit on (inclusive). For an insertion, set this to `start_line - 1`. For creating a new file, use start_line=1 and end_line=0."
+                    },
+                    "new_content": {
+                        "type": "string",
+                        "description": "The new content to replace the specified lines with. Use an empty string to delete."
+                    }
+                },
+                "required": ["start_line", "end_line", "new_content"]
+            }
+        }
+    },
+    "required": ["path", "edits"]
+}"#;
+
+pub const FILE_TOOLS_USAGE_GUIDE: &str = r#"## File Interaction Tools
+
+The file interaction actor provides two essential tools for reading and editing files:
+
+**CRITICAL: Always use ABSOLUTE paths (starting with /) - relative paths will fail!**
+
+### read_file
+- Reads file content with automatic line numbering (format: LINE_NUMBER|CONTENT)
+- LINE_NUMBERs are 1-based -- they start at 1 not 0!
+- Small files (<64KB) are read automatically in full
+- Large files require specifying line ranges (start_line and end_line)
+- Caches file content for efficient subsequent reads and edits
+- Must use absolute paths: `/path/to/file.txt` ✓, `file.txt` ✗
+
+### edit_file  
+- **Primary tool for both editing existing files AND creating new files**
+- Applies multiple edits to a file atomically
+- Processes edits in reverse line order to maintain line number integrity
+- Supports insertions (set end_line to start_line - 1), replacements, and deletions
+- Must use absolute paths: `/path/to/file.txt` ✓, `file.txt` ✗
+
+#### Creating New Files
+To create a new file, use edit_file with a single edit:
+```json
+{
+  "path": "/absolute/path/to/new_file.txt",
+  "edits": [{
+    "start_line": 1,
+    "end_line": 0,
+    "new_content": "Hello, World!\nThis is a new file."
+  }]
+}
+```
+
+#### Editing Existing Files
+For existing files, you can apply multiple edits in one operation:
+```json
+{
+  "path": "existing_file.txt", 
+  "edits": [
+    {
+      "start_line": 5,
+      "end_line": 7,
+      "new_content": "Replace lines 5-7 with this content"
+    },
+    {
+      "start_line": 3,
+      "end_line": 2,
+      "new_content": "Insert this between lines 2 and 3"
+    }
+  ]
+}
+```
+
+### Important Notes
+- **Always check the FilesReadAndEdited section** in the system prompt for currently open files
+- New files: Only single edit operations allowed (create content first, then edit in separate operations)
+- Cached files: Will warn if file was modified externally since last read
+- Automatic directory creation: Parent directories are created automatically if needed
+
+### FilesReadAndEdited Section
+The system prompt includes a special section called "FilesReadAndEdited" that contains:
+- Keys: Canonical file paths of all files that have been read or edited
+- Values: The current cached content of each file (with line numbers)
+
+This section is automatically updated whenever you read or edit files, giving you a complete view of all open files in your workspace."#;
 
 /// WASM-safe alternative to wasm_safe_normalize_path that works without OS-level path resolution
 fn wasm_safe_normalize_path(path: &Path) -> Result<PathBuf, io::Error> {
@@ -93,129 +206,6 @@ fn clean_path_components(path: &Path) -> PathBuf {
 
 const MAX_FILE_SIZE_BYTES: u64 = 10 * 1024 * 1024; // 10MB limit
 const SMALL_FILE_SIZE_BYTES: u64 = 64 * 1024; // 64KB limit for automatic full read
-
-const READ_FILE_NAME: &str = "read_file";
-const READ_FILE_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER|CONTENT. You can read a specific chunk by providing start_line and end_line. IMPORTANT: Always use absolute paths (starting with /) - relative paths will fail.";
-const READ_FILE_SCHEMA: &str = r#"{
-    "type": "object",
-    "properties": {
-        "path": {
-            "type": "string",
-            "description": "ABSOLUTE path to the file (must start with /). Relative paths are not supported and will cause errors."
-        },
-        "start_line": {
-            "type": "integer",
-            "description": "Optional starting line to read (1-indexed)."
-        },
-        "end_line": {
-            "type": "integer",
-            "description": "Optional ending line to read (inclusive)."
-        }
-    },
-    "required": ["path"]
-}"#;
-
-const EDIT_FILE_NAME: &str = "edit_file";
-const EDIT_FILE_DESCRIPTION: &str = "Applies a list of edits to a file atomically. This is the primary tool for modifying files AND creating new files. Each edit targets a specific line range. The tool processes edits from the bottom of the file to the top to ensure line number integrity during the operation. To create a new file, use a single edit with start_line=1 and end_line=0. IMPORTANT: Always use absolute paths (starting with /) - relative paths will fail.";
-const EDIT_FILE_SCHEMA: &str = r#"{
-    "type": "object",
-    "properties": {
-        "path": {
-            "type": "string",
-            "description": "ABSOLUTE path to the file to edit or create (must start with /). If the file doesn't exist, it will be created (along with any necessary parent directories). Relative paths are not supported and will cause errors."
-        },
-        "edits": {
-            "type": "array",
-            "description": "A list of edits to apply. Processed in reverse order of line number.",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "start_line": {
-                        "type": "integer",
-                        "description": "The line number to start the edit on (inclusive). Line numbers start at 1."
-                    },
-                    "end_line": {
-                        "type": "integer",
-                        "description": "The line number to end the edit on (inclusive). For an insertion, set this to `start_line - 1`. For creating a new file, use start_line=1 and end_line=0."
-                    },
-                    "new_content": {
-                        "type": "string",
-                        "description": "The new content to replace the specified lines with. Use an empty string to delete."
-                    }
-                },
-                "required": ["start_line", "end_line", "new_content"]
-            }
-        }
-    },
-    "required": ["path", "edits"]
-}"#;
-
-const FILE_TOOLS_USAGE_GUIDE: &str = r#"## File Interaction Tools
-
-The file interaction actor provides two essential tools for reading and editing files:
-
-**CRITICAL: Always use ABSOLUTE paths (starting with /) - relative paths will fail!**
-
-### read_file
-- Reads file content with automatic line numbering (format: LINE_NUMBER|CONTENT)
-- LINE_NUMBERs are 1-based -- they start at 1 not 0!
-- Small files (<64KB) are read automatically in full
-- Large files require specifying line ranges (start_line and end_line)
-- Caches file content for efficient subsequent reads and edits
-- Must use absolute paths: `/path/to/file.txt` ✓, `file.txt` ✗
-
-### edit_file  
-- **Primary tool for both editing existing files AND creating new files**
-- Applies multiple edits to a file atomically
-- Processes edits in reverse line order to maintain line number integrity
-- Supports insertions (set end_line to start_line - 1), replacements, and deletions
-- Must use absolute paths: `/path/to/file.txt` ✓, `file.txt` ✗
-
-#### Creating New Files
-To create a new file, use edit_file with a single edit:
-```json
-{
-  "path": "/absolute/path/to/new_file.txt",
-  "edits": [{
-    "start_line": 1,
-    "end_line": 0,
-    "new_content": "Hello, World!\nThis is a new file."
-  }]
-}
-```
-
-#### Editing Existing Files
-For existing files, you can apply multiple edits in one operation:
-```json
-{
-  "path": "existing_file.txt", 
-  "edits": [
-    {
-      "start_line": 5,
-      "end_line": 7,
-      "new_content": "Replace lines 5-7 with this content"
-    },
-    {
-      "start_line": 3,
-      "end_line": 2,
-      "new_content": "Insert this between lines 2 and 3"
-    }
-  ]
-}
-```
-
-### Important Notes
-- **Always check the FilesReadAndEdited section** in the system prompt for currently open files
-- New files: Only single edit operations allowed (create content first, then edit in separate operations)
-- Cached files: Will warn if file was modified externally since last read
-- Automatic directory creation: Parent directories are created automatically if needed
-
-### FilesReadAndEdited Section
-The system prompt includes a special section called "FilesReadAndEdited" that contains:
-- Keys: Canonical file paths of all files that have been read or edited
-- Values: The current cached content of each file (with line numbers)
-
-This section is automatically updated whenever you read or edit files, giving you a complete view of all open files in your workspace."#;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FileSlice {
@@ -319,182 +309,103 @@ struct FileCacheEntry {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ReadFileParams {
-    path: String,
-    start_line: Option<i32>,
-    end_line: Option<i32>,
+pub struct ReadFileParams {
+    pub path: String,
+    pub start_line: Option<i32>,
+    pub end_line: Option<i32>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct Edit {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Edit {
     start_line: usize, // 1-indexed
     end_line: usize,   // 1-indexed, inclusive
     new_content: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct EditFileParams {
-    path: String,
-    edits: Vec<serde_json::Value>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditFileParams {
+    pub path: String,
+    pub edits: Vec<Edit>,
 }
 
-#[derive(hive_actor_utils::actors::macros::Actor)]
-struct FileInteractionActor {
-    scope: String,
+#[derive(Debug, Clone)]
+pub struct ReadFileResult {
+    pub message: String,
+    pub ui_display: UIDisplayInfo,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReadFileError {
+    pub error_msg: String,
+    pub ui_display: UIDisplayInfo,
+}
+
+#[derive(Debug, Clone)]
+pub struct EditFileResult {
+    pub message: String,
+    pub ui_display: UIDisplayInfo,
+}
+
+#[derive(Debug, Clone)]
+pub struct EditFileError {
+    pub error_msg: String,
+    pub ui_display: UIDisplayInfo,
+}
+
+pub struct FileInteractionManager {
     cache: HashMap<PathBuf, FileCacheEntry>,
 }
 
-impl GeneratedActorTrait for FileInteractionActor {
-    fn new(scope: String, _config_str: String) -> Self {
-        let tools = vec![
-            hive_actor_utils::llm_client_types::Tool {
-                tool_type: "function".to_string(),
-                function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
-                    name: READ_FILE_NAME.to_string(),
-                    description: READ_FILE_DESCRIPTION.to_string(),
-                    parameters: serde_json::from_str(READ_FILE_SCHEMA).unwrap(),
-                },
-            },
-            hive_actor_utils::llm_client_types::Tool {
-                tool_type: "function".to_string(),
-                function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
-                    name: EDIT_FILE_NAME.to_string(),
-                    description: EDIT_FILE_DESCRIPTION.to_string(),
-                    parameters: serde_json::from_str(EDIT_FILE_SCHEMA).unwrap(),
-                },
-            },
-        ];
-
-        let _ = Self::broadcast_common_message(ToolsAvailable { tools });
-
-        let _ = Self::broadcast_common_message(SystemPromptContribution {
-            agent: scope.clone(),
-            key: "file_interaction:usage_guide".to_string(),
-            content: SystemPromptContent::Text(FILE_TOOLS_USAGE_GUIDE.to_string()),
-            priority: 900,
-            section: Some(Section::Tools),
-        });
-
+impl FileInteractionManager {
+    pub fn new() -> Self {
         Self {
-            scope,
             cache: HashMap::new(),
         }
     }
 
-    fn handle_message(&mut self, message: MessageEnvelope) {
-        if message.from_scope != self.scope {
-            return;
-        }
-
-        if let Some(execute_tool) = Self::parse_as::<ExecuteTool>(&message) {
-            match execute_tool.tool_call.function.name.as_str() {
-                READ_FILE_NAME => self.handle_read_file(execute_tool),
-                EDIT_FILE_NAME => self.handle_edit_file(execute_tool),
-                _ => {}
-            }
-        }
-    }
-
-    fn destructor(&mut self) {
-        // Clear cache on destruction
+    pub fn clear_cache(&mut self) {
         self.cache.clear();
     }
-}
 
-impl FileInteractionActor {
-    fn update_unified_files_system_prompt(&self) {
+    pub fn get_files_info(&self) -> Vec<(PathBuf, String)> {
         let mut files = Vec::new();
         for (path, entry) in &self.cache {
             let content = entry.content.get_numbered_content();
-
-            files.push(serde_json::json!({
-                "path": path.display().to_string(),
-                "content": content
-            }));
+            files.push((path.clone(), content));
         }
-
-        files.sort_by(|a, b| {
-            a["path"]
-                .as_str()
-                .unwrap_or("")
-                .cmp(b["path"].as_str().unwrap_or(""))
-        });
-
-        let data = serde_json::json!({
-            "files": files
-        });
-
-        let default_template = r#"{% for file in data.files -%}
-<file path="{{ file.path }}">{{ file.content }}</file>
-{% endfor %}"#
-            .to_string();
-
-        let _ = Self::broadcast_common_message(SystemPromptContribution {
-            agent: self.scope.clone(),
-            key: "file_interaction:files_read_and_edited".to_string(),
-            content: SystemPromptContent::Data {
-                data,
-                default_template,
-            },
-            priority: 500,
-            section: Some(Section::Custom("FilesReadAndEdited".to_string())),
-        });
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        files
     }
 
-    fn handle_read_file(&mut self, execute_tool: ExecuteTool) {
-        let tool_call_id = &execute_tool.tool_call.id;
-
-        let params: ReadFileParams =
-            match serde_json::from_str(&execute_tool.tool_call.function.arguments) {
-                Ok(params) => params,
-                Err(e) => {
-                    self.send_error_result(
-                        tool_call_id,
-                        format!("Failed to parse read_file parameters: {}", e),
-                        UIDisplayInfo {
-                            collapsed: "Parameters: Invalid format".to_string(),
-                            expanded: Some(format!(
-                                "Error: Failed to parse parameters\n\nDetails: {}",
-                                e
-                            )),
-                        },
-                    );
-                    return;
-                }
-            };
-
+    pub fn read_file(&mut self, params: ReadFileParams) -> Result<ReadFileResult, ReadFileError> {
         // Validate line numbers
         if let Some(start_line) = params.start_line {
             if start_line < 0 {
-                self.send_error_result(
-                    tool_call_id,
-                    format!("Invalid start_line: {} - lines are 1-indexed.", start_line),
-                    UIDisplayInfo {
+                return Err(ReadFileError {
+                    error_msg: format!("Invalid start_line: {} - lines are 1-indexed.", start_line),
+                    ui_display: UIDisplayInfo {
                         collapsed: format!("{}: Invalid line number", params.path),
                         expanded: Some(format!(
                             "File: {}\nError: start_line must be positive (was: {})",
                             params.path, start_line
                         )),
                     },
-                );
-                return;
+                });
             }
         }
 
         if let Some(end_line) = params.end_line {
             if end_line < 0 {
-                self.send_error_result(
-                    tool_call_id,
-                    format!("Invalid end_line: {} - lines are 1-indexed.", end_line),
-                    UIDisplayInfo {
+                return Err(ReadFileError {
+                    error_msg: format!("Invalid end_line: {} - lines are 1-indexed.", end_line),
+                    ui_display: UIDisplayInfo {
                         collapsed: format!("{}: Invalid line number", params.path),
                         expanded: Some(format!(
                             "File: {}\nError: end_line must be positive (was: {})",
                             params.path, end_line
                         )),
                     },
-                );
-                return;
+                });
             }
         }
 
@@ -503,8 +414,6 @@ impl FileInteractionActor {
 
         match self.get_or_read_file_content(&params.path, start_line, end_line) {
             Ok(content) => {
-                self.update_unified_files_system_prompt();
-
                 let message = match (start_line, end_line) {
                     (Some(start), Some(end)) => {
                         format!("Read file: {} (lines {}-{})", params.path, start, end)
@@ -530,75 +439,31 @@ impl FileInteractionActor {
 
                 let expanded = format!("File: {}\n\n{}", params.path, content);
 
-                self.send_success_result(
-                    tool_call_id,
+                Ok(ReadFileResult {
                     message,
-                    UIDisplayInfo {
+                    ui_display: UIDisplayInfo {
                         collapsed,
                         expanded: Some(expanded),
                     },
-                );
+                })
             }
-            Err(e) => {
-                self.send_error_result(
-                    tool_call_id,
-                    e.to_string(),
-                    UIDisplayInfo {
-                        collapsed: format!("{}: Read failed", params.path),
-                        expanded: Some(format!(
-                            "File: {}\nOperation: Read\nError: {}",
-                            params.path, e
-                        )),
-                    },
-                );
-            }
+            Err(e) => Err(ReadFileError {
+                error_msg: e.clone(),
+                ui_display: UIDisplayInfo {
+                    collapsed: format!("{}: Read failed", params.path),
+                    expanded: Some(format!(
+                        "File: {}\nOperation: Read\nError: {}",
+                        params.path, e
+                    )),
+                },
+            }),
         }
     }
 
-    fn handle_edit_file(&mut self, execute_tool: ExecuteTool) {
-        let tool_call_id = &execute_tool.tool_call.id;
-
-        let params = match serde_json::from_str(&execute_tool.tool_call.function.arguments) {
-            Ok(params) => params,
-            Err(e) => {
-                self.send_error_result(
-                    tool_call_id,
-                    format!("Failed to parse edit_file parameters: {}", e),
-                    UIDisplayInfo {
-                        collapsed: "Parameters: Invalid format".to_string(),
-                        expanded: Some(format!(
-                            "Error: Failed to parse parameters\n\nDetails: {}",
-                            e
-                        )),
-                    },
-                );
-                return;
-            }
-        };
-
-        let edits = match self.parse_edits_from_params(&params) {
-            Ok(edits) => edits,
-            Err(e) => {
-                self.send_error_result(
-                    tool_call_id,
-                    e.to_string(),
-                    UIDisplayInfo {
-                        collapsed: format!("{}: Parse error", params.path),
-                        expanded: Some(format!(
-                            "File: {}\nOperation: Edit\nError parsing edits: {}",
-                            params.path, e
-                        )),
-                    },
-                );
-                return;
-            }
-        };
-
-        let edits_count = edits.len();
-        match self.apply_edits(&params.path, edits) {
-            Ok(message) => {
-                self.update_unified_files_system_prompt();
-
+    pub fn edit_file(&mut self, params: &EditFileParams) -> Result<EditFileResult, EditFileError> {
+        let edits_count = params.edits.len();
+        match self.apply_edits(&params.path, &params.edits) {
+            Ok(_new_content) => {
                 let edit_summary = if edits_count == 1 {
                     "1 edit"
                 } else {
@@ -607,61 +472,61 @@ impl FileInteractionActor {
                 let collapsed = format!("{}: {} applied", params.path, edit_summary);
 
                 let expanded = format!(
-                    "File: {}\nOperation: Edit\nChanges: {} operations applied\n\nResult: {}",
-                    params.path, edits_count, message
+                    "File: {}\nOperation: Edit\nChanges: {} operations applied",
+                    params.path, edits_count
                 );
 
-                self.send_success_result(
-                    tool_call_id,
-                    message.clone(),
-                    UIDisplayInfo {
+                Ok(EditFileResult {
+                    message: format!("Edited: {}", params.path),
+                    ui_display: UIDisplayInfo {
                         collapsed,
                         expanded: Some(expanded),
                     },
-                );
+                })
             }
-            Err(e) => {
-                self.send_error_result(
-                    tool_call_id,
-                    e.to_string(),
-                    UIDisplayInfo {
-                        collapsed: format!("{}: Edit failed", params.path),
-                        expanded: Some(format!(
-                            "File: {}\nOperation: Edit\nError: {}",
-                            params.path, e
-                        )),
-                    },
-                );
-            }
+            Err(e) => Err(EditFileError {
+                error_msg: e.clone(),
+                ui_display: UIDisplayInfo {
+                    collapsed: format!("{}: Edit failed", params.path),
+                    expanded: Some(format!(
+                        "File: {}\nOperation: Edit\nError: {}",
+                        params.path, e
+                    )),
+                },
+            }),
         }
     }
 
-    fn send_error_result(&self, tool_call_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
-        let update = ToolCallStatusUpdate {
-            id: tool_call_id.to_string(),
-            status: ToolCallStatus::Done {
-                result: Err(ToolCallResult {
-                    content: error_msg,
-                    ui_display_info: ui_display,
-                }),
-            },
+    pub fn get_edit_diff(&self, params: &EditFileParams) -> Result<String, String> {
+        let path_ref = Path::new(&params.path);
+
+        if !path_ref.is_absolute() {
+            return Err(format!(
+                "Relative paths are not supported. Please use an absolute path starting with '/'. Got: '{}'",
+                params.path
+            ));
+        }
+
+        // Get the current file content (create empty file if it doesn't exist)
+        let old_content = if path_ref.exists() {
+            fs::read_to_string(path_ref)
+                .map_err(|e| format!("Failed to read file '{}': {}", params.path, e))?
+        } else {
+            String::new()
         };
 
-        let _ = Self::broadcast_common_message(update);
-    }
+        // Apply edits to get the new content
+        let new_content = self.apply_edits_to_content(&old_content, &params.edits)?;
 
-    fn send_success_result(&self, tool_call_id: &str, result: String, ui_display: UIDisplayInfo) {
-        let update = ToolCallStatusUpdate {
-            id: tool_call_id.to_string(),
-            status: ToolCallStatus::Done {
-                result: Ok(ToolCallResult {
-                    content: result,
-                    ui_display_info: ui_display,
-                }),
-            },
-        };
+        // Generate the diff
+        let text_diff = TextDiff::from_lines(&old_content, &new_content);
+        let diff_output = text_diff
+            .unified_diff()
+            .context_radius(10)
+            .header(&params.path, &format!("{} (modified)", params.path))
+            .to_string();
 
-        let _ = Self::broadcast_common_message(update);
+        Ok(diff_output)
     }
 
     fn get_or_read_file_content<P: AsRef<Path>>(
@@ -907,83 +772,7 @@ impl FileInteractionActor {
         }
     }
 
-    fn parse_edits_from_params(&self, params: &EditFileParams) -> Result<Vec<Edit>, String> {
-        let mut edits = Vec::new();
-
-        for edit_obj in &params.edits {
-            let start_line = edit_obj
-                .get("start_line")
-                .and_then(|v| v.as_u64())
-                .ok_or_else(|| "Missing required field: start_line".to_string())?
-                as usize;
-
-            let end_line = edit_obj
-                .get("end_line")
-                .and_then(|v| v.as_i64()) // Use i64 to handle -1
-                .ok_or_else(|| "Missing required field: end_line".to_string())?
-                as i64;
-
-            // Convert -1 or negative values to start_line - 1 for insertions
-            let end_line = if end_line < 0 {
-                (start_line as i64 - 1) as usize
-            } else {
-                end_line as usize
-            };
-
-            let new_content = edit_obj
-                .get("new_content")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "Missing required field: new_content".to_string())?
-                .to_string();
-
-            edits.push(Edit {
-                start_line,
-                end_line,
-                new_content,
-            });
-        }
-
-        Ok(edits)
-    }
-
-    fn apply_edits(&mut self, path: &str, mut edits: Vec<Edit>) -> Result<String, String> {
-        let path_ref = Path::new(path);
-
-        if !path_ref.is_absolute() {
-            return Err(format!(
-                "Relative paths are not supported. Please use an absolute path starting with '/'. Got: '{}'",
-                path
-            ));
-        }
-
-        if !path_ref.exists() {
-            if let Some(parent) = path_ref.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create directory: {}", e))?;
-            }
-            fs::File::create(&path).map_err(|e| format!("Failed to create file: {}", e))?;
-        }
-
-        let canonical_path = wasm_safe_normalize_path(path_ref)
-            .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
-
-        if let Some(entry) = self.cache.get(&canonical_path) {
-            let metadata = fs::metadata(&canonical_path)
-                .map_err(|e| format!("Failed to read file metadata: {}", e))?;
-            let current_mtime = metadata
-                .modified()
-                .map_err(|e| format!("Failed to get modified time: {}", e))?;
-
-            if current_mtime != entry.last_modified_at_read {
-                return Err(format!(
-                    "File '{}' has been modified since last read. Please use the read_file tool first.",
-                    canonical_path.display()
-                ));
-            }
-        }
-
-        let content = fs::read_to_string(&canonical_path)
-            .map_err(|e| format!("Failed to read file: {}", e))?;
+    fn apply_edits_to_content(&self, content: &str, edits: &[Edit]) -> Result<String, String> {
         let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
         let is_empty_file = lines.is_empty();
 
@@ -994,9 +783,10 @@ impl FileInteractionActor {
             ));
         }
 
-        edits.sort_by(|a, b| b.start_line.cmp(&a.start_line));
+        let mut edits_vec: Vec<Edit> = edits.to_vec();
+        edits_vec.sort_by(|a, b| b.start_line.cmp(&a.start_line));
 
-        for edit in edits {
+        for edit in edits_vec {
             let current_total_lines = lines.len();
             // Validate line numbers based on current line count
             if edit.start_line < 1 || edit.start_line > current_total_lines + 1 {
@@ -1040,15 +830,63 @@ impl FileInteractionActor {
         } else {
             format!("{}\n", lines.join("\n"))
         };
+
+        Ok(new_content)
+    }
+
+    fn apply_edits(&mut self, path: &str, edits: &[Edit]) -> Result<String, String> {
+        let path_ref = Path::new(path);
+
+        if !path_ref.is_absolute() {
+            return Err(format!(
+                "Relative paths are not supported. Please use an absolute path starting with '/'. Got: '{}'",
+                path
+            ));
+        }
+
+        if !path_ref.exists() {
+            if let Some(parent) = path_ref.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("Failed to create directory: {}", e))?;
+            }
+            fs::File::create(&path).map_err(|e| format!("Failed to create file: {}", e))?;
+        }
+
+        let canonical_path = wasm_safe_normalize_path(path_ref)
+            .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
+
+        if let Some(entry) = self.cache.get(&canonical_path) {
+            let metadata = fs::metadata(&canonical_path)
+                .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+            let current_mtime = metadata
+                .modified()
+                .map_err(|e| format!("Failed to get modified time: {}", e))?;
+
+            if current_mtime != entry.last_modified_at_read {
+                return Err(format!(
+                    "File '{}' has been modified since last read. Please use the read_file tool first.",
+                    canonical_path.display()
+                ));
+            }
+        }
+
+        let content = fs::read_to_string(&canonical_path)
+            .map_err(|e| format!("Failed to read file: {}", e))?;
+
+        let new_content = self.apply_edits_to_content(&content, edits)?;
+
         fs::write(&canonical_path, &new_content)
             .map_err(|e| format!("Failed to write file: {}", e))?;
 
         let _ = self.read_and_cache_file(&canonical_path, None, None);
 
-        Ok(format!(
-            "Successfully edited file: {}",
-            canonical_path.display()
-        ))
+        Ok(new_content)
+    }
+}
+
+impl Default for FileInteractionManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1099,6 +937,57 @@ mod tests {
         let numbered = content.get_numbered_content();
         let expected = "1|line 1\n2|line 2\n[... 2 lines omitted ...]\n5|line 5\n6|line 6\n[... 4 lines omitted ...]";
         assert_eq!(numbered, expected);
+    }
+
+    #[test]
+    fn test_manager_read_file() {
+        let mut manager = FileInteractionManager::new();
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.txt");
+
+        // Create test file
+        let content = "line 1\nline 2\nline 3";
+        std::fs::write(&file_path, content).unwrap();
+
+        let params = ReadFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            start_line: None,
+            end_line: None,
+        };
+
+        let result = manager.read_file(params);
+        assert!(result.is_ok());
+
+        let read_result = result.unwrap();
+        assert!(read_result.message.contains("Read file:"));
+        assert!(read_result.ui_display.expanded.is_some());
+    }
+
+    #[test]
+    fn test_manager_edit_file() {
+        let mut manager = FileInteractionManager::new();
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("edit_test.txt");
+
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 0,
+                new_content: "Hello, World!".to_string(),
+            }],
+        };
+
+        let result = manager.edit_file(&params);
+        assert!(result.is_ok());
+
+        let edit_result = result.unwrap();
+        assert!(edit_result.message.contains("Edited:"));
+
+        // Verify file was created
+        assert!(file_path.exists());
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "Hello, World!\n");
     }
 
     #[test]
@@ -1167,37 +1056,8 @@ mod tests {
     }
 
     #[test]
-    fn test_edit_parse() {
-        let params = EditFileParams {
-            path: "/tmp/test.txt".to_string(),
-            edits: vec![serde_json::json!({
-                "start_line": 1,
-                "end_line": 1,
-                "new_content": "Hello, world!"
-            })],
-        };
-
-        let actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
-
-        let result = actor.parse_edits_from_params(&params);
-        assert!(result.is_ok());
-
-        let edits = result.unwrap();
-        assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].start_line, 1);
-        assert_eq!(edits[0].end_line, 1);
-        assert_eq!(edits[0].new_content, "Hello, world!");
-    }
-
-    #[test]
     fn test_file_reader_slice_merging() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
 
@@ -1207,16 +1067,16 @@ mod tests {
         fs::write(&file_path, content).unwrap();
 
         // Read first slice
-        actor
+        manager
             .read_and_cache_file(&file_path, Some(1), Some(3))
             .unwrap();
 
         // Read overlapping slice - should merge
-        let result = actor.get_or_read_file_content(&file_path, Some(3), Some(6));
+        let result = manager.get_or_read_file_content(&file_path, Some(3), Some(6));
         assert!(result.is_ok());
 
         // Check that slices were merged
-        let cached = actor
+        let cached = manager
             .cache
             .get(&wasm_safe_normalize_path(&file_path).unwrap())
             .unwrap();
@@ -1232,10 +1092,7 @@ mod tests {
 
     #[test]
     fn test_file_reader_slice_already_covered() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
 
@@ -1244,16 +1101,16 @@ mod tests {
         fs::write(&file_path, content).unwrap();
 
         // Read first slice
-        actor
+        manager
             .read_and_cache_file(&file_path, Some(1), Some(5))
             .unwrap();
 
         // Try to read a subset - should be already covered
-        let result = actor.read_and_cache_file(&file_path, Some(2), Some(4));
+        let result = manager.read_and_cache_file(&file_path, Some(2), Some(4));
         assert!(result.is_ok());
 
         // Verify we still have just one slice
-        let cached = actor
+        let cached = manager
             .cache
             .get(&wasm_safe_normalize_path(&file_path).unwrap())
             .unwrap();
@@ -1268,10 +1125,7 @@ mod tests {
 
     #[test]
     fn test_file_reader_no_merge_on_modified_file() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
 
@@ -1280,7 +1134,7 @@ mod tests {
         fs::write(&file_path, content).unwrap();
 
         // Read first slice
-        actor
+        manager
             .read_and_cache_file(&file_path, Some(1), Some(3))
             .unwrap();
 
@@ -1293,11 +1147,11 @@ mod tests {
         .unwrap();
 
         // Try to read another slice - should not merge due to modification
-        let result = actor.read_and_cache_file(&file_path, Some(4), Some(5));
+        let result = manager.read_and_cache_file(&file_path, Some(4), Some(5));
         assert!(result.is_ok());
 
         // Should have fresh cache entry for lines 4-5, not merged
-        let cached = actor
+        let cached = manager
             .cache
             .get(&wasm_safe_normalize_path(&file_path).unwrap())
             .unwrap();
@@ -1311,25 +1165,42 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_edit_parse() {
+        let params = EditFileParams {
+            path: "/tmp/test.txt".to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 1,
+                new_content: "Hello, world!".to_string(),
+            }],
+        };
+
+        // Test that Edit structs work correctly
+        assert_eq!(params.edits.len(), 1);
+        assert_eq!(params.edits[0].start_line, 1);
+        assert_eq!(params.edits[0].end_line, 1);
+        assert_eq!(params.edits[0].new_content, "Hello, world!");
+    }
+
     // --- Comprehensive Edit Operation Tests ---
 
     #[test]
     fn test_edit_create_new_file() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("new_file.txt");
 
-        // Create a new file with content
-        let edits = vec![Edit {
-            start_line: 1,
-            end_line: 0,
-            new_content: "Hello, World!\nThis is a new file.".to_string(),
-        }];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 0,
+                new_content: "Hello, World!\nThis is a new file.".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
         // Verify file was created and has correct content
@@ -1339,63 +1210,67 @@ mod tests {
 
     #[test]
     fn test_edit_create_new_file_with_multiple_operations_error() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("multi_edit_new.txt");
 
         // Try to create a new file with multiple edit operations - should fail
-        let edits = vec![
-            Edit {
-                start_line: 1,
-                end_line: 0,
-                new_content: "Line 1\nLine 2\nLine 3".to_string(),
-            },
-            Edit {
-                start_line: 2,
-                end_line: 2,
-                new_content: "Modified Line 2".to_string(),
-            },
-        ];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![
+                Edit {
+                    start_line: 1,
+                    end_line: 0,
+                    new_content: "Line 1\nLine 2\nLine 3".to_string(),
+                },
+                Edit {
+                    start_line: 2,
+                    end_line: 2,
+                    new_content: "Modified Line 2".to_string(),
+                },
+            ],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_err());
         assert!(
             result
                 .unwrap_err()
+                .error_msg
                 .contains("Cannot apply multiple edits to a new/empty file")
         );
     }
 
     #[test]
     fn test_edit_create_then_edit_workflow() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("workflow.txt");
 
         // Step 1: Create file with initial content
-        let create_edit = vec![Edit {
-            start_line: 1,
-            end_line: 0,
-            new_content: "Line 1\nLine 2\nLine 3".to_string(),
-        }];
+        let create_params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 0,
+                new_content: "Line 1\nLine 2\nLine 3".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), create_edit);
+        let result = manager.edit_file(&create_params);
         assert!(result.is_ok());
 
         // Step 2: Now we can edit the existing file
-        let modify_edit = vec![Edit {
-            start_line: 2,
-            end_line: 2,
-            new_content: "Modified Line 2".to_string(),
-        }];
+        let modify_params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 2,
+                end_line: 2,
+                new_content: "Modified Line 2".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), modify_edit);
+        let result = manager.edit_file(&modify_params);
         assert!(result.is_ok());
 
         // Verify the final content
@@ -1405,10 +1280,7 @@ mod tests {
 
     #[test]
     fn test_edit_empty_file() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("empty.txt");
 
@@ -1416,13 +1288,16 @@ mod tests {
         fs::File::create(&file_path).unwrap();
 
         // Add content to empty file
-        let edits = vec![Edit {
-            start_line: 1,
-            end_line: 0,
-            new_content: "First line\nSecond line".to_string(),
-        }];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 0,
+                new_content: "First line\nSecond line".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
         // Verify content
@@ -1432,10 +1307,7 @@ mod tests {
 
     #[test]
     fn test_edit_single_line_operations() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("single_ops.txt");
 
@@ -1444,13 +1316,16 @@ mod tests {
         fs::write(&file_path, initial_content).unwrap();
 
         // Test replace operation
-        let edits = vec![Edit {
-            start_line: 3,
-            end_line: 3,
-            new_content: "Modified Line 3".to_string(),
-        }];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 3,
+                end_line: 3,
+                new_content: "Modified Line 3".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&file_path).unwrap();
@@ -1459,10 +1334,7 @@ mod tests {
 
     #[test]
     fn test_edit_insert_lines() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("insert_test.txt");
 
@@ -1471,13 +1343,16 @@ mod tests {
         fs::write(&file_path, initial_content).unwrap();
 
         // Insert new lines between line 2 and 3
-        let edits = vec![Edit {
-            start_line: 3,
-            end_line: 2, // end_line < start_line indicates insertion
-            new_content: "Inserted Line A\nInserted Line B".to_string(),
-        }];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 3,
+                end_line: 2, // end_line < start_line indicates insertion
+                new_content: "Inserted Line A\nInserted Line B".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&file_path).unwrap();
@@ -1489,10 +1364,7 @@ mod tests {
 
     #[test]
     fn test_edit_delete_lines() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("delete_test.txt");
 
@@ -1501,13 +1373,16 @@ mod tests {
         fs::write(&file_path, initial_content).unwrap();
 
         // Delete lines 2-4
-        let edits = vec![Edit {
-            start_line: 2,
-            end_line: 4,
-            new_content: "".to_string(),
-        }];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 2,
+                end_line: 4,
+                new_content: "".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&file_path).unwrap();
@@ -1516,10 +1391,7 @@ mod tests {
 
     #[test]
     fn test_edit_multiple_operations_sorted() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("multi_ops.txt");
 
@@ -1528,25 +1400,28 @@ mod tests {
         fs::write(&file_path, initial_content).unwrap();
 
         // Multiple edits - should be processed in reverse order
-        let edits = vec![
-            Edit {
-                start_line: 2,
-                end_line: 2,
-                new_content: "Modified Line 2".to_string(),
-            },
-            Edit {
-                start_line: 4,
-                end_line: 4,
-                new_content: "Modified Line 4".to_string(),
-            },
-            Edit {
-                start_line: 6,
-                end_line: 5, // Insert after line 5
-                new_content: "New Line 6".to_string(),
-            },
-        ];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![
+                Edit {
+                    start_line: 2,
+                    end_line: 2,
+                    new_content: "Modified Line 2".to_string(),
+                },
+                Edit {
+                    start_line: 4,
+                    end_line: 4,
+                    new_content: "Modified Line 4".to_string(),
+                },
+                Edit {
+                    start_line: 6,
+                    end_line: 5, // Insert after line 5
+                    new_content: "New Line 6".to_string(),
+                },
+            ],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&file_path).unwrap();
@@ -1556,10 +1431,7 @@ mod tests {
 
     #[test]
     fn test_edit_error_invalid_line_numbers() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("invalid_lines.txt");
 
@@ -1568,23 +1440,28 @@ mod tests {
         fs::write(&file_path, initial_content).unwrap();
 
         // Try to edit line that doesn't exist
-        let edits = vec![Edit {
-            start_line: 10, // File only has 3 lines
-            end_line: 10,
-            new_content: "Invalid".to_string(),
-        }];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 10, // File only has 3 lines
+                end_line: 10,
+                new_content: "Invalid".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid line numbers"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("Invalid line numbers")
+        );
     }
 
     #[test]
     fn test_edit_file_without_read_first() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("no_read_first.txt");
 
@@ -1593,13 +1470,16 @@ mod tests {
         fs::write(&file_path, initial_content).unwrap();
 
         // Edit file without reading it first - should work now
-        let edits = vec![Edit {
-            start_line: 1,
-            end_line: 1,
-            new_content: "Modified content".to_string(),
-        }];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 1,
+                new_content: "Modified content".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&file_path).unwrap();
@@ -1608,55 +1488,56 @@ mod tests {
 
     #[test]
     fn test_edit_file_staleness_check() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("staleness.txt");
 
         // Create and read file into cache
         let initial_content = "Original content";
         fs::write(&file_path, initial_content).unwrap();
-        actor.read_and_cache_file(&file_path, None, None).unwrap();
+        manager.read_and_cache_file(&file_path, None, None).unwrap();
 
         // Modify file externally
         std::thread::sleep(std::time::Duration::from_millis(10));
         fs::write(&file_path, "Externally modified").unwrap();
 
         // Try to edit - should fail due to staleness
-        let edits = vec![Edit {
-            start_line: 1,
-            end_line: 1,
-            new_content: "Should fail".to_string(),
-        }];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 1,
+                new_content: "Should fail".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_err());
         assert!(
             result
                 .unwrap_err()
+                .error_msg
                 .contains("has been modified since last read")
         );
     }
 
     #[test]
     fn test_edit_create_nested_directory() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let nested_path = temp_dir.path().join("nested").join("deep").join("file.txt");
 
         // Create file in nested directory that doesn't exist
-        let edits = vec![Edit {
-            start_line: 1,
-            end_line: 0,
-            new_content: "Content in nested directory".to_string(),
-        }];
+        let params = EditFileParams {
+            path: nested_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 0,
+                new_content: "Content in nested directory".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(nested_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
         // Verify file and directories were created
@@ -1667,25 +1548,81 @@ mod tests {
 
     #[test]
     fn test_documentation_example_file_creation() {
-        let mut actor = FileInteractionActor {
-            scope: "test".to_string(),
-            cache: HashMap::new(),
-        };
+        let mut manager = FileInteractionManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("doc_example.txt");
 
         // Test the exact example from our documentation
-        let edits = vec![Edit {
-            start_line: 1,
-            end_line: 0,
-            new_content: "Hello, World!\nThis is a new file.".to_string(),
-        }];
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 0,
+                new_content: "Hello, World!\nThis is a new file.".to_string(),
+            }],
+        };
 
-        let result = actor.apply_edits(file_path.to_str().unwrap(), edits);
+        let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
         // Verify it matches the documentation example
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Hello, World!\nThis is a new file.\n");
+    }
+
+    #[test]
+    fn test_get_edit_diff() {
+        let manager = FileInteractionManager::new();
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("diff_test.txt");
+
+        // Create initial file
+        let initial_content = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
+        fs::write(&file_path, initial_content).unwrap();
+
+        // Create edit parameters to modify line 3
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 3,
+                end_line: 3,
+                new_content: "Modified Line 3".to_string(),
+            }],
+        };
+
+        // Get the diff
+        let result = manager.get_edit_diff(&params);
+        assert!(result.is_ok());
+
+        let diff_output = result.unwrap();
+        assert!(diff_output.contains("Line 3"));
+        assert!(diff_output.contains("Modified Line 3"));
+        assert!(diff_output.contains("@@")); // Unified diff format marker
+    }
+
+    #[test]
+    fn test_get_edit_diff_new_file() {
+        let manager = FileInteractionManager::new();
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("new_diff_test.txt");
+
+        // Create edit parameters for a new file
+        let params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 0,
+                new_content: "New file content\nSecond line".to_string(),
+            }],
+        };
+
+        // Get the diff
+        let result = manager.get_edit_diff(&params);
+        assert!(result.is_ok());
+
+        let diff_output = result.unwrap();
+        assert!(diff_output.contains("New file content"));
+        assert!(diff_output.contains("Second line"));
+        assert!(diff_output.contains("@@")); // Unified diff format marker
     }
 }

@@ -57,7 +57,7 @@ impl HiveContext {
     }
 
     /// Spawn a new agent with the specified actors in a new scope
-    pub async fn spawn_agent<S: AsRef<str>>(
+    pub async fn spawn_agent<S: AsRef<str> + std::fmt::Debug>(
         &self,
         actor_ids: &[S],
         agent_name: String,
@@ -70,13 +70,18 @@ impl HiveContext {
     }
 
     /// Spawn a new agent with the specified actors in a specific scope
-    pub async fn spawn_agent_in_scope<S: AsRef<str>>(
+    pub async fn spawn_agent_in_scope<S: AsRef<str> + std::fmt::Debug>(
         &self,
         actor_names: &[S],
         scope: Scope,
         agent_name: String,
         parent_scope: Option<Scope>,
     ) -> HiveResult<()> {
+        tracing::debug!(
+            "Attempting to spawn agent in scope: {scope} with actors: {:?}",
+            actor_names
+        );
+
         let logical_actors_to_spawn: Vec<&str> = self
             .actor_executors
             .iter()
@@ -97,15 +102,29 @@ impl HiveContext {
             .collect();
 
         let mut set_of_logical_actors_to_spawn = HashSet::new();
-
         for actor in logical_actors_to_spawn {
             if set_of_logical_actors_to_spawn.contains(&actor) {
                 tracing::warn!(
-                    "Attempted to spawn: `{actor}` twice in the same scope. Second request was ignored and `{actor}` was only spawned once."
+                    "Attempted to spawn: `{actor}` twice in the same scope. Second request was ignored and `{actor}` will only be spawned once."
                 );
             } else {
                 set_of_logical_actors_to_spawn.insert(actor);
             }
+        }
+
+        for actor_name in actor_names {
+            if !set_of_logical_actors_to_spawn.contains(&actor_name.as_ref()) {
+                tracing::warn!(
+                    "Could not spawn actor: {actor_name:?} in scope: {scope} - actor not found. Confirm it is correctly listed as a requirement."
+                )
+            }
+        }
+
+        // NOTE: It is important we store the relationship between the child and parent scope
+        // before we spawn the children as the children may utilize this info in their new function
+        {
+            let mut parents = self.scope_parents.lock().unwrap();
+            parents.insert(scope.clone(), parent_scope.clone());
         }
 
         let rxs: Vec<_> = (0..set_of_logical_actors_to_spawn.len())
@@ -131,11 +150,6 @@ impl HiveContext {
         {
             let mut tracking = self.scope_tracking.lock().unwrap();
             tracking.insert(scope.clone(), actors_spawned);
-        }
-
-        {
-            let mut parents = self.scope_parents.lock().unwrap();
-            parents.insert(scope.clone(), parent_scope.clone());
         }
 
         let agent_spawned = AgentSpawned {

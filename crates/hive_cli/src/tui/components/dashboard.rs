@@ -117,7 +117,6 @@ impl Component<TuiMessage, MessageEnvelope> for DashboardComponent {
             return Some(TuiMessage::Redraw);
         }
 
-        // Handle keyboard events
         if let Event::Keyboard(key_event) = &ev
             && let Some(action) = self.config.dashboard.key_bindings.get(key_event)
         {
@@ -128,11 +127,8 @@ impl Component<TuiMessage, MessageEnvelope> for DashboardComponent {
             }
         }
 
-        // Handle MessageEnvelope events
         if let Event::User(envelope) = &ev {
-            // Check for AgentSpawned messages
             if parse_common_message_as::<AddMessage>(envelope).is_some() {
-                // Hide splash screen when we get a starting message
                 self.component.show_splash = false;
 
                 return match (
@@ -147,18 +143,26 @@ impl Component<TuiMessage, MessageEnvelope> for DashboardComponent {
             }
         }
 
-        // Forward events to child components
-        let textarea_event = if self.component.show_splash {
-            self.component.splash_component.on(ev.clone())
-        } else {
-            self.component.chat_area_component.on(ev.clone())
+        let mut conditional_msg_set = match (self.component.show_splash, &ev) {
+            (_, Event::User(_)) => {
+                vec![
+                    self.component.chat_area_component.on(ev.clone()),
+                    self.component.splash_component.on(ev.clone()),
+                ]
+            }
+            (false, _) => {
+                vec![self.component.chat_area_component.on(ev.clone())]
+            }
+            (true, _) => {
+                vec![self.component.splash_component.on(ev.clone())]
+            }
         };
 
-        match (self.component.graph_area_component.on(ev), textarea_event) {
-            (None, None) => None,
-            (None, Some(msg)) => Some(msg),
-            (Some(msg), None) => Some(msg),
-            (Some(msg1), Some(msg2)) => Some(TuiMessage::Batch(vec![msg1, msg2])),
-        }
+        let graph_area_component_msg = self.component.graph_area_component.on(ev);
+        conditional_msg_set.extend([graph_area_component_msg]);
+
+        Some(TuiMessage::Batch(
+            conditional_msg_set.into_iter().flatten().collect(),
+        ))
     }
 }

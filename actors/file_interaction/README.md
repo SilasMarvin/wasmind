@@ -1,61 +1,68 @@
-# File Interaction Tool Actor
+# File Interaction Actor
 
-*Example tool actor providing file system operations for the Hive library*
+*Tool actor providing file reading and editing capabilities for AI agents*
 
-This tool actor provides AI agents with comprehensive file reading and editing capabilities, including intelligent caching, atomic operations, and automatic workspace management. It supports both reading existing files and creating new ones with built-in safety features.
+This actor gives AI agents the ability to read and edit files with line-by-line precision. It handles everything from simple file reads to complex multi-edit operations, with built-in caching and safety features to prevent data loss.
+
+## Architecture
+
+This is a workspace containing two crates:
+- **`file_interaction`** - Pure Rust library with all the file manipulation logic
+- **`file_interaction_actor`** - WASM actor wrapper that provides the tools to AI agents
+
+The library can be used independently by other Rust projects, while the actor provides the Hive integration.
 
 ## Actor ID
-`file_interaction`
+`file_interaction_actor`
 
 ## Tools Provided
 
-This actor exposes the following tools to AI agents:
+This actor exposes two tools to AI agents:
 
 ### `read_file`
-- **Description**: Reads content from a file with automatic line numbering
+- **Description**: Reads content from files with automatic line numbering
 - **Parameters**:
-  - `path`: Absolute path to the file (must start with `/`)
-  - `start_line`: Optional starting line to read (1-indexed)
-  - `end_line`: Optional ending line to read (inclusive)
-- **Usage**: Read source code, configuration files, documentation, or any text files
+  - `path`: Absolute path to the file (required) 
+  - `start_line`: Optional starting line number (1-indexed)
+  - `end_line`: Optional ending line number (inclusive)
+- **Usage**: Read entire files or specific line ranges, with automatic caching for large files
 
 ### `edit_file`
-- **Description**: Apply atomic edits to a file or create new files
+- **Description**: Apply multiple edits to a file atomically
 - **Parameters**:
-  - `path`: Absolute path to the file to edit or create
+  - `path`: Absolute path to the file to edit or create (required)
   - `edits`: Array of edit operations, each containing:
     - `start_line`: Line number to start the edit (1-indexed)
-    - `end_line`: Line number to end the edit (inclusive)
-    - `new_content`: Content to replace the specified lines
-- **Usage**: Modify existing files, create new files, apply multiple edits atomically
+    - `end_line`: Line number to end the edit (for insertions, use start_line - 1)
+    - `new_content`: The content to replace with
+- **Usage**: Create files, modify existing content, insert/delete lines, all in a single operation
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need your AI agents to:
+Include this actor when you need AI agents to:
 
-- **Read and analyze files**: Load source code, configuration files, documentation, or data files
-- **Edit existing files**: Modify code, update configurations, or make content changes
-- **Create new files**: Generate new source files, documentation, or configuration files  
-- **Code development**: Work with codebases by reading, modifying, and creating files
-- **Content management**: Handle text files, documentation, and structured data
-- **Configuration management**: Read and update application settings and configuration files
-- **Data processing**: Work with text-based data files like JSON, CSV, XML, etc.
-- **Development workflows**: Support any task that requires file system interaction
+- **Read and analyze code**: Examine files with line numbers for debugging and understanding
+- **Edit files safely**: Make precise changes without corrupting existing content  
+- **Create new files**: Generate code, documentation, or configuration files
+- **Handle large files**: Work with big files using line ranges instead of loading everything
+- **Batch file operations**: Apply multiple edits to the same file in one atomic operation
+- **Development workflows**: Code editing, refactoring, and file management tasks
 
-This actor is essential for AI agents that need to work with files as part of development, content creation, or data management tasks.
+This actor is essential for AI agents that need to interact with codebases, manage project files, or perform any file-based development tasks.
 
 ## Messages Listened For
 
-- `tools::ExecuteTool` - Receives tool execution requests for file operations
+- `tools::ExecuteTool` - Receives tool execution requests when AI agents want to read or edit files
   - **Scope**: Only listens to messages from its own scope (standard tool actor behavior)
-  - Handles `read_file` tool calls for reading file content with optional line ranges
-  - Handles `edit_file` tool calls for creating new files or editing existing ones
+  - Handles both `read_file` and `edit_file` tool calls with their respective parameters
 
 ## Messages Broadcast
 
-- `tools::ToolsAvailable` - Announces the availability of `read_file` and `edit_file` tools to AI agents
-- `tools::ToolCallStatusUpdate` - Reports the results of file operations back to requesting agents
-- `assistant::SystemPromptContribution` - Provides usage guidance and maintains a live view of all open files in the workspace
+- `tools::ToolsAvailable` - Announces the `read_file` and `edit_file` tools to AI agents when initialized
+- `tools::ToolCallStatusUpdate` - Reports the results of file operations back to the requesting agent
+  - Includes both success and failure outcomes with detailed file information
+  - Provides structured UI display for better user experience
+- `assistant::SystemPromptContribution` - Provides comprehensive usage guidance and best practices
 
 ## Configuration
 
@@ -65,28 +72,30 @@ No configuration required. The actor is ready to use once included in your actor
 
 When activated in a Hive system, this actor:
 
-1. **Registers file tools** (`read_file` and `edit_file`) with AI agents
-2. **Provides usage guidance** via system prompt contributions explaining best practices
-3. **Handles read requests** with automatic line numbering and intelligent caching
-4. **Processes edit requests** atomically, supporting both file creation and modification
-5. **Maintains workspace awareness** by updating the system prompt with all open files
-6. **Enforces security** by requiring absolute paths and validating all operations
+1. **Registers file tools** with AI agents, making `read_file` and `edit_file` available
+2. **Provides usage guidance** through system prompt contributions with examples and best practices
+3. **Handles file reads** with automatic line numbering and intelligent caching for large files
+4. **Processes edit operations** by applying multiple changes atomically to prevent corruption
+5. **Manages file safety** through staleness detection and absolute path requirements
+6. **Creates directories** automatically when editing files in non-existent directories
+7. **Caches file content** to optimize repeated reads and enable efficient partial file access
 
-Key features:
-- **Smart file handling**: Small files (<64KB) are read fully, large files require line ranges
-- **Atomic operations**: Multiple edits applied from bottom to top to maintain line integrity
-- **Automatic directory creation**: Parent directories created as needed
-- **Intelligent caching**: Optimizes repeated file access and tracks modifications
+The actor ensures all file operations are safe and reliable, with comprehensive error handling and user-friendly feedback for both successful operations and failures.
 
 ## Building
 
 To build the File Interaction Actor WASM component:
 
 ```bash
+cd crates/file_interaction_actor
 cargo component build
 ```
 
-This generates `target/wasm32-wasip1/debug/file_interaction.wasm` for use in the Hive system.
+This generates the WASM file for use in the Hive system. You can also build the entire workspace:
+
+```bash
+cargo build
+```
 
 ## Testing
 

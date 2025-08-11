@@ -1,0 +1,9 @@
+actor_id = "approve"
+display_name = "Approve Tool"
+description = "Tool for approving proposed file changes"
+
+[system_prompt_contributions]
+[system_prompt_contributions.approve_tool_usage]
+section = "Tools"
+priority = 900
+content = "Use the approve tool when you approve the proposed file changes."
