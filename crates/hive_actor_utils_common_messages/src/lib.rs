@@ -7,7 +7,7 @@ pub trait Message: Serialize + DeserializeOwned {
 pub type Scope = String;
 
 pub mod actors {
-    use super::Message;
+    use super::{Message, Scope};
     use serde::{Deserialize, Serialize};
 
     // hive.common.actors.ActorReady
@@ -37,10 +37,10 @@ pub mod actors {
     // hive.common.actors.AgentSpawned
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct AgentSpawned {
-        pub agent_id: String,             // The scope UUID
-        pub name: String,                 // "Root Agent", "Code Reviewer", etc.
-        pub parent_agent: Option<String>, // Parent scope UUID if spawned
-        pub actors: Vec<String>,          // ["assistant", "execute_bash"]
+        pub agent_id: Scope,             // The scope
+        pub name: String,                // "Root Agent", "Code Reviewer", etc.
+        pub parent_agent: Option<Scope>, // Parent scope UUID if spawned
+        pub actors: Vec<String>,         // ["assistant", "execute_bash"]
     }
 
     impl Message for AgentSpawned {
@@ -52,10 +52,7 @@ pub mod assistant {
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
 
-    use crate::Scope;
-
-    use super::Message;
-    use super::tools;
+    use super::{Message, Scope, tools};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PendingToolCall {
@@ -68,13 +65,13 @@ pub mod assistant {
         WaitingForAllActorsReady,
         WaitingForUserInput,
         WaitingForSystemInput {
-            required_scope: Option<String>,
+            required_scope: Option<Scope>,
             interruptible_by_user: bool,
         },
         WaitingForAgentCoordination {
             coordinating_tool_call_id: String,
             coordinating_tool_name: String,
-            target_agent_scope: Option<String>,
+            target_agent_scope: Option<Scope>,
             user_can_interrupt: bool,
         },
         WaitingForTools {
@@ -301,8 +298,7 @@ pub mod assistant {
 }
 
 pub mod tools {
-    use super::Message;
-    use crate::Scope;
+    use super::{Message, Scope};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -348,6 +344,7 @@ pub mod tools {
         Received {
             display_info: UIDisplayInfo,
         },
+        // FUTURE NOTE: Is this one actually going to be useful?
         AwaitingSystem {
             details: AwaitingSystemDetails,
         },
