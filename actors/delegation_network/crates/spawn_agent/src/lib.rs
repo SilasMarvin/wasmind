@@ -1,5 +1,5 @@
 use delegation_network_common_types::{AgentSpawned, AgentType};
-use hive_actor_utils::{
+use wasmind_actor_utils::{
     common_messages::{
         assistant::{
             AddMessage, RequestStatusUpdate, Section, Status, SystemPromptContent,
@@ -191,7 +191,7 @@ impl tools::Tool for SpawnAgentTool {
 
             // Use the host's spawn_agent function
             let agent_id =
-                match bindings::hive::actor::agent::spawn_agent(&actors, &agent_def.agent_role) {
+                match bindings::wasmind::actor::agent::spawn_agent(&actors, &agent_def.agent_role) {
                     Ok(scope) => scope,
                     Err(e) => {
                         let error_result = ToolCallResult {

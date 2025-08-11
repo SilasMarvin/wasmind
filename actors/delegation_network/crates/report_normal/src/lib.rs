@@ -1,4 +1,4 @@
-use hive_actor_utils::{
+use wasmind_actor_utils::{
     common_messages::{
         actors::Exit,
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},

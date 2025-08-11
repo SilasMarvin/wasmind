@@ -12,13 +12,13 @@ authors.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-hive_actor_utils.workspace = true
+wasmind_actor_utils.workspace = true
 serde.workspace = true
 serde_json = "1"
 wit-bindgen-rt.workspace = true
 
 [package.metadata.component.target.dependencies]
-"hive:actor" = { path = "../../../../crates/hive_actor_bindings/wit" }
+"wasmind:actor" = { path = "../../../../crates/wasmind_actor_bindings/wit" }
 
 [profile.release]
 opt-level = "s"

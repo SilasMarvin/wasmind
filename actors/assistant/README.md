@@ -1,8 +1,8 @@
 # Assistant Actor
 
-The Assistant Actor is a conversational AI agent that manages chat interactions, tool execution, and dynamic system prompt generation within the Hive actor system.
+The Assistant Actor is a conversational AI agent that manages chat interactions, tool execution, and dynamic system prompt generation within the Wasmind actor system.
 
-This is just one version of an Assistant that can be used within Hive with sane defaults and reasonable interoperability. In reality, anyone can create their own assistant with their own state management and messages.
+This is just one version of an Assistant that can be used within Wasmind with sane defaults and reasonable interoperability. In reality, anyone can create their own assistant with their own state management and messages.
 
 ## Quick Reference
 
@@ -200,7 +200,7 @@ Waits for the language model service to become available.
 
 #### `WaitingForSystemInput`
 - **Purpose**: The primary waiting state for the assistant, enabling both system-level coordination and user interaction
-- **Note**: In Hive, events are typically represented as system messages, making this the natural default state
+- **Note**: In Wasmind, events are typically represented as system messages, making this the natural default state
 - **Configuration**:
   - `required_scope` - if set, only accepts messages from that specific actor
   - `interruptible_by_user` - whether user messages can interrupt the wait
@@ -603,7 +603,7 @@ To build the Assistant Actor WASM component:
 cargo component build
 ```
 
-This generates `target/wasm32-wasip1/debug/assistant.wasm` for use in the Hive system.
+This generates `target/wasm32-wasip1/debug/assistant.wasm` for use in the Wasmind system.
 
 ## Testing
 
@@ -615,4 +615,4 @@ cargo test
 
 ---
 
-*This README is part of the Hive actor system. For more information, see the main project documentation.*
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

@@ -1,5 +1,5 @@
-package hive:delegation-network-coordinator@0.1.0;
+package wasmind:delegation-network-coordinator@0.1.0;
 
 world delegation-network-coordinator {
-    include hive:actor/actor-world@0.1.0;
+    include wasmind:actor/actor-world@0.1.0;
 }

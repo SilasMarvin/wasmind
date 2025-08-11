@@ -1,4 +1,4 @@
-use hive_actor_utils::{
+use wasmind_actor_utils::{
     common_messages::{
         assistant::{Section, SystemPromptContent, SystemPromptContribution},
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
@@ -370,7 +370,7 @@ No active plan
             },
         };
 
-        bindings::hive::actor::messaging::broadcast(
+        bindings::wasmind::actor::messaging::broadcast(
             ToolCallStatusUpdate::MESSAGE_TYPE,
             &serde_json::to_string(&update).unwrap().into_bytes(),
         );
@@ -384,7 +384,7 @@ No active plan
             },
         };
 
-        bindings::hive::actor::messaging::broadcast(
+        bindings::wasmind::actor::messaging::broadcast(
             ToolCallStatusUpdate::MESSAGE_TYPE,
             &serde_json::to_string(&update).unwrap().into_bytes(),
         );

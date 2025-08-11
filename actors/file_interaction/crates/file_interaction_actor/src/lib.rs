@@ -1,10 +1,10 @@
-use bindings::exports::hive::actor::actor::MessageEnvelope;
+use bindings::exports::wasmind::actor::actor::MessageEnvelope;
 use file_interaction::{
     EDIT_FILE_DESCRIPTION, EDIT_FILE_NAME, EDIT_FILE_SCHEMA, EditFileParams,
     FILE_TOOLS_USAGE_GUIDE, FileInteractionManager, READ_FILE_DESCRIPTION, READ_FILE_NAME,
     READ_FILE_SCHEMA, ReadFileParams,
 };
-use hive_actor_utils::common_messages::{
+use wasmind_actor_utils::common_messages::{
     assistant::{Section, SystemPromptContent, SystemPromptContribution},
     tools::{
         ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, ToolsAvailable,
@@ -27,9 +27,9 @@ impl Default for FileInteractionActorConfig {
     }
 }
 
-hive_actor_utils::actors::macros::generate_actor_trait!();
+wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
-#[derive(hive_actor_utils::actors::macros::Actor)]
+#[derive(wasmind_actor_utils::actors::macros::Actor)]
 pub struct FileInteractionActor {
     scope: String,
     manager: FileInteractionManager,
@@ -42,17 +42,17 @@ impl GeneratedActorTrait for FileInteractionActor {
 
         let tools = if config.allow_edits {
             vec![
-                hive_actor_utils::llm_client_types::Tool {
+                wasmind_actor_utils::llm_client_types::Tool {
                     tool_type: "function".to_string(),
-                    function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
+                    function: wasmind_actor_utils::llm_client_types::ToolFunctionDefinition {
                         name: READ_FILE_NAME.to_string(),
                         description: READ_FILE_DESCRIPTION.to_string(),
                         parameters: serde_json::from_str(READ_FILE_SCHEMA).unwrap(),
                     },
                 },
-                hive_actor_utils::llm_client_types::Tool {
+                wasmind_actor_utils::llm_client_types::Tool {
                     tool_type: "function".to_string(),
-                    function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
+                    function: wasmind_actor_utils::llm_client_types::ToolFunctionDefinition {
                         name: EDIT_FILE_NAME.to_string(),
                         description: EDIT_FILE_DESCRIPTION.to_string(),
                         parameters: serde_json::from_str(EDIT_FILE_SCHEMA).unwrap(),
@@ -60,9 +60,9 @@ impl GeneratedActorTrait for FileInteractionActor {
                 },
             ]
         } else {
-            vec![hive_actor_utils::llm_client_types::Tool {
+            vec![wasmind_actor_utils::llm_client_types::Tool {
                 tool_type: "function".to_string(),
-                function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
+                function: wasmind_actor_utils::llm_client_types::ToolFunctionDefinition {
                     name: READ_FILE_NAME.to_string(),
                     description: READ_FILE_DESCRIPTION.to_string(),
                     parameters: serde_json::from_str(READ_FILE_SCHEMA).unwrap(),

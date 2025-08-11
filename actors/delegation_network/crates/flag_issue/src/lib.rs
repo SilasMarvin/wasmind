@@ -1,4 +1,4 @@
-use hive_actor_utils::{
+use wasmind_actor_utils::{
     common_messages::{
         assistant::{
             AddMessage, AgentTaskResponse, InterruptAndForceStatus,
@@ -55,10 +55,10 @@ impl tools::Tool for FlagIssueTool {
             };
 
         // Get parent scope (the agent being monitored) and grandparent scope (the manager)
-        let parent_scope = bindings::hive::actor::agent::get_parent_scope();
+        let parent_scope = bindings::wasmind::actor::agent::get_parent_scope();
         let grandparent_scope = parent_scope
             .as_ref()
-            .and_then(|p| bindings::hive::actor::agent::get_parent_scope_of(p));
+            .and_then(|p| bindings::wasmind::actor::agent::get_parent_scope_of(p));
 
         // Interrupt the monitored agent (parent of health checker)
         if let Some(parent_scope) = parent_scope

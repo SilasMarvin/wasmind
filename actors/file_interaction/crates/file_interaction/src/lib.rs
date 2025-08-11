@@ -5,7 +5,7 @@ use std::{
     time::SystemTime,
 };
 
-use hive_actor_utils::common_messages::tools::UIDisplayInfo;
+use wasmind_actor_utils::common_messages::tools::UIDisplayInfo;
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
 

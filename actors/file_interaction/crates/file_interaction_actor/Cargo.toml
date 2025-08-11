@@ -18,7 +18,7 @@ serde.workspace = true
 serde_json.workspace = true
 
 file_interaction = { path = "../file_interaction" }
-hive_actor_utils.workspace = true
+wasmind_actor_utils.workspace = true
 
 [package.metadata.component.target.dependencies]
-"hive:actor" = { path = "../../../../crates/hive_actor_bindings/wit" }
+"wasmind:actor" = { path = "../../../../crates/wasmind_actor_bindings/wit" }

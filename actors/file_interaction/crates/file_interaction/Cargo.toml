@@ -10,7 +10,7 @@ authors.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-hive_actor_utils.workspace = true
+wasmind_actor_utils.workspace = true
 
 similar = "2.7"
 

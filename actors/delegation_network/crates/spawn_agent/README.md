@@ -1,6 +1,6 @@
 # Spawn Agent Tool Actor
 
-*Example tool actor for creating and managing new AI agents within the Hive delegation network*
+*Example tool actor for creating and managing new AI agents within the Wasmind delegation network*
 
 This tool actor enables AI agents to create specialized subordinate agents with specific roles and tasks. It supports creating Worker agents for direct task execution, Manager agents for coordination and delegation, and SubManager agents for mid-level project management.
 
@@ -23,7 +23,7 @@ This actor exposes the following tool to AI agents:
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need AI agents to:
+Include this actor in your Wasmind configuration when you need AI agents to:
 
 - **Delegate complex tasks**: Break down large projects into smaller tasks for specialized agents
 - **Create specialized workers**: Spawn agents with specific expertise (coding, research, analysis, etc.)
@@ -60,7 +60,7 @@ sub_manager_actors = ["assistant", "execute_bash", "file_interaction", "spawn_ag
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Registers the `spawn_agent` tool** with AI agents, enabling them to create subordinate agents
 2. **Provides comprehensive usage guidance** including examples and best practices via system prompts
@@ -80,4 +80,4 @@ To build the Spawn Agent Actor WASM component:
 cargo component build
 ```
 
-This generates `target/wasm32-wasip1/debug/spawn_agent.wasm` for use in the Hive system.
+This generates `target/wasm32-wasip1/debug/spawn_agent.wasm` for use in the Wasmind system.

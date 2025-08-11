@@ -1,6 +1,6 @@
-use bindings::exports::hive::actor::actor::MessageEnvelope;
+use bindings::exports::wasmind::actor::actor::MessageEnvelope;
 use code_with_experts_common::ApprovalResponse;
-use hive_actor_utils::common_messages::{
+use wasmind_actor_utils::common_messages::{
     assistant::{
         AgentTaskResponse, RequestStatusUpdate, Section, Status, SystemPromptContent,
         SystemPromptContribution, WaitReason,
@@ -15,7 +15,7 @@ use serde::Deserialize;
 #[allow(warnings)]
 mod bindings;
 
-hive_actor_utils::actors::macros::generate_actor_trait!();
+wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
 const REQUEST_CHANGES_NAME: &str = "request_changes";
 const REQUEST_CHANGES_DESCRIPTION: &str = "Request changes to the proposed file edits";
@@ -35,16 +35,16 @@ struct RequestChangesParams {
     changes_requested: String,
 }
 
-#[derive(hive_actor_utils::actors::macros::Actor)]
+#[derive(wasmind_actor_utils::actors::macros::Actor)]
 pub struct RequestChangesActor {
     scope: String,
 }
 
 impl GeneratedActorTrait for RequestChangesActor {
     fn new(scope: String, _config_str: String) -> Self {
-        let tools = vec![hive_actor_utils::llm_client_types::Tool {
+        let tools = vec![wasmind_actor_utils::llm_client_types::Tool {
             tool_type: "function".to_string(),
-            function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
+            function: wasmind_actor_utils::llm_client_types::ToolFunctionDefinition {
                 name: REQUEST_CHANGES_NAME.to_string(),
                 description: REQUEST_CHANGES_DESCRIPTION.to_string(),
                 parameters: serde_json::from_str(REQUEST_CHANGES_SCHEMA).unwrap(),

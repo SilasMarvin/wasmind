@@ -1,6 +1,6 @@
 # Send Message Tool Actor
 
-*Example tool actor for inter-agent communication within the Hive delegation network*
+*Example tool actor for inter-agent communication within the Wasmind delegation network*
 
 This tool actor enables AI agents to send messages to subordinate agents they have spawned or are managing. It provides a controlled communication channel for providing guidance, asking for updates, and coordinating work between agents in a delegation hierarchy.
 
@@ -21,7 +21,7 @@ This actor exposes the following tool to AI agents:
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need AI agents to:
+Include this actor in your Wasmind configuration when you need AI agents to:
 
 - **Communicate with subordinates**: Send messages to agents they have spawned or are managing
 - **Provide course corrections**: Give updated instructions or guidance when tasks change
@@ -52,7 +52,7 @@ No configuration required. The actor is ready to use once included in your actor
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Registers the `send_message` tool** with AI agents, enabling inter-agent communication
 2. **Provides usage guidance** including when to use the tool, message guidelines, and examples

@@ -8,7 +8,7 @@ resolver = "2"
 edition = "2024"
 license = "MIT"
 description = ""
-repository = "https://github.com/SilasMarvin/hive"
+repository = "https://github.com/SilasMarvin/wasmind"
 readme = "README.md"
 authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 

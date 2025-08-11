@@ -1,6 +1,6 @@
 # Flag Issue Tool Actor
 
-*Example tool actor for reporting agent issues within the Hive delegation network*
+*Example tool actor for reporting agent issues within the Wasmind delegation network*
 
 This tool actor enables health analyzer agents to flag problematic behavior in monitored agents. When issues are detected, it interrupts the problematic agent and escalates the issue to their manager for intervention.
 
@@ -19,7 +19,7 @@ This actor exposes the following tool to AI agents:
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need:
+Include this actor in your Wasmind configuration when you need:
 
 - **Issue escalation**: Report stuck, looping, or problematic agent behavior to managers
 - **Agent intervention**: Pause problematic agents before they waste resources or cause issues
@@ -50,7 +50,7 @@ No configuration required. The actor is ready to use once included in your actor
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Registers the `flag_issue` tool** with health analyzer agents
 2. **Processes issue reports** including the nature of the detected problem

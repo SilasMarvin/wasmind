@@ -1,6 +1,6 @@
 # Execute Bash Tool Actor
 
-*Example tool actor providing command-line execution capabilities for the Hive library*
+*Example tool actor providing command-line execution capabilities for the Wasmind library*
 
 This tool actor provides AI agents with the ability to execute bash commands in a controlled, stateless environment. Each command runs in a fresh bash shell with support for all standard shell features including pipes, redirections, and command chaining.
 
@@ -22,7 +22,7 @@ This actor exposes the following tool to AI agents:
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need your AI agents to:
+Include this actor in your Wasmind configuration when you need your AI agents to:
 
 - **Execute system commands**: Run shell scripts, system utilities, and command-line tools
 - **File operations**: Create, modify, and manage files using standard Unix tools
@@ -53,7 +53,7 @@ No configuration required. The actor is ready to use once included in your actor
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Registers the `execute_command` tool** with AI agents, making it available for use
 2. **Receives tool calls** when agents decide to run shell commands
@@ -72,7 +72,7 @@ To build the Execute Bash Actor WASM component:
 cargo component build
 ```
 
-This generates `target/wasm32-wasip1/debug/execute_bash.wasm` for use in the Hive system.
+This generates `target/wasm32-wasip1/debug/execute_bash.wasm` for use in the Wasmind system.
 
 ## Testing
 

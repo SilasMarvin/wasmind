@@ -1,6 +1,6 @@
 # Report Normal Tool Actor
 
-*Example tool actor for health check reporting within the Hive delegation network*
+*Example tool actor for health check reporting within the Wasmind delegation network*
 
 This tool actor enables health analyzer agents to report that a monitored agent is healthy and making normal progress. It provides a clean exit path for health check agents when no issues are detected.
 
@@ -18,7 +18,7 @@ This actor exposes the following tool to AI agents:
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need:
+Include this actor in your Wasmind configuration when you need:
 
 - **Health check completion**: Allow analyzer agents to report positive health assessments
 - **Clean agent exit**: Provide a way for temporary analyzer agents to complete and exit
@@ -47,7 +47,7 @@ No configuration required. The actor is ready to use once included in your actor
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Registers the `report_normal` tool** with health analyzer agents
 2. **Processes health reports** when analyzer agents determine monitored agents are healthy

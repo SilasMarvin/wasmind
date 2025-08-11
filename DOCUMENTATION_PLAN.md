@@ -1,16 +1,16 @@
-# Comprehensive Documentation Plan for Hive
+# Comprehensive Documentation Plan for Wasmind
 
 ## Current State Analysis
 
 **Existing Documentation:**
 - **Actors**: Excellent READMEs (Assistant, Delegation Network, Tool Actors) - comprehensive and well-structured
-- **Configuration**: Excellent README in `hive_config` - very detailed with examples and troubleshooting
+- **Configuration**: Excellent README in `Wasmind_config` - very detailed with examples and troubleshooting
 - **Missing**: READMEs for 7/9 core crates in `/crates/`
 - **Missing**: Overall project README, getting started guide, developer documentation
 
 **What's Missing:**
 - Main project README.md 
-- Core crate READMEs (hive, hive_actor_loader, hive_actor_utils, etc.)
+- Core crate READMEs (Wasmind, Wasmind_actor_loader, Wasmind_actor_utils, etc.)
 - MDBook documentation structure
 - Getting started guides
 - Developer onboarding
@@ -26,50 +26,50 @@
    - Link to book for comprehensive docs
    - Repository structure overview
 
-2. **`crates/hive/README.md`** (Core Library)
-   - The main Hive system library
+2. **`crates/Wasmind/README.md`** (Core Library)
+   - The main Wasmind system library
    - API overview for library users
    - Core concepts (actors, messages, coordination)
    - Link to book for detailed usage
 
-3. **`crates/hive_cli/README.md`** (CLI Tool)  
+3. **`crates/Wasmind_cli/README.md`** (CLI Tool)  
    - CLI installation and basic usage
    - Command reference
    - Configuration file setup
    - Link to book for advanced usage
 
-4. **`crates/hive_actor_loader/README.md`** (Actor Loading)
+4. **`crates/Wasmind_actor_loader/README.md`** (Actor Loading)
    - Actor loading and dependency resolution system
    - Used by library developers
    - Architecture explanation
 
-5. **`crates/hive_actor_utils/README.md`** (Actor Development)
+5. **`crates/Wasmind_actor_utils/README.md`** (Actor Development)
    - Utilities and macros for actor development
    - How to build actors
    - Message patterns and tools
 
-6. **`crates/hive_llm_types/README.md`** (LLM Integration)
+6. **`crates/Wasmind_llm_types/README.md`** (LLM Integration)
    - LLM type definitions and chat message handling
    - Integration patterns
 
-7. **Update `crates/hive_actor_bindings/README.md`** (currently minimal)
+7. **Update `crates/Wasmind_actor_bindings/README.md`** (currently minimal)
    - WASM bindings for actor communication
    - Technical details for actor developers
 
 ### Phase 2: MDBook Structure
-**Book Focus: Hive System (not CLI-focused)**
+**Book Focus: Wasmind System (not CLI-focused)**
 
 ```
 docs/
 ├── book.toml
 └── src/
     ├── SUMMARY.md
-    ├── introduction.md  # What is Hive, why it exists
+    ├── introduction.md  # What is Wasmind, why it exists
     ├── concepts.md  # Core concepts: agents, actors, messages, scope, coordination
     ├── user-guide/
     │   ├── README.md  # Brief intro to this section
     │   ├── getting-started.md  # Install CLI, first config, run assistant
-    │   ├── configuration.md  # Intro + link to hive_config README
+    │   ├── configuration.md  # Intro + link to Wasmind_config README
     │   ├── using-actors.md  # Working with built-in actors
     │   └── examples.md  # User examples: chat bot, delegation, etc.
     └── developer-guide/
@@ -84,10 +84,10 @@ docs/
 
 **Key Design Decisions:**
 - **10 content pages total** - focused and manageable
-- **Clear audience separation** - user guide for using Hive, developer guide for extending it
+- **Clear audience separation** - user guide for using Wasmind, developer guide for extending it
 - **Concepts page** covers shared foundational knowledge both audiences need
 - **Examples in context** - each guide has its own relevant examples
-- **Reference under developer guide** - technical documentation for those building with Hive
+- **Reference under developer guide** - technical documentation for those building with Wasmind
 
 ## Content Strategy
 
@@ -110,21 +110,21 @@ docs/
 3. **Audience Focus**: READMEs for component users, book for system users/developers
 
 ### Authoritative Sources
-- **Configuration details**: `hive_config/README.md` (book links to it)
+- **Configuration details**: `Wasmind_config/README.md` (book links to it)
 - **Actor specifics**: Individual actor READMEs (book provides overview + links)
 - **System concepts**: Book's concepts.md page
 - **Usage patterns**: Book's examples in each guide
 
 ### CLI Positioning
 - CLI is introduced in user guide as the primary interface
-- Not the focus - just the current way to interact with Hive
+- Not the focus - just the current way to interact with Wasmind
 - Developer guide mentions embedding as alternative
 
 ## Implementation Priorities
 
 **High Priority (Phase 1):**
 1. Main project README
-2. Core crate READMEs (hive, hive_cli, hive_actor_utils)
+2. Core crate READMEs (Wasmind, Wasmind_cli, Wasmind_actor_utils)
 3. MDBook structure setup
 
 **Medium Priority (Phase 2):**
@@ -141,12 +141,12 @@ docs/
 
 ### Phase 1 Tasks
 - [ ] Main project README.md
-- [ ] crates/hive/README.md (core library)
-- [ ] crates/hive_cli/README.md
-- [ ] crates/hive_actor_utils/README.md
-- [ ] crates/hive_actor_loader/README.md
-- [ ] crates/hive_llm_types/README.md
-- [ ] Update crates/hive_actor_bindings/README.md
+- [ ] crates/Wasmind/README.md (core library)
+- [ ] crates/Wasmind_cli/README.md
+- [ ] crates/Wasmind_actor_utils/README.md
+- [ ] crates/Wasmind_actor_loader/README.md
+- [ ] crates/Wasmind_llm_types/README.md
+- [ ] Update crates/Wasmind_actor_bindings/README.md
 - [ ] Setup MDBook structure
 
 ### Phase 2 Tasks

@@ -1,5 +1,5 @@
-use bindings::hive::actor::logger;
-use hive_actor_utils::{
+use bindings::wasmind::actor::logger;
+use wasmind_actor_utils::{
     common_messages::{
         actors::{self, Exit},
         assistant::{
@@ -90,7 +90,7 @@ impl PendingMessage {
     }
 }
 
-#[derive(hive_actor_utils::actors::macros::Actor)]
+#[derive(wasmind_actor_utils::actors::macros::Actor)]
 pub struct Assistant {
     pending_message: PendingMessage,
     scope: String,
@@ -212,7 +212,7 @@ impl Assistant {
             .map_err(|e| format!("Failed to serialize request: {}", e))?;
 
         // Retry logic handles transient network failures and rate limiting
-        let request = bindings::hive::actor::http::Request::new(
+        let request = bindings::wasmind::actor::http::Request::new(
             "POST",
             &format!("{}/v1/chat/completions", base_url),
         );
@@ -294,7 +294,7 @@ impl Assistant {
             self.add_chat_messages(new_messages);
         }
 
-        let request_id = format!("req_{}", hive_actor_utils::utils::generate_id(6));
+        let request_id = format!("req_{}", wasmind_actor_utils::utils::generate_id(6));
 
         self.set_status(
             Status::Processing {
@@ -383,7 +383,7 @@ impl Assistant {
     }
 }
 
-hive_actor_utils::actors::macros::generate_actor_trait!();
+wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
 impl GeneratedActorTrait for Assistant {
     fn new(scope: String, config_str: String) -> Self {
@@ -414,7 +414,7 @@ impl GeneratedActorTrait for Assistant {
 
     fn handle_message(
         &mut self,
-        message: bindings::exports::hive::actor::actor::MessageEnvelope,
+        message: bindings::exports::wasmind::actor::actor::MessageEnvelope,
     ) -> () {
         // Handle LiteLLM base URL updates
         if let Some(base_url_update) = Self::parse_as::<litellm::BaseUrlUpdate>(&message) {

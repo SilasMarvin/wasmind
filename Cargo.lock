@@ -1396,161 +1396,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "hive"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "clap",
- "etcetera",
- "futures",
- "hive_actor_loader",
- "hive_actor_utils",
- "hive_config",
- "hive_llm_types",
- "image",
- "lazy-regex",
- "libc",
- "minijinja",
- "pathdiff",
- "rand 0.9.1",
- "ratatui",
- "reqwest",
- "rmcp",
- "serde",
- "serde_json",
- "serde_yaml",
- "snafu",
- "tempfile",
- "throbber-widgets-tui",
- "tokio",
- "toml",
- "tracing",
- "tui-textarea",
- "tuirealm",
- "wasmtime",
- "wasmtime-wasi",
- "wiremock",
-]
-
-[[package]]
-name = "hive_actor_bindings"
-version = "0.1.0"
-dependencies = [
- "wit-bindgen-rt 0.43.0",
-]
-
-[[package]]
-name = "hive_actor_loader"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "futures",
- "hex",
- "hive_config",
- "serde",
- "serde_json",
- "sha2",
- "snafu",
- "tempfile",
- "tokio",
- "tokio-test",
- "toml",
- "tracing",
- "url",
- "which",
-]
-
-[[package]]
-name = "hive_actor_utils"
-version = "0.1.0"
-dependencies = [
- "hive_actor_utils_common_messages",
- "hive_actor_utils_macros",
- "hive_llm_types",
- "rand 0.9.1",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "hive_actor_utils_common_messages"
-version = "0.1.0"
-dependencies = [
- "hive_llm_types",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "hive_actor_utils_macros"
-version = "0.1.0"
-dependencies = [
- "quote",
- "serde_json",
- "syn 2.0.104",
-]
-
-[[package]]
-name = "hive_cli"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "clap",
- "cli-clipboard",
- "etcetera",
- "futures",
- "hive",
- "hive_actor_utils",
- "image",
- "lazy-regex",
- "libc",
- "minijinja",
- "rand 0.9.1",
- "ratatui",
- "reqwest",
- "rmcp",
- "serde",
- "serde_json",
- "serde_yaml",
- "snafu",
- "tempfile",
- "throbber-widgets-tui",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "tui-textarea",
- "tuirealm",
- "url",
- "wasmtime",
- "wasmtime-wasi",
-]
-
-[[package]]
-name = "hive_config"
-version = "0.1.0"
-dependencies = [
- "etcetera",
- "serde",
- "snafu",
- "tempfile",
- "toml",
- "url",
-]
-
-[[package]]
-name = "hive_llm_types"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "home"
 version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4184,6 +4029,161 @@ checksum = "b3bc393c395cb621367ff02d854179882b9a351b4e0c93d1397e6090b53a5c2a"
 dependencies = [
  "leb128fmt",
  "wasmparser 0.235.0",
+]
+
+[[package]]
+name = "wasmind"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "etcetera",
+ "futures",
+ "image",
+ "lazy-regex",
+ "libc",
+ "minijinja",
+ "pathdiff",
+ "rand 0.9.1",
+ "ratatui",
+ "reqwest",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "snafu",
+ "tempfile",
+ "throbber-widgets-tui",
+ "tokio",
+ "toml",
+ "tracing",
+ "tui-textarea",
+ "tuirealm",
+ "wasmind_actor_loader",
+ "wasmind_actor_utils",
+ "wasmind_config",
+ "wasmind_llm_types",
+ "wasmtime",
+ "wasmtime-wasi",
+ "wiremock",
+]
+
+[[package]]
+name = "wasmind_actor_bindings"
+version = "0.1.0"
+dependencies = [
+ "wit-bindgen-rt 0.43.0",
+]
+
+[[package]]
+name = "wasmind_actor_loader"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "snafu",
+ "tempfile",
+ "tokio",
+ "tokio-test",
+ "toml",
+ "tracing",
+ "url",
+ "wasmind_config",
+ "which",
+]
+
+[[package]]
+name = "wasmind_actor_utils"
+version = "0.1.0"
+dependencies = [
+ "rand 0.9.1",
+ "serde",
+ "serde_json",
+ "wasmind_actor_utils_common_messages",
+ "wasmind_actor_utils_macros",
+ "wasmind_llm_types",
+]
+
+[[package]]
+name = "wasmind_actor_utils_common_messages"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "wasmind_llm_types",
+]
+
+[[package]]
+name = "wasmind_actor_utils_macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "serde_json",
+ "syn 2.0.104",
+]
+
+[[package]]
+name = "wasmind_cli"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "cli-clipboard",
+ "etcetera",
+ "futures",
+ "image",
+ "lazy-regex",
+ "libc",
+ "minijinja",
+ "rand 0.9.1",
+ "ratatui",
+ "reqwest",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "snafu",
+ "tempfile",
+ "throbber-widgets-tui",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "tui-textarea",
+ "tuirealm",
+ "url",
+ "wasmind",
+ "wasmind_actor_utils",
+ "wasmtime",
+ "wasmtime-wasi",
+]
+
+[[package]]
+name = "wasmind_config"
+version = "0.1.0"
+dependencies = [
+ "etcetera",
+ "serde",
+ "snafu",
+ "tempfile",
+ "toml",
+ "url",
+]
+
+[[package]]
+name = "wasmind_llm_types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

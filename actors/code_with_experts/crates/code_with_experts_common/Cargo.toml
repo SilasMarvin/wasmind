@@ -8,5 +8,5 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
-hive_actor_utils.workspace = true
+wasmind_actor_utils.workspace = true
 serde.workspace = true

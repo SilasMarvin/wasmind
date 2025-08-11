@@ -1,6 +1,6 @@
 # Complete Tool Actor
 
-*Example tool actor for task completion signaling within the Hive delegation network*
+*Example tool actor for task completion signaling within the Wasmind delegation network*
 
 This tool actor enables AI agents to formally signal the completion of their assigned tasks. It provides a structured way for agents to report their results, update their status, and notify parent agents in the delegation hierarchy about task outcomes.
 
@@ -20,7 +20,7 @@ This actor exposes the following tool to AI agents:
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need AI agents to:
+Include this actor in your Wasmind configuration when you need AI agents to:
 
 - **Signal task completion**: Formally indicate when assigned work is finished
 - **Report results**: Provide summaries of what was accomplished during task execution
@@ -50,7 +50,7 @@ No configuration required. The actor is ready to use once included in your agent
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Registers the `complete` tool** with AI agents, enabling formal task completion
 2. **Processes completion requests** by parsing the summary and success status

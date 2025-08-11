@@ -1,4 +1,4 @@
-use hive_actor_utils::common_messages::Message;
+use wasmind_actor_utils::common_messages::Message;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

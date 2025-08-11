@@ -3,7 +3,7 @@
 //   * runtime_path: "wit_bindgen_rt"
 #[rustfmt::skip]
 #[allow(dead_code, clippy::all)]
-pub mod hive {
+pub mod wasmind {
     pub mod actor {
         /// =================================================================
         /// CAPABILITY INTERFACES
@@ -26,7 +26,7 @@ pub mod hive {
                     let ptr1 = vec1.as_ptr().cast::<u8>();
                     let len1 = vec1.len();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/messaging@0.1.0")]
+                    #[link(wasm_import_module = "wasmind:actor/messaging@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "broadcast"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8, _: usize);
@@ -124,7 +124,7 @@ pub mod hive {
                     unreachable!();
                     #[cfg(target_arch = "wasm32")]
                     {
-                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/command@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[resource-drop]cmd"]
                             fn drop(_: u32);
@@ -141,7 +141,7 @@ pub mod hive {
                         let ptr0 = vec0.as_ptr().cast::<u8>();
                         let len0 = vec0.len();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/command@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[constructor]cmd"]
                             fn wit_import1(_: *mut u8, _: usize) -> i32;
@@ -188,7 +188,7 @@ pub mod hive {
                             }
                         }
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/command@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]cmd.args"]
                             fn wit_import2(_: i32, _: *mut u8, _: usize) -> i32;
@@ -219,7 +219,7 @@ pub mod hive {
                         let ptr0 = vec0.as_ptr().cast::<u8>();
                         let len0 = vec0.len();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/command@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]cmd.current-dir"]
                             fn wit_import1(_: i32, _: *mut u8, _: usize) -> i32;
@@ -244,7 +244,7 @@ pub mod hive {
                 pub fn timeout(&self, seconds: u32) -> Cmd {
                     unsafe {
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/command@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]cmd.timeout"]
                             fn wit_import0(_: i32, _: i32) -> i32;
@@ -271,7 +271,7 @@ pub mod hive {
                         let ptr1 = vec1.as_ptr().cast::<u8>();
                         let len1 = vec1.len();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/command@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]cmd.env"]
                             fn wit_import2(
@@ -310,7 +310,7 @@ pub mod hive {
                 pub fn env_clear(&self) -> Cmd {
                     unsafe {
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/command@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]cmd.env-clear"]
                             fn wit_import0(_: i32) -> i32;
@@ -341,7 +341,7 @@ pub mod hive {
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/command@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/command@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]cmd.run"]
                             fn wit_import1(_: i32, _: *mut u8);
@@ -558,7 +558,7 @@ pub mod hive {
                     unreachable!();
                     #[cfg(target_arch = "wasm32")]
                     {
-                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/http@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[resource-drop]request"]
                             fn drop(_: u32);
@@ -580,7 +580,7 @@ pub mod hive {
                         let ptr1 = vec1.as_ptr().cast::<u8>();
                         let len1 = vec1.len();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/http@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[constructor]request"]
                             fn wit_import2(
@@ -618,7 +618,7 @@ pub mod hive {
                         let ptr1 = vec1.as_ptr().cast::<u8>();
                         let len1 = vec1.len();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/http@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]request.header"]
                             fn wit_import2(
@@ -697,7 +697,7 @@ pub mod hive {
                             }
                         }
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/http@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]request.headers"]
                             fn wit_import5(_: i32, _: *mut u8, _: usize) -> i32;
@@ -729,7 +729,7 @@ pub mod hive {
                         let ptr0 = vec0.as_ptr().cast::<u8>();
                         let len0 = vec0.len();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/http@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]request.body"]
                             fn wit_import1(_: i32, _: *mut u8, _: usize) -> i32;
@@ -755,7 +755,7 @@ pub mod hive {
                 pub fn timeout(&self, seconds: u32) -> Request {
                     unsafe {
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/http@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]request.timeout"]
                             fn wit_import0(_: i32, _: i32) -> i32;
@@ -779,7 +779,7 @@ pub mod hive {
                 pub fn retry(&self, max_attempts: u32, base_delay_ms: u64) -> Request {
                     unsafe {
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/http@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]request.retry"]
                             fn wit_import0(_: i32, _: i32, _: i64) -> i32;
@@ -817,7 +817,7 @@ pub mod hive {
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/http@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/http@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]request.send"]
                             fn wit_import1(_: i32, _: *mut u8);
@@ -1017,7 +1017,7 @@ pub mod hive {
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/logger@0.1.0")]
+                    #[link(wasm_import_module = "wasmind:actor/logger@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "log"]
                         fn wit_import1(_: i32, _: *mut u8, _: usize);
@@ -1103,7 +1103,7 @@ pub mod hive {
                     unreachable!();
                     #[cfg(target_arch = "wasm32")]
                     {
-                        #[link(wasm_import_module = "hive:actor/actor@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/actor@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[resource-drop]actor"]
                             fn drop(_: u32);
@@ -1127,7 +1127,7 @@ pub mod hive {
                         let ptr1 = vec1.as_ptr().cast::<u8>();
                         let len1 = vec1.len();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/actor@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/actor@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[constructor]actor"]
                             fn wit_import2(
@@ -1185,7 +1185,7 @@ pub mod hive {
                         let ptr5 = vec5.as_ptr().cast::<u8>();
                         let len5 = vec5.len();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/actor@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/actor@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]actor.handle-message"]
                             fn wit_import6(
@@ -1243,7 +1243,7 @@ pub mod hive {
                 pub fn destructor(&self) -> () {
                     unsafe {
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "hive:actor/actor@0.1.0")]
+                        #[link(wasm_import_module = "wasmind:actor/actor@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]actor.destructor"]
                             fn wit_import0(_: i32);
@@ -1263,7 +1263,7 @@ pub mod hive {
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
-            pub type Scope = super::super::super::hive::actor::actor::Scope;
+            pub type Scope = super::super::super::wasmind::actor::actor::Scope;
             #[allow(unused_unsafe, clippy::all)]
             /// Spawn a new agent with the specified actors
             /// Returns the scope ID of the newly created agent
@@ -1316,7 +1316,7 @@ pub mod hive {
                     let len2 = vec2.len();
                     let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/agent@0.1.0")]
+                    #[link(wasm_import_module = "wasmind:actor/agent@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "spawn-agent"]
                         fn wit_import4(
@@ -1402,7 +1402,7 @@ pub mod hive {
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/agent@0.1.0")]
+                    #[link(wasm_import_module = "wasmind:actor/agent@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "get-parent-scope"]
                         fn wit_import1(_: *mut u8);
@@ -1459,7 +1459,7 @@ pub mod hive {
                     let len0 = vec0.len();
                     let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/agent@0.1.0")]
+                    #[link(wasm_import_module = "wasmind:actor/agent@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "get-parent-scope-of"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
@@ -1537,7 +1537,7 @@ pub mod hive {
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/host-info@0.1.0")]
+                    #[link(wasm_import_module = "wasmind:actor/host-info@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "get-host-working-directory"]
                         fn wit_import1(_: *mut u8);
@@ -1575,7 +1575,7 @@ pub mod hive {
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/host-info@0.1.0")]
+                    #[link(wasm_import_module = "wasmind:actor/host-info@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "get-host-os-info"]
                         fn wit_import1(_: *mut u8);
@@ -1612,7 +1612,7 @@ pub mod hive {
 #[rustfmt::skip]
 #[allow(dead_code, clippy::all)]
 pub mod exports {
-    pub mod hive {
+    pub mod wasmind {
         pub mod actor {
             /// =================================================================
             /// INTERFACE 1: Core Actor Model
@@ -1772,7 +1772,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
+                                wasm_import_module = "[export]wasmind:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-drop]actor"]
@@ -1863,7 +1863,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
+                                wasm_import_module = "[export]wasmind:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-new]actor"]
@@ -1885,7 +1885,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
+                                wasm_import_module = "[export]wasmind:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-rep]actor"]
@@ -1910,16 +1910,16 @@ pub mod exports {
                     fn destructor(&self) -> ();
                 }
                 #[doc(hidden)]
-                macro_rules! __export_hive_actor_actor_0_1_0_cabi {
+                macro_rules! __export_wasmind_actor_actor_0_1_0_cabi {
                     ($ty:ident with_types_in $($path_to_types:tt)*) => {
                         const _ : () = { #[unsafe (export_name =
-                        "hive:actor/actor@0.1.0#[constructor]actor")] unsafe extern "C"
-                        fn export_constructor_actor(arg0 : * mut u8, arg1 : usize, arg2 :
-                        * mut u8, arg3 : usize,) -> i32 { unsafe { $($path_to_types)*::
-                        _export_constructor_actor_cabi::<<$ty as $($path_to_types)*::
-                        Guest >::Actor > (arg0, arg1, arg2, arg3) } } #[unsafe
-                        (export_name =
-                        "hive:actor/actor@0.1.0#[method]actor.handle-message")] unsafe
+                        "wasmind:actor/actor@0.1.0#[constructor]actor")] unsafe extern
+                        "C" fn export_constructor_actor(arg0 : * mut u8, arg1 : usize,
+                        arg2 : * mut u8, arg3 : usize,) -> i32 { unsafe {
+                        $($path_to_types)*:: _export_constructor_actor_cabi::<<$ty as
+                        $($path_to_types)*:: Guest >::Actor > (arg0, arg1, arg2, arg3) }
+                        } #[unsafe (export_name =
+                        "wasmind:actor/actor@0.1.0#[method]actor.handle-message")] unsafe
                         extern "C" fn export_method_actor_handle_message(arg0 : * mut u8,
                         arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 : usize,
                         arg5 : * mut u8, arg6 : usize, arg7 : * mut u8, arg8 : usize,
@@ -1928,20 +1928,20 @@ pub mod exports {
                         $($path_to_types)*:: Guest >::Actor > (arg0, arg1, arg2, arg3,
                         arg4, arg5, arg6, arg7, arg8, arg9, arg10) } } #[unsafe
                         (export_name =
-                        "hive:actor/actor@0.1.0#[method]actor.destructor")] unsafe extern
-                        "C" fn export_method_actor_destructor(arg0 : * mut u8,) { unsafe
-                        { $($path_to_types)*::
+                        "wasmind:actor/actor@0.1.0#[method]actor.destructor")] unsafe
+                        extern "C" fn export_method_actor_destructor(arg0 : * mut u8,) {
+                        unsafe { $($path_to_types)*::
                         _export_method_actor_destructor_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Actor > (arg0) } } const _ : () = {
                         #[doc(hidden)] #[unsafe (export_name =
-                        "hive:actor/actor@0.1.0#[dtor]actor")] #[allow(non_snake_case)]
-                        unsafe extern "C" fn dtor(rep : * mut u8) { unsafe {
-                        $($path_to_types)*:: Actor::dtor::< <$ty as $($path_to_types)*::
-                        Guest >::Actor > (rep) } } }; };
+                        "wasmind:actor/actor@0.1.0#[dtor]actor")]
+                        #[allow(non_snake_case)] unsafe extern "C" fn dtor(rep : * mut
+                        u8) { unsafe { $($path_to_types)*:: Actor::dtor::< <$ty as
+                        $($path_to_types)*:: Guest >::Actor > (rep) } } }; };
                     };
                 }
                 #[doc(hidden)]
-                pub(crate) use __export_hive_actor_actor_0_1_0_cabi;
+                pub(crate) use __export_wasmind_actor_actor_0_1_0_cabi;
             }
         }
     }
@@ -2160,67 +2160,67 @@ macro_rules! __export_wait_impl {
     };
     ($ty:ident with_types_in $($path_to_types_root:tt)*) => {
         $($path_to_types_root)*::
-        exports::hive::actor::actor::__export_hive_actor_actor_0_1_0_cabi!($ty
-        with_types_in $($path_to_types_root)*:: exports::hive::actor::actor);
+        exports::wasmind::actor::actor::__export_wasmind_actor_actor_0_1_0_cabi!($ty
+        with_types_in $($path_to_types_root)*:: exports::wasmind::actor::actor);
     };
 }
 #[doc(inline)]
 pub(crate) use __export_wait_impl as export;
 #[cfg(target_arch = "wasm32")]
 #[unsafe(
-    link_section = "component-type:wit-bindgen:0.41.0:hive:wait@0.1.0:wait:encoded world"
+    link_section = "component-type:wit-bindgen:0.41.0:wasmind:wait@0.1.0:wait:encoded world"
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 2182] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x8b\x10\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 2209] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa6\x10\x01A\x02\x01\
 A\x11\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
-cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x18\x01q\x04\x06exit\
-ed\x01}\0\x08signaled\x01}\0\x0ffailed-to-start\x01s\0\x0ftimeout-expired\0\0\x04\
-\0\x0bexit-status\x03\0\0\x01p}\x01r\x03\x06stdout\x02\x06stderr\x02\x06status\x01\
-\x04\0\x0ecommand-output\x03\0\x03\x04\0\x03cmd\x03\x01\x01i\x05\x01@\x01\x07com\
-mands\0\x06\x04\0\x10[constructor]cmd\x01\x07\x01h\x05\x01ps\x01@\x02\x04self\x08\
-\x04args\x09\0\x06\x04\0\x10[method]cmd.args\x01\x0a\x01@\x02\x04self\x08\x03dir\
-s\0\x06\x04\0\x17[method]cmd.current-dir\x01\x0b\x01@\x02\x04self\x08\x07seconds\
-y\0\x06\x04\0\x13[method]cmd.timeout\x01\x0c\x01@\x03\x04self\x08\x03keys\x05val\
-ues\0\x06\x04\0\x0f[method]cmd.env\x01\x0d\x01@\x01\x04self\x08\0\x06\x04\0\x15[\
-method]cmd.env-clear\x01\x0e\x01j\x01\x04\x01s\x01@\x01\x04self\x08\0\x0f\x04\0\x0f\
-[method]cmd.run\x01\x10\x03\0\x18hive:actor/command@0.1.0\x05\x01\x01B\x1b\x01o\x02\
-ss\x01p\0\x01r\x01\x07headers\x01\x04\0\x07headers\x03\0\x02\x01q\x04\x0dnetwork\
--error\x01s\0\x07timeout\0\0\x0binvalid-url\x01s\0\x0dbuilder-error\x01s\0\x04\0\
-\x0drequest-error\x03\0\x04\x01p}\x01r\x03\x06status{\x07headers\x03\x04body\x06\
-\x04\0\x08response\x03\0\x07\x04\0\x07request\x03\x01\x01i\x09\x01@\x02\x06metho\
-ds\x03urls\0\x0a\x04\0\x14[constructor]request\x01\x0b\x01h\x09\x01@\x03\x04self\
-\x0c\x03keys\x05values\0\x0a\x04\0\x16[method]request.header\x01\x0d\x01@\x02\x04\
-self\x0c\x07headers\x03\0\x0a\x04\0\x17[method]request.headers\x01\x0e\x01@\x02\x04\
-self\x0c\x04body\x06\0\x0a\x04\0\x14[method]request.body\x01\x0f\x01@\x02\x04sel\
-f\x0c\x07secondsy\0\x0a\x04\0\x17[method]request.timeout\x01\x10\x01@\x03\x04sel\
-f\x0c\x0cmax-attemptsy\x0dbase-delay-msw\0\x0a\x04\0\x15[method]request.retry\x01\
-\x11\x01j\x01\x08\x01\x05\x01@\x01\x04self\x0c\0\x12\x04\0\x14[method]request.se\
-nd\x01\x13\x03\0\x15hive:actor/http@0.1.0\x05\x02\x01B\x04\x01m\x04\x05debug\x04\
-info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07messag\
-es\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x03\x01B\x0e\x01\
-s\x04\0\x05scope\x03\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-id\
-s\x0afrom-scope\x01\x07payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05\
-actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[construc\
-tor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[m\
-ethod]actor.handle-message\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]a\
-ctor.destructor\x01\x0a\x03\0\x16hive:actor/actor@0.1.0\x05\x04\x02\x03\0\x04\x05\
-scope\x01B\x0b\x02\x03\x02\x01\x05\x04\0\x05scope\x03\0\0\x01ps\x01j\x01\x01\x01\
-s\x01@\x02\x09actor-ids\x02\x0aagent-names\0\x03\x04\0\x0bspawn-agent\x01\x04\x01\
-k\x01\x01@\0\0\x05\x04\0\x10get-parent-scope\x01\x06\x01@\x01\x05scope\x01\0\x05\
-\x04\0\x13get-parent-scope-of\x01\x07\x03\0\x16hive:actor/agent@0.1.0\x05\x06\x01\
-B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\x1aget-h\
-ost-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\x03\x03\
-\0\x1ahive:actor/host-info@0.1.0\x05\x07\x01B\x0e\x01s\x04\0\x05scope\x03\0\0\x01\
-p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scope\x01\x07paylo\
-ad\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01@\x02\
-\x05scope\x01\x06configs\0\x06\x04\0\x12[constructor]actor\x01\x07\x01h\x05\x01@\
-\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[method]actor.handle-message\x01\x09\
-\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]actor.destructor\x01\x0a\x04\0\x16h\
-ive:actor/actor@0.1.0\x05\x08\x04\0\x14hive:wait/wait@0.1.0\x04\0\x0b\x0a\x01\0\x04\
-wait\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\
-\x10wit-bindgen-rust\x060.41.0";
+cast\x01\x01\x03\0\x1dwasmind:actor/messaging@0.1.0\x05\0\x01B\x18\x01q\x04\x06e\
+xited\x01}\0\x08signaled\x01}\0\x0ffailed-to-start\x01s\0\x0ftimeout-expired\0\0\
+\x04\0\x0bexit-status\x03\0\0\x01p}\x01r\x03\x06stdout\x02\x06stderr\x02\x06stat\
+us\x01\x04\0\x0ecommand-output\x03\0\x03\x04\0\x03cmd\x03\x01\x01i\x05\x01@\x01\x07\
+commands\0\x06\x04\0\x10[constructor]cmd\x01\x07\x01h\x05\x01ps\x01@\x02\x04self\
+\x08\x04args\x09\0\x06\x04\0\x10[method]cmd.args\x01\x0a\x01@\x02\x04self\x08\x03\
+dirs\0\x06\x04\0\x17[method]cmd.current-dir\x01\x0b\x01@\x02\x04self\x08\x07seco\
+ndsy\0\x06\x04\0\x13[method]cmd.timeout\x01\x0c\x01@\x03\x04self\x08\x03keys\x05\
+values\0\x06\x04\0\x0f[method]cmd.env\x01\x0d\x01@\x01\x04self\x08\0\x06\x04\0\x15\
+[method]cmd.env-clear\x01\x0e\x01j\x01\x04\x01s\x01@\x01\x04self\x08\0\x0f\x04\0\
+\x0f[method]cmd.run\x01\x10\x03\0\x1bwasmind:actor/command@0.1.0\x05\x01\x01B\x1b\
+\x01o\x02ss\x01p\0\x01r\x01\x07headers\x01\x04\0\x07headers\x03\0\x02\x01q\x04\x0d\
+network-error\x01s\0\x07timeout\0\0\x0binvalid-url\x01s\0\x0dbuilder-error\x01s\0\
+\x04\0\x0drequest-error\x03\0\x04\x01p}\x01r\x03\x06status{\x07headers\x03\x04bo\
+dy\x06\x04\0\x08response\x03\0\x07\x04\0\x07request\x03\x01\x01i\x09\x01@\x02\x06\
+methods\x03urls\0\x0a\x04\0\x14[constructor]request\x01\x0b\x01h\x09\x01@\x03\x04\
+self\x0c\x03keys\x05values\0\x0a\x04\0\x16[method]request.header\x01\x0d\x01@\x02\
+\x04self\x0c\x07headers\x03\0\x0a\x04\0\x17[method]request.headers\x01\x0e\x01@\x02\
+\x04self\x0c\x04body\x06\0\x0a\x04\0\x14[method]request.body\x01\x0f\x01@\x02\x04\
+self\x0c\x07secondsy\0\x0a\x04\0\x17[method]request.timeout\x01\x10\x01@\x03\x04\
+self\x0c\x0cmax-attemptsy\x0dbase-delay-msw\0\x0a\x04\0\x15[method]request.retry\
+\x01\x11\x01j\x01\x08\x01\x05\x01@\x01\x04self\x0c\0\x12\x04\0\x14[method]reques\
+t.send\x01\x13\x03\0\x18wasmind:actor/http@0.1.0\x05\x02\x01B\x04\x01m\x04\x05de\
+bug\x04info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07\
+messages\x01\0\x04\0\x03log\x01\x02\x03\0\x1awasmind:actor/logger@0.1.0\x05\x03\x01\
+B\x0e\x01s\x04\0\x05scope\x03\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom\
+-actor-ids\x0afrom-scope\x01\x07payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\
+\0\x05actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[co\
+nstructor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\
+\x1c[method]actor.handle-message\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[me\
+thod]actor.destructor\x01\x0a\x03\0\x19wasmind:actor/actor@0.1.0\x05\x04\x02\x03\
+\0\x04\x05scope\x01B\x0b\x02\x03\x02\x01\x05\x04\0\x05scope\x03\0\0\x01ps\x01j\x01\
+\x01\x01s\x01@\x02\x09actor-ids\x02\x0aagent-names\0\x03\x04\0\x0bspawn-agent\x01\
+\x04\x01k\x01\x01@\0\0\x05\x04\0\x10get-parent-scope\x01\x06\x01@\x01\x05scope\x01\
+\0\x05\x04\0\x13get-parent-scope-of\x01\x07\x03\0\x19wasmind:actor/agent@0.1.0\x05\
+\x06\x01B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\x1a\
+get-host-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\x03\
+\x03\0\x1dwasmind:actor/host-info@0.1.0\x05\x07\x01B\x0e\x01s\x04\0\x05scope\x03\
+\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scope\x01\x07\
+payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01\
+@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[constructor]actor\x01\x07\x01h\x05\
+\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[method]actor.handle-message\
+\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]actor.destructor\x01\x0a\x04\
+\0\x19wasmind:actor/actor@0.1.0\x05\x08\x04\0\x17wasmind:wait/wait@0.1.0\x04\0\x0b\
+\x0a\x01\0\x04wait\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-compon\
+ent\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

@@ -1,0 +1,32 @@
+[package]
+name = "wasmind_actor_loader"
+version = "0.1.0"
+
+description.workspace = true
+repository.workspace = true
+readme.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["progress-output"]
+progress-output = []
+
+[dependencies]
+tokio = { workspace = true, features = ["full"] }
+snafu = { workspace = true }
+url = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+wasmind_config = { path = "../wasmind_config" }
+tempfile = { workspace = true }
+futures = "0.3"
+tracing = "0.1"
+sha2 = "0.10"
+hex = "0.4"
+which = "6.0"
+chrono = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"

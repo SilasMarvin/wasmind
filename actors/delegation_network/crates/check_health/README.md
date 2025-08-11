@@ -1,6 +1,6 @@
 # Check Health Actor
 
-*Example infrastructure actor for agent health monitoring within the Hive delegation network*
+*Example infrastructure actor for agent health monitoring within the Wasmind delegation network*
 
 This infrastructure actor monitors AI agent conversations and periodically spawns health analyzer agents to assess agent performance, detect issues, and ensure agents are making appropriate progress on their tasks. It provides automated oversight and quality control for delegation networks. Unlike tool actors, this actor provides monitoring services rather than exposing tools to AI agents.
 
@@ -9,7 +9,7 @@ This infrastructure actor monitors AI agent conversations and periodically spawn
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need:
+Include this actor in your Wasmind configuration when you need:
 
 - **Automated agent monitoring**: Periodic health checks on agent performance and progress
 - **Issue detection**: Identify when agents are stuck, confused, or going off-track
@@ -45,7 +45,7 @@ check_interval = 300  # Check every 5 minutes (in seconds)
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Monitors agent conversations** by capturing all requests and responses from the assigned scope
 2. **Maintains conversation transcripts** for comprehensive health analysis

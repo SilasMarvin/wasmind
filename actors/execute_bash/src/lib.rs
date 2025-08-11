@@ -1,4 +1,4 @@
-use hive_actor_utils::{
+use wasmind_actor_utils::{
     common_messages::tools::{ExecuteTool, UIDisplayInfo},
     messages::Message,
     tools,
@@ -221,7 +221,7 @@ fn format_command_output(header: &str, stdout: &str, stderr: &str) -> String {
 impl CommandTool {
     /// Send error result with UI display
     fn send_error_result(&self, tool_call_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
-        use hive_actor_utils::common_messages::tools::{
+        use wasmind_actor_utils::common_messages::tools::{
             ToolCallResult, ToolCallStatus, ToolCallStatusUpdate,
         };
 
@@ -236,7 +236,7 @@ impl CommandTool {
         };
 
         // In WASM, we use the broadcast mechanism from the generated trait
-        bindings::hive::actor::messaging::broadcast(
+        bindings::wasmind::actor::messaging::broadcast(
             ToolCallStatusUpdate::MESSAGE_TYPE,
             &serde_json::to_string(&update).unwrap().into_bytes(),
         );
@@ -244,7 +244,7 @@ impl CommandTool {
 
     /// Send success result with UI display
     fn send_success_result(&self, tool_call_id: &str, result: String, ui_display: UIDisplayInfo) {
-        use hive_actor_utils::common_messages::tools::{
+        use wasmind_actor_utils::common_messages::tools::{
             ToolCallResult, ToolCallStatus, ToolCallStatusUpdate,
         };
 
@@ -258,7 +258,7 @@ impl CommandTool {
             },
         };
 
-        bindings::hive::actor::messaging::broadcast(
+        bindings::wasmind::actor::messaging::broadcast(
             ToolCallStatusUpdate::MESSAGE_TYPE,
             &serde_json::to_string(&update).unwrap().into_bytes(),
         );
@@ -273,7 +273,7 @@ impl CommandTool {
         tool_call_id: &str,
     ) {
         // Create command request using bash -c for shell features
-        let mut cmd = bindings::hive::actor::command::Cmd::new("bash");
+        let mut cmd = bindings::wasmind::actor::command::Cmd::new("bash");
 
         // Set args for bash -c command
         cmd = cmd.args(&["-c".to_string(), full_command.to_string()]);
@@ -306,10 +306,10 @@ impl CommandTool {
     fn handle_command_output(
         &self,
         command: &str,
-        output: bindings::hive::actor::command::CommandOutput,
+        output: bindings::wasmind::actor::command::CommandOutput,
         tool_call_id: &str,
     ) {
-        use bindings::hive::actor::command::ExitStatus;
+        use bindings::wasmind::actor::command::ExitStatus;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -596,10 +596,10 @@ mod tests {
     fn test_timeout_validation() {
         // Test timeout bounds in handle_call logic
         let tool_call = ExecuteTool {
-            tool_call: hive_actor_utils::llm_client_types::ToolCall {
+            tool_call: wasmind_actor_utils::llm_client_types::ToolCall {
                 id: "test-id".to_string(),
                 tool_type: "function".to_string(),
-                function: hive_actor_utils::llm_client_types::Function {
+                function: wasmind_actor_utils::llm_client_types::Function {
                     name: "execute_command".to_string(),
                     arguments: r#"{"command": "echo test", "timeout": 700}"#.to_string(),
                 },

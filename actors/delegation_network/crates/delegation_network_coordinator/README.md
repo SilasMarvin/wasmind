@@ -1,6 +1,6 @@
 # Delegation Network Coordinator Actor
 
-*Example infrastructure actor for managing agent hierarchies within the Hive delegation network*
+*Example infrastructure actor for managing agent hierarchies within the Wasmind delegation network*
 
 This infrastructure actor monitors and coordinates the delegation network by tracking active agents, their relationships, and preventing invalid operations. It ensures the integrity of the agent hierarchy and provides intelligent guardrails for manager agents. Unlike tool actors, this actor provides coordination and monitoring services rather than exposing tools to AI agents.
 
@@ -9,7 +9,7 @@ This infrastructure actor monitors and coordinates the delegation network by tra
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need:
+Include this actor in your Wasmind configuration when you need:
 
 - **Agent hierarchy tracking**: Monitor parent-child relationships between agents
 - **Active agent management**: Track which agents are currently running vs completed
@@ -44,7 +44,7 @@ No configuration required. The actor automatically coordinates any delegation ne
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Tracks agent spawning** by monitoring AgentSpawned messages and building the hierarchy tree
 2. **Maintains active agent registry** with parent-child relationships and agent types
@@ -63,4 +63,4 @@ To build the Delegation Network Coordinator Actor WASM component:
 cargo component build
 ```
 
-This generates `target/wasm32-wasip1/debug/delegation_network_coordinator.wasm` for use in the Hive system.
+This generates `target/wasm32-wasip1/debug/delegation_network_coordinator.wasm` for use in the Wasmind system.

@@ -1,6 +1,6 @@
-use bindings::exports::hive::actor::actor::MessageEnvelope;
+use bindings::exports::wasmind::actor::actor::MessageEnvelope;
 use code_with_experts_common::ApprovalResponse;
-use hive_actor_utils::common_messages::{
+use wasmind_actor_utils::common_messages::{
     assistant::{
         AgentTaskResponse, RequestStatusUpdate, Section, Status, SystemPromptContent,
         SystemPromptContribution, WaitReason,
@@ -14,7 +14,7 @@ use hive_actor_utils::common_messages::{
 #[allow(warnings)]
 mod bindings;
 
-hive_actor_utils::actors::macros::generate_actor_trait!();
+wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
 const APPROVE_NAME: &str = "approve";
 const APPROVE_DESCRIPTION: &str = "Approve the proposed file changes";
@@ -24,16 +24,16 @@ const APPROVE_SCHEMA: &str = r#"{
     "required": []
 }"#;
 
-#[derive(hive_actor_utils::actors::macros::Actor)]
+#[derive(wasmind_actor_utils::actors::macros::Actor)]
 pub struct ApproveActor {
     scope: String,
 }
 
 impl GeneratedActorTrait for ApproveActor {
     fn new(scope: String, _config_str: String) -> Self {
-        let tools = vec![hive_actor_utils::llm_client_types::Tool {
+        let tools = vec![wasmind_actor_utils::llm_client_types::Tool {
             tool_type: "function".to_string(),
-            function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
+            function: wasmind_actor_utils::llm_client_types::ToolFunctionDefinition {
                 name: APPROVE_NAME.to_string(),
                 description: APPROVE_DESCRIPTION.to_string(),
                 parameters: serde_json::from_str(APPROVE_SCHEMA).unwrap(),

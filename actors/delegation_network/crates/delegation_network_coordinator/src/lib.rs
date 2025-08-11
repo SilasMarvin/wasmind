@@ -4,10 +4,10 @@ use std::{
 };
 
 use bindings::{
-    exports::hive::actor::actor::MessageEnvelope, hive::actor::agent::get_parent_scope_of,
+    exports::wasmind::actor::actor::MessageEnvelope, wasmind::actor::agent::get_parent_scope_of,
 };
 use delegation_network_common_types::{AgentSpawned, AgentType};
-use hive_actor_utils::{
+use wasmind_actor_utils::{
     common_messages::{
         assistant::{AddMessage, Status, StatusUpdate},
         tools::ExecuteTool,
@@ -18,14 +18,14 @@ use hive_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
-hive_actor_utils::actors::macros::generate_actor_trait!();
+wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
 struct StoredAgent {
     agent_type: AgentType,
     active_agents: HashSet<String>,
 }
 
-#[derive(hive_actor_utils::actors::macros::Actor)]
+#[derive(wasmind_actor_utils::actors::macros::Actor)]
 struct DelegationNetworkCoordinator {
     active_agents: HashMap<String, StoredAgent>,
 }

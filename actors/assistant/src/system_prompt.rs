@@ -1,5 +1,5 @@
-use hive_actor_utils::common_messages::assistant::{Section, SystemPromptContent, SystemPromptContribution};
-use crate::bindings::hive::actor::host_info;
+use wasmind_actor_utils::common_messages::assistant::{Section, SystemPromptContent, SystemPromptContribution};
+use crate::bindings::wasmind::actor::host_info;
 use minijinja::{Environment, context};
 use regex::Regex;
 use std::collections::HashMap;

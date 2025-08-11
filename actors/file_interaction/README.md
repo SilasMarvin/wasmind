@@ -10,7 +10,7 @@ This is a workspace containing two crates:
 - **`file_interaction`** - Pure Rust library with all the file manipulation logic
 - **`file_interaction_actor`** - WASM actor wrapper that provides the tools to AI agents
 
-The library can be used independently by other Rust projects, while the actor provides the Hive integration.
+The library can be used independently by other Rust projects, while the actor provides the Wasmind integration.
 
 ## Actor ID
 `file_interaction_actor`
@@ -70,7 +70,7 @@ No configuration required. The actor is ready to use once included in your actor
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Registers file tools** with AI agents, making `read_file` and `edit_file` available
 2. **Provides usage guidance** through system prompt contributions with examples and best practices
@@ -91,7 +91,7 @@ cd crates/file_interaction_actor
 cargo component build
 ```
 
-This generates the WASM file for use in the Hive system. You can also build the entire workspace:
+This generates the WASM file for use in the Wasmind system. You can also build the entire workspace:
 
 ```bash
 cargo build

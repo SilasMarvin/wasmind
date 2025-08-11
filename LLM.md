@@ -1,12 +1,12 @@
-# Hive: Actor-Based LLM Agent Orchestration Library
+# Wasmind: Actor-Based LLM Agent Orchestration Library
 
 ## For LLM Developers
-This document provides context for LLMs working on the Hive codebase.
+This document provides context for LLMs working on the Wasmind codebase.
 
 ## Overview
-Hive is a Rust library for orchestrating LLM agents using an actor model architecture. In this system:
-- **Core Library** (`/crates/hive`): Actor orchestration engine and platform
-- **CLI Binary** (`/crates/hive_cli`): Reference implementation and development interface
+Wasmind is a Rust library for orchestrating LLM agents using an actor model architecture. In this system:
+- **Core Library** (`/crates/Wasmind`): Actor orchestration engine and platform
+- **CLI Binary** (`/crates/Wasmind_cli`): Reference implementation and development interface
 - **Example Actors** (`/actors/`): Sample WASM components demonstrating various capabilities
 - **Actors** are WebAssembly (WASM) plugins that handle messages and execute specific tasks
 - **Agents** are groups of actors working together under a shared scope
@@ -24,7 +24,7 @@ Hive is a Rust library for orchestrating LLM agents using an actor model archite
 2. **Message Passing**: Broadcast-based communication
    - All actors receive all messages via tokio broadcast channels
    - Actors filter messages based on scope and message type
-   - Common message types defined in `hive_actor_utils_common_messages`
+   - Common message types defined in `Wasmind_actor_utils_common_messages`
 
 3. **Scopes**: Hierarchical organization of actors
    - Each actor operates within a scope (UUID-based)
@@ -33,16 +33,16 @@ Hive is a Rust library for orchestrating LLM agents using an actor model archite
 
 ## Directory Structure
 
-### `/crates/hive` - Core Library
+### `/crates/Wasmind` - Core Library
 The main orchestration library providing:
-- `hive.rs`: Main entry point with `start_hive()` function
+- `Wasmind.rs`: Main entry point with `start_Wasmind()` function
 - `actors/`: Actor execution traits and manager implementation
   - `manager/`: WASM component instantiation and message routing
   - `agent.rs`: Agent-level abstractions (currently in transition)
 - `scope.rs`: Scope management
 
 ### `/actors` - Example Actor Implementations
-Sample WASM actors demonstrating Hive's capabilities:
+Sample WASM actors demonstrating Wasmind's capabilities:
 
 **Basic Examples:**
 - `assistant/`: LLM chat interface with tool calling
@@ -53,23 +53,23 @@ Sample WASM actors demonstrating Hive's capabilities:
 - Demonstrates: Manager → SubManager → Worker patterns
 - Tools: `spawn_agent`, `send_message`, `send_manager_message`, `planner`, `wait`, `complete`
 
-**Note**: These are examples of what's possible with Hive. The platform supports many different actor architectures and use cases.
+**Note**: These are examples of what's possible with Wasmind. The platform supports many different actor architectures and use cases.
 
-### `/crates/hive_actor_*` - Actor Support Libraries
-- `hive_actor_bindings/`: WIT bindings and interface definitions
-- `hive_actor_loader/`: Dynamic WASM actor loading
-- `hive_actor_utils/`: Common utilities, message types, and macros
-- `hive_actor_utils_macros/`: Procedural macros for actor generation
+### `/crates/Wasmind_actor_*` - Actor Support Libraries
+- `Wasmind_actor_bindings/`: WIT bindings and interface definitions
+- `Wasmind_actor_loader/`: Dynamic WASM actor loading
+- `Wasmind_actor_utils/`: Common utilities, message types, and macros
+- `Wasmind_actor_utils_macros/`: Procedural macros for actor generation
 
-### `/crates/hive_cli` - Reference Implementation
-Command-line interface and terminal application demonstrating Hive usage:
+### `/crates/Wasmind_cli` - Reference Implementation
+Command-line interface and terminal application demonstrating Wasmind usage:
 - `main.rs`: Entry point that loads and starts actors
 - `default_config.toml`: Configuration for example actor setup
-- Serves as development interface and example of what's possible with Hive
+- Serves as development interface and example of what's possible with Wasmind
 
 ### Other Components
-- `hive_config/`: Configuration management
-- `hive_llm_client/`: LLM client abstractions
+- `Wasmind_config/`: Configuration management
+- `Wasmind_llm_client/`: LLM client abstractions
 
 ## Actor Capabilities
 Actors can import various capabilities through WIT interfaces:
@@ -80,7 +80,7 @@ Actors can import various capabilities through WIT interfaces:
 - **logger**: ✅ Structured logging across the system
 
 ## Current Implementation Status
-Hive is an active development project building a flexible platform for LLM agent systems:
+Wasmind is an active development project building a flexible platform for LLM agent systems:
 - ✅ WASM-based actor system with message passing
 - ✅ HTTP client with automatic retry and exponential backoff
 - ✅ Command execution capabilities
@@ -117,14 +117,14 @@ This will generate the WASM component in `target/wasm32-wasip1/debug/` directory
 
 ### Adding New Actors
 **Actor Structure:**
-- Each actor: `Cargo.toml`, `Hive.toml`, `wit/world.wit`, `src/lib.rs`
+- Each actor: `Cargo.toml`, `Wasmind.toml`, `wit/world.wit`, `src/lib.rs`
 - Build: `cargo component build` from actor directory
 - Bindings: Auto-generated in `src/bindings.rs`
 
 **Integration:**
 - Add to application configuration as needed
 - Tools defined using `#[derive(tools::macros::Tool)]`
-- Message types in `hive_actor_utils_common_messages`
+- Message types in `Wasmind_actor_utils_common_messages`
 
 ### Platform Focus
 **Current Examples**: Delegation network demonstrates hierarchical coordination patterns
@@ -135,7 +135,7 @@ This will generate the WASM component in `target/wasm32-wasip1/debug/` directory
 
 ### Comment Quality Guidelines
 
-When working on the Hive codebase, follow these principles for writing valuable comments:
+When working on the Wasmind codebase, follow these principles for writing valuable comments:
 
 #### What TO Comment
 - **Why, not what**: Explain the reasoning behind non-obvious code decisions

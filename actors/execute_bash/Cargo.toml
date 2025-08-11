@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 description = ""
-repository = "https://github.com/SilasMarvin/hive"
+repository = "https://github.com/SilasMarvin/wasmind"
 readme = "README.md"
 authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 
@@ -16,7 +16,7 @@ wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-hive_actor_utils = { path = "../../crates/hive_actor_utils", features = ["macros"] }
+wasmind_actor_utils = { path = "../../crates/wasmind_actor_utils", features = ["macros"] }
 
 [package.metadata.component.target.dependencies]
-"hive:actor" = { path = "../../crates/hive_actor_bindings/wit" }
+"wasmind:actor" = { path = "../../crates/wasmind_actor_bindings/wit" }

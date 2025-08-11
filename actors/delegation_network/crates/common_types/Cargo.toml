@@ -10,4 +10,4 @@ authors.workspace = true
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
-hive_actor_utils.workspace = true
+wasmind_actor_utils.workspace = true

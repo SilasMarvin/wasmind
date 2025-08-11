@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
-use bindings::hive::actor::agent::spawn_agent;
-use hive_actor_utils::{
+use bindings::wasmind::actor::agent::spawn_agent;
+use wasmind_actor_utils::{
     common_messages::assistant::{AddMessage, Request, Response},
     llm_client_types::{ChatMessage, UserChatMessage},
 };
@@ -14,9 +14,9 @@ struct CheckHealthConfig {
     check_interval: u64,
 }
 
-hive_actor_utils::actors::macros::generate_actor_trait!();
+wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
-#[derive(hive_actor_utils::actors::macros::Actor)]
+#[derive(wasmind_actor_utils::actors::macros::Actor)]
 struct CheckHealthWorker {
     scope: String,
     config: CheckHealthConfig,
@@ -29,8 +29,8 @@ impl GeneratedActorTrait for CheckHealthWorker {
         let config: CheckHealthConfig = toml::from_str(&config_str)
             .expect("Failed to parse check_health config - configuration is required");
 
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Info,
+        bindings::wasmind::actor::logger::log(
+            bindings::wasmind::actor::logger::LogLevel::Info,
             &format!(
                 "CheckHealth worker initialized for scope: {} with interval: {}s",
                 scope, config.check_interval
@@ -45,7 +45,7 @@ impl GeneratedActorTrait for CheckHealthWorker {
         }
     }
 
-    fn handle_message(&mut self, message: bindings::exports::hive::actor::actor::MessageEnvelope) {
+    fn handle_message(&mut self, message: bindings::exports::wasmind::actor::actor::MessageEnvelope) {
         // Only care about messages from our own scope (the agent we're monitoring)
         if message.from_scope != self.scope {
             return;
@@ -72,8 +72,8 @@ impl GeneratedActorTrait for CheckHealthWorker {
     }
 
     fn destructor(&mut self) {
-        bindings::hive::actor::logger::log(
-            bindings::hive::actor::logger::LogLevel::Info,
+        bindings::wasmind::actor::logger::log(
+            bindings::wasmind::actor::logger::LogLevel::Info,
             &format!("CheckHealth worker shutting down for scope: {}", self.scope),
         );
     }
@@ -98,8 +98,8 @@ impl CheckHealthWorker {
         ) {
             Ok(scope) => scope,
             Err(e) => {
-                bindings::hive::actor::logger::log(
-                    bindings::hive::actor::logger::LogLevel::Info,
+                bindings::wasmind::actor::logger::log(
+                    bindings::wasmind::actor::logger::LogLevel::Info,
                     &format!("Failed to spawn Check Health {e}",),
                 );
                 return;

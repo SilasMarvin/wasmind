@@ -1,6 +1,6 @@
 # Send Manager Message Tool Actor
 
-*Example tool actor for upward communication to managers within the Hive delegation network*
+*Example tool actor for upward communication to managers within the Wasmind delegation network*
 
 This tool actor enables AI agents to send messages upward to their direct manager when they need guidance, are blocked, or have critical updates. It provides a structured escalation path for subordinate agents to communicate with their managers in the delegation hierarchy.
 
@@ -20,7 +20,7 @@ This actor exposes the following tool to AI agents:
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need AI agents to:
+Include this actor in your Wasmind configuration when you need AI agents to:
 
 - **Escalate blockers**: Report issues that prevent task completion and need manager intervention
 - **Request guidance**: Ask for clarification on requirements, priorities, or approach
@@ -51,7 +51,7 @@ No configuration required. The actor is ready to use once included in your agent
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Registers the `send_manager_message` tool** with subordinate agents for upward communication
 2. **Provides comprehensive guidance** about appropriate escalation scenarios and message formatting

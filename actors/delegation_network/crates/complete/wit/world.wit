@@ -1,5 +1,5 @@
-package hive:complete@0.1.0;
+package wasmind:complete@0.1.0;
 
 world complete {
-    include hive:actor/actor-world@0.1.0;
+    include wasmind:actor/actor-world@0.1.0;
 }

@@ -1,5 +1,5 @@
-use bindings::hive::actor::agent::get_parent_scope;
-use hive_actor_utils::{
+use bindings::wasmind::actor::agent::get_parent_scope;
+use wasmind_actor_utils::{
     common_messages::{
         assistant::{AddMessage, AgentTaskResponse, RequestStatusUpdate, Status},
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
@@ -101,7 +101,7 @@ impl tools::Tool for CompleteTool {
 
             let _ = Self::broadcast_common_message(AddMessage {
                 agent: parent_scope,
-                message: hive_actor_utils::llm_client_types::ChatMessage::System(
+                message: wasmind_actor_utils::llm_client_types::ChatMessage::System(
                     SystemChatMessage {
                         content: system_message_content,
                     },
@@ -142,7 +142,7 @@ impl CompleteTool {
             },
         };
 
-        bindings::hive::actor::messaging::broadcast(
+        bindings::wasmind::actor::messaging::broadcast(
             ToolCallStatusUpdate::MESSAGE_TYPE,
             &serde_json::to_string(&update).unwrap().into_bytes(),
         );
@@ -154,7 +154,7 @@ impl CompleteTool {
             status: ToolCallStatus::Done { result: Ok(result) },
         };
 
-        bindings::hive::actor::messaging::broadcast(
+        bindings::wasmind::actor::messaging::broadcast(
             ToolCallStatusUpdate::MESSAGE_TYPE,
             &serde_json::to_string(&update).unwrap().into_bytes(),
         );

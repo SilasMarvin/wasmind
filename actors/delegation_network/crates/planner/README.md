@@ -1,6 +1,6 @@
 # Planner Tool Actor
 
-*Example tool actor for strategic planning and progress tracking within the Hive delegation network*
+*Example tool actor for strategic planning and progress tracking within the Wasmind delegation network*
 
 This tool actor enables AI agents to create structured plans for complex multi-step tasks and systematically track progress. It provides a formal planning framework that helps agents break down large objectives into manageable components with clear status tracking.
 
@@ -22,7 +22,7 @@ This actor exposes the following tool to AI agents:
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need AI agents to:
+Include this actor in your Wasmind configuration when you need AI agents to:
 
 - **Plan complex projects**: Break down large tasks into sequential phases with clear milestones
 - **Track progress systematically**: Monitor task completion across multiple components
@@ -52,7 +52,7 @@ No configuration required. The actor is ready to use once included in your actor
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Registers the `planner` tool** with AI agents for structured planning capabilities
 2. **Provides comprehensive guidance** including best practices and example plans for different domains

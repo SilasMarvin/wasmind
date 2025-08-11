@@ -3,7 +3,7 @@
 //   * runtime_path: "wit_bindgen_rt"
 #[rustfmt::skip]
 #[allow(dead_code, clippy::all)]
-pub mod hive {
+pub mod wasmind {
     pub mod actor {
         /// =================================================================
         /// CAPABILITY INTERFACES
@@ -26,7 +26,7 @@ pub mod hive {
                     let ptr1 = vec1.as_ptr().cast::<u8>();
                     let len1 = vec1.len();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/messaging@0.1.0")]
+                    #[link(wasm_import_module = "wasmind:actor/messaging@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "broadcast"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8, _: usize);
@@ -94,7 +94,7 @@ pub mod hive {
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "hive:actor/logger@0.1.0")]
+                    #[link(wasm_import_module = "wasmind:actor/logger@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "log"]
                         fn wit_import1(_: i32, _: *mut u8, _: usize);
@@ -112,7 +112,7 @@ pub mod hive {
 #[rustfmt::skip]
 #[allow(dead_code, clippy::all)]
 pub mod exports {
-    pub mod hive {
+    pub mod wasmind {
         pub mod actor {
             /// =================================================================
             /// INTERFACE 1: Core Actor Model
@@ -272,7 +272,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
+                                wasm_import_module = "[export]wasmind:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-drop]actor"]
@@ -363,7 +363,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
+                                wasm_import_module = "[export]wasmind:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-new]actor"]
@@ -385,7 +385,7 @@ pub mod exports {
                         #[cfg(target_arch = "wasm32")]
                         {
                             #[link(
-                                wasm_import_module = "[export]hive:actor/actor@0.1.0"
+                                wasm_import_module = "[export]wasmind:actor/actor@0.1.0"
                             )]
                             unsafe extern "C" {
                                 #[link_name = "[resource-rep]actor"]
@@ -410,16 +410,16 @@ pub mod exports {
                     fn destructor(&self) -> ();
                 }
                 #[doc(hidden)]
-                macro_rules! __export_hive_actor_actor_0_1_0_cabi {
+                macro_rules! __export_wasmind_actor_actor_0_1_0_cabi {
                     ($ty:ident with_types_in $($path_to_types:tt)*) => {
                         const _ : () = { #[unsafe (export_name =
-                        "hive:actor/actor@0.1.0#[constructor]actor")] unsafe extern "C"
-                        fn export_constructor_actor(arg0 : * mut u8, arg1 : usize, arg2 :
-                        * mut u8, arg3 : usize,) -> i32 { unsafe { $($path_to_types)*::
-                        _export_constructor_actor_cabi::<<$ty as $($path_to_types)*::
-                        Guest >::Actor > (arg0, arg1, arg2, arg3) } } #[unsafe
-                        (export_name =
-                        "hive:actor/actor@0.1.0#[method]actor.handle-message")] unsafe
+                        "wasmind:actor/actor@0.1.0#[constructor]actor")] unsafe extern
+                        "C" fn export_constructor_actor(arg0 : * mut u8, arg1 : usize,
+                        arg2 : * mut u8, arg3 : usize,) -> i32 { unsafe {
+                        $($path_to_types)*:: _export_constructor_actor_cabi::<<$ty as
+                        $($path_to_types)*:: Guest >::Actor > (arg0, arg1, arg2, arg3) }
+                        } #[unsafe (export_name =
+                        "wasmind:actor/actor@0.1.0#[method]actor.handle-message")] unsafe
                         extern "C" fn export_method_actor_handle_message(arg0 : * mut u8,
                         arg1 : * mut u8, arg2 : usize, arg3 : * mut u8, arg4 : usize,
                         arg5 : * mut u8, arg6 : usize, arg7 : * mut u8, arg8 : usize,
@@ -428,20 +428,20 @@ pub mod exports {
                         $($path_to_types)*:: Guest >::Actor > (arg0, arg1, arg2, arg3,
                         arg4, arg5, arg6, arg7, arg8, arg9, arg10) } } #[unsafe
                         (export_name =
-                        "hive:actor/actor@0.1.0#[method]actor.destructor")] unsafe extern
-                        "C" fn export_method_actor_destructor(arg0 : * mut u8,) { unsafe
-                        { $($path_to_types)*::
+                        "wasmind:actor/actor@0.1.0#[method]actor.destructor")] unsafe
+                        extern "C" fn export_method_actor_destructor(arg0 : * mut u8,) {
+                        unsafe { $($path_to_types)*::
                         _export_method_actor_destructor_cabi::<<$ty as
                         $($path_to_types)*:: Guest >::Actor > (arg0) } } const _ : () = {
                         #[doc(hidden)] #[unsafe (export_name =
-                        "hive:actor/actor@0.1.0#[dtor]actor")] #[allow(non_snake_case)]
-                        unsafe extern "C" fn dtor(rep : * mut u8) { unsafe {
-                        $($path_to_types)*:: Actor::dtor::< <$ty as $($path_to_types)*::
-                        Guest >::Actor > (rep) } } }; };
+                        "wasmind:actor/actor@0.1.0#[dtor]actor")]
+                        #[allow(non_snake_case)] unsafe extern "C" fn dtor(rep : * mut
+                        u8) { unsafe { $($path_to_types)*:: Actor::dtor::< <$ty as
+                        $($path_to_types)*:: Guest >::Actor > (rep) } } }; };
                     };
                 }
                 #[doc(hidden)]
-                pub(crate) use __export_hive_actor_actor_0_1_0_cabi;
+                pub(crate) use __export_wasmind_actor_actor_0_1_0_cabi;
             }
         }
     }
@@ -563,8 +563,8 @@ macro_rules! __export_actor_world_impl {
     };
     ($ty:ident with_types_in $($path_to_types_root:tt)*) => {
         $($path_to_types_root)*::
-        exports::hive::actor::actor::__export_hive_actor_actor_0_1_0_cabi!($ty
-        with_types_in $($path_to_types_root)*:: exports::hive::actor::actor);
+        exports::wasmind::actor::actor::__export_wasmind_actor_actor_0_1_0_cabi!($ty
+        with_types_in $($path_to_types_root)*:: exports::wasmind::actor::actor);
     };
 }
 #[doc(inline)]
@@ -575,21 +575,21 @@ pub(crate) use __export_actor_world_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 637] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xfb\x03\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 646] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x84\x04\x01A\x02\x01\
 A\x06\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
-cast\x01\x01\x03\0\x1ahive:actor/messaging@0.1.0\x05\0\x01B\x04\x01m\x04\x05debu\
-g\x04info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07m\
-essages\x01\0\x04\0\x03log\x01\x02\x03\0\x17hive:actor/logger@0.1.0\x05\x01\x01B\
-\x0e\x01s\x04\0\x05scope\x03\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-\
-actor-ids\x0afrom-scope\x01\x07payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\
+cast\x01\x01\x03\0\x1dwasmind:actor/messaging@0.1.0\x05\0\x01B\x04\x01m\x04\x05d\
+ebug\x04info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07\
+messages\x01\0\x04\0\x03log\x01\x02\x03\0\x1awasmind:actor/logger@0.1.0\x05\x01\x01\
+B\x0e\x01s\x04\0\x05scope\x03\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom\
+-actor-ids\x0afrom-scope\x01\x07payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\
 \0\x05actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[co\
 nstructor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\
 \x1c[method]actor.handle-message\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[me\
-thod]actor.destructor\x01\x0a\x04\0\x16hive:actor/actor@0.1.0\x05\x02\x04\0(file\
--interaction:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0\
-G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
-n-rust\x060.41.0";
+thod]actor.destructor\x01\x0a\x04\0\x19wasmind:actor/actor@0.1.0\x05\x02\x04\0(f\
+ile-interaction:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\
+\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bi\
+ndgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 description = ""
-repository = "https://github.com/SilasMarvin/hive"
+repository = "https://github.com/SilasMarvin/wasmind"
 readme = "README.md"
 authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 
@@ -21,7 +21,7 @@ minijinja = "2.5"
 regex = "1.10"
 chrono = { version = "0.4", features = ["serde"] }
 
-hive_actor_utils = { path = "../../crates/hive_actor_utils", features = ["macros"] }
+wasmind_actor_utils = { path = "../../crates/wasmind_actor_utils", features = ["macros"] }
 
 [package.metadata.component.target.dependencies]
-"hive:actor" = { path = "../../crates/hive_actor_bindings/wit" }
+"wasmind:actor" = { path = "../../crates/wasmind_actor_bindings/wit" }

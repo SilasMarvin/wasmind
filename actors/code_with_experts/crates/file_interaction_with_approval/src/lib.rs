@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use bindings::{
-    exports::hive::actor::actor::MessageEnvelope,
-    hive::actor::{actor::Scope, agent::spawn_agent},
+    exports::wasmind::actor::actor::MessageEnvelope,
+    wasmind::actor::{actor::Scope, agent::spawn_agent},
 };
 use code_with_experts_common::ApprovalResponse;
 use file_interaction::{
@@ -10,7 +10,7 @@ use file_interaction::{
     FILE_TOOLS_USAGE_GUIDE, FileInteractionManager, READ_FILE_DESCRIPTION, READ_FILE_NAME,
     READ_FILE_SCHEMA, ReadFileParams,
 };
-use hive_actor_utils::{
+use wasmind_actor_utils::{
     common_messages::{
         assistant::{AddMessage, Section, SystemPromptContent, SystemPromptContribution},
         tools::{
@@ -30,7 +30,7 @@ struct ApprovalConfig {
     approvers: HashMap<String, Vec<String>>,
 }
 
-hive_actor_utils::actors::macros::generate_actor_trait!();
+wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
 struct ActiveEditFileCall {
     approver_scopes: Vec<Scope>,
@@ -39,7 +39,7 @@ struct ActiveEditFileCall {
     approver_responses: HashMap<Scope, Option<ApprovalResponse>>,
 }
 
-#[derive(hive_actor_utils::actors::macros::Actor)]
+#[derive(wasmind_actor_utils::actors::macros::Actor)]
 pub struct FileInteractionWIthApprovalActor {
     scope: String,
     manager: FileInteractionManager,
@@ -53,17 +53,17 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
             toml::from_str(&config_str).expect("Error deserializing config");
 
         let tools = vec![
-            hive_actor_utils::llm_client_types::Tool {
+            wasmind_actor_utils::llm_client_types::Tool {
                 tool_type: "function".to_string(),
-                function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
+                function: wasmind_actor_utils::llm_client_types::ToolFunctionDefinition {
                     name: READ_FILE_NAME.to_string(),
                     description: READ_FILE_DESCRIPTION.to_string(),
                     parameters: serde_json::from_str(READ_FILE_SCHEMA).unwrap(),
                 },
             },
-            hive_actor_utils::llm_client_types::Tool {
+            wasmind_actor_utils::llm_client_types::Tool {
                 tool_type: "function".to_string(),
-                function: hive_actor_utils::llm_client_types::ToolFunctionDefinition {
+                function: wasmind_actor_utils::llm_client_types::ToolFunctionDefinition {
                     name: EDIT_FILE_NAME.to_string(),
                     description: EDIT_FILE_DESCRIPTION.to_string(),
                     parameters: serde_json::from_str(EDIT_FILE_SCHEMA).unwrap(),

@@ -1,6 +1,6 @@
 # Wait Tool Actor
 
-*Example tool actor for coordination and timing control within the Hive delegation network*
+*Example tool actor for coordination and timing control within the Wasmind delegation network*
 
 This tool actor enables AI agents to pause execution and wait for responses from other agents or system events. It provides intelligent timing coordination for multi-agent workflows where sequential operations or synchronization is required.
 
@@ -19,7 +19,7 @@ This actor exposes the following tool to AI agents:
 
 ## When You Might Want This Actor
 
-Include this actor in your Hive configuration when you need AI agents to:
+Include this actor in your Wasmind configuration when you need AI agents to:
 
 - **Coordinate agent responses**: Wait for subordinate agents to complete tasks or respond to messages
 - **Synchronize operations**: Pause between dependent operations that must occur in sequence
@@ -49,7 +49,7 @@ No configuration required. The actor is ready to use once included in your actor
 
 ## How It Works
 
-When activated in a Hive system, this actor:
+When activated in a Wasmind system, this actor:
 
 1. **Registers the `wait` tool** with AI agents, enabling controlled pausing
 2. **Provides comprehensive guidance** about when and how to use waiting effectively
