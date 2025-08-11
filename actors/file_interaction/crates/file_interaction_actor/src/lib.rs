@@ -156,12 +156,11 @@ impl FileInteractionActor {
                 Err(e) => {
                     self.send_error_result(
                         tool_call_id,
-                        format!("Failed to parse read_file parameters: {}", e),
+                        format!("Failed to parse read_file parameters: {e}"),
                         UIDisplayInfo {
                             collapsed: "Parameters: Invalid format".to_string(),
                             expanded: Some(format!(
-                                "Error: Failed to parse parameters\n\nDetails: {}",
-                                e
+                                "Error: Failed to parse parameters\n\nDetails: {e}"
                             )),
                         },
                     );
@@ -189,12 +188,11 @@ impl FileInteractionActor {
                 Err(e) => {
                     self.send_error_result(
                         tool_call_id,
-                        format!("Failed to parse edit_file parameters: {}", e),
+                        format!("Failed to parse edit_file parameters: {e}"),
                         UIDisplayInfo {
                             collapsed: "Parameters: Invalid format".to_string(),
                             expanded: Some(format!(
-                                "Error: Failed to parse parameters\n\nDetails: {}",
-                                e
+                                "Error: Failed to parse parameters\n\nDetails: {e}"
                             )),
                         },
                     );
