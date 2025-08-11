@@ -28,9 +28,12 @@ pub struct AssistantConfig {
     pub system_prompt: SystemPromptConfig,
     #[serde(default)]
     pub base_url: Option<String>,
-    /// Whether the LLM is required to respond with tool calls
+    // Whether the LLM is required to respond with tool calls
     #[serde(default)]
     pub require_tool_call: bool,
+    #[serde(default)]
+    // Whether the LLM is allowed to respond with empty content
+    pub allow_empty_responses: bool,
 }
 
 /// Pending message that accumulates user input and system messages to be submitted to the LLM when appropriate
@@ -123,7 +126,10 @@ impl Assistant {
                         _ => {
                             logger::log(
                                 logger::LogLevel::Error,
-                                &format!("Unexpected message type in LLM response: expected Assistant message, got {:?}", choice.message)
+                                &format!(
+                                    "Unexpected message type in LLM response: expected Assistant message, got {:?}",
+                                    choice.message
+                                ),
                             );
                             self.set_status(
                                 Status::Wait {
@@ -139,7 +145,7 @@ impl Assistant {
                 } else {
                     logger::log(
                         logger::LogLevel::Error,
-                        "LLM response contained no choices - empty response"
+                        "LLM response contained no choices - empty response",
                     );
                     self.set_status(
                         Status::Wait {
@@ -503,6 +509,15 @@ impl GeneratedActorTrait for Assistant {
             else if let Some(response) = Self::parse_as::<assistant::Response>(&message) {
                 if let Status::Processing { request_id } = &self.status {
                     if response.request_id == *request_id {
+                        if response.message.content.is_none()
+                            && response.message.tool_calls.is_none()
+                            && !self.config.allow_empty_responses
+                        {
+                            self.pending_message.add_system_message(SystemChatMessage { content: "SYSTEM ERROR: It is required you respond with some text content or tool call. Review who you are and what you are doing. Acomplish your goal!".to_string() });
+                            self.submit(false);
+                            return;
+                        }
+
                         // This is our response! Handle tool calls if any
                         if let Some(tool_calls) = &response.message.tool_calls {
                             // Convert tool calls to pending tool calls map
@@ -535,7 +550,7 @@ impl GeneratedActorTrait for Assistant {
                             }
                         } else {
                             if self.config.require_tool_call {
-                                self.pending_message.add_system_message(SystemChatMessage { content: "ERROR: It is required you respond with some kind of tool call! Review who you are and what you are doing and respond with a valid tool call".to_string() });
+                                self.pending_message.add_system_message(SystemChatMessage { content: "SYSTEM ERROR: It is required you respond with some kind of tool call! Review who you are and what you are doing and respond with a valid tool call".to_string() });
                                 self.submit(false);
                             } else {
                                 self.set_status(
@@ -573,8 +588,7 @@ impl GeneratedActorTrait for Assistant {
         }
 
         // Handle interrupt and force status
-        if let Some(interrupt) =
-            Self::parse_as::<assistant::InterruptAndForceStatus>(&message)
+        if let Some(interrupt) = Self::parse_as::<assistant::InterruptAndForceStatus>(&message)
             && interrupt.agent == self.scope
         {
             // Check if the last message in chat history is a tool call that needs to be removed

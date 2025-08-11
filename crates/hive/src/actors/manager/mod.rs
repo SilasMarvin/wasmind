@@ -64,7 +64,10 @@ impl Manager {
         config.async_support(true);
         let engine = Engine::new(&config).unwrap();
 
-        let component = Component::from_binary(&engine, wasm).unwrap();
+        let component = match Component::from_binary(&engine, wasm) {
+            Ok(component) => component,
+            Err(e) => panic!("Error creating wasm component for: {actor_id} - {e:?}"),
+        };
 
         let mut store = Store::new(
             &engine,

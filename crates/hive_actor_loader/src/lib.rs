@@ -629,10 +629,7 @@ impl ActorLoader {
         };
 
         let mut cmd = Command::new("cargo-component");
-        cmd.current_dir(&build_dir)
-            .arg("rustc")
-            .arg("--crate-type=cdylib")
-            .arg("--release");
+        cmd.current_dir(&build_dir).arg("build").arg("--release");
 
         if package_name.is_some() {
             info!("Building in package directory: {:?}", build_dir);

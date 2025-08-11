@@ -133,8 +133,8 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
                         &active_edit_file_call.tool_call_id,
                         tool_response_message.clone(),
                         UIDisplayInfo {
-                            collapsed: "Edit file request denied".to_string(),
-                            expanded: Some(tool_response_message),
+                            collapsed: tool_response_message.clone(),
+                            expanded: None,
                         },
                     );
                 } else {
