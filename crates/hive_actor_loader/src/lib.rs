@@ -438,9 +438,7 @@ impl ActorLoader {
                     .await?;
 
                 // Get version from original source
-                let version = self
-                    .get_actor_version(source_path, package_name, &actor.name)
-                    .await?;
+                let version = self.get_actor_version(source_path, package_name).await?;
 
                 (source_path.to_path_buf(), wasm_path, version)
             }
@@ -467,9 +465,7 @@ impl ActorLoader {
                     .await?;
 
                 // Get version from cached copy
-                let version = self
-                    .get_actor_version(&build_path, package_name, &actor.name)
-                    .await?;
+                let version = self.get_actor_version(&build_path, package_name).await?;
 
                 (build_path, wasm_path, version)
             }
@@ -719,7 +715,6 @@ impl ActorLoader {
         &self,
         actor_path: &Path,
         package_name: Option<&str>,
-        actor_name: &str,
     ) -> Result<String> {
         // Determine the manifest path
         let manifest_path = if let Some(package) = package_name {
@@ -816,9 +811,7 @@ mod tests {
             .join("test_actors")
             .join("buildable_simple");
 
-        let result = loader
-            .get_actor_version(&test_actor_path, None, "buildable_simple")
-            .await;
+        let result = loader.get_actor_version(&test_actor_path, None).await;
         assert!(result.is_ok(), "Failed to get version: {:?}", result.err());
         assert_eq!(result.unwrap(), "0.1.0");
     }
@@ -828,9 +821,7 @@ mod tests {
         let loader = ActorLoader::new(None).unwrap();
         let nonexistent_path = PathBuf::from("/nonexistent/path");
 
-        let result = loader
-            .get_actor_version(&nonexistent_path, None, "nonexistent")
-            .await;
+        let result = loader.get_actor_version(&nonexistent_path, None).await;
         assert!(result.is_err());
     }
 

@@ -302,6 +302,7 @@ pub mod assistant {
 
 pub mod tools {
     use super::Message;
+    use crate::Scope;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -338,7 +339,7 @@ pub mod tools {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct AwaitingSystemDetails {
-        pub required_scope: Option<String>,
+        pub required_scope: Option<Scope>,
         pub ui_display_info: UIDisplayInfo,
     }
 

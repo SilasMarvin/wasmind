@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use bindings::{
     exports::hive::actor::actor::MessageEnvelope,
-    hive::actor::{actor::Scope, agent::spawn_agent, logger},
+    hive::actor::{actor::Scope, agent::spawn_agent},
 };
 use code_with_experts_common::ApprovalResponse;
 use file_interaction::{
@@ -33,6 +33,7 @@ struct ApprovalConfig {
 hive_actor_utils::actors::macros::generate_actor_trait!();
 
 struct ActiveEditFileCall {
+    approver_scopes: Vec<Scope>,
     tool_call_id: String,
     edit_file_params: EditFileParams,
     approver_responses: HashMap<Scope, Option<ApprovalResponse>>,
@@ -42,27 +43,14 @@ struct ActiveEditFileCall {
 pub struct FileInteractionWIthApprovalActor {
     scope: String,
     manager: FileInteractionManager,
-    approver_scopes: Vec<Scope>,
     active_edit_file_call: Option<ActiveEditFileCall>,
+    config: ApprovalConfig,
 }
 
 impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
     fn new(scope: String, config_str: String) -> Self {
         let config: ApprovalConfig =
             toml::from_str(&config_str).expect("Error deserializing config");
-
-        let approver_scopes = config
-            .approvers
-            .into_iter()
-            .map(|(approver_name, mut approver_actors)| {
-                approver_actors.extend_from_slice(&[
-                    "hcwe_approve".to_string(),
-                    "hcwe_request_changes".to_string(),
-                ]);
-                spawn_agent(&approver_actors, &approver_name)
-                    .expect("Error spawning initial actors")
-            })
-            .collect();
 
         let tools = vec![
             hive_actor_utils::llm_client_types::Tool {
@@ -93,16 +81,21 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
         });
 
         Self {
+            config,
             scope: scope.clone(),
             manager: FileInteractionManager::new(),
-            approver_scopes,
             active_edit_file_call: None,
         }
     }
 
     fn handle_message(&mut self, message: MessageEnvelope) {
         if self.active_edit_file_call.is_some()
-            && self.approver_scopes.contains(&message.from_scope)
+            && self
+                .active_edit_file_call
+                .as_ref()
+                .unwrap()
+                .approver_scopes
+                .contains(&message.from_scope)
             && let Some(approver_response) = Self::parse_as::<ApprovalResponse>(&message)
         {
             self.active_edit_file_call
@@ -110,6 +103,8 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
                 .unwrap()
                 .approver_responses
                 .insert(message.from_scope.clone(), Some(approver_response));
+
+            self.update_tool_call_status();
 
             if self
                 .active_edit_file_call
@@ -276,24 +271,60 @@ impl FileInteractionWIthApprovalActor {
             }
         };
 
-        self.active_edit_file_call = Some(ActiveEditFileCall {
-            tool_call_id: execute_tool.tool_call.id,
-            edit_file_params: params.clone(),
-            approver_responses: self
-                .approver_scopes
-                .iter()
-                .map(|x| (x.clone(), None))
-                .collect(),
-        });
+        let approver_scopes: Vec<Scope> = self
+            .config
+            .approvers
+            .iter()
+            .map(|(approver_name, approver_actors)| {
+                let mut approver_actors = approver_actors.clone();
+                approver_actors.extend_from_slice(&[
+                    "hcwe_approve".to_string(),
+                    "hcwe_request_changes".to_string(),
+                ]);
+                spawn_agent(&approver_actors, &approver_name)
+                    .expect("Error spawning initial actors")
+            })
+            .collect();
 
         let message_content = format!("Review the change:\n\n{diff}");
-        for scope in &self.approver_scopes {
+        for scope in &approver_scopes {
             let message = ChatMessage::System(SystemChatMessage {
                 content: message_content.clone(),
             });
             let _ = Self::broadcast_common_message(AddMessage {
                 agent: scope.clone(),
                 message,
+            });
+        }
+
+        self.active_edit_file_call = Some(ActiveEditFileCall {
+            tool_call_id: execute_tool.tool_call.id,
+            edit_file_params: params.clone(),
+            approver_responses: approver_scopes.iter().map(|x| (x.clone(), None)).collect(),
+            approver_scopes,
+        });
+
+        self.update_tool_call_status();
+    }
+
+    fn update_tool_call_status(&self) {
+        if let Some(active_edit_file_call) = &self.active_edit_file_call {
+            let _ = Self::broadcast_common_message(ToolCallStatusUpdate {
+                id: active_edit_file_call.tool_call_id.clone(),
+                status: ToolCallStatus::Received {
+                    display_info: UIDisplayInfo {
+                        collapsed: format!(
+                            "Waiting for {}/{} experts",
+                            active_edit_file_call
+                                .approver_responses
+                                .values()
+                                .filter(|x| x.is_some())
+                                .count(),
+                            active_edit_file_call.approver_scopes.len()
+                        ),
+                        expanded: None,
+                    },
+                },
             });
         }
     }

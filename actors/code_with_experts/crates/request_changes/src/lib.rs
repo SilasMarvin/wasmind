@@ -2,8 +2,8 @@ use bindings::exports::hive::actor::actor::MessageEnvelope;
 use code_with_experts_common::ApprovalResponse;
 use hive_actor_utils::common_messages::{
     assistant::{
-        RequestStatusUpdate, Section, Status, SystemPromptContent, SystemPromptContribution,
-        WaitReason,
+        AgentTaskResponse, RequestStatusUpdate, Section, Status, SystemPromptContent,
+        SystemPromptContribution, WaitReason,
     },
     tools::{
         ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, ToolsAvailable,
@@ -132,11 +132,11 @@ impl RequestChangesActor {
 
         let _ = Self::broadcast_common_message(RequestStatusUpdate {
             agent: self.scope.clone(),
-            status: Status::Wait {
-                reason: WaitReason::WaitingForSystemInput {
-                    required_scope: None,
-                    interruptible_by_user: false,
-                },
+            status: Status::Done {
+                result: Ok(AgentTaskResponse {
+                    summary: "Requested changes".to_string(),
+                    success: true,
+                }),
             },
             tool_call_id: Some(tool_call_id.to_string()),
         });
@@ -144,4 +144,3 @@ impl RequestChangesActor {
         let _ = Self::broadcast_common_message(update);
     }
 }
-

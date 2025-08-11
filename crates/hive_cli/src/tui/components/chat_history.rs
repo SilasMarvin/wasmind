@@ -5,10 +5,10 @@ use hive_actor_utils::common_messages::{
     tools::{ToolCallStatus, ToolCallStatusUpdate},
 };
 use hive_actor_utils::llm_client_types::{AssistantChatMessage, ChatMessage, ToolCall};
-use ratatui::buffer::Buffer;
 use ratatui::layout::Alignment;
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, WidgetRef, Wrap};
+use ratatui::{buffer::Buffer, widgets::Clear};
 use std::collections::HashMap;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
@@ -317,7 +317,6 @@ impl CacheableRenderItem for ChatMessageWidgetState {
                 if i < self.widgets.len() - 1 {
                     render_area.y += MESSAGE_GAP;
                 }
-                render_area.height = render_area.height.saturating_sub(*widget_height);
             }
 
             self.buffer = Some(buff);
@@ -344,6 +343,9 @@ fn convert_from_chat_state_to_chat_message_widget_state(
     });
 
     for msg in chat_state.messages {
+        if matches!(msg, ChatMessage::Tool(_)) {
+            continue;
+        }
         msgs.push(ChatMessageWidgetState {
             message: msg,
             height: None,
@@ -479,6 +481,7 @@ impl AssistantInfo {
         buf: &mut Buffer,
         scroll_offset: u16,
         y_offset: &mut u16,
+        add_gap: bool,
     ) {
         let height = item.get_height(area, context);
 
@@ -488,7 +491,10 @@ impl AssistantInfo {
             Self::render_item_with_clipping(buffer, height, *y_offset, scroll_offset, area, buf);
         }
 
-        *y_offset += height + MESSAGE_GAP;
+        *y_offset += height;
+        if add_gap {
+            *y_offset += MESSAGE_GAP;
+        }
     }
 
     // Universal clipping and rendering method for any renderable item
@@ -541,6 +547,7 @@ impl AssistantInfo {
             buf,
             scroll_offset,
             &mut y_offset,
+            true,
         );
 
         if self.chat_message_widget_state.is_empty() && self.pending_user_message.is_none() {
@@ -577,10 +584,13 @@ impl AssistantInfo {
                 buf,
                 scroll_offset,
                 &mut y_offset,
+                false,
             );
         } else {
             // Render chat history
-            for message in &mut self.chat_message_widget_state {
+            let message_count = self.chat_message_widget_state.len();
+            for (i, message) in self.chat_message_widget_state.iter_mut().enumerate() {
+                let is_last_message = i == message_count - 1 && self.pending_user_message.is_none();
                 Self::render_and_track(
                     message,
                     &self.tool_call_updates,
@@ -588,6 +598,7 @@ impl AssistantInfo {
                     buf,
                     scroll_offset,
                     &mut y_offset,
+                    !is_last_message,
                 );
             }
 
@@ -617,12 +628,13 @@ impl AssistantInfo {
                     buf,
                     scroll_offset,
                     &mut y_offset,
+                    false,
                 );
             }
         }
 
-        // Subtract the trailing MESSAGE_GAP since there's no gap after the last item
-        y_offset.saturating_sub(MESSAGE_GAP)
+        // Return the total content height
+        y_offset
     }
 }
 
@@ -703,6 +715,7 @@ impl MockComponent for ChatHistory {
                     info.render_ref_mut(area, frame.buffer_mut(), self.scroll_offset);
 
                 if is_scrolled_to_bottom && last_content_height != self.content_height {
+                    frame.render_widget(Clear, area);
                     self.scroll_offset = self
                         .content_height
                         .saturating_sub(self.last_render_area.map(|a| a.height).unwrap_or(0));
