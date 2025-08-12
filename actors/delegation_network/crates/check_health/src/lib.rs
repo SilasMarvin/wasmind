@@ -53,7 +53,16 @@ impl GeneratedActorTrait for CheckHealthWorker {
 
         // Store assistant requests from our scope
         if let Some(request) = Self::parse_as::<Request>(&message) {
-            self.transcript = request.chat_state.messages.clone();
+            // Convert ChatMessageWithRequestId to ChatMessage
+            self.transcript = request.chat_state.messages
+                .into_iter()
+                .map(|msg| match msg {
+                    ChatMessage::Assistant(extended) => ChatMessage::Assistant(extended.into()),
+                    ChatMessage::User(u) => ChatMessage::User(u),
+                    ChatMessage::System(s) => ChatMessage::System(s),
+                    ChatMessage::Tool(t) => ChatMessage::Tool(t),
+                })
+                .collect();
             // Add system message to transcript
             self.transcript
                 .insert(0, ChatMessage::System(request.chat_state.system));
@@ -63,7 +72,7 @@ impl GeneratedActorTrait for CheckHealthWorker {
         if let Some(response) = Self::parse_as::<Response>(&message) {
             // Add assistant response to transcript
             self.transcript
-                .push(ChatMessage::Assistant(response.message));
+                .push(ChatMessage::Assistant(response.message.into()));
 
             if self.should_check() {
                 self.spawn_health_analyzer();

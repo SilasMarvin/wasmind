@@ -63,7 +63,7 @@ impl tools::Tool for CommandTool {
                         expanded: Some(format!("Command: execute_command\nError: Failed to parse parameters\n\nDetails: {}", e)),
                     };
 
-                    self.send_error_result(&tool_call.tool_call.id, error_msg, ui_display);
+                    self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_msg, ui_display);
                     return;
                 }
             };
@@ -82,7 +82,7 @@ impl tools::Tool for CommandTool {
         };
 
         // Execute the command directly - no processing state in simplified version
-        self.execute_command(&params, &full_command, timeout, &tool_call.tool_call.id);
+        self.execute_command(&params, &full_command, timeout, &tool_call.tool_call.id, &tool_call.originating_request_id);
     }
 }
 
@@ -220,13 +220,14 @@ fn format_command_output(header: &str, stdout: &str, stderr: &str) -> String {
 
 impl CommandTool {
     /// Send error result with UI display
-    fn send_error_result(&self, tool_call_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
+    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
         use wasmind_actor_utils::common_messages::tools::{
             ToolCallResult, ToolCallStatus, ToolCallStatusUpdate,
         };
 
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done {
                 result: Err(ToolCallResult {
                     content: error_msg,
@@ -243,13 +244,14 @@ impl CommandTool {
     }
 
     /// Send success result with UI display
-    fn send_success_result(&self, tool_call_id: &str, result: String, ui_display: UIDisplayInfo) {
+    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: String, ui_display: UIDisplayInfo) {
         use wasmind_actor_utils::common_messages::tools::{
             ToolCallResult, ToolCallStatus, ToolCallStatusUpdate,
         };
 
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done {
                 result: Ok(ToolCallResult {
                     content: result,
@@ -271,6 +273,7 @@ impl CommandTool {
         full_command: &str,
         timeout: u64,
         tool_call_id: &str,
+        originating_request_id: &str,
     ) {
         // Create command request using bash -c for shell features
         let mut cmd = bindings::wasmind::actor::command::Cmd::new("bash");
@@ -289,7 +292,7 @@ impl CommandTool {
         // Execute the command
         match cmd.run() {
             Ok(output) => {
-                self.handle_command_output(full_command, output, tool_call_id);
+                self.handle_command_output(full_command, output, tool_call_id, originating_request_id);
             }
             Err(e) => {
                 let error_msg = format!("Failed to execute command '{}': {}", full_command, e);
@@ -297,7 +300,7 @@ impl CommandTool {
                     full_command,
                     CommandOutcome::Error(error_msg.clone()),
                 );
-                self.send_error_result(tool_call_id, error_msg, ui_display);
+                self.send_error_result(tool_call_id, originating_request_id, error_msg, ui_display);
             }
         }
     }
@@ -308,6 +311,7 @@ impl CommandTool {
         command: &str,
         output: bindings::wasmind::actor::command::CommandOutput,
         tool_call_id: &str,
+        originating_request_id: &str,
     ) {
         use bindings::wasmind::actor::command::ExitStatus;
 
@@ -410,10 +414,10 @@ impl CommandTool {
         // Send appropriate result
         match &output.status {
             ExitStatus::Exited(0) => {
-                self.send_success_result(tool_call_id, result_content, ui_display);
+                self.send_success_result(tool_call_id, originating_request_id, result_content, ui_display);
             }
             _ => {
-                self.send_error_result(tool_call_id, result_content, ui_display);
+                self.send_error_result(tool_call_id, originating_request_id, result_content, ui_display);
             }
         }
     }

@@ -99,7 +99,7 @@ impl tools::Tool for SendMessageTool {
                         expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", error_msg)),
                     },
                 };
-                self.send_error_result(&tool_call.tool_call.id, error_result);
+                self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
                 return;
             }
         };
@@ -118,13 +118,14 @@ impl tools::Tool for SendMessageTool {
                 agent: self.scope.clone(),
                 status: Status::Wait {
                     reason: WaitReason::WaitingForAgentCoordination {
+                        originating_request_id: tool_call.originating_request_id.clone(),
                         coordinating_tool_call_id: tool_call.tool_call.id.clone(),
                         coordinating_tool_name: "send_message".to_string(),
                         target_agent_scope: Some(params.agent_id.clone()),
                         user_can_interrupt: true,
                     },
                 },
-                tool_call_id: Some(tool_call.tool_call.id.clone()),
+                originating_request_id: Some(tool_call.originating_request_id.clone()),
             };
 
             let _ = Self::broadcast_common_message(status_update_request);
@@ -151,14 +152,15 @@ impl tools::Tool for SendMessageTool {
             },
         };
 
-        self.send_success_result(&tool_call.tool_call.id, result);
+        self.send_success_result(&tool_call.tool_call.id, &tool_call.originating_request_id, result);
     }
 }
 
 impl SendMessageTool {
-    fn send_error_result(&self, tool_call_id: &str, error_result: ToolCallResult) {
+    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_result: ToolCallResult) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done {
                 result: Err(error_result),
             },
@@ -170,9 +172,10 @@ impl SendMessageTool {
         );
     }
 
-    fn send_success_result(&self, tool_call_id: &str, result: ToolCallResult) {
+    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: ToolCallResult) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done {
                 result: Ok(result),
             },

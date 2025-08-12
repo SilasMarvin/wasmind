@@ -38,6 +38,7 @@ impl tools::Tool for ReportNormalTool {
 
         let update = ToolCallStatusUpdate {
             id: tool_call.tool_call.id,
+            originating_request_id: tool_call.originating_request_id,
             status: ToolCallStatus::Done { result: Ok(result) },
         };
         let _ = Self::broadcast_common_message(update);

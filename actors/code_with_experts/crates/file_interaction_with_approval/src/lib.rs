@@ -304,6 +304,7 @@ impl FileInteractionWIthApprovalActor {
 
         self.active_edit_file_call = Some(ActiveEditFileCall {
             tool_call_id: execute_tool.tool_call.id,
+            originating_request_id: execute_tool.originating_request_id,
             edit_file_params: params.clone(),
             approver_responses: approver_scopes.iter().map(|x| (x.clone(), None)).collect(),
             approver_scopes,
@@ -316,6 +317,7 @@ impl FileInteractionWIthApprovalActor {
         if let Some(active_edit_file_call) = &self.active_edit_file_call {
             let _ = Self::broadcast_common_message(ToolCallStatusUpdate {
                 id: active_edit_file_call.tool_call_id.clone(),
+                originating_request_id: active_edit_file_call.originating_request_id.clone(),
                 status: ToolCallStatus::Received {
                     display_info: UIDisplayInfo {
                         collapsed: format!(
@@ -351,30 +353,36 @@ impl FileInteractionWIthApprovalActor {
     }
 
     fn send_error_result(&self, tool_call_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
-        let update = ToolCallStatusUpdate {
-            id: tool_call_id.to_string(),
-            status: ToolCallStatus::Done {
-                result: Err(ToolCallResult {
-                    content: error_msg,
-                    ui_display_info: ui_display,
-                }),
-            },
-        };
+        if let Some(active_edit_file_call) = &self.active_edit_file_call {
+            let update = ToolCallStatusUpdate {
+                id: tool_call_id.to_string(),
+                originating_request_id: active_edit_file_call.originating_request_id.clone(),
+                status: ToolCallStatus::Done {
+                    result: Err(ToolCallResult {
+                        content: error_msg,
+                        ui_display_info: ui_display,
+                    }),
+                },
+            };
 
-        let _ = Self::broadcast_common_message(update);
+            let _ = Self::broadcast_common_message(update);
+        }
     }
 
     fn send_success_result(&self, tool_call_id: &str, result: String, ui_display: UIDisplayInfo) {
-        let update = ToolCallStatusUpdate {
-            id: tool_call_id.to_string(),
-            status: ToolCallStatus::Done {
-                result: Ok(ToolCallResult {
-                    content: result,
-                    ui_display_info: ui_display,
-                }),
-            },
-        };
+        if let Some(active_edit_file_call) = &self.active_edit_file_call {
+            let update = ToolCallStatusUpdate {
+                id: tool_call_id.to_string(),
+                originating_request_id: active_edit_file_call.originating_request_id.clone(),
+                status: ToolCallStatus::Done {
+                    result: Ok(ToolCallResult {
+                        content: result,
+                        ui_display_info: ui_display,
+                    }),
+                },
+            };
 
-        let _ = Self::broadcast_common_message(update);
+            let _ = Self::broadcast_common_message(update);
+        }
     }
 }

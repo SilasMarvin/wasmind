@@ -382,7 +382,7 @@ impl Assistant {
                             ..
                         },
                 } => {
-                    if originating_request_id != update.originating_request_id {
+                    if *originating_request_id != update.originating_request_id {
                         return;
                     }
 

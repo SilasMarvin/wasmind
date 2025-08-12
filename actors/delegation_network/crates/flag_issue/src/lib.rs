@@ -49,7 +49,7 @@ impl tools::Tool for FlagIssueTool {
                 Ok(params) => params,
                 Err(e) => {
                     let error_msg = format!("Failed to parse flag_issue parameters: {}", e);
-                    self.send_error_result(&tool_call.tool_call.id, error_msg);
+                    self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_msg);
                     return;
                 }
             };
@@ -86,14 +86,15 @@ impl tools::Tool for FlagIssueTool {
         }
 
         // Send success result
-        self.send_success_result(&tool_call.tool_call.id, &params.issue_summary);
+        self.send_success_result(&tool_call.tool_call.id, &tool_call.originating_request_id, &params.issue_summary);
     }
 }
 
 impl FlagIssueTool {
-    fn send_error_result(&self, tool_call_id: &str, error_msg: String) {
+    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_msg: String) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done {
                 result: Err(ToolCallResult {
                     content: error_msg.clone(),
@@ -108,7 +109,7 @@ impl FlagIssueTool {
         let _ = Self::broadcast_common_message(update);
     }
 
-    fn send_success_result(&self, tool_call_id: &str, issue_summary: &str) {
+    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, issue_summary: &str) {
         let status_update_request = RequestStatusUpdate {
             agent: self.scope.clone(),
             status: Status::Done {
@@ -117,7 +118,7 @@ impl FlagIssueTool {
                     success: true,
                 }),
             },
-            tool_call_id: Some(tool_call_id.to_string()),
+            originating_request_id: Some(originating_request_id.to_string()),
         };
 
         let _ = Self::broadcast_common_message(status_update_request);
@@ -138,6 +139,7 @@ impl FlagIssueTool {
 
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done { result: Ok(result) },
         };
 

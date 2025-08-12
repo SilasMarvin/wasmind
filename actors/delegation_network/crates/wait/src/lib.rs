@@ -91,13 +91,14 @@ impl tools::Tool for WaitTool {
             agent: self.scope.clone(),
             status: Status::Wait {
                 reason: WaitReason::WaitingForAgentCoordination {
+                    originating_request_id: tool_call.originating_request_id.clone(),
                     coordinating_tool_call_id: tool_call.tool_call.id.clone(),
                     coordinating_tool_name: "wait".to_string(),
                     target_agent_scope: None,
                     user_can_interrupt: true,
                 },
             },
-            tool_call_id: Some(tool_call.tool_call.id.clone()),
+            originating_request_id: Some(tool_call.originating_request_id.clone()),
         };
 
         // Send the status update request
@@ -114,6 +115,7 @@ impl tools::Tool for WaitTool {
 
         let update = ToolCallStatusUpdate {
             id: tool_call.tool_call.id,
+            originating_request_id: tool_call.originating_request_id,
             status: ToolCallStatus::Done {
                 result: Ok(result),
             },

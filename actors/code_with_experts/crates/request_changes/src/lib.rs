@@ -92,6 +92,7 @@ impl RequestChangesActor {
                 Err(e) => {
                     let update = ToolCallStatusUpdate {
                         id: tool_call_id.to_string(),
+                        originating_request_id: execute_tool.originating_request_id.clone(),
                         status: ToolCallStatus::Done {
                             result: Err(ToolCallResult {
                                 content: format!(
@@ -115,6 +116,7 @@ impl RequestChangesActor {
 
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: execute_tool.originating_request_id.clone(),
             status: ToolCallStatus::Done {
                 result: Ok(ToolCallResult {
                     content: format!("Changes requested: {}", params.changes_requested),
@@ -138,7 +140,7 @@ impl RequestChangesActor {
                     success: true,
                 }),
             },
-            tool_call_id: Some(tool_call_id.to_string()),
+            originating_request_id: Some(execute_tool.originating_request_id.clone()),
         });
 
         let _ = Self::broadcast_common_message(update);

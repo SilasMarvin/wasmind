@@ -160,7 +160,7 @@ impl tools::Tool for SpawnAgentTool {
                             expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", error_msg)),
                         },
                     };
-                    self.send_error_result(&tool_call.tool_call.id, error_result);
+                    self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
                     return;
                 }
             };
@@ -174,7 +174,7 @@ impl tools::Tool for SpawnAgentTool {
                     expanded: Some("Error: No agents were specified for spawning\n\nAt least one agent must be provided in the agents_to_spawn array.".to_string()),
                 },
             };
-            self.send_error_result(&tool_call.tool_call.id, error_result);
+            self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
             return;
         }
 
@@ -201,7 +201,7 @@ impl tools::Tool for SpawnAgentTool {
                                 expanded: Some(format!("Operation: Create agent\nAgent Type: {:?}\nError: {}", agent_def.agent_type, e)),
                             },
                         };
-                        self.send_error_result(&tool_call.tool_call.id, error_result);
+                        self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
                         return;
                     }
                 };
@@ -251,13 +251,14 @@ impl tools::Tool for SpawnAgentTool {
                 agent: self.scope.clone(),
                 status: Status::Wait {
                     reason: WaitReason::WaitingForAgentCoordination {
+                        originating_request_id: tool_call.originating_request_id.clone(),
                         coordinating_tool_call_id: tool_call.tool_call.id.clone(),
                         coordinating_tool_name: "spawn_agent".to_string(),
                         target_agent_scope: None,
                         user_can_interrupt: true,
                     },
                 },
-                tool_call_id: Some(tool_call.tool_call.id.clone()),
+                originating_request_id: Some(tool_call.originating_request_id.clone()),
             };
 
             let _ = Self::broadcast_common_message(status_update_request);
@@ -288,14 +289,15 @@ impl tools::Tool for SpawnAgentTool {
             },
         };
 
-        self.send_success_result(&tool_call.tool_call.id, result);
+        self.send_success_result(&tool_call.tool_call.id, &tool_call.originating_request_id, result);
     }
 }
 
 impl SpawnAgentTool {
-    fn send_error_result(&self, tool_call_id: &str, error_result: ToolCallResult) {
+    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_result: ToolCallResult) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done {
                 result: Err(error_result),
             },
@@ -303,9 +305,10 @@ impl SpawnAgentTool {
         let _ = Self::broadcast_common_message(update);
     }
 
-    fn send_success_result(&self, tool_call_id: &str, result: ToolCallResult) {
+    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: ToolCallResult) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done { result: Ok(result) },
         };
         let _ = Self::broadcast_common_message(update);

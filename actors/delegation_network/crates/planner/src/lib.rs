@@ -191,17 +191,17 @@ impl tools::Tool for PlannerTool {
                         expanded: Some(format!("Parameter Error:\n{}", error_msg)),
                     },
                 };
-                self.send_error_result(&tool_call.tool_call.id, error_result);
+                self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
                 return;
             }
         };
 
         match action {
             PlannerAction::Create { title, tasks } => {
-                self.handle_create_plan(title, tasks, &tool_call.tool_call.id);
+                self.handle_create_plan(title, tasks, &tool_call.tool_call.id, &tool_call.originating_request_id);
             }
             PlannerAction::Update { task_number, status } => {
-                self.handle_update_task(task_number, status, &tool_call.tool_call.id);
+                self.handle_update_task(task_number, status, &tool_call.tool_call.id, &tool_call.originating_request_id);
             }
         }
     }
@@ -261,7 +261,7 @@ No active plan
         });
     }
 
-    fn handle_create_plan(&mut self, title: String, task_descriptions: Vec<String>, tool_call_id: &str) {
+    fn handle_create_plan(&mut self, title: String, task_descriptions: Vec<String>, tool_call_id: &str, originating_request_id: &str) {
         if task_descriptions.is_empty() {
             let error_result = ToolCallResult {
                 content: "Task list cannot be empty".to_string(),
@@ -270,7 +270,7 @@ No active plan
                     expanded: Some("Task list cannot be empty".to_string()),
                 },
             };
-            self.send_error_result(tool_call_id, error_result);
+            self.send_error_result(tool_call_id, originating_request_id, error_result);
             return;
         }
 
@@ -298,10 +298,10 @@ No active plan
             },
         };
 
-        self.send_success_result(tool_call_id, result);
+        self.send_success_result(tool_call_id, originating_request_id, result);
     }
 
-    fn handle_update_task(&mut self, task_number: usize, new_status: TaskStatus, tool_call_id: &str) {
+    fn handle_update_task(&mut self, task_number: usize, new_status: TaskStatus, tool_call_id: &str, originating_request_id: &str) {
         let plan = match &mut self.current_plan {
             Some(plan) => plan,
             None => {
@@ -312,7 +312,7 @@ No active plan
                         expanded: Some("No active task plan. Create a plan first.".to_string()),
                     },
                 };
-                self.send_error_result(tool_call_id, error_result);
+                self.send_error_result(tool_call_id, originating_request_id, error_result);
                 return;
             }
         };
@@ -332,7 +332,7 @@ No active plan
                     )),
                 },
             };
-            self.send_error_result(tool_call_id, error_result);
+            self.send_error_result(tool_call_id, originating_request_id, error_result);
             return;
         }
 
@@ -359,12 +359,13 @@ No active plan
             },
         };
 
-        self.send_success_result(tool_call_id, result);
+        self.send_success_result(tool_call_id, originating_request_id, result);
     }
 
-    fn send_error_result(&self, tool_call_id: &str, error_result: ToolCallResult) {
+    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_result: ToolCallResult) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done {
                 result: Err(error_result),
             },
@@ -376,9 +377,10 @@ No active plan
         );
     }
 
-    fn send_success_result(&self, tool_call_id: &str, result: ToolCallResult) {
+    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: ToolCallResult) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done {
                 result: Ok(result),
             },
