@@ -11,7 +11,7 @@ use similar::TextDiff;
 
 // Tool constants
 pub const READ_FILE_NAME: &str = "read_file";
-pub const READ_FILE_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER|CONTENT. You can read a specific chunk by providing start_line and end_line. IMPORTANT: Always use absolute paths (starting with /) - relative paths will fail.";
+pub const READ_FILE_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER:CONTENT. You can read a specific chunk by providing start_line and end_line. IMPORTANT: Always use absolute paths (starting with /) - relative paths will fail.";
 pub const READ_FILE_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
@@ -73,7 +73,7 @@ The file interaction actor provides two essential tools for reading and editing 
 **CRITICAL: Always use ABSOLUTE paths (starting with /) - relative paths will fail!**
 
 ### read_file
-- Reads file content with automatic line numbering (format: LINE_NUMBER|CONTENT)
+- Reads file content with automatic line numbering (format: LINE_NUMBER:CONTENT)
 - LINE_NUMBERs are 1-based -- they start at 1 not 0!
 - Small files (<64KB) are read automatically in full
 - Large files require specifying line ranges (start_line and end_line)
@@ -229,7 +229,7 @@ impl FileContent {
             FileContent::Full(content) => content
                 .lines()
                 .enumerate()
-                .map(|(i, line)| format!("{}|{}", i + 1, line))
+                .map(|(i, line)| format!("{}:{}", i + 1, line))
                 .collect::<Vec<_>>()
                 .join("\n"),
             FileContent::Partial {
@@ -250,7 +250,7 @@ impl FileContent {
 
                     // Format the lines with line numbers on output
                     for (i, line) in slice.lines.iter().enumerate() {
-                        result.push(format!("{}|{}", slice.start_line + i, line));
+                        result.push(format!("{}:{}", slice.start_line + i, line));
                     }
                     last_end = slice.end_line;
                 }
@@ -962,7 +962,7 @@ mod tests {
         let content = FileContent::Full("line 1\nline 2\nline 3".to_string());
         let numbered = content.get_numbered_content();
 
-        assert_eq!(numbered, "1|line 1\n2|line 2\n3|line 3");
+        assert_eq!(numbered, "1:line 1\n2:line 2\n3:line 3");
     }
 
     #[test]
@@ -984,7 +984,7 @@ mod tests {
         };
 
         let numbered = content.get_numbered_content();
-        let expected = "1|line 1\n2|line 2\n[... 2 lines omitted ...]\n5|line 5\n6|line 6\n[... 4 lines omitted ...]";
+        let expected = "1:line 1\n2:line 2\n[... 2 lines omitted ...]\n5:line 5\n6:line 6\n[... 4 lines omitted ...]";
         assert_eq!(numbered, expected);
     }
 
@@ -1312,9 +1312,9 @@ mod tests {
         assert!(manager.cache.contains_key(&canonical_path));
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
         let cached_content = cached_entry.content.get_numbered_content();
-        assert!(cached_content.contains("1|Line 1"));
-        assert!(cached_content.contains("2|Line 2"));
-        assert!(cached_content.contains("3|Line 3"));
+        assert!(cached_content.contains("1:Line 1"));
+        assert!(cached_content.contains("2:Line 2"));
+        assert!(cached_content.contains("3:Line 3"));
 
         // Step 2: Now we can edit the existing file
         let modify_params = EditFileParams {
@@ -1332,9 +1332,9 @@ mod tests {
         // Verify cache was updated after edit
         let cached_entry_after_edit = manager.cache.get(&canonical_path).unwrap();
         let cached_content_after = cached_entry_after_edit.content.get_numbered_content();
-        assert!(cached_content_after.contains("1|Line 1"));
-        assert!(cached_content_after.contains("2|Modified Line 2"));
-        assert!(cached_content_after.contains("3|Line 3"));
+        assert!(cached_content_after.contains("1:Line 1"));
+        assert!(cached_content_after.contains("2:Modified Line 2"));
+        assert!(cached_content_after.contains("3:Line 3"));
 
         // Verify the final content on disk matches cache
         let content = fs::read_to_string(&file_path).unwrap();
@@ -1398,7 +1398,7 @@ mod tests {
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
         let initial_cached = manager.cache.get(&canonical_path).unwrap();
         let initial_content_cached = initial_cached.content.get_numbered_content();
-        assert!(initial_content_cached.contains("3|Line 3"));
+        assert!(initial_content_cached.contains("3:Line 3"));
 
         // Test replace operation
         let params = EditFileParams {
@@ -1416,11 +1416,11 @@ mod tests {
         // Verify cache was updated with the edit
         let cached_after_edit = manager.cache.get(&canonical_path).unwrap();
         let cached_content = cached_after_edit.content.get_numbered_content();
-        assert!(cached_content.contains("1|Line 1"));
-        assert!(cached_content.contains("2|Line 2"));
-        assert!(cached_content.contains("3|Modified Line 3"));
-        assert!(cached_content.contains("4|Line 4"));
-        assert!(cached_content.contains("5|Line 5"));
+        assert!(cached_content.contains("1:Line 1"));
+        assert!(cached_content.contains("2:Line 2"));
+        assert!(cached_content.contains("3:Modified Line 3"));
+        assert!(cached_content.contains("4:Line 4"));
+        assert!(cached_content.contains("5:Line 5"));
 
         // Verify disk content matches cache
         let content = fs::read_to_string(&file_path).unwrap();
@@ -1449,9 +1449,9 @@ mod tests {
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
         let initial_cached = manager.cache.get(&canonical_path).unwrap();
         let initial_content_cached = initial_cached.content.get_numbered_content();
-        assert!(initial_content_cached.contains("1|Line 1"));
-        assert!(initial_content_cached.contains("2|Line 2"));
-        assert!(initial_content_cached.contains("3|Line 3"));
+        assert!(initial_content_cached.contains("1:Line 1"));
+        assert!(initial_content_cached.contains("2:Line 2"));
+        assert!(initial_content_cached.contains("3:Line 3"));
 
         // Insert new lines between line 2 and 3
         let params = EditFileParams {
@@ -1469,11 +1469,11 @@ mod tests {
         // Verify cache was updated with inserted lines
         let cached_after_edit = manager.cache.get(&canonical_path).unwrap();
         let cached_content = cached_after_edit.content.get_numbered_content();
-        assert!(cached_content.contains("1|Line 1"));
-        assert!(cached_content.contains("2|Line 2"));
-        assert!(cached_content.contains("3|Inserted Line A"));
-        assert!(cached_content.contains("4|Inserted Line B"));
-        assert!(cached_content.contains("5|Line 3"));
+        assert!(cached_content.contains("1:Line 1"));
+        assert!(cached_content.contains("2:Line 2"));
+        assert!(cached_content.contains("3:Inserted Line A"));
+        assert!(cached_content.contains("4:Inserted Line B"));
+        assert!(cached_content.contains("5:Line 3"));
 
         // Verify disk content matches cache
         let content = fs::read_to_string(&file_path).unwrap();
@@ -1505,9 +1505,9 @@ mod tests {
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
         let initial_cached = manager.cache.get(&canonical_path).unwrap();
         let initial_content_cached = initial_cached.content.get_numbered_content();
-        assert!(initial_content_cached.contains("2|Line 2"));
-        assert!(initial_content_cached.contains("3|Line 3"));
-        assert!(initial_content_cached.contains("4|Line 4"));
+        assert!(initial_content_cached.contains("2:Line 2"));
+        assert!(initial_content_cached.contains("3:Line 3"));
+        assert!(initial_content_cached.contains("4:Line 4"));
 
         // Delete lines 2-4
         let params = EditFileParams {
@@ -1525,8 +1525,8 @@ mod tests {
         // Verify cache was updated with deletion
         let cached_after_edit = manager.cache.get(&canonical_path).unwrap();
         let cached_content = cached_after_edit.content.get_numbered_content();
-        assert!(cached_content.contains("1|Line 1"));
-        assert!(cached_content.contains("2|Line 5"));
+        assert!(cached_content.contains("1:Line 1"));
+        assert!(cached_content.contains("2:Line 5"));
         // Verify deleted lines are no longer in cache
         assert!(!cached_content.contains("Line 2"));
         assert!(!cached_content.contains("Line 3"));
@@ -1559,9 +1559,9 @@ mod tests {
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
         let initial_cached = manager.cache.get(&canonical_path).unwrap();
         let initial_content_cached = initial_cached.content.get_numbered_content();
-        assert!(initial_content_cached.contains("2|Line 2"));
-        assert!(initial_content_cached.contains("4|Line 4"));
-        assert!(initial_content_cached.contains("5|Line 5"));
+        assert!(initial_content_cached.contains("2:Line 2"));
+        assert!(initial_content_cached.contains("4:Line 4"));
+        assert!(initial_content_cached.contains("5:Line 5"));
 
         // Multiple edits - should be processed in reverse order
         let params = EditFileParams {
@@ -1591,12 +1591,12 @@ mod tests {
         // Verify cache was updated with all edits
         let cached_after_edit = manager.cache.get(&canonical_path).unwrap();
         let cached_content = cached_after_edit.content.get_numbered_content();
-        assert!(cached_content.contains("1|Line 1"));
-        assert!(cached_content.contains("2|Modified Line 2"));
-        assert!(cached_content.contains("3|Line 3"));
-        assert!(cached_content.contains("4|Modified Line 4"));
-        assert!(cached_content.contains("5|Line 5"));
-        assert!(cached_content.contains("6|New Line 6"));
+        assert!(cached_content.contains("1:Line 1"));
+        assert!(cached_content.contains("2:Modified Line 2"));
+        assert!(cached_content.contains("3:Line 3"));
+        assert!(cached_content.contains("4:Modified Line 4"));
+        assert!(cached_content.contains("5:Line 5"));
+        assert!(cached_content.contains("6:New Line 6"));
 
         // Verify disk content matches cache
         let content = fs::read_to_string(&file_path).unwrap();
@@ -1995,8 +1995,8 @@ mod tests {
 
         // Verify the formatted output looks correct
         let formatted = cached_entry.content.get_numbered_content();
-        assert!(formatted.contains("1|line 1"));
-        assert!(formatted.contains("10|line 10"));
+        assert!(formatted.contains("1:line 1"));
+        assert!(formatted.contains("10:line 10"));
         assert!(!formatted.contains("omitted")); // No gaps should remain
     }
 
@@ -2056,7 +2056,7 @@ mod tests {
         // Verify the formatted output
         let formatted = cached_entry.content.get_numbered_content();
         for i in 1..=9 {
-            assert!(formatted.contains(&format!("{}|line {}", i, i)));
+            assert!(formatted.contains(&format!("{}:line {}", i, i)));
         }
         assert!(!formatted.contains("omitted")); // No gaps
     }
@@ -2120,11 +2120,11 @@ mod tests {
 
         // Verify the formatted output shows gaps
         let formatted = cached_entry.content.get_numbered_content();
-        assert!(formatted.contains("1|line 1"));
-        assert!(formatted.contains("3|line 3"));
+        assert!(formatted.contains("1:line 1"));
+        assert!(formatted.contains("3:line 3"));
         assert!(formatted.contains("[... 1 lines omitted ...]")); // Gap at line 4
-        assert!(formatted.contains("5|line 5"));
-        assert!(formatted.contains("9|line 9"));
+        assert!(formatted.contains("5:line 5"));
+        assert!(formatted.contains("9:line 9"));
         assert!(formatted.contains("[... 1 lines omitted ...]")); // Gap at line 10
 
         // Now fill the remaining gap at line 4
@@ -2213,23 +2213,23 @@ mod tests {
         // Check content of each file
         for (path, content) in files_info {
             if path.file_name().unwrap() == "small_file.txt" {
-                assert!(content.contains("1|line 1"));
-                assert!(content.contains("2|line 2"));
-                assert!(content.contains("3|line 3"));
+                assert!(content.contains("1:line 1"));
+                assert!(content.contains("2:line 2"));
+                assert!(content.contains("3:line 3"));
                 assert!(!content.contains("omitted"));
             } else if path.file_name().unwrap() == "partial_file.txt" {
-                assert!(content.contains("2|A2"));
-                assert!(content.contains("3|A3"));
-                assert!(content.contains("4|A4"));
-                assert!(content.contains("7|A7"));
-                assert!(content.contains("8|A8"));
+                assert!(content.contains("2:A2"));
+                assert!(content.contains("3:A3"));
+                assert!(content.contains("4:A4"));
+                assert!(content.contains("7:A7"));
+                assert!(content.contains("8:A8"));
                 assert!(content.contains("[... 1 lines omitted ...]")); // Gap at line 1
                 assert!(content.contains("[... 2 lines omitted ...]")); // Gap at lines 5-6
                 assert!(content.contains("[... 2 lines omitted ...]")); // Gap at lines 9-10
             } else if path.file_name().unwrap() == "another_small.txt" {
-                assert!(content.contains("1|X"));
-                assert!(content.contains("2|Y"));
-                assert!(content.contains("3|Z"));
+                assert!(content.contains("1:X"));
+                assert!(content.contains("2:Y"));
+                assert!(content.contains("3:Z"));
                 assert!(!content.contains("omitted"));
             }
         }
@@ -2297,23 +2297,23 @@ mod tests {
         assert_eq!(path.file_name().unwrap(), "complex_partial.txt");
 
         // Verify it shows the chunks we read
-        assert!(content_str.contains("1|line 1"));
-        assert!(content_str.contains("2|line 2"));
-        assert!(content_str.contains("4|line 4"));
-        assert!(content_str.contains("7|line 7"));
-        assert!(content_str.contains("9|line 9"));
-        assert!(content_str.contains("12|line 12"));
-        assert!(content_str.contains("15|line 15"));
+        assert!(content_str.contains("1:line 1"));
+        assert!(content_str.contains("2:line 2"));
+        assert!(content_str.contains("4:line 4"));
+        assert!(content_str.contains("7:line 7"));
+        assert!(content_str.contains("9:line 9"));
+        assert!(content_str.contains("12:line 12"));
+        assert!(content_str.contains("15:line 15"));
 
         // Verify it shows gaps where we didn't read
         assert!(content_str.contains("[... 2 lines omitted ...]")); // lines 5-6
         assert!(content_str.contains("[... 2 lines omitted ...]")); // lines 10-11
 
         // Should not contain lines we didn't read
-        assert!(!content_str.contains("5|line 5"));
-        assert!(!content_str.contains("6|line 6"));
-        assert!(!content_str.contains("10|line 10"));
-        assert!(!content_str.contains("11|line 11"));
+        assert!(!content_str.contains("5:line 5"));
+        assert!(!content_str.contains("6:line 6"));
+        assert!(!content_str.contains("10:line 10"));
+        assert!(!content_str.contains("11:line 11"));
 
         // Verify the internal cache structure
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
@@ -2481,7 +2481,7 @@ mod tests {
         // Verify the full content is properly formatted when retrieved
         let formatted = cached_entry_after.content.get_numbered_content();
         for i in 1..=5 {
-            assert!(formatted.contains(&format!("{}|line {}", i, i)));
+            assert!(formatted.contains(&format!("{}:line {}", i, i)));
         }
         assert!(!formatted.contains("omitted")); // No gaps in full content
 
