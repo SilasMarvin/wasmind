@@ -11,7 +11,9 @@ use wasmind_actor_utils::{
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
     },
     llm_client_types::{
-        ChatMessage, ChatRequest, ChatResponse, SystemChatMessage, Tool, UserChatMessage,
+        AssistantChatMessageWithOriginatingRequestId, ChatMessage, ChatMessageForLLM,
+        ChatMessageWithRequestId, ChatRequest, ChatResponse, SystemChatMessage, Tool,
+        UserChatMessage,
     },
 };
 
@@ -71,7 +73,7 @@ impl PendingMessage {
     /// Convert to Vec<ChatMessage> for LLM submission
     /// System messages come first, then user message
     /// Returns empty vec if no content exists
-    pub fn to_chat_messages(&mut self) -> Vec<ChatMessage> {
+    pub fn to_chat_messages(&mut self) -> Vec<ChatMessageWithRequestId> {
         let mut messages = Vec::new();
 
         // Add system messages first
@@ -98,7 +100,7 @@ impl PendingMessage {
 pub struct Assistant {
     pending_message: PendingMessage,
     scope: String,
-    chat_history: Vec<ChatMessage>,
+    chat_history: Vec<ChatMessageWithRequestId>,
     available_tools: Vec<Tool>,
     status: Status,
     config: AssistantConfig,
@@ -110,21 +112,30 @@ impl Assistant {
     fn submit_and_process(&mut self, request_id: String) {
         let system_prompt = self.render_system_prompt();
 
+        let messages_for_llm: Vec<ChatMessageForLLM> =
+            self.chat_history.iter().map(|x| x.into()).collect();
         match self.make_completion_request(
             &system_prompt,
-            &self.chat_history,
+            &messages_for_llm,
             Some(&self.available_tools),
         ) {
             Ok(response) => {
                 if let Some(choice) = response.choices.first() {
                     match &choice.message {
                         ChatMessage::Assistant(assistant_msg) => {
-                            self.add_chat_messages([choice.message.clone()]);
+                            self.add_chat_messages([
+                                ChatMessageWithRequestId::assistant_with_request_id(
+                                    assistant_msg.clone(),
+                                    request_id.clone(),
+                                ),
+                            ]);
 
                             // Notify other components that we have a response ready
                             let _ = Self::broadcast_common_message(assistant::Response {
-                                request_id,
-                                message: assistant_msg.clone(),
+                                message: AssistantChatMessageWithOriginatingRequestId::new(
+                                    assistant_msg.clone(),
+                                    request_id,
+                                ),
                             });
                         }
                         _ => {
@@ -262,7 +273,7 @@ impl Assistant {
         }
     }
 
-    fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessage>) {
+    fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessageWithRequestId>) {
         self.chat_history.extend(messages);
 
         let system_message = match ChatMessage::system(self.render_system_prompt()) {
@@ -315,8 +326,16 @@ impl Assistant {
         if let ToolCallStatus::Done { result, .. } = update.status {
             match &mut self.status.clone() {
                 Status::Wait {
-                    reason: WaitReason::WaitingForTools { tool_calls },
+                    reason:
+                        WaitReason::WaitingForTools {
+                            originating_request_id,
+                            tool_calls,
+                        },
                 } => {
+                    // Only process updates that match our current request
+                    if &update.originating_request_id != originating_request_id {
+                        return;
+                    }
                     let found = match tool_calls.get_mut(&update.id) {
                         Some(pending_call) => {
                             pending_call.result = Some(result);
@@ -327,6 +346,7 @@ impl Assistant {
 
                     self.status = Status::Wait {
                         reason: WaitReason::WaitingForTools {
+                            originating_request_id: originating_request_id.clone(),
                             tool_calls: tool_calls.clone(),
                         },
                     };
@@ -342,10 +362,12 @@ impl Assistant {
                                 .unwrap()
                                 .map(|tool_call_result| tool_call_result.content)
                                 .unwrap_or_else(|e| format!("Error: {}", e.content));
-                            self.add_chat_messages([ChatMessage::tool(
-                                call_id,
-                                pending_call.tool_call.function.name,
-                                content,
+                            self.add_chat_messages([ChatMessageWithRequestId::Tool(
+                                wasmind_actor_utils::llm_client_types::ToolChatMessage {
+                                    tool_call_id: call_id,
+                                    name: pending_call.tool_call.function.name,
+                                    content,
+                                },
                             )]);
                         }
                         self.submit(true);
@@ -354,12 +376,13 @@ impl Assistant {
                 Status::Wait {
                     reason:
                         WaitReason::WaitingForAgentCoordination {
+                            originating_request_id,
                             coordinating_tool_call_id,
                             coordinating_tool_name,
                             ..
                         },
                 } => {
-                    if coordinating_tool_call_id != &update.id {
+                    if originating_request_id != update.originating_request_id {
                         return;
                     }
 
@@ -367,10 +390,12 @@ impl Assistant {
                         .map(|tool_call_result| tool_call_result.content)
                         .unwrap_or_else(|e| format!("Error: {}", e.content));
 
-                    self.add_chat_messages([ChatMessage::tool(
-                        update.id,
-                        coordinating_tool_name.clone(),
-                        content,
+                    self.add_chat_messages([ChatMessageWithRequestId::Tool(
+                        wasmind_actor_utils::llm_client_types::ToolChatMessage {
+                            tool_call_id: update.id,
+                            name: coordinating_tool_name.clone(),
+                            content,
+                        },
                     )]);
 
                     // This checks for the following scenario:
@@ -495,13 +520,17 @@ impl GeneratedActorTrait for Assistant {
             // We only perform the Status update if we are waiting for this tool to complete otherwise it may be an old/dropped tool or something
             } else if let Some(status_update_request) =
                 Self::parse_as::<assistant::RequestStatusUpdate>(&message)
-                && let Some(tool_call_id) = status_update_request.tool_call_id
+                && let Some(originating_request_id) = status_update_request.originating_request_id
             {
                 if let Status::Wait {
-                    reason: WaitReason::WaitingForTools { tool_calls },
+                    reason:
+                        WaitReason::WaitingForTools {
+                            originating_request_id: current_request_id,
+                            tool_calls: _,
+                        },
                 } = self.status.clone()
                 {
-                    if tool_calls.get(&tool_call_id).is_some() {
+                    if originating_request_id == current_request_id {
                         self.set_status(status_update_request.status.clone(), true);
                         if matches!(status_update_request.status, Status::Done { .. }) {
                             let _ = Self::broadcast_common_message(Exit);
@@ -512,13 +541,15 @@ impl GeneratedActorTrait for Assistant {
             // Handle assistant response messages - only when we're in processing state with matching ID
             else if let Some(response) = Self::parse_as::<assistant::Response>(&message) {
                 if let Status::Processing { request_id } = &self.status {
-                    if response.request_id == *request_id {
-                        if (response.message.content.is_none()
+                    let current_request_id = request_id.clone();
+                    if response.message.originating_request_id == current_request_id {
+                        if (response.message.message.content.is_none()
                             || response
+                                .message
                                 .message
                                 .content
                                 .is_some_and(|content| content.is_empty()))
-                            && response.message.tool_calls.is_none()
+                            && response.message.message.tool_calls.is_none()
                             && !self.config.allow_empty_responses
                         {
                             self.pending_message.add_system_message(SystemChatMessage { content: "SYSTEM ERROR: It is required you respond with some text content or tool call. Review who you are and what you are doing. Acomplish your goal!".to_string() });
@@ -527,7 +558,7 @@ impl GeneratedActorTrait for Assistant {
                         }
 
                         // This is our response! Handle tool calls if any
-                        if let Some(tool_calls) = &response.message.tool_calls {
+                        if let Some(tool_calls) = &response.message.message.tool_calls {
                             // Convert tool calls to pending tool calls map
                             let mut pending_tool_calls = std::collections::HashMap::new();
                             for tool_call in tool_calls {
@@ -544,6 +575,7 @@ impl GeneratedActorTrait for Assistant {
                             self.set_status(
                                 Status::Wait {
                                     reason: WaitReason::WaitingForTools {
+                                        originating_request_id: current_request_id.clone(),
                                         tool_calls: pending_tool_calls,
                                     },
                                 },
@@ -554,6 +586,7 @@ impl GeneratedActorTrait for Assistant {
                             for tool_call in tool_calls {
                                 let _ = Self::broadcast_common_message(tools::ExecuteTool {
                                     tool_call: tool_call.clone(),
+                                    originating_request_id: current_request_id.clone(),
                                 });
                             }
                         } else {
@@ -587,10 +620,14 @@ impl GeneratedActorTrait for Assistant {
         {
             match &self.status {
                 Status::Wait {
-                    reason: WaitReason::WaitingForTools { tool_calls },
+                    reason:
+                        WaitReason::WaitingForTools {
+                            originating_request_id,
+                            tool_calls: _,
+                        },
                 } => {
-                    if let Some(tool_call_id) = request_status_update.tool_call_id
-                        && tool_calls.contains_key(&tool_call_id)
+                    if let Some(update_request_id) = request_status_update.originating_request_id
+                        && &update_request_id == originating_request_id
                     {
                         self.set_status(request_status_update.status, true);
                     }
@@ -605,8 +642,8 @@ impl GeneratedActorTrait for Assistant {
         {
             // Check if the last message in chat history is a tool call that needs to be removed
             // This prevents errors when the manager sends a message after interruption
-            if let Some(ChatMessage::Assistant(msg)) = self.chat_history.last() {
-                if msg.tool_calls.is_some() {
+            if let Some(ChatMessageWithRequestId::Assistant(msg)) = self.chat_history.last() {
+                if msg.message.tool_calls.is_some() {
                     // Remove the tool call message since we won't have responses for it
                     self.chat_history.pop();
                 }

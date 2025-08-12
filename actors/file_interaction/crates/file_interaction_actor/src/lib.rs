@@ -149,6 +149,7 @@ impl FileInteractionActor {
 
     fn handle_read_file(&mut self, execute_tool: ExecuteTool) {
         let tool_call_id = &execute_tool.tool_call.id;
+        let originating_request_id = &execute_tool.originating_request_id;
 
         let params: ReadFileParams =
             match serde_json::from_str(&execute_tool.tool_call.function.arguments) {
@@ -156,6 +157,7 @@ impl FileInteractionActor {
                 Err(e) => {
                     self.send_error_result(
                         tool_call_id,
+                        originating_request_id,
                         format!("Failed to parse read_file parameters: {e}"),
                         UIDisplayInfo {
                             collapsed: "Parameters: Invalid format".to_string(),
@@ -175,16 +177,17 @@ impl FileInteractionActor {
                     "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the read file",
                     result.message
                 );
-                self.send_success_result(tool_call_id, message, result.ui_display);
+                self.send_success_result(tool_call_id, originating_request_id, message, result.ui_display);
             }
             Err(error) => {
-                self.send_error_result(tool_call_id, error.error_msg, error.ui_display);
+                self.send_error_result(tool_call_id, originating_request_id, error.error_msg, error.ui_display);
             }
         }
     }
 
     fn handle_edit_file(&mut self, execute_tool: ExecuteTool) {
         let tool_call_id = &execute_tool.tool_call.id;
+        let originating_request_id = &execute_tool.originating_request_id;
 
         let params: EditFileParams =
             match serde_json::from_str(&execute_tool.tool_call.function.arguments) {
@@ -192,6 +195,7 @@ impl FileInteractionActor {
                 Err(e) => {
                     self.send_error_result(
                         tool_call_id,
+                        originating_request_id,
                         format!("Failed to parse edit_file parameters: {e}"),
                         UIDisplayInfo {
                             collapsed: "Parameters: Invalid format".to_string(),
@@ -211,17 +215,18 @@ impl FileInteractionActor {
                     "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the updated edited file",
                     result.message
                 );
-                self.send_success_result(tool_call_id, message, result.ui_display);
+                self.send_success_result(tool_call_id, originating_request_id, message, result.ui_display);
             }
             Err(error) => {
-                self.send_error_result(tool_call_id, error.error_msg, error.ui_display);
+                self.send_error_result(tool_call_id, originating_request_id, error.error_msg, error.ui_display);
             }
         }
     }
 
-    fn send_error_result(&self, tool_call_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
+    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done {
                 result: Err(ToolCallResult {
                     content: error_msg,
@@ -233,9 +238,10 @@ impl FileInteractionActor {
         let _ = Self::broadcast_common_message(update);
     }
 
-    fn send_success_result(&self, tool_call_id: &str, result: String, ui_display: UIDisplayInfo) {
+    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: String, ui_display: UIDisplayInfo) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
             status: ToolCallStatus::Done {
                 result: Ok(ToolCallResult {
                     content: result,

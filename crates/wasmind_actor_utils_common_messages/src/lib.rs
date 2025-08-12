@@ -69,12 +69,14 @@ pub mod assistant {
             interruptible_by_user: bool,
         },
         WaitingForAgentCoordination {
+            originating_request_id: String,
             coordinating_tool_call_id: String,
             coordinating_tool_name: String,
             target_agent_scope: Option<Scope>,
             user_can_interrupt: bool,
         },
         WaitingForTools {
+            originating_request_id: String,
             tool_calls: HashMap<String, PendingToolCall>,
         },
         WaitingForLiteLLM,
@@ -114,7 +116,7 @@ pub mod assistant {
     pub struct RequestStatusUpdate {
         pub agent: Scope,
         pub status: Status,
-        pub tool_call_id: Option<String>,
+        pub originating_request_id: Option<String>,
     }
 
     impl Message for RequestStatusUpdate {
@@ -147,7 +149,7 @@ pub mod assistant {
     pub struct ChatState {
         pub system: wasmind_llm_types::SystemChatMessage,
         pub tools: Vec<wasmind_llm_types::Tool>,
-        pub messages: Vec<wasmind_llm_types::ChatMessage>,
+        pub messages: Vec<wasmind_llm_types::ChatMessageWithRequestId>,
     }
 
     // wasmind.common.assistant.Request
@@ -163,8 +165,7 @@ pub mod assistant {
     // wasmind.common.assistant.Response
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Response {
-        pub request_id: String,
-        pub message: wasmind_llm_types::AssistantChatMessage,
+        pub message: wasmind_llm_types::AssistantChatMessageWithOriginatingRequestId,
     }
 
     impl Message for Response {
@@ -321,6 +322,7 @@ pub mod tools {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ExecuteTool {
         pub tool_call: wasmind_llm_types::ToolCall,
+        pub originating_request_id: String,
     }
 
     impl Message for ExecuteTool {
@@ -358,6 +360,7 @@ pub mod tools {
     pub struct ToolCallStatusUpdate {
         pub status: ToolCallStatus,
         pub id: String,
+        pub originating_request_id: String,
     }
 
     impl Message for ToolCallStatusUpdate {

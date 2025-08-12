@@ -9,7 +9,7 @@ use wasmind_actor_utils::common_messages::{
         AwaitingSystemDetails, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo,
     },
 };
-use wasmind_actor_utils::llm_client_types::{ChatMessage, Function, SystemChatMessage, ToolCall};
+use wasmind_actor_utils::llm_client_types::{Function, SystemChatMessage, ToolCall};
 use wasmind_cli::{TuiResult, tui};
 
 use crate::utils::create_spawn_agent_message;
@@ -41,6 +41,7 @@ pub fn spawn_agent(scope: &Scope, coordinator: &mut WasmindCoordinator) -> TuiRe
         },
         5 => Status::Wait {
             reason: WaitReason::WaitingForAgentCoordination {
+                originating_request_id: "Filler".to_string(),
                 coordinating_tool_call_id: "Filler".to_string(),
                 coordinating_tool_name: "Filler".to_string(),
                 target_agent_scope: None,
@@ -49,6 +50,7 @@ pub fn spawn_agent(scope: &Scope, coordinator: &mut WasmindCoordinator) -> TuiRe
         },
         6 => Status::Wait {
             reason: WaitReason::WaitingForTools {
+                originating_request_id: "example-request-id".to_string(),
                 tool_calls: HashMap::new(),
             },
         },
@@ -103,6 +105,7 @@ fn create_tool_status_updates() -> Vec<ToolCallStatusUpdate> {
         // First tool call - Received state
         ToolCallStatusUpdate {
             id: "tool_call_1_received".to_string(),
+            originating_request_id: "example-request-id".to_string(),
             status: ToolCallStatus::Received {
                 display_info: UIDisplayInfo {
                     collapsed: "/tmp/test.txt: Reading in progress...".to_string(),
@@ -113,6 +116,7 @@ fn create_tool_status_updates() -> Vec<ToolCallStatusUpdate> {
         // Second tool call - AwaitingSystem state
         ToolCallStatusUpdate {
             id: "tool_call_2_awaiting".to_string(),
+            originating_request_id: "example-request-id".to_string(),
             status: ToolCallStatus::AwaitingSystem {
                 details: AwaitingSystemDetails {
                     required_scope: Some("bash_executor".to_string()),
@@ -126,6 +130,7 @@ fn create_tool_status_updates() -> Vec<ToolCallStatusUpdate> {
         // Third tool call - Done state (success)
         ToolCallStatusUpdate {
             id: "tool_call_3_done".to_string(),
+            originating_request_id: "example-request-id".to_string(),
             status: ToolCallStatus::Done {
                 result: Ok(ToolCallResult {
                     content: "Found 42 TODO items in 8 files:\n- src/main.rs: 5 items\n- src/utils.rs: 3 items\n- src/handlers.rs: 12 items\n...".to_string(),
@@ -198,18 +203,25 @@ pub async fn run() -> TuiResult<()> {
     // Create sample tool calls for the second assistant message
     let tool_calls = create_sample_tool_calls();
 
-    // Create an assistant message with tool calls
-    let assistant_with_tools_message = ChatMessage::assistant_with_tools(tool_calls);
-
     let chat_state = ChatState {
         system: SystemChatMessage {
             content: large_system_content,
         },
         tools: vec![],
         messages: vec![
-            ChatMessage::user(user_content),
-            ChatMessage::assistant(assistant_content),
-            assistant_with_tools_message,
+            wasmind_actor_utils::llm_client_types::ChatMessageWithRequestId::User(
+                wasmind_actor_utils::llm_client_types::UserChatMessage {
+                    content: user_content,
+                }
+            ),
+            wasmind_actor_utils::llm_client_types::ChatMessageWithRequestId::assistant_with_request_id(
+                wasmind_actor_utils::llm_client_types::AssistantChatMessage::new_with_content(assistant_content),
+                "example-request-id".to_string(),
+            ),
+            wasmind_actor_utils::llm_client_types::ChatMessageWithRequestId::assistant_with_request_id(
+                wasmind_actor_utils::llm_client_types::AssistantChatMessage::new_with_tools(tool_calls),
+                "example-request-id".to_string(),
+            ),
         ],
     };
 

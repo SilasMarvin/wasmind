@@ -35,6 +35,7 @@ wasmind_actor_utils::actors::macros::generate_actor_trait!();
 struct ActiveEditFileCall {
     approver_scopes: Vec<Scope>,
     tool_call_id: String,
+    originating_request_id: String,
     edit_file_params: EditFileParams,
     approver_responses: HashMap<Scope, Option<ApprovalResponse>>,
 }

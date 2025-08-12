@@ -27,6 +27,7 @@ pub struct ThinkingBlock {
     pub signature: Option<String>,
 }
 
+/// Standard AssistantChatMessage used for LLM API communication.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssistantChatMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -63,6 +64,38 @@ impl AssistantChatMessage {
     }
 }
 
+/// Extended AssistantChatMessage that includes request tracking for internal system use.
+///
+/// This type exists primarily to solve the correlation problem between assistant messages and their tool calls.
+///
+/// This type is used for:
+/// - Broadcasting Response messages between actors
+/// - UI rendering where tool call correlation is needed
+/// - Internal system communication where request tracking is required
+///
+/// It should be converted TO AssistantChatMessage when making LLM API calls to maintain compatibility.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssistantChatMessageWithOriginatingRequestId {
+    #[serde(flatten)]
+    pub message: AssistantChatMessage,
+    pub originating_request_id: String,
+}
+
+impl From<AssistantChatMessageWithOriginatingRequestId> for AssistantChatMessage {
+    fn from(extended: AssistantChatMessageWithOriginatingRequestId) -> Self {
+        extended.message
+    }
+}
+
+impl AssistantChatMessageWithOriginatingRequestId {
+    pub fn new(message: AssistantChatMessage, originating_request_id: String) -> Self {
+        Self {
+            message,
+            originating_request_id,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserChatMessage {
     pub content: String,
@@ -70,9 +103,9 @@ pub struct UserChatMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolChatMessage {
-    tool_call_id: String,
-    name: String,
-    content: String,
+    pub tool_call_id: String,
+    pub name: String,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,12 +115,18 @@ pub struct SystemChatMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "role", rename_all = "lowercase")]
-pub enum ChatMessage {
+pub enum ChatMessage<T = AssistantChatMessage> {
     System(SystemChatMessage),
     User(UserChatMessage),
-    Assistant(AssistantChatMessage),
+    Assistant(T),
     Tool(ToolChatMessage),
 }
+
+/// Type alias for ChatMessage used in LLM API requests (without request ID tracking)
+pub type ChatMessageForLLM = ChatMessage<AssistantChatMessage>;
+
+/// Type alias for ChatMessage used in internal broadcasting (with request ID tracking)
+pub type ChatMessageWithRequestId = ChatMessage<AssistantChatMessageWithOriginatingRequestId>;
 
 impl ChatMessage {
     pub fn system(content: impl Into<String>) -> Self {
@@ -132,6 +171,44 @@ impl ChatMessage {
             name: name.into(),
             content: content.into(),
         })
+    }
+}
+
+impl ChatMessageWithRequestId {
+    pub fn assistant_with_request_id(
+        message: AssistantChatMessage,
+        originating_request_id: String,
+    ) -> Self {
+        Self::Assistant(AssistantChatMessageWithOriginatingRequestId::new(
+            message,
+            originating_request_id,
+        ))
+    }
+}
+
+impl From<ChatMessageWithRequestId> for ChatMessageForLLM {
+    fn from(msg: ChatMessageWithRequestId) -> Self {
+        match msg {
+            ChatMessage::System(system_msg) => ChatMessage::System(system_msg),
+            ChatMessage::User(user_msg) => ChatMessage::User(user_msg),
+            ChatMessage::Assistant(assistant_with_id) => {
+                ChatMessage::Assistant(assistant_with_id.message)
+            }
+            ChatMessage::Tool(tool_msg) => ChatMessage::Tool(tool_msg),
+        }
+    }
+}
+
+impl From<&ChatMessageWithRequestId> for ChatMessageForLLM {
+    fn from(msg: &ChatMessageWithRequestId) -> Self {
+        match msg {
+            ChatMessage::System(system_msg) => ChatMessage::System(system_msg.clone()),
+            ChatMessage::User(user_msg) => ChatMessage::User(user_msg.clone()),
+            ChatMessage::Assistant(assistant_with_id) => {
+                ChatMessage::Assistant(assistant_with_id.message.clone())
+            }
+            ChatMessage::Tool(tool_msg) => ChatMessage::Tool(tool_msg.clone()),
+        }
     }
 }
 

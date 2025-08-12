@@ -14,7 +14,9 @@ use wasmind_actor_utils::common_messages::{
     assistant::{AddMessage, ChatState, ChatStateUpdated, Request as AssistantRequest},
     tools::{ToolCallStatus, ToolCallStatusUpdate},
 };
-use wasmind_actor_utils::llm_client_types::{AssistantChatMessage, ChatMessage, ToolCall};
+use wasmind_actor_utils::llm_client_types::{
+    AssistantChatMessage, ChatMessage, ChatMessageWithRequestId, ToolCall,
+};
 
 use crate::tui::utils::{center_horizontal, create_block_with_title};
 use crate::tui::{icons, model::TuiMessage};
@@ -212,7 +214,8 @@ fn create_tool_widget(
 fn create_assistant_widgets(
     message: &AssistantChatMessage,
     area: Rect,
-    tool_call_updates: &HashMap<String, ToolCallStatus>,
+    tool_call_updates: &HashMap<String, HashMap<String, ToolCallStatus>>,
+    request_id: &str,
 ) -> Vec<(Box<dyn WidgetRef>, u16)> {
     let mut widgets: Vec<(Box<dyn WidgetRef>, u16)> = vec![];
 
@@ -237,7 +240,11 @@ fn create_assistant_widgets(
 
     if let Some(tool_calls) = &message.tool_calls {
         for tool_call in tool_calls {
-            if let Some(status) = tool_call_updates.get(&tool_call.id) {
+            let status = tool_call_updates
+                .get(request_id)
+                .and_then(|request_updates| request_updates.get(&tool_call.id));
+
+            if let Some(status) = status {
                 widgets.push(create_tool_widget(tool_call, status, area, false));
             }
         }
@@ -252,25 +259,34 @@ fn create_assistant_widgets(
 
 /// Represents a chat message with cached rendering state
 struct ChatMessageWidgetState {
-    message: ChatMessage,
+    message: wasmind_actor_utils::llm_client_types::ChatMessageWithRequestId,
     height: Option<u16>,
     buffer: Option<Buffer>,
     widgets: Vec<(Box<dyn WidgetRef>, u16)>,
 }
 
 impl ChatMessageWidgetState {
-    fn build_widgets(&mut self, area: Rect, tool_call_updates: &HashMap<String, ToolCallStatus>) {
+    fn build_widgets(
+        &mut self,
+        area: Rect,
+        tool_call_updates: &HashMap<String, HashMap<String, ToolCallStatus>>,
+    ) {
         let widgets = match &self.message {
-            ChatMessage::System(system_msg) => {
+            ChatMessageWithRequestId::System(system_msg) => {
                 vec![create_system_widget(&system_msg.content, area)]
             }
-            ChatMessage::User(user_msg) => {
+            ChatMessageWithRequestId::User(user_msg) => {
                 vec![create_user_widget(&user_msg.content, area)]
             }
-            ChatMessage::Assistant(assistant_chat_message) => {
-                create_assistant_widgets(assistant_chat_message, area, tool_call_updates)
+            ChatMessageWithRequestId::Assistant(assistant_with_request_id) => {
+                create_assistant_widgets(
+                    &assistant_with_request_id.message,
+                    area,
+                    tool_call_updates,
+                    &assistant_with_request_id.originating_request_id,
+                )
             }
-            ChatMessage::Tool(_) => vec![],
+            ChatMessageWithRequestId::Tool(_) => vec![],
         };
         let mut total_height = 0;
         for (widget, height) in widgets.into_iter() {
@@ -286,7 +302,7 @@ impl ChatMessageWidgetState {
 }
 
 impl CacheableRenderItem for ChatMessageWidgetState {
-    type Context = HashMap<String, ToolCallStatus>;
+    type Context = HashMap<String, HashMap<String, ToolCallStatus>>; // tool_call_updates
 
     fn get_height(&mut self, area: Rect, context: &Self::Context) -> u16 {
         if let Some(height) = self.height {
@@ -336,14 +352,19 @@ fn convert_from_chat_state_to_chat_message_widget_state(
 ) -> Vec<ChatMessageWidgetState> {
     let mut msgs = vec![];
     msgs.push(ChatMessageWidgetState {
-        message: ChatMessage::System(chat_state.system),
+        message: wasmind_actor_utils::llm_client_types::ChatMessageWithRequestId::System(
+            chat_state.system,
+        ),
         height: None,
         buffer: None,
         widgets: vec![],
     });
 
     for msg in chat_state.messages {
-        if matches!(msg, ChatMessage::Tool(_)) {
+        if matches!(
+            msg,
+            wasmind_actor_utils::llm_client_types::ChatMessageWithRequestId::Tool(_)
+        ) {
             continue;
         }
         msgs.push(ChatMessageWidgetState {
@@ -366,7 +387,7 @@ struct AssistantInfo {
     role: String,
     chat_message_widget_state: Vec<ChatMessageWidgetState>,
     pending_user_message: Option<String>,
-    tool_call_updates: HashMap<String, ToolCallStatus>,
+    tool_call_updates: HashMap<String, HashMap<String, ToolCallStatus>>, // request_id -> tool_call_id -> status
     // Cached render items
     cached_title: Option<CachedParagraph>,
     cached_empty_state: Option<CachedParagraph>,
@@ -414,8 +435,10 @@ impl AssistantInfo {
     fn invalidate_message_with_tool_call(&mut self, tool_call_id: &str) {
         for message in &mut self.chat_message_widget_state {
             // Check if this message contains the tool call
-            if let ChatMessage::Assistant(assistant_msg) = &message.message
-                && let Some(tool_calls) = &assistant_msg.tool_calls
+            if let wasmind_actor_utils::llm_client_types::ChatMessageWithRequestId::Assistant(
+                assistant_with_request_id,
+            ) = &message.message
+                && let Some(tool_calls) = &assistant_with_request_id.message.tool_calls
             {
                 for tool_call in tool_calls {
                     if tool_call.id == tool_call_id {
@@ -591,6 +614,7 @@ impl AssistantInfo {
             let message_count = self.chat_message_widget_state.len();
             for (i, message) in self.chat_message_widget_state.iter_mut().enumerate() {
                 let is_last_message = i == message_count - 1 && self.pending_user_message.is_none();
+
                 Self::render_and_track(
                     message,
                     &self.tool_call_updates,
@@ -789,6 +813,8 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                     if let Some(actor_info) = self.component.chat_history_map.get_mut(scope) {
                         actor_info
                             .tool_call_updates
+                            .entry(tool_update.originating_request_id.clone())
+                            .or_insert_with(HashMap::new)
                             .insert(tool_update.id.clone(), tool_update.status);
 
                         // Invalidate cache for the specific message containing this tool call

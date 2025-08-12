@@ -6,7 +6,6 @@
 
 pub mod dependency_resolver;
 
-use futures::future::join_all;
 use sha2::{Digest, Sha256};
 use snafu::{Location, ResultExt, Snafu, ensure, location};
 use std::collections::HashMap;
