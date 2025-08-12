@@ -135,11 +135,6 @@ impl FileInteractionActor {
 {% endfor %}"#
             .to_string();
 
-        logger::log(
-            logger::LogLevel::Error,
-            &serde_json::to_string_pretty(&data).unwrap(),
-        );
-
         let _ = Self::broadcast_common_message(SystemPromptContribution {
             agent: self.scope.clone(),
             key: "file_interaction:files_read_and_edited".to_string(),
