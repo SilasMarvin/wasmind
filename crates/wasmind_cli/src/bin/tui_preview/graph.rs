@@ -1,3 +1,4 @@
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use wasmind::coordinator::WasmindCoordinator;
 use wasmind::wasmind_actor_loader::LoadedActor;
 use wasmind_actor_utils::STARTING_SCOPE;
@@ -10,7 +11,6 @@ use wasmind_actor_utils::common_messages::{
 };
 use wasmind_actor_utils::llm_client_types::{ChatMessage, Function, SystemChatMessage, ToolCall};
 use wasmind_cli::{TuiResult, tui};
-use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use crate::utils::create_spawn_agent_message;
 

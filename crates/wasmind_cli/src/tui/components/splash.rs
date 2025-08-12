@@ -1,7 +1,6 @@
 use crate::config::ParsedTuiConfig;
 use crate::tui::model::TuiMessage;
 use crate::tui::utils::{center, center_horizontal};
-use wasmind::actors::MessageEnvelope;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::widgets::Paragraph;
 use tuirealm::{
@@ -9,6 +8,7 @@ use tuirealm::{
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
+use wasmind::actors::MessageEnvelope;
 
 use super::textarea::LLMTextAreaComponent;
 

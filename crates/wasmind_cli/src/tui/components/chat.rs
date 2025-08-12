@@ -1,4 +1,3 @@
-use wasmind::actors::MessageEnvelope;
 use ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::props::{BorderSides, Borders};
 use tuirealm::{
@@ -6,6 +5,7 @@ use tuirealm::{
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
+use wasmind::actors::MessageEnvelope;
 
 use crate::config::ParsedTuiConfig;
 use crate::tui::{model::TuiMessage, utils};

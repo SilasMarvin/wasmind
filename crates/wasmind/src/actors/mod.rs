@@ -1,8 +1,8 @@
-use wasmind_actor_loader::LoadedActor;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use wasmind_actor_loader::LoadedActor;
 
 mod manager;
 

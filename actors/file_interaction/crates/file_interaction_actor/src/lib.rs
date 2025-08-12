@@ -1,9 +1,10 @@
-use bindings::exports::wasmind::actor::actor::MessageEnvelope;
+use bindings::{exports::wasmind::actor::actor::MessageEnvelope, wasmind::actor::logger};
 use file_interaction::{
     EDIT_FILE_DESCRIPTION, EDIT_FILE_NAME, EDIT_FILE_SCHEMA, EditFileParams,
     FILE_TOOLS_USAGE_GUIDE, FileInteractionManager, READ_FILE_DESCRIPTION, READ_FILE_NAME,
     READ_FILE_SCHEMA, ReadFileParams,
 };
+use serde::Deserialize;
 use wasmind_actor_utils::common_messages::{
     assistant::{Section, SystemPromptContent, SystemPromptContribution},
     tools::{
@@ -11,7 +12,6 @@ use wasmind_actor_utils::common_messages::{
         UIDisplayInfo,
     },
 };
-use serde::Deserialize;
 
 #[allow(warnings)]
 mod bindings;
@@ -135,6 +135,11 @@ impl FileInteractionActor {
 {% endfor %}"#
             .to_string();
 
+        logger::log(
+            logger::LogLevel::Error,
+            &serde_json::to_string_pretty(&data).unwrap(),
+        );
+
         let _ = Self::broadcast_common_message(SystemPromptContribution {
             agent: self.scope.clone(),
             key: "file_interaction:files_read_and_edited".to_string(),
@@ -171,7 +176,11 @@ impl FileInteractionActor {
         match self.manager.read_file(params) {
             Ok(result) => {
                 self.update_unified_files_system_prompt();
-                self.send_success_result(tool_call_id, result.message, result.ui_display);
+                let message = format!(
+                    "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the read file",
+                    result.message
+                );
+                self.send_success_result(tool_call_id, message, result.ui_display);
             }
             Err(error) => {
                 self.send_error_result(tool_call_id, error.error_msg, error.ui_display);
@@ -203,7 +212,11 @@ impl FileInteractionActor {
         match self.manager.edit_file(&params) {
             Ok(result) => {
                 self.update_unified_files_system_prompt();
-                self.send_success_result(tool_call_id, result.message, result.ui_display);
+                let message = format!(
+                    "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the updated edited file",
+                    result.message
+                );
+                self.send_success_result(tool_call_id, message, result.ui_display);
             }
             Err(error) => {
                 self.send_error_result(tool_call_id, error.error_msg, error.ui_display);

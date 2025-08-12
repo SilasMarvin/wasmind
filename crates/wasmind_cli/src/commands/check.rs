@@ -1,9 +1,9 @@
 use crate::TuiResult;
 use crate::tui::icons;
-use wasmind::wasmind_actor_loader::dependency_resolver::{DependencyResolver, ResolvedActor};
-use wasmind::wasmind_config::{ActorSource, Config};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use wasmind::wasmind_actor_loader::dependency_resolver::{DependencyResolver, ResolvedActor};
+use wasmind::wasmind_config::{ActorSource, Config};
 
 #[derive(Debug)]
 struct StartupAnalysis {

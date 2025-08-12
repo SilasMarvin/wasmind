@@ -1,7 +1,7 @@
 use crate::actors::MessageEnvelope;
-use wasmind_actor_utils::messages::Message;
 use rand::Rng;
 use serde::de::DeserializeOwned;
+use wasmind_actor_utils::messages::Message;
 
 /// Parse a MessageEnvelope as a specific common message type
 ///

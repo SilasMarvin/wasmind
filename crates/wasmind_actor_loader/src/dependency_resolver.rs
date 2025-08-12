@@ -543,7 +543,10 @@ fn sources_match(source1: &ActorSource, source2: &ActorSource) -> bool {
     }
 }
 
-fn git_refs_match(ref1: &Option<wasmind_config::GitRef>, ref2: &Option<wasmind_config::GitRef>) -> bool {
+fn git_refs_match(
+    ref1: &Option<wasmind_config::GitRef>,
+    ref2: &Option<wasmind_config::GitRef>,
+) -> bool {
     match (ref1, ref2) {
         (None, None) => true,
         (Some(r1), Some(r2)) => match (r1, r2) {
@@ -816,7 +819,11 @@ guidelines = "Follow all instructions carefully"
 actor_id = "test:assistant"
 required_spawn_with = []
 "#;
-        std::fs::write(assistant_actor_dir.join("Wasmind.toml"), assistant_wasmind_toml).unwrap();
+        std::fs::write(
+            assistant_actor_dir.join("Wasmind.toml"),
+            assistant_wasmind_toml,
+        )
+        .unwrap();
 
         // Create user actor that depends on the dependency
         let user_actors = vec![Actor {

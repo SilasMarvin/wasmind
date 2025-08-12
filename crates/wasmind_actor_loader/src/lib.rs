@@ -132,6 +132,16 @@ pub enum Error {
         #[snafu(implicit)]
         location: Location,
     },
+
+    #[snafu(display(
+        "Actor '{actor_name}' has an unexpected WASM module file instead of a WebAssembly Component at '{wasm_path}'. This is a rare issue that may indicate mixed build tools or a cargo-component bug. Please file an issue with details about your build environment."
+    ))]
+    WasmModuleInsteadOfComponent {
+        actor_name: String,
+        wasm_path: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -473,8 +483,21 @@ impl ActorLoader {
 
         // Read the built wasm
         let wasm = fs::read(&wasm_path).await.context(IoSnafu {
-            path: Some(wasm_path),
+            path: Some(wasm_path.clone()),
         })?;
+
+        // Validate that this is a WebAssembly Component, not a WASM module
+        if wasm.len() >= 8 {
+            let magic = &wasm[0..8];
+            // WASM module magic bytes: 00 61 73 6d 01 00 00 00
+            if magic == [0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00] {
+                return Err(Error::WasmModuleInsteadOfComponent {
+                    actor_name: actor.name.clone(),
+                    wasm_path: wasm_path.display().to_string(),
+                    location: location!(),
+                });
+            }
+        }
 
         // Cache the built actor (skip in dev mode)
         if !is_dev_mode {

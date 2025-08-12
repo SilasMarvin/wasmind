@@ -1,5 +1,3 @@
-use wasmind::actors::MessageEnvelope;
-use wasmind::context::WasmindContext;
 use model::Model;
 use ratatui::crossterm::{
     event::{KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags},
@@ -8,6 +6,8 @@ use ratatui::crossterm::{
 use std::{io::stdout, sync::Arc, thread};
 use tokio::sync::broadcast::{Receiver, Sender};
 use tuirealm::{PollStrategy, Update};
+use wasmind::actors::MessageEnvelope;
+use wasmind::context::WasmindContext;
 
 pub mod components;
 pub mod icons;

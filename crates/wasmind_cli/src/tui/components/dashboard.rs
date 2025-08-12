@@ -1,13 +1,13 @@
 use crate::config::ParsedTuiConfig;
 use crate::tui::model::TuiMessage;
-use wasmind::{actors::MessageEnvelope, utils::parse_common_message_as};
-use wasmind_actor_utils::common_messages::assistant::AddMessage;
 use ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
+use wasmind::{actors::MessageEnvelope, utils::parse_common_message_as};
+use wasmind_actor_utils::common_messages::assistant::AddMessage;
 
 use super::chat::ChatAreaComponent;
 use super::graph::GraphAreaComponent;

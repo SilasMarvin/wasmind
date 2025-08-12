@@ -1,6 +1,6 @@
+use std::path::PathBuf;
 use wasmind_actor_loader::dependency_resolver::DependencyResolver;
 use wasmind_config::{Actor, ActorSource, PathSource};
-use std::path::PathBuf;
 
 #[tokio::test]
 async fn test_simple_actor_resolution() {

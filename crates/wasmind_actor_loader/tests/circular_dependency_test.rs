@@ -1,7 +1,7 @@
-use wasmind_actor_loader::dependency_resolver::DependencyResolver;
-use wasmind_config::{Actor, ActorSource, PathSource};
 use std::fs;
 use tempfile::TempDir;
+use wasmind_actor_loader::dependency_resolver::DependencyResolver;
+use wasmind_config::{Actor, ActorSource, PathSource};
 
 #[tokio::test]
 async fn test_circular_dependency_detection() {

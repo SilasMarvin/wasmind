@@ -1,10 +1,10 @@
-use wasmind::actors::MessageEnvelope;
 use ratatui::buffer::Buffer;
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
+use wasmind::actors::MessageEnvelope;
 
 use crate::tui::model::TuiMessage;
 

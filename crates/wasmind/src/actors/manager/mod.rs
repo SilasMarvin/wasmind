@@ -1,8 +1,8 @@
-use wasmind::actor::{agent, command, host_info, http, logger, messaging};
-use wasmind_actor_utils::{common_messages::actors, messages::Message};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{Instrument, Level};
+use wasmind::actor::{agent, command, host_info, http, logger, messaging};
+use wasmind_actor_utils::{common_messages::actors, messages::Message};
 use wasmtime::{
     Config, Engine, Store,
     component::{Component, HasSelf, Linker, ResourceAny, bindgen},

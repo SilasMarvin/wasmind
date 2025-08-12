@@ -1,4 +1,3 @@
-use wasmind::actors::MessageEnvelope;
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
@@ -16,6 +15,7 @@ use tuirealm::{
     event::{Key, KeyEvent, KeyModifiers},
     props::{BorderType, Borders},
 };
+use wasmind::actors::MessageEnvelope;
 
 use crate::{config::ParsedTuiConfig, tui::model::TuiMessage, utils::key_event_to_string};
 

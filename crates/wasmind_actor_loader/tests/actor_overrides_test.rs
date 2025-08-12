@@ -1,6 +1,6 @@
+use std::path::PathBuf;
 use wasmind_actor_loader::dependency_resolver::DependencyResolver;
 use wasmind_config::{Actor, ActorOverride, ActorSource, PathSource};
-use std::path::PathBuf;
 
 #[tokio::test]
 async fn test_actor_overrides_config_only() {

@@ -1,4 +1,5 @@
 use bindings::wasmind::actor::logger;
+use serde::Deserialize;
 use wasmind_actor_utils::{
     common_messages::{
         actors::{self, Exit},
@@ -13,7 +14,6 @@ use wasmind_actor_utils::{
         ChatMessage, ChatRequest, ChatResponse, SystemChatMessage, Tool, UserChatMessage,
     },
 };
-use serde::Deserialize;
 
 #[allow(warnings)]
 mod bindings;
@@ -553,15 +553,19 @@ impl GeneratedActorTrait for Assistant {
                                 self.pending_message.add_system_message(SystemChatMessage { content: "SYSTEM ERROR: It is required you respond with some kind of tool call! Review who you are and what you are doing and respond with a valid tool call".to_string() });
                                 self.submit(false);
                             } else {
-                                self.set_status(
-                                    Status::Wait {
-                                        reason: WaitReason::WaitingForSystemInput {
-                                            required_scope: None,
-                                            interruptible_by_user: true,
+                                if self.pending_message.has_content() {
+                                    self.submit(false);
+                                } else {
+                                    self.set_status(
+                                        Status::Wait {
+                                            reason: WaitReason::WaitingForSystemInput {
+                                                required_scope: None,
+                                                interruptible_by_user: true,
+                                            },
                                         },
-                                    },
-                                    true,
-                                );
+                                        true,
+                                    );
+                                }
                             }
                         }
                     }

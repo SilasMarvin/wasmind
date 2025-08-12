@@ -9,8 +9,8 @@ pub trait Tool: Sized {
 #[cfg(feature = "macros")]
 pub mod macros {
     pub mod __private {
-        pub use wasmind_llm_types;
         pub use serde_json;
+        pub use wasmind_llm_types;
     }
 
     pub use wasmind_actor_utils_macros::Tool;

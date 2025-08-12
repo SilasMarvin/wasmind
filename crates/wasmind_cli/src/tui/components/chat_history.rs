@@ -1,10 +1,3 @@
-use wasmind::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
-use wasmind_actor_utils::common_messages::{
-    actors::AgentSpawned,
-    assistant::{AddMessage, ChatState, ChatStateUpdated, Request as AssistantRequest},
-    tools::{ToolCallStatus, ToolCallStatusUpdate},
-};
-use wasmind_actor_utils::llm_client_types::{AssistantChatMessage, ChatMessage, ToolCall};
 use ratatui::layout::Alignment;
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, WidgetRef, Wrap};
@@ -15,6 +8,13 @@ use tuirealm::{
     command::{Cmd, CmdResult},
     ratatui::layout::Rect,
 };
+use wasmind::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
+use wasmind_actor_utils::common_messages::{
+    actors::AgentSpawned,
+    assistant::{AddMessage, ChatState, ChatStateUpdated, Request as AssistantRequest},
+    tools::{ToolCallStatus, ToolCallStatusUpdate},
+};
+use wasmind_actor_utils::llm_client_types::{AssistantChatMessage, ChatMessage, ToolCall};
 
 use crate::tui::utils::{center_horizontal, create_block_with_title};
 use crate::tui::{icons, model::TuiMessage};
@@ -110,7 +110,7 @@ fn create_user_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) {
         .style(Style::new())
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
-    let min_height = message_paragraph.line_count(area.width) as u16;
+    let min_height = message_paragraph.line_count(area.width.saturating_sub(4)) as u16;
 
     (Box::new(message_paragraph), min_height)
 }
@@ -129,7 +129,7 @@ fn create_system_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) 
         .style(Style::new())
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
-    let min_height = message_paragraph.line_count(area.width) as u16;
+    let min_height = message_paragraph.line_count(area.width.saturating_sub(4)) as u16;
 
     (Box::new(message_paragraph), min_height)
 }
@@ -203,7 +203,7 @@ fn create_tool_widget(
         .style(Style::new())
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
-    let min_height = p.line_count(area.width) as u16;
+    let min_height = p.line_count(area.width.saturating_sub(4)) as u16;
 
     (Box::new(p), min_height)
 }
@@ -231,7 +231,7 @@ fn create_assistant_widgets(
             .style(Style::new())
             .alignment(Alignment::Left)
             .wrap(Wrap { trim: true });
-        let min_height = p.line_count(area.width) as u16;
+        let min_height = p.line_count(area.width.saturating_sub(4)) as u16;
         widgets.push((Box::new(p), min_height));
     }
 

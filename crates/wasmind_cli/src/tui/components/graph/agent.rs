@@ -1,7 +1,5 @@
 use std::time::{Duration, Instant};
 
-use wasmind::{actors::MessageEnvelope, scope::Scope};
-use wasmind_actor_utils::common_messages::assistant::Status as AgentStatus;
 use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
@@ -17,6 +15,8 @@ use tuirealm::{
     props::Color,
     ratatui::layout::Rect,
 };
+use wasmind::{actors::MessageEnvelope, scope::Scope};
+use wasmind_actor_utils::common_messages::assistant::Status as AgentStatus;
 
 use crate::tui::{model::TuiMessage, throbber_in_title_ext::ThrobberInTitleExt, utils};
 

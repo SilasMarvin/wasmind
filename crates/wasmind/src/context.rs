@@ -1,11 +1,11 @@
 use crate::actors::ActorExecutor;
-use wasmind_actor_utils::STARTING_SCOPE;
-use wasmind_actor_utils::common_messages::actors::AgentSpawned;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
+use wasmind_actor_utils::STARTING_SCOPE;
+use wasmind_actor_utils::common_messages::actors::AgentSpawned;
 
-use crate::{WasmindResult, SerializationSnafu, actors::MessageEnvelope, scope::Scope};
+use crate::{SerializationSnafu, WasmindResult, actors::MessageEnvelope, scope::Scope};
 use snafu::ResultExt;
 
 /// Shared context for the Wasmind system that enables agent spawning

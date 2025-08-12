@@ -1,8 +1,8 @@
-use wasmind_actor_loader::dependency_resolver::DependencyResolver;
-use wasmind_config::{Actor, ActorOverride, ActorSource, PathSource};
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
+use wasmind_actor_loader::dependency_resolver::DependencyResolver;
+use wasmind_config::{Actor, ActorOverride, ActorSource, PathSource};
 
 #[tokio::test]
 async fn test_required_spawn_with_basic_functionality() {
@@ -245,7 +245,11 @@ auto_spawn = false
 
     let helper_dir = workspace_path.join("crates").join("helper_actor");
     fs::create_dir_all(&helper_dir).unwrap();
-    fs::write(helper_dir.join("Wasmind.toml"), r#"actor_id = "test:helper""#).unwrap();
+    fs::write(
+        helper_dir.join("Wasmind.toml"),
+        r#"actor_id = "test:helper""#,
+    )
+    .unwrap();
 
     let monitor_dir = workspace_path.join("crates").join("monitor_actor");
     fs::create_dir_all(&monitor_dir).unwrap();

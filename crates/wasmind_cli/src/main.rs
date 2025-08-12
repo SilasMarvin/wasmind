@@ -1,7 +1,7 @@
 use clap::Parser;
-use wasmind::coordinator::WasmindCoordinator;
 use snafu::whatever;
 use std::sync::Arc;
+use wasmind::coordinator::WasmindCoordinator;
 
 use wasmind_actor_utils::common_messages::assistant::AddMessage;
 use wasmind_actor_utils::common_messages::litellm::BaseUrlUpdate;

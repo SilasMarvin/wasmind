@@ -1,3 +1,9 @@
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::broadcast::Receiver;
+use tuirealm::listener::{ListenerResult, Poll};
+use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
+use tuirealm::{Application, AttrValue, Attribute, EventListenerCfg, ListenerError, Update};
 use wasmind::actors::MessageEnvelope;
 use wasmind::context::WasmindContext;
 use wasmind::scope::Scope;
@@ -5,12 +11,6 @@ use wasmind_actor_utils::STARTING_SCOPE;
 use wasmind_actor_utils::common_messages::actors::Exit;
 use wasmind_actor_utils::common_messages::assistant::AddMessage;
 use wasmind_actor_utils::llm_client_types::ChatMessage;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::broadcast::Receiver;
-use tuirealm::listener::{ListenerResult, Poll};
-use tuirealm::terminal::{CrosstermTerminalAdapter, TerminalAdapter, TerminalBridge};
-use tuirealm::{Application, AttrValue, Attribute, EventListenerCfg, ListenerError, Update};
 
 use crate::config::ParsedTuiConfig;
 use crate::tui::components::dashboard::{DASHBOARD_SCOPE, DashboardComponent, SCOPE_ATTR};

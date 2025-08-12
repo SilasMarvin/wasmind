@@ -1,9 +1,3 @@
-use wasmind::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
-use wasmind_actor_utils::common_messages::{
-    actors::{AgentSpawned, Exit},
-    assistant::{self, Request as AssistantRequest, Status as AgentStatus, StatusUpdate},
-    tools::ExecuteTool,
-};
 use ratatui::{
     layout::{Flex, Layout},
     text::Span,
@@ -14,6 +8,12 @@ use tuirealm::{
     command::{Cmd, CmdResult},
     props::Borders,
     ratatui::layout::Rect,
+};
+use wasmind::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
+use wasmind_actor_utils::common_messages::{
+    actors::{AgentSpawned, Exit},
+    assistant::{self, Request as AssistantRequest, Status as AgentStatus, StatusUpdate},
+    tools::ExecuteTool,
 };
 
 use crate::{
