@@ -41,11 +41,14 @@ impl GeneratedActorTrait for CheckHealthWorker {
             scope,
             config,
             transcript: Vec::new(),
-            last_check_time: None,
+            last_check_time: Some(Instant::now()),
         }
     }
 
-    fn handle_message(&mut self, message: bindings::exports::wasmind::actor::actor::MessageEnvelope) {
+    fn handle_message(
+        &mut self,
+        message: bindings::exports::wasmind::actor::actor::MessageEnvelope,
+    ) {
         // Only care about messages from our own scope (the agent we're monitoring)
         if message.from_scope != self.scope {
             return;
@@ -54,7 +57,9 @@ impl GeneratedActorTrait for CheckHealthWorker {
         // Store assistant requests from our scope
         if let Some(request) = Self::parse_as::<Request>(&message) {
             // Convert ChatMessageWithRequestId to ChatMessage
-            self.transcript = request.chat_state.messages
+            self.transcript = request
+                .chat_state
+                .messages
                 .into_iter()
                 .map(|msg| match msg {
                     ChatMessage::Assistant(extended) => ChatMessage::Assistant(extended.into()),
@@ -167,4 +172,3 @@ impl CheckHealthWorker {
             .join("\n\n")
     }
 }
-

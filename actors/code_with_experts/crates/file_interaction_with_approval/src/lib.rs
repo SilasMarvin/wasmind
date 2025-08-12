@@ -132,6 +132,7 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
                     );
                     self.send_error_result(
                         &active_edit_file_call.tool_call_id,
+                        &active_edit_file_call.originating_request_id,
                         tool_response_message.clone(),
                         UIDisplayInfo {
                             collapsed: tool_response_message.clone(),
@@ -141,6 +142,7 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
                 } else {
                     self.do_edit_file(
                         &active_edit_file_call.tool_call_id,
+                        &active_edit_file_call.originating_request_id,
                         &active_edit_file_call.edit_file_params,
                     );
                 }
@@ -212,6 +214,7 @@ impl FileInteractionWIthApprovalActor {
                 Err(e) => {
                     self.send_error_result(
                         tool_call_id,
+                        &execute_tool.originating_request_id,
                         format!("Failed to parse read_file parameters: {}", e),
                         UIDisplayInfo {
                             collapsed: "Parameters: Invalid format".to_string(),
@@ -232,10 +235,10 @@ impl FileInteractionWIthApprovalActor {
                     "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the read file",
                     result.message
                 );
-                self.send_success_result(tool_call_id, message, result.ui_display);
+                self.send_success_result(tool_call_id, &execute_tool.originating_request_id, message, result.ui_display);
             }
             Err(error) => {
-                self.send_error_result(tool_call_id, error.error_msg, error.ui_display);
+                self.send_error_result(tool_call_id, &execute_tool.originating_request_id, error.error_msg, error.ui_display);
             }
         }
     }
@@ -249,6 +252,7 @@ impl FileInteractionWIthApprovalActor {
                 Err(e) => {
                     self.send_error_result(
                         tool_call_id,
+                        &execute_tool.originating_request_id,
                         format!("Failed to parse edit_file parameters: {e}"),
                         UIDisplayInfo {
                             collapsed: "Parameters: Invalid format".to_string(),
@@ -266,6 +270,7 @@ impl FileInteractionWIthApprovalActor {
             Err(e) => {
                 self.send_error_result(
                     tool_call_id,
+                    &execute_tool.originating_request_id,
                     e.clone(),
                     UIDisplayInfo {
                         collapsed: e,
@@ -336,7 +341,7 @@ impl FileInteractionWIthApprovalActor {
         }
     }
 
-    fn do_edit_file(&mut self, tool_call_id: &str, params: &EditFileParams) {
+    fn do_edit_file(&mut self, tool_call_id: &str, originating_request_id: &str, params: &EditFileParams) {
         match self.manager.edit_file(params) {
             Ok(result) => {
                 self.update_unified_files_system_prompt();
@@ -344,45 +349,41 @@ impl FileInteractionWIthApprovalActor {
                     "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the updated edited file",
                     result.message
                 );
-                self.send_success_result(tool_call_id, message, result.ui_display);
+                self.send_success_result(tool_call_id, originating_request_id, message, result.ui_display);
             }
             Err(error) => {
-                self.send_error_result(tool_call_id, error.error_msg, error.ui_display);
+                self.send_error_result(tool_call_id, originating_request_id, error.error_msg, error.ui_display);
             }
         }
     }
 
-    fn send_error_result(&self, tool_call_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
-        if let Some(active_edit_file_call) = &self.active_edit_file_call {
-            let update = ToolCallStatusUpdate {
-                id: tool_call_id.to_string(),
-                originating_request_id: active_edit_file_call.originating_request_id.clone(),
-                status: ToolCallStatus::Done {
-                    result: Err(ToolCallResult {
-                        content: error_msg,
-                        ui_display_info: ui_display,
-                    }),
-                },
-            };
+    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
+        let update = ToolCallStatusUpdate {
+            id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
+            status: ToolCallStatus::Done {
+                result: Err(ToolCallResult {
+                    content: error_msg,
+                    ui_display_info: ui_display,
+                }),
+            },
+        };
 
-            let _ = Self::broadcast_common_message(update);
-        }
+        let _ = Self::broadcast_common_message(update);
     }
 
-    fn send_success_result(&self, tool_call_id: &str, result: String, ui_display: UIDisplayInfo) {
-        if let Some(active_edit_file_call) = &self.active_edit_file_call {
-            let update = ToolCallStatusUpdate {
-                id: tool_call_id.to_string(),
-                originating_request_id: active_edit_file_call.originating_request_id.clone(),
-                status: ToolCallStatus::Done {
-                    result: Ok(ToolCallResult {
-                        content: result,
-                        ui_display_info: ui_display,
-                    }),
-                },
-            };
+    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: String, ui_display: UIDisplayInfo) {
+        let update = ToolCallStatusUpdate {
+            id: tool_call_id.to_string(),
+            originating_request_id: originating_request_id.to_string(),
+            status: ToolCallStatus::Done {
+                result: Ok(ToolCallResult {
+                    content: result,
+                    ui_display_info: ui_display,
+                }),
+            },
+        };
 
-            let _ = Self::broadcast_common_message(update);
-        }
+        let _ = Self::broadcast_common_message(update);
     }
 }

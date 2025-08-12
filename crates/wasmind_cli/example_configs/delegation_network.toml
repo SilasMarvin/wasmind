@@ -43,23 +43,9 @@ port = 4000
 container_name = "wasmind-litellm"
 
 [[litellm.models]]
-model_name = "gpt-4o"
-
-[litellm.models.litellm_params]
-model = "openai/gpt-4o"
-api_key = "os.environ/OPENAI_API_KEY"
-
-[[litellm.models]]
 model_name = "gpt-oss-120b"
 
 [litellm.models.litellm_params]
 model = "openrouter/openai/gpt-oss-120b"
 api_key = "os.environ/OPENROUTER_API_KEY"
 provider = { only = ["cerebras"] }
-
-# [[litellm.models]]
-# model_name = "qwen3-480b"
-#
-# [litellm.models.litellm_params]
-# model = "cerebras/qwen-3-coder-480b"
-# api_key = "os.environ/CEREBRAS_API_KEY"

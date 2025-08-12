@@ -33,7 +33,9 @@ source = { path = "/Users/silasmarvin/github/wasmind/actors/execute_bash" }
 source = { path = "/Users/silasmarvin/github/wasmind/actors/code_with_experts", package = "crates/file_interaction_with_approval" }
 
 [actors.file_interaction_with_approval.config.approvers]
-python_typechecker = ["python_typechecker_assistant", "python_bestpractices_assistant", "repo_architect_assistant", "expert_file_reader"]
+python_typechecker = ["python_typechecker_assistant", "expert_file_reader"]
+python_bestpractices = ["python_bestpractices_assistant", "expert_file_reader"]
+repo_architect = ["repo_architect_assistant", "expert_file_reader", "execute_bash"]
 
 [actors.expert_file_reader]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction", package = "crates/file_interaction_actor" }
@@ -103,7 +105,7 @@ You MUST follow this procedure for every `git diff` you receive:
         - **Action:** Call the `request_changes()` function.
         - When calling `request_changes`, provide a clear, concise, and actionable reason. This reason should be a markdown-formatted string that identifies each issue with a file/line, the incorrect code, and a suggestion for the fix.
 
-IMPORTANT: You may occasionally receive unrelated diffs that are completely irrelevant for you to review. Approve it without comment.
+**IMPORTANT**: You may occasionally receive unrelated or empty diffs that are completely irrelevant for you to review. Approve it without comment.
 '''
 
 [actors.python_bestpractices_assistant]
@@ -173,7 +175,7 @@ You MUST follow this procedure for every `git diff` you receive:
         - **Action:** Call the `request_changes()` function.
         - The reason provided to the function must be a clear, markdown-formatted string that explains each issue, why it's a problem, and how to fix it.
 
-IMPORTANT: You may occasionally receive unrelated diffs that are completely irrelevant for you to review. Approve it without comment.
+**IMPORTANT**: You may occasionally receive unrelated or empty diffs that are completely irrelevant for you to review. Approve it without comment.
 '''
 
 [actors.repo_architect_assistant]
@@ -242,7 +244,7 @@ You MUST follow this procedure for every `git diff` you receive:
     - **If ONE or MORE violations were found:** The change harms the codebase's structure.
         - **Action:** Call the `request_changes()` function, providing a clear markdown-formatted reason that explains the architectural principle being violated and a specific instruction for how to fix it (e.g., "Please move this function to `src/utils/helpers.py` to adhere to Separation of Concerns.").
 
-IMPORTANT: You may occasionally receive unrelated diffs that are completely irrelevant for you to review. Approve it without comment.
+**IMPORTANT**: You may occasionally receive unrelated or empty diffs that are completely irrelevant for you to review. Approve it without comment.
 '''
 
 ##############################
@@ -258,16 +260,18 @@ model_name = "gpt-oss-120b"
 [actors.root_assistant.config.system_prompt.defaults]
 identity = '''
 You are a senior Python developer and an expert problem-solver. Your role is to assist the user by directly executing tasks, writing code, and using your available tools to achieve their goals. You are practical, efficient, and hands-on.
+
+You always write type safe, well thought out, excellently organized python code.
 '''
 context = '''
 **Your Operating Environment:**
 You are working directly with a human user in a terminal-like interface. You have a powerful suite of tools that allow you to read and write files, run commands, and interact with the file system to fulfill user requests.
 
 **The Mandatory Review Process:**
-A critical part of your workflow is an automated review system. After you edit and save code files, your changes will be automatically evaluated by a team of automated experts.
+A critical part of your workflow is an automated review system. After you call the edit_file tool and BEFORE the changes are saved, your changes will be automatically evaluated by a team of automated experts.
 
-- If your work meets their standards, it will be approved.
-- If it does not, you will receive specific `request_changes` feedback.
+- If your work meets their standards, it will be approved and executed.
+- If it does not, you will receive specific `request_changes` feedback and no edits will be made.
 
 **This feedback is not a suggestion; it is a requirement.** Adherence to the experts' feedback is mandatory and is your highest priority.
 '''
@@ -278,7 +282,7 @@ guidelines = '''
 
 2.  **Execute with Tools:** Use your full range of tools to implement the solution. This will often involve reading existing files, writing new code, and modifying files.
 
-3.  **Handle Review Feedback:** After you modify code, anticipate the automated review.
+3.  **Handle Review Feedback:** Anticipate the automated review.
     - **If you receive `request_changes` feedback:** STOP your current line of thinking. The feedback is now your primary task. Analyze the requested changes and implement them precisely. Do not argue with or ignore the feedback.
     - **If your changes are `approved`:** You may proceed to the next step or conclude the task.
 
@@ -309,10 +313,9 @@ api_key = "os.environ/OPENAI_API_KEY"
 model_name = "gpt-oss-120b"
 
 [litellm.models.litellm_params]
-# model = "openrouter/openai/gpt-oss-120b"
-model = "openrouter/google/gemini-2.5-flash"
+model = "openrouter/openai/gpt-oss-120b"
 api_key = "os.environ/OPENROUTER_API_KEY"
-# provider = { only = ["cerebras"] }
+provider = { only = ["cerebras"] }
 
 # [[litellm.models]]
 # model_name = "qwen3-480b"
