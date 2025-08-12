@@ -126,7 +126,7 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
                     .collect::<Vec<String>>();
                 if problems.len() > 0 {
                     let tool_response_message = format!(
-                        "Your edit file request has been denied! Domain experts have requested the following changes:\n\n{}",
+                        "Your edit_file changes have not been applied and the contents of the file have not been edited! Domain experts have reviwed your edits and requested the following changes:\n\n<requested_changes>\n{}\n</requested_changes>\n\nUpdate your edit_file tool call to include the requested changes before trying again.",
                         problems.join("\n\n--------\n\n")
                     );
                     self.send_error_result(

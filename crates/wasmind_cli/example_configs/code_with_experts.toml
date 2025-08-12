@@ -303,9 +303,10 @@ api_key = "os.environ/OPENAI_API_KEY"
 model_name = "gpt-oss-120b"
 
 [litellm.models.litellm_params]
-model = "openrouter/openai/gpt-oss-120b"
+# model = "openrouter/openai/gpt-oss-120b"
+model = "openrouter/google/gemini-2.5-flash"
 api_key = "os.environ/OPENROUTER_API_KEY"
-provider = { only = ["cerebras"] }
+# provider = { only = ["cerebras"] }
 
 # [[litellm.models]]
 # model_name = "qwen3-480b"

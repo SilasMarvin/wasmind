@@ -21,6 +21,10 @@ mod bindings;
 mod system_prompt;
 use system_prompt::{SystemPromptConfig, SystemPromptRenderer};
 
+fn return_false() -> bool {
+    return false;
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AssistantConfig {
     pub model_name: String,
@@ -31,8 +35,8 @@ pub struct AssistantConfig {
     // Whether the LLM is required to respond with tool calls
     #[serde(default)]
     pub require_tool_call: bool,
-    #[serde(default)]
-    // Whether the LLM is allowed to respond with empty content
+    #[serde(default = "return_false")]
+    // Whether the LLM is allowed to respond with empty content (this include things like just thinking content)
     pub allow_empty_responses: bool,
 }
 
@@ -509,7 +513,11 @@ impl GeneratedActorTrait for Assistant {
             else if let Some(response) = Self::parse_as::<assistant::Response>(&message) {
                 if let Status::Processing { request_id } = &self.status {
                     if response.request_id == *request_id {
-                        if response.message.content.is_none()
+                        if (response.message.content.is_none()
+                            || response
+                                .message
+                                .content
+                                .is_some_and(|content| content.is_empty()))
                             && response.message.tool_calls.is_none()
                             && !self.config.allow_empty_responses
                         {

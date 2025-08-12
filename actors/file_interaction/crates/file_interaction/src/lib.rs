@@ -1307,6 +1307,15 @@ mod tests {
         let result = manager.edit_file(&create_params);
         assert!(result.is_ok());
 
+        // Verify cache was populated after creation
+        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        assert!(manager.cache.contains_key(&canonical_path));
+        let cached_entry = manager.cache.get(&canonical_path).unwrap();
+        let cached_content = cached_entry.content.get_numbered_content();
+        assert!(cached_content.contains("1|Line 1"));
+        assert!(cached_content.contains("2|Line 2"));
+        assert!(cached_content.contains("3|Line 3"));
+
         // Step 2: Now we can edit the existing file
         let modify_params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1320,7 +1329,14 @@ mod tests {
         let result = manager.edit_file(&modify_params);
         assert!(result.is_ok());
 
-        // Verify the final content
+        // Verify cache was updated after edit
+        let cached_entry_after_edit = manager.cache.get(&canonical_path).unwrap();
+        let cached_content_after = cached_entry_after_edit.content.get_numbered_content();
+        assert!(cached_content_after.contains("1|Line 1"));
+        assert!(cached_content_after.contains("2|Modified Line 2"));
+        assert!(cached_content_after.contains("3|Line 3"));
+
+        // Verify the final content on disk matches cache
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Line 1\nModified Line 2\nLine 3\n");
     }
@@ -1378,6 +1394,12 @@ mod tests {
         };
         manager.read_file(read_params).unwrap();
 
+        // Verify initial cache state
+        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let initial_cached = manager.cache.get(&canonical_path).unwrap();
+        let initial_content_cached = initial_cached.content.get_numbered_content();
+        assert!(initial_content_cached.contains("3|Line 3"));
+
         // Test replace operation
         let params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1391,6 +1413,16 @@ mod tests {
         let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
+        // Verify cache was updated with the edit
+        let cached_after_edit = manager.cache.get(&canonical_path).unwrap();
+        let cached_content = cached_after_edit.content.get_numbered_content();
+        assert!(cached_content.contains("1|Line 1"));
+        assert!(cached_content.contains("2|Line 2"));
+        assert!(cached_content.contains("3|Modified Line 3"));
+        assert!(cached_content.contains("4|Line 4"));
+        assert!(cached_content.contains("5|Line 5"));
+
+        // Verify disk content matches cache
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Line 1\nLine 2\nModified Line 3\nLine 4\nLine 5\n");
     }
@@ -1413,6 +1445,14 @@ mod tests {
         };
         manager.read_file(read_params).unwrap();
 
+        // Verify initial cache
+        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let initial_cached = manager.cache.get(&canonical_path).unwrap();
+        let initial_content_cached = initial_cached.content.get_numbered_content();
+        assert!(initial_content_cached.contains("1|Line 1"));
+        assert!(initial_content_cached.contains("2|Line 2"));
+        assert!(initial_content_cached.contains("3|Line 3"));
+
         // Insert new lines between line 2 and 3
         let params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1426,6 +1466,16 @@ mod tests {
         let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
+        // Verify cache was updated with inserted lines
+        let cached_after_edit = manager.cache.get(&canonical_path).unwrap();
+        let cached_content = cached_after_edit.content.get_numbered_content();
+        assert!(cached_content.contains("1|Line 1"));
+        assert!(cached_content.contains("2|Line 2"));
+        assert!(cached_content.contains("3|Inserted Line A"));
+        assert!(cached_content.contains("4|Inserted Line B"));
+        assert!(cached_content.contains("5|Line 3"));
+
+        // Verify disk content matches cache
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(
             content,
@@ -1451,6 +1501,14 @@ mod tests {
         };
         manager.read_file(read_params).unwrap();
 
+        // Verify initial cache has all 5 lines
+        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let initial_cached = manager.cache.get(&canonical_path).unwrap();
+        let initial_content_cached = initial_cached.content.get_numbered_content();
+        assert!(initial_content_cached.contains("2|Line 2"));
+        assert!(initial_content_cached.contains("3|Line 3"));
+        assert!(initial_content_cached.contains("4|Line 4"));
+
         // Delete lines 2-4
         let params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1464,6 +1522,17 @@ mod tests {
         let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
+        // Verify cache was updated with deletion
+        let cached_after_edit = manager.cache.get(&canonical_path).unwrap();
+        let cached_content = cached_after_edit.content.get_numbered_content();
+        assert!(cached_content.contains("1|Line 1"));
+        assert!(cached_content.contains("2|Line 5"));
+        // Verify deleted lines are no longer in cache
+        assert!(!cached_content.contains("Line 2"));
+        assert!(!cached_content.contains("Line 3"));
+        assert!(!cached_content.contains("Line 4"));
+
+        // Verify disk content matches cache
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Line 1\nLine 5\n");
     }
@@ -1485,6 +1554,14 @@ mod tests {
             end_line: None,
         };
         manager.read_file(read_params).unwrap();
+
+        // Verify initial cache state
+        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let initial_cached = manager.cache.get(&canonical_path).unwrap();
+        let initial_content_cached = initial_cached.content.get_numbered_content();
+        assert!(initial_content_cached.contains("2|Line 2"));
+        assert!(initial_content_cached.contains("4|Line 4"));
+        assert!(initial_content_cached.contains("5|Line 5"));
 
         // Multiple edits - should be processed in reverse order
         let params = EditFileParams {
@@ -1511,6 +1588,17 @@ mod tests {
         let result = manager.edit_file(&params);
         assert!(result.is_ok());
 
+        // Verify cache was updated with all edits
+        let cached_after_edit = manager.cache.get(&canonical_path).unwrap();
+        let cached_content = cached_after_edit.content.get_numbered_content();
+        assert!(cached_content.contains("1|Line 1"));
+        assert!(cached_content.contains("2|Modified Line 2"));
+        assert!(cached_content.contains("3|Line 3"));
+        assert!(cached_content.contains("4|Modified Line 4"));
+        assert!(cached_content.contains("5|Line 5"));
+        assert!(cached_content.contains("6|New Line 6"));
+
+        // Verify disk content matches cache
         let content = fs::read_to_string(&file_path).unwrap();
         let expected = "Line 1\nModified Line 2\nLine 3\nModified Line 4\nLine 5\nNew Line 6\n";
         assert_eq!(content, expected);

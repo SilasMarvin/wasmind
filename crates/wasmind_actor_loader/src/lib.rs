@@ -328,28 +328,25 @@ impl ActorLoader {
         // Phase 2: Load all resolved actors in parallel
         #[cfg(feature = "progress-output")]
         println!("Loading {} actors...", resolved_actors.len());
-        let tasks: Vec<_> = resolved_actors
-            .into_iter()
-            .map(|(logical_name, resolved)| {
-                let actor = Actor {
-                    name: logical_name,
-                    source: resolved.source,
-                    config: resolved.config,
-                    auto_spawn: resolved.auto_spawn,
-                    required_spawn_with: resolved.required_spawn_with.clone(),
-                };
-                self.load_single_actor(
+
+        let mut loaded_actors = vec![];
+        for (logical_name, resolved) in resolved_actors {
+            let actor = Actor {
+                name: logical_name,
+                source: resolved.source,
+                config: resolved.config,
+                auto_spawn: resolved.auto_spawn,
+                required_spawn_with: resolved.required_spawn_with.clone(),
+            };
+            let actor = self
+                .load_single_actor(
                     actor,
                     resolved.actor_id.clone(),
                     resolved.required_spawn_with,
                 )
-            })
-            .collect();
-
-        let results = join_all(tasks).await;
-
-        // Collect results, propagating any errors
-        let loaded_actors = results.into_iter().collect::<Result<Vec<_>>>()?;
+                .await?;
+            loaded_actors.push(actor);
+        }
 
         #[cfg(feature = "progress-output")]
         println!("✓ Actor loading complete");

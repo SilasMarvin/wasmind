@@ -420,7 +420,7 @@ impl AssistantInfo {
                 for tool_call in tool_calls {
                     if tool_call.id == tool_call_id {
                         message.invalidate_cache();
-                        return; // Found it, no need to continue
+                        return;
                     }
                 }
             }
