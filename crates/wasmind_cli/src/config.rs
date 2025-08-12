@@ -95,6 +95,10 @@ fn default_dashboard_key_bindings() -> HashMap<String, String> {
         "ctrl-c".to_string(),
         DashboardUserAction::Exit.as_str().to_string(),
     );
+    bindings.insert(
+        "esc".to_string(),
+        DashboardUserAction::InterruptAgent.as_str().to_string(),
+    );
     bindings
 }
 

@@ -6,6 +6,7 @@ starting_actors = ["delegation_network_coordinator"]
 
 [tui.dashboard.key_bindings]
 "ctrl-c" = "Exit"
+"esc" = "InterruptAgent"
 
 [tui.chat.key_bindings]
 "ctrl-a" = "Assist"

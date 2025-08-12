@@ -10,6 +10,7 @@ starting_actors = ["root_assistant", "file_interaction_with_approval", "execute_
 
 [tui.dashboard.key_bindings]
 "ctrl-c" = "Exit"
+"esc" = "InterruptAgent"
 
 [tui.chat.key_bindings]
 "ctrl-a" = "Assist"

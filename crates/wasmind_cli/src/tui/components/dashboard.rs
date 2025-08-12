@@ -21,12 +21,14 @@ pub const SCOPE_ATTR: &str = "SCOPE_ATTR";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DashboardUserAction {
     Exit,
+    InterruptAgent,
 }
 
 impl DashboardUserAction {
     pub fn as_str(&self) -> &'static str {
         match self {
             DashboardUserAction::Exit => "Exit",
+            DashboardUserAction::InterruptAgent => "InterruptAgent",
         }
     }
 }
@@ -37,6 +39,7 @@ impl TryFrom<&str> for DashboardUserAction {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "Exit" => Ok(DashboardUserAction::Exit),
+            "InterruptAgent" => Ok(DashboardUserAction::InterruptAgent),
             _ => Err(()),
         }
     }
@@ -123,6 +126,9 @@ impl Component<TuiMessage, MessageEnvelope> for DashboardComponent {
             match action {
                 DashboardUserAction::Exit => {
                     return Some(TuiMessage::Exit);
+                }
+                DashboardUserAction::InterruptAgent => {
+                    return Some(TuiMessage::InterruptAgent);
                 }
             }
         }
