@@ -24,12 +24,13 @@ pub struct SystemPromptConfig {
 
 fn default_base_template() -> String {
     r#"{% for section_name, contributions in sections -%}
-## {{ section_name }}
-
+<{{ section_name | lower | replace(" ", "_") }}>
 {% for contribution in contributions -%}
 {{ contribution }}
 
 {% endfor -%}
+</{{ section_name | lower | replace(" ", "_") }}>
+
 {% endfor -%}"#
         .to_string()
 }
@@ -366,7 +367,8 @@ mod tests {
         let result = renderer.render().unwrap();
 
         assert!(result.contains("Current directory: /home/user/project"));
-        assert!(result.contains("## Context"));
+        assert!(result.contains("<context>"));
+        assert!(result.contains("</context>"));
     }
 
     #[test]
@@ -520,8 +522,10 @@ mod tests {
 
         let result = renderer.render().unwrap();
 
-        assert!(result.contains("## Context"));
-        assert!(result.contains("## Tools"));
+        assert!(result.contains("<context>"));
+        assert!(result.contains("</context>"));
+        assert!(result.contains("<tools>"));
+        assert!(result.contains("</tools>"));
         assert!(result.contains("Context item"));
         assert!(result.contains("Tools item"));
     }
@@ -542,7 +546,8 @@ mod tests {
         renderer.add_contribution(contribution).unwrap();
         let result = renderer.render().unwrap();
         
-        assert!(result.contains("## default"));
+        assert!(result.contains("<default>"));
+        assert!(result.contains("</default>"));
         assert!(result.contains("No section specified"));
     }
 

@@ -18,7 +18,6 @@ fn format_string_for_error(s: &str) -> String {
     }
 }
 
-
 // Tool constants
 pub const READ_FILE_NAME: &str = "read_file";
 pub const READ_FILE_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER:CONTENT. You can read a specific chunk by providing start_line and end_line. IMPORTANT: Always use absolute paths (starting with /) - relative paths will fail.";
@@ -83,7 +82,7 @@ pub const FILE_TOOLS_USAGE_GUIDE: &str = r#"## File Interaction Tools
 Reads files with line numbers. Supports absolute and relative paths.
 
 ### edit_file - Search-and-Replace Editing
-Uses exact string matching instead of line numbers. Must read files before editing.
+Uses exact string matching. Must read files before editing.
 
 **Basic Example:**
 ```json
@@ -124,7 +123,11 @@ Uses exact string matching instead of line numbers. Must read files before editi
 - Use `replace_all: true` for multiple matches"#;
 
 /// WASM-safe path normalization that supports both absolute and relative paths
-fn wasm_safe_normalize_path(path: &Path, working_directory: &PathBuf, verify_exists: bool) -> Result<PathBuf, io::Error> {
+fn wasm_safe_normalize_path(
+    path: &Path,
+    working_directory: &PathBuf,
+    verify_exists: bool,
+) -> Result<PathBuf, io::Error> {
     // Convert relative paths to absolute using the working directory
     let absolute_path = if path.is_absolute() {
         path.to_path_buf()
@@ -371,7 +374,7 @@ impl FileInteractionManager {
             working_directory,
         }
     }
-    
+
     pub fn set_working_directory(&mut self, working_directory: PathBuf) {
         self.working_directory = working_directory;
     }
@@ -475,10 +478,12 @@ impl FileInteractionManager {
 
     pub fn edit_file(&mut self, params: &EditFileParams) -> Result<EditFileResult, EditFileError> {
         let edits_count = params.edits.len();
-        
+
         // Get the diff before applying edits (for new files, this will generate an empty-to-content diff)
-        let diff_before_edit = self.get_edit_diff(params).unwrap_or_else(|_| String::from("Could not generate diff"));
-        
+        let diff_before_edit = self
+            .get_edit_diff(params)
+            .unwrap_or_else(|_| String::from("Could not generate diff"));
+
         match self.apply_edits(&params.path, &params.edits) {
             Ok(_new_content) => {
                 let edit_summary = if edits_count == 1 {
@@ -491,19 +496,16 @@ impl FileInteractionManager {
                 let json_content = serde_json::to_string_pretty(params)
                     .unwrap_or_else(|_| "Failed to serialize parameters".to_string());
                 let formatted_json = format_json_for_tui(&json_content);
-                
+
                 let expanded = format!(
                     "File: {}\nOperation: Edit\nChanges: {} operations applied\n\nEdit Details:\n{}",
-                    params.path, 
-                    edits_count,
-                    formatted_json
+                    params.path, edits_count, formatted_json
                 );
 
                 // Include the diff in the message so LLMs can see exactly what changed
                 let message = format!(
                     "Successfully edited {}\n\nDiff of changes:\n```diff\n{}\n```",
-                    params.path,
-                    diff_before_edit
+                    params.path, diff_before_edit
                 );
 
                 Ok(EditFileResult {
@@ -773,7 +775,8 @@ impl FileInteractionManager {
     fn has_been_modified<P: AsRef<Path>>(&self, path: P) -> Result<bool, String> {
         let path_ref = path.as_ref();
 
-        let canonical_path = match wasm_safe_normalize_path(path_ref, &self.working_directory, true) {
+        let canonical_path = match wasm_safe_normalize_path(path_ref, &self.working_directory, true)
+        {
             Ok(p) => p,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 return Ok(true);
@@ -828,9 +831,13 @@ impl FileInteractionManager {
                     // Re-read the same line ranges that were originally cached
                     // We need to clear the cache entry first, then rebuild it with the same ranges
                     self.cache.remove(&canonical_path);
-                    
+
                     for slice in slices {
-                        self.read_and_cache_file(path, Some(slice.start_line), Some(slice.end_line))?;
+                        self.read_and_cache_file(
+                            path,
+                            Some(slice.start_line),
+                            Some(slice.end_line),
+                        )?;
                     }
                 }
             }
@@ -905,24 +912,24 @@ impl FileInteractionManager {
                     path
                 ));
             }
-            
+
             // For new files, use the already computed canonical path and create parent directories
             let absolute_path = canonical_path;
-            
+
             if let Some(parent) = absolute_path.parent() {
                 fs::create_dir_all(parent)
                     .map_err(|e| format!("Failed to create directory: {e}"))?;
             }
-            
+
             // Start with empty content for new file
             let new_content = self.apply_edits_to_content("", edits)?;
-            
+
             fs::write(&absolute_path, &new_content)
                 .map_err(|e| format!("Failed to write file: {e}"))?;
-                
+
             // Cache the new file (full read for new files)
             let _ = self.read_and_cache_file(&absolute_path, None, None);
-            
+
             Ok(new_content)
         } else {
             // Existing file - must be in cache (must have been read first)
@@ -965,7 +972,6 @@ impl FileInteractionManager {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -997,9 +1003,10 @@ mod tests {
 
     #[test]
     fn test_single_string_replacement() {
-        let (temp_dir, file_path) = create_test_file("def calculate(a, b):\n    return a + b\n\nprint(calculate(2, 3))");
+        let (temp_dir, file_path) =
+            create_test_file("def calculate(a, b):\n    return a + b\n\nprint(calculate(2, 3))");
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         read_file_first(&mut manager, &file_path.to_string_lossy());
 
         let params = EditFileParams {
@@ -1015,14 +1022,19 @@ mod tests {
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&file_path).unwrap();
-        assert_eq!(content, "def calculate(a, b):\n    return a * b\n\nprint(calculate(2, 3))");
+        assert_eq!(
+            content,
+            "def calculate(a, b):\n    return a * b\n\nprint(calculate(2, 3))"
+        );
     }
 
     #[test]
     fn test_multiline_replacement() {
-        let (temp_dir, file_path) = create_test_file("def old_function(x):\n    result = x * 2\n    return result\n\nprint(\"done\")");
+        let (temp_dir, file_path) = create_test_file(
+            "def old_function(x):\n    result = x * 2\n    return result\n\nprint(\"done\")",
+        );
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         read_file_first(&mut manager, &file_path.to_string_lossy());
 
         let params = EditFileParams {
@@ -1044,9 +1056,10 @@ mod tests {
 
     #[test]
     fn test_replace_all_functionality() {
-        let (temp_dir, file_path) = create_test_file("debug = True\nif debug: print('debug')\ndebug_mode = debug");
+        let (temp_dir, file_path) =
+            create_test_file("debug = True\nif debug: print('debug')\ndebug_mode = debug");
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         read_file_first(&mut manager, &file_path.to_string_lossy());
 
         let params = EditFileParams {
@@ -1062,7 +1075,10 @@ mod tests {
         assert!(result.is_ok());
 
         let content = fs::read_to_string(&file_path).unwrap();
-        assert_eq!(content, "verbose = True\nif verbose: print('verbose')\nverbose_mode = verbose");
+        assert_eq!(
+            content,
+            "verbose = True\nif verbose: print('verbose')\nverbose_mode = verbose"
+        );
     }
 
     #[test]
@@ -1092,9 +1108,10 @@ mod tests {
 
     #[test]
     fn test_multiple_edits_sequential() {
-        let (temp_dir, file_path) = create_test_file("DEBUG = True\nPORT = 3000\nHOST = 'localhost'\nUSE_SSL = False");
+        let (temp_dir, file_path) =
+            create_test_file("DEBUG = True\nPORT = 3000\nHOST = 'localhost'\nUSE_SSL = False");
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         read_file_first(&mut manager, &file_path.to_string_lossy());
 
         let params = EditFileParams {
@@ -1130,7 +1147,7 @@ mod tests {
     fn test_string_not_found_error() {
         let (temp_dir, file_path) = create_test_file("line 1\nline 2\nline 3");
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         read_file_first(&mut manager, &file_path.to_string_lossy());
 
         let params = EditFileParams {
@@ -1151,9 +1168,11 @@ mod tests {
 
     #[test]
     fn test_multiple_matches_without_replace_all() {
-        let (temp_dir, file_path) = create_test_file("result = calculate(x)\nprint(result)\nresult = calculate(y)\nprint(result)");
+        let (temp_dir, file_path) = create_test_file(
+            "result = calculate(x)\nprint(result)\nresult = calculate(y)\nprint(result)",
+        );
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         read_file_first(&mut manager, &file_path.to_string_lossy());
 
         let params = EditFileParams {
@@ -1176,7 +1195,7 @@ mod tests {
     fn test_diff_output_in_success_messages() {
         let (temp_dir, file_path) = create_test_file("Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         read_file_first(&mut manager, &file_path.to_string_lossy());
 
         let params = EditFileParams {
@@ -1200,16 +1219,19 @@ mod tests {
 
     #[test]
     fn test_exact_whitespace_matching() {
-        let (temp_dir, file_path) = create_test_file("    def function1():\n\t\tprint('spaces before')\n\tdef function2():\n\t\tprint('tabs before')");
+        let (temp_dir, file_path) = create_test_file(
+            "    def function1():\n\t\tprint('spaces before')\n\tdef function2():\n\t\tprint('tabs before')",
+        );
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         read_file_first(&mut manager, &file_path.to_string_lossy());
 
         let params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
             edits: vec![Edit {
                 old_string: "    def function1():\n\t\tprint('spaces before')".to_string(), // Exact whitespace
-                new_string: "    def modified_function1():\n\t\tprint('modified spaces')".to_string(),
+                new_string: "    def modified_function1():\n\t\tprint('modified spaces')"
+                    .to_string(),
                 replace_all: false,
             }],
         };
@@ -1225,9 +1247,11 @@ mod tests {
 
     #[test]
     fn test_context_for_uniqueness() {
-        let (temp_dir, file_path) = create_test_file("def process_user_data(data):\n    # TODO: Add validation\n    return data\n\ndef process_admin_data(data):\n    # TODO: Add validation\n    return data + \"_admin\"");
+        let (temp_dir, file_path) = create_test_file(
+            "def process_user_data(data):\n    # TODO: Add validation\n    return data\n\ndef process_admin_data(data):\n    # TODO: Add validation\n    return data + \"_admin\"",
+        );
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         read_file_first(&mut manager, &file_path.to_string_lossy());
 
         // Replace only the first TODO by including surrounding context
@@ -1253,14 +1277,14 @@ mod tests {
     fn test_partial_cache_preservation_after_edit() {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         // Create a file with many lines
         let content = (1..=20)
             .map(|i| format!("line {}", i))
             .collect::<Vec<_>>()
             .join("\n");
         let (_temp_dir, file_path) = create_test_file(&content);
-        
+
         // Read only lines 5-8 to create a partial cache
         let read_params = ReadFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1268,12 +1292,13 @@ mod tests {
             end_line: Some(8),
         };
         manager.read_file(read_params).unwrap();
-        
+
         // Verify we have a partial cache
-        let canonical_path = wasm_safe_normalize_path(&file_path, &manager.working_directory, true).unwrap();
+        let canonical_path =
+            wasm_safe_normalize_path(&file_path, &manager.working_directory, true).unwrap();
         let entry_before = manager.cache.get(&canonical_path).unwrap();
         assert!(matches!(entry_before.content, FileContent::Partial { .. }));
-        
+
         // Edit the file - change "line 6" to "modified line 6"
         let edit_params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1283,26 +1308,29 @@ mod tests {
                 replace_all: false,
             }],
         };
-        
+
         let result = manager.edit_file(&edit_params);
         assert!(result.is_ok());
-        
+
         // Verify cache is still partial and contains updated content
         let entry_after = manager.cache.get(&canonical_path).unwrap();
         match &entry_after.content {
-            FileContent::Partial { slices, total_lines } => {
+            FileContent::Partial {
+                slices,
+                total_lines,
+            } => {
                 assert_eq!(*total_lines, 20);
                 assert_eq!(slices.len(), 1);
                 assert_eq!(slices[0].start_line, 5);
                 assert_eq!(slices[0].end_line, 8);
-                
+
                 // Verify the content was updated
                 let numbered_content = entry_after.content.get_numbered_content();
                 assert!(numbered_content.contains("5:line 5"));
                 assert!(numbered_content.contains("6:modified line 6")); // This should be updated
                 assert!(numbered_content.contains("7:line 7"));
                 assert!(numbered_content.contains("8:line 8"));
-                
+
                 // Should not contain other lines
                 assert!(!numbered_content.contains("1:line 1"));
                 assert!(!numbered_content.contains("10:line 10"));
@@ -1317,15 +1345,16 @@ mod tests {
     fn test_full_cache_preservation_after_edit() {
         let (temp_dir, file_path) = create_test_file("line 1\nline 2\nline 3\nline 4\nline 5");
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         // Read full file to create full cache
         read_file_first(&mut manager, &file_path.to_string_lossy());
-        
+
         // Verify we have a full cache
-        let canonical_path = wasm_safe_normalize_path(&file_path, &manager.working_directory, true).unwrap();
+        let canonical_path =
+            wasm_safe_normalize_path(&file_path, &manager.working_directory, true).unwrap();
         let entry_before = manager.cache.get(&canonical_path).unwrap();
         assert!(matches!(entry_before.content, FileContent::Full(_)));
-        
+
         // Edit the file
         let edit_params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1335,10 +1364,10 @@ mod tests {
                 replace_all: false,
             }],
         };
-        
+
         let result = manager.edit_file(&edit_params);
         assert!(result.is_ok());
-        
+
         // Verify cache is still full and contains updated content
         let entry_after = manager.cache.get(&canonical_path).unwrap();
         match &entry_after.content {
@@ -1359,14 +1388,14 @@ mod tests {
     fn test_context_preservation_workflow() {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         // Create a large file (simulating a file where partial reads matter)
         let content = (1..=100)
             .map(|i| format!("function_{}() {{ return {}; }}", i, i * 10))
             .collect::<Vec<_>>()
             .join("\n");
         let (_temp_dir, file_path) = create_test_file(&content);
-        
+
         // LLM reads only lines 40-50 for focused work
         let read_params = ReadFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1374,10 +1403,10 @@ mod tests {
             end_line: Some(50),
         };
         let read_result = manager.read_file(read_params).unwrap();
-        
+
         // Verify partial context is provided to LLM
         assert!(read_result.message.contains("40-50"));
-        
+
         // LLM edits function_45 based on the context it sees
         let edit_params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1387,30 +1416,30 @@ mod tests {
                 replace_all: false,
             }],
         };
-        
+
         let edit_result = manager.edit_file(&edit_params);
         assert!(edit_result.is_ok());
-        
+
         // Verify edit was successful
         assert!(edit_result.unwrap().message.contains("Successfully edited"));
-        
+
         // Key test: Verify LLM still sees only the same context range
         let files_info = manager.get_files_info();
         assert_eq!(files_info.len(), 1);
-        
+
         let (_, cached_content) = &files_info[0];
-        
+
         // Should still only see lines 40-50, not the entire 100-line file
         assert!(cached_content.contains("40:function_40()"));
         assert!(cached_content.contains("45:function_45_optimized()")); // Updated content
         assert!(cached_content.contains("50:function_50()"));
-        
+
         // Should NOT see other lines (context preserved)
         assert!(!cached_content.contains("1:function_1()"));
         assert!(!cached_content.contains("90:function_90()"));
         assert!(cached_content.contains("[... 39 lines omitted ...]")); // Before
         assert!(cached_content.contains("[... 50 lines omitted ...]")); // After
-        
+
         // Verify actual file on disk has the change
         let disk_content = fs::read_to_string(&file_path).unwrap();
         assert!(disk_content.contains("function_45_optimized() { return 450 * 2; }"));
@@ -1424,7 +1453,7 @@ mod tests {
         let mut manager = create_test_manager(temp_dir.path());
         let content = "line 1\nline 2\nline 3";
         let (_temp_dir, file_path) = create_test_file(content);
-        
+
         // Try to edit without reading first
         let edit_params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1434,10 +1463,15 @@ mod tests {
                 replace_all: false,
             }],
         };
-        
+
         let result = manager.edit_file(&edit_params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("must be read before it can be edited"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("must be read before it can be edited")
+        );
     }
 
     #[test]
@@ -1446,7 +1480,7 @@ mod tests {
         let mut manager = create_test_manager(temp_dir.path());
         let content = "line 1\nline 2\nline 3";
         let (_temp_dir, file_path) = create_test_file(content);
-        
+
         // Read the file first
         let read_params = ReadFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1454,10 +1488,10 @@ mod tests {
             end_line: None,
         };
         manager.read_file(read_params).unwrap();
-        
+
         // Modify the file externally to make it stale
         fs::write(&file_path, "externally modified content").unwrap();
-        
+
         // Try to edit the now-stale file
         let edit_params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1467,10 +1501,15 @@ mod tests {
                 replace_all: false,
             }],
         };
-        
+
         let result = manager.edit_file(&edit_params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("has been modified since last read"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("has been modified since last read")
+        );
     }
 
     #[test]
@@ -1479,7 +1518,7 @@ mod tests {
         let mut manager = create_test_manager(temp_dir.path());
         let temp_dir = TempDir::new().unwrap();
         let nonexistent_path = temp_dir.path().join("does_not_exist.txt");
-        
+
         // Try to edit a file that doesn't exist
         let edit_params = EditFileParams {
             path: nonexistent_path.to_string_lossy().to_string(),
@@ -1489,10 +1528,14 @@ mod tests {
                 replace_all: false,
             }],
         };
-        
+
         let result = manager.edit_file(&edit_params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("does not exist. To create a new file, use an edit with empty old_string"));
+        assert!(
+            result.unwrap_err().error_msg.contains(
+                "does not exist. To create a new file, use an edit with empty old_string"
+            )
+        );
     }
 
     #[test]
@@ -1501,7 +1544,7 @@ mod tests {
         let mut manager = create_test_manager(temp_dir.path());
         let content = "existing content";
         let (_temp_dir, file_path) = create_test_file(content);
-        
+
         // Read the file first
         let read_params = ReadFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1509,7 +1552,7 @@ mod tests {
             end_line: None,
         };
         manager.read_file(read_params).unwrap();
-        
+
         // Try to use empty old_string on a non-empty file
         let edit_params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -1519,17 +1562,22 @@ mod tests {
                 replace_all: false,
             }],
         };
-        
+
         let result = manager.edit_file(&edit_params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("Cannot use empty old_string on non-empty file"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("Cannot use empty old_string on non-empty file")
+        );
     }
 
     #[test]
     fn test_relative_paths_work_correctly() {
         let temp_dir = TempDir::new().unwrap();
         let mut manager = create_test_manager(temp_dir.path());
-        
+
         // Create a file with a relative path
         let relative_path = "test_relative.txt";
         let edit_params = EditFileParams {
@@ -1540,28 +1588,36 @@ mod tests {
                 replace_all: false,
             }],
         };
-        
+
         // Create the file using relative path
         let result = manager.edit_file(&edit_params);
-        assert!(result.is_ok(), "Failed to create file with relative path: {:?}", result);
-        
+        assert!(
+            result.is_ok(),
+            "Failed to create file with relative path: {:?}",
+            result
+        );
+
         // Verify the file exists at the expected absolute location
         let absolute_path = temp_dir.path().join(relative_path);
         assert!(absolute_path.exists(), "File should exist at absolute path");
-        
+
         let content = fs::read_to_string(&absolute_path).unwrap();
         assert_eq!(content, "This file was created with a relative path!");
-        
+
         // Now read the file using the same relative path
         let read_params = ReadFileParams {
             path: relative_path.to_string(),
             start_line: None,
             end_line: None,
         };
-        
+
         let read_result = manager.read_file(read_params);
-        assert!(read_result.is_ok(), "Failed to read file with relative path: {:?}", read_result);
-        
+        assert!(
+            read_result.is_ok(),
+            "Failed to read file with relative path: {:?}",
+            read_result
+        );
+
         // Edit the file using relative path
         let edit_params2 = EditFileParams {
             path: relative_path.to_string(),
@@ -1571,13 +1627,17 @@ mod tests {
                 replace_all: false,
             }],
         };
-        
+
         let edit_result = manager.edit_file(&edit_params2);
-        assert!(edit_result.is_ok(), "Failed to edit file with relative path: {:?}", edit_result);
-        
+        assert!(
+            edit_result.is_ok(),
+            "Failed to edit file with relative path: {:?}",
+            edit_result
+        );
+
         // Verify the edit worked
         let final_content = fs::read_to_string(&absolute_path).unwrap();
         assert_eq!(final_content, "This file was edited using relative paths!");
     }
-
 }
+
