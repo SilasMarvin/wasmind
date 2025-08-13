@@ -70,22 +70,18 @@ impl Component<TuiMessage, MessageEnvelope> for LLMTextAreaComponent {
     fn on(&mut self, ev: Event<MessageEnvelope>) -> Option<TuiMessage> {
         match ev {
             Event::Keyboard(key_event) => {
-                if let Some(action) = self.config.chat.key_bindings.get(&key_event) {
-                    match action {
-                        ChatUserAction::Assist => {
-                            let content = self
-                                .component
-                                .state()
-                                .unwrap_vec()
-                                .into_iter()
-                                .map(|line| line.unwrap_string())
-                                .collect::<Vec<String>>()
-                                .join("\n");
-                            self.perform(Cmd::Custom(TEXTAREA_CMD_CLEAR));
-                            return Some(TuiMessage::SubmittedUserTypedLLMMessage(content));
-                        }
-                        _ => (),
-                    }
+                if let Some(ChatUserAction::Assist) = self.config.chat.key_bindings.get(&key_event)
+                {
+                    let content = self
+                        .component
+                        .state()
+                        .unwrap_vec()
+                        .into_iter()
+                        .map(|line| line.unwrap_string())
+                        .collect::<Vec<String>>()
+                        .join("\n");
+                    self.perform(Cmd::Custom(TEXTAREA_CMD_CLEAR));
+                    return Some(TuiMessage::SubmittedUserTypedLLMMessage(content));
                 }
 
                 match key_event {

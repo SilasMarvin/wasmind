@@ -425,7 +425,7 @@ impl GraphArea {
                 GraphUserAction::SelectDown => "Select Down",
             };
 
-            bindings.push(format!("{}: {}", key_str, action_str));
+            bindings.push(format!("{key_str}: {action_str}"));
         }
 
         if bindings.is_empty() {

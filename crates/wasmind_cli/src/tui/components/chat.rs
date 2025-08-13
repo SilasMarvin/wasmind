@@ -122,14 +122,10 @@ impl Component<TuiMessage, MessageEnvelope> for ChatAreaComponent {
         // TODO: Pull the assist action here and out of the llm text area section
         if let Event::Keyboard(key_event) = &ev
             && let Some(action) = self.component.config.chat.key_bindings.get(key_event)
+            && action == &ChatUserAction::ToggleToolExpansion
         {
-            match action {
-                ChatUserAction::ToggleToolExpansion => {
-                    self.component.chat_history.toggle_tool_expansion();
-                    return Some(TuiMessage::Redraw);
-                }
-                _ => (),
-            }
+            self.component.chat_history.toggle_tool_expansion();
+            return Some(TuiMessage::Redraw);
         }
 
         match (
