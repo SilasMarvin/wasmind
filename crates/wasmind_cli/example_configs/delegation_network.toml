@@ -4,12 +4,14 @@ starting_actors = ["delegation_network_coordinator"]
 # TUI Specific Config ########
 ##############################
 
+# These are the default bindings - not required but shown here for easy customization
 [tui.dashboard.key_bindings]
 "ctrl-c" = "Exit"
 "esc" = "InterruptAgent"
 
 [tui.chat.key_bindings]
 "ctrl-a" = "Assist"
+"ctrl-t" = "ToggleToolExpansion"
 
 [tui.graph.key_bindings]
 "shift-down" = "SelectDown"

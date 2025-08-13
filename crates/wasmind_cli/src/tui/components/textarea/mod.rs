@@ -84,6 +84,7 @@ impl Component<TuiMessage, MessageEnvelope> for LLMTextAreaComponent {
                             self.perform(Cmd::Custom(TEXTAREA_CMD_CLEAR));
                             return Some(TuiMessage::SubmittedUserTypedLLMMessage(content));
                         }
+                        _ => (),
                     }
                 }
 

@@ -146,6 +146,7 @@ fn create_tool_widget(
     let default_expanded_content = serde_json::to_string_pretty(&tool_call.function.arguments)
         .unwrap_or(tool_call.function.arguments.clone());
 
+    let expand_icon = if is_expanded { "-" } else { "+" };
     let (errored, title, content, expanded_content) = match status {
         ToolCallStatus::Received { display_info } => {
             let (content, expanded_content) = (
@@ -154,7 +155,7 @@ fn create_tool_widget(
             );
             (
                 false,
-                format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
+                format!("[ {} Tool: {} ]", expand_icon, tool_call.function.name),
                 content,
                 expanded_content,
             )
@@ -163,7 +164,7 @@ fn create_tool_widget(
             let content = format!("Awaiting system: {}", details.ui_display_info.collapsed);
             (
                 false,
-                format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
+                format!("[ {} Tool: {} ]", expand_icon, tool_call.function.name),
                 content,
                 details.ui_display_info.expanded.clone(),
             )
@@ -184,7 +185,7 @@ fn create_tool_widget(
 
             (
                 errored,
-                format!("[ {} Tool: {} ]", icons::TOOL_ICON, tool_call.function.name),
+                format!("[ {} Tool: {} ]", expand_icon, tool_call.function.name),
                 content,
                 expanded_content,
             )
@@ -216,6 +217,7 @@ fn create_assistant_widgets(
     area: Rect,
     tool_call_updates: &HashMap<String, HashMap<String, ToolCallStatus>>,
     request_id: &str,
+    tools_expanded: bool,
 ) -> Vec<(Box<dyn WidgetRef>, u16)> {
     let mut widgets: Vec<(Box<dyn WidgetRef>, u16)> = vec![];
 
@@ -245,7 +247,7 @@ fn create_assistant_widgets(
                 .and_then(|request_updates| request_updates.get(&tool_call.id));
 
             if let Some(status) = status {
-                widgets.push(create_tool_widget(tool_call, status, area, false));
+                widgets.push(create_tool_widget(tool_call, status, area, tools_expanded));
             }
         }
     }
@@ -270,6 +272,7 @@ impl ChatMessageWidgetState {
         &mut self,
         area: Rect,
         tool_call_updates: &HashMap<String, HashMap<String, ToolCallStatus>>,
+        tools_expanded: bool,
     ) {
         let widgets = match &self.message {
             ChatMessageWithRequestId::System(system_msg) => {
@@ -284,6 +287,7 @@ impl ChatMessageWidgetState {
                     area,
                     tool_call_updates,
                     &assistant_with_request_id.originating_request_id,
+                    tools_expanded,
                 )
             }
             ChatMessageWithRequestId::Tool(_) => vec![],
@@ -302,13 +306,13 @@ impl ChatMessageWidgetState {
 }
 
 impl CacheableRenderItem for ChatMessageWidgetState {
-    type Context = HashMap<String, HashMap<String, ToolCallStatus>>; // tool_call_updates
+    type Context = (HashMap<String, HashMap<String, ToolCallStatus>>, bool); // (tool_call_updates, tools_expanded)
 
     fn get_height(&mut self, area: Rect, context: &Self::Context) -> u16 {
         if let Some(height) = self.height {
             height
         } else {
-            self.build_widgets(area, context);
+            self.build_widgets(area, &context.0, context.1);
             self.height.unwrap()
         }
     }
@@ -551,7 +555,7 @@ impl AssistantInfo {
     }
 
     // This render function tracks total content height and supports scrolling
-    fn render_ref_mut(&mut self, area: Rect, buf: &mut Buffer, scroll_offset: u16) -> u16 {
+    fn render_ref_mut(&mut self, area: Rect, buf: &mut Buffer, scroll_offset: u16, tools_expanded: bool) -> u16 {
         let mut y_offset = 0;
 
         // Create or get cached title
@@ -617,7 +621,7 @@ impl AssistantInfo {
 
                 Self::render_and_track(
                     message,
-                    &self.tool_call_updates,
+                    &(self.tool_call_updates.clone(), tools_expanded),
                     area,
                     buf,
                     scroll_offset,
@@ -694,8 +698,14 @@ impl ChatHistoryComponent {
                 scroll_offset: 0,
                 content_height: 0,
                 last_render_area: None,
+                tools_expanded: false,
             },
         }
+    }
+
+    pub fn toggle_tool_expansion(&mut self) {
+        self.component.tools_expanded = !self.component.tools_expanded;
+        self.component.invalidate_all_caches();
     }
 }
 
@@ -706,6 +716,7 @@ struct ChatHistory {
     scroll_offset: u16,
     content_height: u16,
     last_render_area: Option<Rect>,
+    tools_expanded: bool,
 }
 
 impl ChatHistory {
@@ -736,14 +747,14 @@ impl MockComponent for ChatHistory {
                 // Store render area and get total content height
                 self.last_render_area = Some(area);
                 self.content_height =
-                    info.render_ref_mut(area, frame.buffer_mut(), self.scroll_offset);
+                    info.render_ref_mut(area, frame.buffer_mut(), self.scroll_offset, self.tools_expanded);
 
                 if is_scrolled_to_bottom && last_content_height != self.content_height {
                     frame.render_widget(Clear, area);
                     self.scroll_offset = self
                         .content_height
                         .saturating_sub(self.last_render_area.map(|a| a.height).unwrap_or(0));
-                    info.render_ref_mut(area, frame.buffer_mut(), self.scroll_offset);
+                    info.render_ref_mut(area, frame.buffer_mut(), self.scroll_offset, self.tools_expanded);
                 }
             } else {
                 tracing::error!("Trying to retrieve a scope that does not exist: {active_scope}");

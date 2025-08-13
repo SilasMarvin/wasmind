@@ -84,6 +84,10 @@ fn default_chat_key_bindings() -> HashMap<String, String> {
         "ctrl-a".to_string(),
         ChatUserAction::Assist.as_str().to_string(),
     );
+    bindings.insert(
+        "ctrl-t".to_string(),
+        ChatUserAction::ToggleToolExpansion.as_str().to_string(),
+    );
     bindings
 }
 
@@ -259,9 +263,15 @@ impl TuiConfig {
     pub fn parse(self) -> Result<ParsedTuiConfig, ConfigError> {
         use crate::utils::parse_key_combination;
 
-        let dashboard_key_bindings = self
-            .dashboard
-            .key_bindings
+        // Merge dashboard defaults with user config
+        let mut dashboard_bindings = if self.dashboard.clear_defaults {
+            HashMap::new()
+        } else {
+            default_dashboard_key_bindings()
+        };
+        dashboard_bindings.extend(self.dashboard.key_bindings);
+
+        let dashboard_key_bindings = dashboard_bindings
             .into_iter()
             .map(|(binding, action)| {
                 let Some(parsed_binding) = parse_key_combination(&binding) else {
@@ -274,9 +284,15 @@ impl TuiConfig {
             })
             .collect::<Result<HashMap<_, _>, _>>()?;
 
-        let chat_key_bindings = self
-            .chat
-            .key_bindings
+        // Merge chat defaults with user config
+        let mut chat_bindings = if self.chat.clear_defaults {
+            HashMap::new()
+        } else {
+            default_chat_key_bindings()
+        };
+        chat_bindings.extend(self.chat.key_bindings);
+
+        let chat_key_bindings = chat_bindings
             .into_iter()
             .map(|(binding, action)| {
                 let Some(parsed_binding) = parse_key_combination(&binding) else {
@@ -289,9 +305,15 @@ impl TuiConfig {
             })
             .collect::<Result<HashMap<_, _>, _>>()?;
 
-        let graph_key_bindings = self
-            .graph
-            .key_bindings
+        // Merge graph defaults with user config
+        let mut graph_bindings = if self.graph.clear_defaults {
+            HashMap::new()
+        } else {
+            default_graph_key_bindings()
+        };
+        graph_bindings.extend(self.graph.key_bindings);
+
+        let graph_key_bindings = graph_bindings
             .into_iter()
             .map(|(binding, action)| {
                 let Some(parsed_binding) = parse_key_combination(&binding) else {

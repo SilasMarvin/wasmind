@@ -17,12 +17,14 @@ use super::textarea::LLMTextAreaComponent;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ChatUserAction {
     Assist,
+    ToggleToolExpansion,
 }
 
 impl ChatUserAction {
     pub fn as_str(&self) -> &'static str {
         match self {
             ChatUserAction::Assist => "Assist",
+            ChatUserAction::ToggleToolExpansion => "ToggleToolExpansion",
         }
     }
 }
@@ -33,6 +35,7 @@ impl TryFrom<&str> for ChatUserAction {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "Assist" => Ok(ChatUserAction::Assist),
+            "ToggleToolExpansion" => Ok(ChatUserAction::ToggleToolExpansion),
             _ => Err(()),
         }
     }
@@ -51,6 +54,7 @@ impl ChatAreaComponent {
                 state: State::One(StateValue::String("".to_string())),
                 llm_textarea: LLMTextAreaComponent::new(config.clone()),
                 chat_history: ChatHistoryComponent::new(initial_prompt),
+                config,
             },
         }
     }
@@ -61,6 +65,7 @@ struct ChatArea {
     state: State,
     llm_textarea: LLMTextAreaComponent,
     chat_history: ChatHistoryComponent,
+    config: ParsedTuiConfig,
 }
 
 impl MockComponent for ChatArea {
@@ -113,6 +118,20 @@ impl MockComponent for ChatArea {
 
 impl Component<TuiMessage, MessageEnvelope> for ChatAreaComponent {
     fn on(&mut self, ev: Event<MessageEnvelope>) -> Option<TuiMessage> {
+        // Handle keyboard events for chat actions
+        // TODO: Pull the assist action here and out of the llm text area section
+        if let Event::Keyboard(key_event) = &ev
+            && let Some(action) = self.component.config.chat.key_bindings.get(key_event)
+        {
+            match action {
+                ChatUserAction::ToggleToolExpansion => {
+                    self.component.chat_history.toggle_tool_expansion();
+                    return Some(TuiMessage::Redraw);
+                }
+                _ => (),
+            }
+        }
+
         match (
             self.component.chat_history.on(ev.clone()),
             self.component.llm_textarea.on(ev),
