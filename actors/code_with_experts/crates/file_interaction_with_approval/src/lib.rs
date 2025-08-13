@@ -84,7 +84,7 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
 
         // Get the host working directory and create the manager with it
         let working_directory = host_info::get_host_working_directory();
-        let manager = FileInteractionManager::new_with_working_directory(PathBuf::from(working_directory));
+        let manager = FileInteractionManager::new(PathBuf::from(working_directory));
         
         Self {
             config,
@@ -189,7 +189,7 @@ impl FileInteractionWIthApprovalActor {
 
         let default_template = r#"Current Working Directory: {{ data.working_directory }}
 
-The current state of all read and edited files. This is updated automatically for you after each edit_file and read_file call. I.E. You do NOT need to call read_file after edit_file uses
+Current state of all read and edited files. This section updates automatically after each read_file and edit_file call.
 
 {% for file in data.files -%}
 <file path="{{ file.path }}">
