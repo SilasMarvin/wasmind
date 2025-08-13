@@ -107,6 +107,117 @@ pub mod wasmind {
                 }
             }
         }
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod host_info {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            /// Operating system information from the host
+            #[derive(Clone)]
+            pub struct OsInfo {
+                pub os: _rt::String,
+                pub arch: _rt::String,
+            }
+            impl ::core::fmt::Debug for OsInfo {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("OsInfo")
+                        .field("os", &self.os)
+                        .field("arch", &self.arch)
+                        .finish()
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Get the actual working directory from the host system
+            /// This returns the real host working directory, not the WASM guest working directory
+            pub fn get_host_working_directory() -> _rt::String {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 2
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "wasmind:actor/host-info@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get-host-working-directory"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = *ptr0.add(0).cast::<*mut u8>();
+                    let l3 = *ptr0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len4 = l3;
+                    let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
+                    let result5 = _rt::string_lift(bytes4);
+                    result5
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Get the actual operating system information from the host
+            /// This returns the real host OS info, not "wasm32"
+            pub fn get_host_os_info() -> OsInfo {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "wasmind:actor/host-info@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get-host-os-info"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = *ptr0.add(0).cast::<*mut u8>();
+                    let l3 = *ptr0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len4 = l3;
+                    let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
+                    let l5 = *ptr0
+                        .add(2 * ::core::mem::size_of::<*const u8>())
+                        .cast::<*mut u8>();
+                    let l6 = *ptr0
+                        .add(3 * ::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len7 = l6;
+                    let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+                    let result8 = OsInfo {
+                        os: _rt::string_lift(bytes4),
+                        arch: _rt::string_lift(bytes7),
+                    };
+                    result8
+                }
+            }
+        }
         /// =================================================================
         /// INTERFACE 1: Core Actor Model
         /// This interface defines the essential types and behaviors required
@@ -917,6 +1028,13 @@ mod _rt {
     #![allow(dead_code, clippy::all)]
     pub use alloc_crate::string::String;
     pub use alloc_crate::vec::Vec;
+    pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
+        if cfg!(debug_assertions) {
+            String::from_utf8(bytes).unwrap()
+        } else {
+            String::from_utf8_unchecked(bytes)
+        }
+    }
     use core::fmt;
     use core::marker;
     use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
@@ -992,13 +1110,6 @@ mod _rt {
         }
     }
     pub use alloc_crate::alloc;
-    pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
-        if cfg!(debug_assertions) {
-            String::from_utf8(bytes).unwrap()
-        } else {
-            String::from_utf8_unchecked(bytes)
-        }
-    }
     pub unsafe fn invalid_enum_discriminant<T>() -> T {
         if cfg!(debug_assertions) {
             panic!("invalid enum discriminant")
@@ -1049,31 +1160,34 @@ pub(crate) use __export_actor_world_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1117] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xdb\x07\x01A\x02\x01\
-A\x0b\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1242] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd8\x08\x01A\x02\x01\
+A\x0d\x01B\x03\x01p}\x01@\x02\x0cmessage-types\x07payload\0\x01\0\x04\0\x09broad\
 cast\x01\x01\x03\0\x1dwasmind:actor/messaging@0.1.0\x05\0\x01B\x04\x01m\x04\x05d\
 ebug\x04info\x04warn\x05error\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07\
 messages\x01\0\x04\0\x03log\x01\x02\x03\0\x1awasmind:actor/logger@0.1.0\x05\x01\x01\
-B\x0e\x01s\x04\0\x05scope\x03\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom\
--actor-ids\x0afrom-scope\x01\x07payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\
-\0\x05actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[co\
-nstructor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\
-\x1c[method]actor.handle-message\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[me\
-thod]actor.destructor\x01\x0a\x03\0\x19wasmind:actor/actor@0.1.0\x05\x02\x02\x03\
-\0\x02\x05scope\x01B\x0b\x02\x03\x02\x01\x03\x04\0\x05scope\x03\0\0\x01ps\x01j\x01\
-\x01\x01s\x01@\x02\x09actor-ids\x02\x0aagent-names\0\x03\x04\0\x0bspawn-agent\x01\
-\x04\x01k\x01\x01@\0\0\x05\x04\0\x10get-parent-scope\x01\x06\x01@\x01\x05scope\x01\
-\0\x05\x04\0\x13get-parent-scope-of\x01\x07\x03\0\x19wasmind:actor/agent@0.1.0\x05\
-\x04\x01B\x0e\x01s\x04\0\x05scope\x03\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\
-\x0dfrom-actor-ids\x0afrom-scope\x01\x07payload\x02\x04\0\x10message-envelope\x03\
-\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\x06\x04\
-\0\x12[constructor]actor\x01\x07\x01h\x05\x01@\x02\x04self\x08\x07message\x04\x01\
-\0\x04\0\x1c[method]actor.handle-message\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\
-\x18[method]actor.destructor\x01\x0a\x04\0\x19wasmind:actor/actor@0.1.0\x05\x05\x04\
-\06file-interaction-with-approval:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0b\
-actor-world\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x07\
-0.227.1\x10wit-bindgen-rust\x060.41.0";
+B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\x1aget-h\
+ost-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\x03\x03\
+\0\x1dwasmind:actor/host-info@0.1.0\x05\x02\x01B\x0e\x01s\x04\0\x05scope\x03\0\0\
+\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scope\x01\x07p\
+ayload\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01\
+@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[constructor]actor\x01\x07\x01h\x05\
+\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[method]actor.handle-message\
+\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]actor.destructor\x01\x0a\x03\
+\0\x19wasmind:actor/actor@0.1.0\x05\x03\x02\x03\0\x03\x05scope\x01B\x0b\x02\x03\x02\
+\x01\x04\x04\0\x05scope\x03\0\0\x01ps\x01j\x01\x01\x01s\x01@\x02\x09actor-ids\x02\
+\x0aagent-names\0\x03\x04\0\x0bspawn-agent\x01\x04\x01k\x01\x01@\0\0\x05\x04\0\x10\
+get-parent-scope\x01\x06\x01@\x01\x05scope\x01\0\x05\x04\0\x13get-parent-scope-o\
+f\x01\x07\x03\0\x19wasmind:actor/agent@0.1.0\x05\x05\x01B\x0e\x01s\x04\0\x05scop\
+e\x03\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scope\
+\x01\x07payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05actor\x03\x01\x01\
+i\x05\x01@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[constructor]actor\x01\x07\
+\x01h\x05\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[method]actor.handl\
+e-message\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]actor.destructor\x01\
+\x0a\x04\0\x19wasmind:actor/actor@0.1.0\x05\x06\x04\06file-interaction-with-appr\
+oval:actor/actor-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09pr\
+oducers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x06\
+0.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

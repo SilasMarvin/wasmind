@@ -1,9 +1,13 @@
-use bindings::{exports::wasmind::actor::actor::MessageEnvelope, wasmind::actor::logger};
+use bindings::{
+    exports::wasmind::actor::actor::MessageEnvelope, 
+    wasmind::actor::host_info
+};
 use file_interaction::{
     EDIT_FILE_DESCRIPTION, EDIT_FILE_NAME, EDIT_FILE_SCHEMA, EditFileParams,
     FILE_TOOLS_USAGE_GUIDE, FileInteractionManager, READ_FILE_DESCRIPTION, READ_FILE_NAME,
     READ_FILE_SCHEMA, ReadFileParams,
 };
+use std::path::PathBuf;
 use serde::Deserialize;
 use wasmind_actor_utils::common_messages::{
     assistant::{Section, SystemPromptContent, SystemPromptContribution},
@@ -80,9 +84,13 @@ impl GeneratedActorTrait for FileInteractionActor {
             section: Some(Section::Tools),
         });
 
+        // Get the host working directory and create the manager with it
+        let working_directory = host_info::get_host_working_directory();
+        let manager = FileInteractionManager::new_with_working_directory(PathBuf::from(working_directory));
+
         Self {
             scope,
-            manager: FileInteractionManager::new(),
+            manager,
             config,
         }
     }
@@ -126,11 +134,17 @@ impl FileInteractionActor {
                 .cmp(b["path"].as_str().unwrap_or(""))
         });
 
+        // Get the current working directory
+        let working_directory = host_info::get_host_working_directory();
+        
         let data = serde_json::json!({
+            "working_directory": working_directory,
             "files": files
         });
 
-        let default_template = r#"The current state of all read and edited files. This is updated automatically for you after each edit_file and read_file call. I.E. You do NOT need to call read_file after edit_file uses
+        let default_template = r#"Current Working Directory: {{ data.working_directory }}
+
+The current state of all read and edited files. This is updated automatically for you after each edit_file and read_file call. I.E. You do NOT need to call read_file after edit_file uses
 
 {% for file in data.files -%}
 <file path="{{ file.path }}">

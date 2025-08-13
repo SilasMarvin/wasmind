@@ -3,6 +3,7 @@ package file-interaction-with-approval:actor@0.1.0;
 world actor-world {
   import wasmind:actor/messaging@0.1.0;
   import wasmind:actor/logger@0.1.0;
+  import wasmind:actor/host-info@0.1.0;
   import wasmind:actor/agent@0.1.0;
   export wasmind:actor/actor@0.1.0; 
 }

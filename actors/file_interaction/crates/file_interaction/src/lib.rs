@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use similar::TextDiff;
 use wasmind_actor_utils::common_messages::tools::UIDisplayInfo;
 
+
 // Tool constants
 pub const READ_FILE_NAME: &str = "read_file";
 pub const READ_FILE_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER:CONTENT. You can read a specific chunk by providing start_line and end_line. IMPORTANT: Always use absolute paths (starting with /) - relative paths will fail.";
@@ -78,20 +79,20 @@ The file interaction actor provides two essential tools for reading and editing 
 - Small files (<64KB) are read automatically in full
 - Large files require specifying line ranges (start_line and end_line)
 - Caches file content for efficient subsequent reads and edits
-- Must use absolute paths: `/path/to/file.txt` ✓, `file.txt` ✗
+- Supports both absolute (`/path/to/file.txt`) and relative (`file.txt`) paths
 
 ### edit_file  
 - **Primary tool for both editing existing files AND creating new files**
 - Applies multiple edits to a file atomically
 - Processes edits in reverse line order to maintain line number integrity
 - Supports insertions (set end_line to start_line - 1), replacements, and deletions
-- Must use absolute paths: `/path/to/file.txt` ✓, `file.txt` ✗
+- Supports both absolute (`/path/to/file.txt`) and relative (`file.txt`) paths
 
 #### Creating New Files
 To create a new file, use edit_file with a single edit:
 ```json
 {
-  "path": "/absolute/path/to/new_file.txt",
+  "path": "path/to/new_file.txt",
   "edits": [{
     "start_line": 1,
     "end_line": 0,
@@ -104,7 +105,7 @@ To create a new file, use edit_file with a single edit:
 For existing files, you can apply multiple edits in one operation:
 ```json
 {
-  "path": "/absolute/path/to/existing_file.txt", 
+  "path": "path/to/existing_file.txt", 
   "edits": [
     {
       "start_line": 5,
@@ -123,7 +124,7 @@ For existing files, you can apply multiple edits in one operation:
 **Common single-line operations:**
 ```json
 {
-  "path": "/absolute/path/to/file.txt",
+  "path": "path/to/file.txt",
   "edits": [{
     "start_line": 10,
     "end_line": 10,
@@ -135,7 +136,7 @@ For existing files, you can apply multiple edits in one operation:
 **Delete lines (use empty new_content):**
 ```json
 {
-  "path": "/absolute/path/to/file.txt",
+  "path": "path/to/file.txt",
   "edits": [{
     "start_line": 5,
     "end_line": 8,
@@ -150,25 +151,43 @@ For existing files, you can apply multiple edits in one operation:
 - Cached files: Will warn if file was modified externally since last read
 - Automatic directory creation: Parent directories are created automatically if needed"#;
 
-/// WASM-safe alternative to wasm_safe_normalize_path that works without OS-level path resolution
-fn wasm_safe_normalize_path(path: &Path) -> Result<PathBuf, io::Error> {
-    // Check if path is absolute - relative paths are not supported in WASM
-    if !path.is_absolute() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "Relative paths are not supported. Please use an absolute path starting with '/'. Got: '{}'",
-                path.display()
-            ),
-        ));
+/// WASM-safe path normalization that supports both absolute and relative paths
+fn wasm_safe_normalize_path(path: &Path, working_directory: Option<&PathBuf>, verify_exists: bool) -> Result<PathBuf, io::Error> {
+    // Convert relative paths to absolute using the working directory
+    let absolute_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        // If we have a working directory, use it; otherwise, try to get the current directory
+        match working_directory {
+            Some(wd) => wd.join(path),
+            None => {
+                // For non-WASM environments (tests), fall back to current_dir
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    std::env::current_dir()?.join(path)
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!(
+                            "Relative path '{}' provided but no working directory is set",
+                            path.display()
+                        ),
+                    ));
+                }
+            }
+        }
+    };
+
+    // Optionally check if the file exists to ensure we're working with a valid path
+    // This also validates the path without needing canonicalize
+    if verify_exists {
+        fs::metadata(&absolute_path)?;
     }
 
-    // First check if the file exists to ensure we're working with a valid path
-    // This also validates the path without needing canonicalize
-    fs::metadata(path)?;
-
     // Clean and normalize the path components
-    Ok(clean_path_components(path))
+    Ok(clean_path_components(&absolute_path))
 }
 
 /// Clean and normalize path components without OS calls
@@ -389,13 +408,26 @@ pub struct EditFileError {
 
 pub struct FileInteractionManager {
     cache: HashMap<PathBuf, FileCacheEntry>,
+    working_directory: Option<PathBuf>,
 }
 
 impl FileInteractionManager {
     pub fn new() -> Self {
         Self {
             cache: HashMap::new(),
+            working_directory: None,
         }
+    }
+    
+    pub fn new_with_working_directory(working_directory: PathBuf) -> Self {
+        Self {
+            cache: HashMap::new(),
+            working_directory: Some(working_directory),
+        }
+    }
+    
+    pub fn set_working_directory(&mut self, working_directory: PathBuf) {
+        self.working_directory = Some(working_directory);
     }
 
     pub fn clear_cache(&mut self) {
@@ -541,13 +573,6 @@ impl FileInteractionManager {
     pub fn get_edit_diff(&self, params: &EditFileParams) -> Result<String, String> {
         let path_ref = Path::new(&params.path);
 
-        if !path_ref.is_absolute() {
-            return Err(format!(
-                "Relative paths are not supported. Please use an absolute path starting with '/'. Got: '{}'",
-                params.path
-            ));
-        }
-
         let is_new_file = !path_ref.exists();
         let is_single_create_edit = params.edits.len() == 1
             && params.edits[0].start_line == 1
@@ -556,7 +581,7 @@ impl FileInteractionManager {
         // Apply same validation as edit_file
         if !is_new_file {
             // Existing file - must be in cache (must have been read)
-            let canonical_path = wasm_safe_normalize_path(path_ref)
+            let canonical_path = wasm_safe_normalize_path(path_ref, self.working_directory.as_ref(), true)
                 .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
 
             if !self.cache.contains_key(&canonical_path) {
@@ -602,7 +627,7 @@ impl FileInteractionManager {
         end_line: Option<usize>,
     ) -> Result<String, String> {
         let path_ref = path.as_ref();
-        let canonical_path = wasm_safe_normalize_path(path_ref)
+        let canonical_path = wasm_safe_normalize_path(path_ref, self.working_directory.as_ref(), true)
             .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
 
         let needs_read = match (start_line, end_line) {
@@ -654,7 +679,7 @@ impl FileInteractionManager {
     ) -> Result<(), String> {
         let path_ref = path.as_ref();
 
-        let canonical_path = wasm_safe_normalize_path(path_ref)
+        let canonical_path = wasm_safe_normalize_path(path_ref, self.working_directory.as_ref(), true)
             .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
 
         if let (Some(start), Some(end)) = (start_line, end_line) {
@@ -792,7 +817,7 @@ impl FileInteractionManager {
     fn has_been_modified<P: AsRef<Path>>(&self, path: P) -> Result<bool, String> {
         let path_ref = path.as_ref();
 
-        let canonical_path = match wasm_safe_normalize_path(path_ref) {
+        let canonical_path = match wasm_safe_normalize_path(path_ref, self.working_directory.as_ref(), true) {
             Ok(p) => p,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 return Ok(true);
@@ -905,19 +930,13 @@ impl FileInteractionManager {
     fn apply_edits(&mut self, path: &str, edits: &[Edit]) -> Result<String, String> {
         let path_ref = Path::new(path);
 
-        if !path_ref.is_absolute() {
-            return Err(format!(
-                "Relative paths are not supported. Please use an absolute path starting with '/'. Got: '{path}'"
-            ));
-        }
-
         let is_new_file = !path_ref.exists();
         let is_single_create_edit =
             edits.len() == 1 && edits[0].start_line == 1 && edits[0].end_line == 0;
 
         if !is_new_file {
             // Existing file - must be in cache (must have been read)
-            let canonical_path = wasm_safe_normalize_path(path_ref)
+            let canonical_path = wasm_safe_normalize_path(path_ref, self.working_directory.as_ref(), true)
                 .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
 
             if let Some(entry) = self.cache.get(&canonical_path) {
@@ -945,15 +964,18 @@ impl FileInteractionManager {
                 edits.len()
             ));
         } else {
-            // Creating new file
-            if let Some(parent) = path_ref.parent() {
+            // Creating new file - get absolute path first
+            let absolute_path = wasm_safe_normalize_path(path_ref, self.working_directory.as_ref(), false)
+                .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
+            
+            if let Some(parent) = absolute_path.parent() {
                 fs::create_dir_all(parent)
                     .map_err(|e| format!("Failed to create directory: {e}"))?;
             }
-            fs::File::create(path).map_err(|e| format!("Failed to create file: {e}"))?;
+            fs::File::create(&absolute_path).map_err(|e| format!("Failed to create file: {e}"))?;
         }
 
-        let canonical_path = wasm_safe_normalize_path(path_ref)
+        let canonical_path = wasm_safe_normalize_path(path_ref, self.working_directory.as_ref(), true)
             .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
 
         let content =
@@ -1148,7 +1170,7 @@ mod tests {
         // Check that slices were merged
         let cached = manager
             .cache
-            .get(&wasm_safe_normalize_path(&file_path).unwrap())
+            .get(&wasm_safe_normalize_path(&file_path, None, true).unwrap())
             .unwrap();
         if let FileContent::Partial { slices, .. } = &cached.content {
             // Should have merged into one slice covering lines 1-6
@@ -1182,7 +1204,7 @@ mod tests {
         // Verify we still have just one slice
         let cached = manager
             .cache
-            .get(&wasm_safe_normalize_path(&file_path).unwrap())
+            .get(&wasm_safe_normalize_path(&file_path, None, true).unwrap())
             .unwrap();
         if let FileContent::Partial { slices, .. } = &cached.content {
             assert_eq!(slices.len(), 1);
@@ -1223,7 +1245,7 @@ mod tests {
         // Should have fresh cache entry for lines 4-5, not merged
         let cached = manager
             .cache
-            .get(&wasm_safe_normalize_path(&file_path).unwrap())
+            .get(&wasm_safe_normalize_path(&file_path, None, true).unwrap())
             .unwrap();
         if let FileContent::Partial { slices, .. } = &cached.content {
             // Should be a fresh slice, not merged
@@ -1331,7 +1353,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify cache was populated after creation
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         assert!(manager.cache.contains_key(&canonical_path));
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
         let cached_content = cached_entry.content.get_numbered_content();
@@ -1418,7 +1440,7 @@ mod tests {
         manager.read_file(read_params).unwrap();
 
         // Verify initial cache state
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let initial_cached = manager.cache.get(&canonical_path).unwrap();
         let initial_content_cached = initial_cached.content.get_numbered_content();
         assert!(initial_content_cached.contains("3:Line 3"));
@@ -1469,7 +1491,7 @@ mod tests {
         manager.read_file(read_params).unwrap();
 
         // Verify initial cache
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let initial_cached = manager.cache.get(&canonical_path).unwrap();
         let initial_content_cached = initial_cached.content.get_numbered_content();
         assert!(initial_content_cached.contains("1:Line 1"));
@@ -1525,7 +1547,7 @@ mod tests {
         manager.read_file(read_params).unwrap();
 
         // Verify initial cache has all 5 lines
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let initial_cached = manager.cache.get(&canonical_path).unwrap();
         let initial_content_cached = initial_cached.content.get_numbered_content();
         assert!(initial_content_cached.contains("2:Line 2"));
@@ -1579,7 +1601,7 @@ mod tests {
         manager.read_file(read_params).unwrap();
 
         // Verify initial cache state
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let initial_cached = manager.cache.get(&canonical_path).unwrap();
         let initial_content_cached = initial_cached.content.get_numbered_content();
         assert!(initial_content_cached.contains("2:Line 2"));
@@ -2038,7 +2060,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify the cache has merged into one continuous chunk (lines 1-10)
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
 
         if let FileContent::Partial {
@@ -2099,7 +2121,7 @@ mod tests {
         manager.read_file(params3).unwrap();
 
         // Verify all chunks merged into one continuous chunk
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
 
         if let FileContent::Partial {
@@ -2165,7 +2187,7 @@ mod tests {
         manager.read_file(params3).unwrap();
 
         // Verify we have separate chunks with proper ordering
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
 
         if let FileContent::Partial {
@@ -2392,7 +2414,7 @@ mod tests {
         assert!(!content_str.contains("11:line 11"));
 
         // Verify the internal cache structure
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
 
         if let FileContent::Partial {
@@ -2438,7 +2460,7 @@ mod tests {
         assert!(result1.is_ok());
 
         // Verify we have the full range cached
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
         let original_cache_time = cached_entry.last_modified_at_read;
 
@@ -2533,7 +2555,7 @@ mod tests {
         assert!(result1.is_ok());
 
         // Verify we have partial content
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
 
         match &cached_entry.content {
@@ -2630,7 +2652,7 @@ mod tests {
         manager.read_file(params2).unwrap();
 
         // Verify they merged into one continuous chunk
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
 
         if let FileContent::Partial {
@@ -2703,7 +2725,7 @@ mod tests {
         };
         manager.read_file(params1).unwrap();
 
-        let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
+        let canonical_path = wasm_safe_normalize_path(&file_path, None, true).unwrap();
         let _original_cache = manager.cache.get(&canonical_path).unwrap().clone();
 
         // Now read a subset that's completely contained (lines 3-7)
