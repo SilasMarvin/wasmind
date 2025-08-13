@@ -529,6 +529,10 @@ impl FileInteractionManager {
 
     pub fn edit_file(&mut self, params: &EditFileParams) -> Result<EditFileResult, EditFileError> {
         let edits_count = params.edits.len();
+        
+        // Get the diff before applying edits (for new files, this will generate an empty-to-content diff)
+        let diff_before_edit = self.get_edit_diff(params).unwrap_or_else(|_| String::from("Could not generate diff"));
+        
         match self.apply_edits(&params.path, &params.edits) {
             Ok(_new_content) => {
                 let edit_summary = if edits_count == 1 {
@@ -549,8 +553,15 @@ impl FileInteractionManager {
                     formatted_json
                 );
 
+                // Include the diff in the message so LLMs can see exactly what changed
+                let message = format!(
+                    "Successfully edited {}\n\nDiff of changes:\n```diff\n{}\n```",
+                    params.path,
+                    diff_before_edit
+                );
+
                 Ok(EditFileResult {
-                    message: format!("Edited: {}", params.path),
+                    message,
                     ui_display: UIDisplayInfo {
                         collapsed,
                         expanded: Some(expanded),
@@ -1294,6 +1305,13 @@ mod tests {
 
         let result = manager.edit_file(&params);
         assert!(result.is_ok());
+        
+        // Verify the result message contains the diff for new file creation
+        let edit_result = result.as_ref().unwrap();
+        assert!(edit_result.message.contains("Successfully edited"));
+        assert!(edit_result.message.contains("Diff of changes:"));
+        assert!(edit_result.message.contains("+Hello, World!"));
+        assert!(edit_result.message.contains("+This is a new file."));
 
         // Verify file was created and has correct content
         let content = fs::read_to_string(&file_path).unwrap();
@@ -1457,6 +1475,13 @@ mod tests {
 
         let result = manager.edit_file(&params);
         assert!(result.is_ok());
+        
+        // Verify the result message contains the diff
+        let edit_result = result.as_ref().unwrap();
+        assert!(edit_result.message.contains("Successfully edited"));
+        assert!(edit_result.message.contains("Diff of changes:"));
+        assert!(edit_result.message.contains("-Line 3"));
+        assert!(edit_result.message.contains("+Modified Line 3"));
 
         // Verify cache was updated with the edit
         let cached_after_edit = manager.cache.get(&canonical_path).unwrap();
