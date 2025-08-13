@@ -125,27 +125,17 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
                         ApprovalResponse::RequestChanges { changes } => Some(changes),
                     })
                     .collect::<Vec<String>>();
-                if problems.len() > 0 {
-                    let tool_response_message = format!(
-                        "Your edit_file changes have not been applied and the contents of the file have not been edited! Domain experts have reviwed your edits and requested the following changes:\n\n<requested_changes>\n{}\n</requested_changes>\n\nUpdate your edit_file tool call to include the requested changes before trying again.",
-                        problems.join("\n\n--------\n\n")
-                    );
-                    self.send_error_result(
-                        &active_edit_file_call.tool_call_id,
-                        &active_edit_file_call.originating_request_id,
-                        tool_response_message.clone(),
-                        UIDisplayInfo {
-                            collapsed: tool_response_message.clone(),
-                            expanded: None,
-                        },
-                    );
+                let requested_changes = if problems.len() > 0 {
+                    Some(problems.join("\n\n--------\n\n"))
                 } else {
-                    self.do_edit_file(
-                        &active_edit_file_call.tool_call_id,
-                        &active_edit_file_call.originating_request_id,
-                        &active_edit_file_call.edit_file_params,
-                    );
-                }
+                    None
+                };
+                self.do_edit_file(
+                    &active_edit_file_call.tool_call_id,
+                    &active_edit_file_call.originating_request_id,
+                    &active_edit_file_call.edit_file_params,
+                    requested_changes,
+                );
             }
         }
 
@@ -360,6 +350,7 @@ impl FileInteractionWIthApprovalActor {
         tool_call_id: &str,
         originating_request_id: &str,
         params: &EditFileParams,
+        requested_changes: Option<String>,
     ) {
         match self.manager.edit_file(params) {
             Ok(result) => {
@@ -368,6 +359,15 @@ impl FileInteractionWIthApprovalActor {
                     "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the updated edited file",
                     result.message
                 );
+                let message = if let Some(requested_changes) = requested_changes {
+                    format!(
+                        "{message}\n\nExperts have also reviewed your changes and requested you make the following changes:\n{requested_changes}"
+                    )
+                } else {
+                    format!(
+                        "{message}\n\nExperts have also reviewed your changes and approved them! Excellent job!"
+                    )
+                };
                 self.send_success_result(
                     tool_call_id,
                     originating_request_id,

@@ -221,6 +221,24 @@ fn clean_path_components(path: &Path) -> PathBuf {
     }
 }
 
+/// Formats JSON for TUI display by replacing leading spaces with centered dots
+/// This preserves indentation structure when the TUI strips whitespace
+fn format_json_for_tui(json_string: &str) -> String {
+    json_string
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.is_empty() {
+                line.to_string() // Preserve empty lines as-is
+            } else {
+                let leading_spaces = line.len() - trimmed.len();
+                format!("{}{}", "·".repeat(leading_spaces), trimmed)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 const MAX_FILE_SIZE_BYTES: u64 = 10 * 1024 * 1024; // 10MB limit
 const SMALL_FILE_SIZE_BYTES: u64 = 64 * 1024; // 64KB limit for automatic full read
 
@@ -488,9 +506,15 @@ impl FileInteractionManager {
                 };
                 let collapsed = format!("{}: {} applied", params.path, edit_summary);
 
+                let json_content = serde_json::to_string_pretty(params)
+                    .unwrap_or_else(|_| "Failed to serialize parameters".to_string());
+                let formatted_json = format_json_for_tui(&json_content);
+                
                 let expanded = format!(
-                    "File: {}\nOperation: Edit\nChanges: {} operations applied",
-                    params.path, edits_count
+                    "File: {}\nOperation: Edit\nChanges: {} operations applied\n\nEdit Details:\n{}",
+                    params.path, 
+                    edits_count,
+                    formatted_json
                 );
 
                 Ok(EditFileResult {
@@ -3155,6 +3179,95 @@ mod tests {
         let content5 = fs::read_to_string(&file_path).unwrap();
         let expected5 = "new line 1\nnew line 2\n";
         assert_eq!(content5, expected5);
+    }
+
+    #[test]
+    fn test_edit_file_ui_display_includes_json_parameters() {
+        let mut manager = FileInteractionManager::new();
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("ui_display_test.txt");
+
+        // Create initial file
+        let initial_content = "line 1\nline 2\nline 3";
+        fs::write(&file_path, initial_content).unwrap();
+
+        // Read the file first
+        let read_params = ReadFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            start_line: None,
+            end_line: None,
+        };
+        manager.read_file(read_params).unwrap();
+
+        // Edit the file
+        let edit_params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 2,
+                end_line: 2,
+                new_content: "modified line 2".to_string(),
+            }],
+        };
+
+        let result = manager.edit_file(&edit_params);
+        assert!(result.is_ok());
+
+        let edit_result = result.unwrap();
+        
+        // Check that the expanded UI display contains JSON-formatted parameters
+        let expanded = edit_result.ui_display.expanded.unwrap();
+        assert!(expanded.contains("Edit Details:"));
+        assert!(expanded.contains("\"path\":"));
+        assert!(expanded.contains("\"edits\":"));
+        assert!(expanded.contains("\"start_line\": 2"));
+        assert!(expanded.contains("\"end_line\": 2"));
+        assert!(expanded.contains("\"new_content\": \"modified line 2\""));
+        
+        // Verify that leading spaces have been replaced with centered dots for TUI display
+        assert!(expanded.contains("··\"path\":"), "Should contain centered dots for indentation");
+        assert!(expanded.contains("··\"edits\":"), "Should contain centered dots for indentation");
+        assert!(expanded.contains("····\"start_line\": 2"), "Should contain more dots for deeper indentation");
+        
+        // Verify the original JSON structure is preserved (by converting dots back to spaces)
+        let json_start = expanded.find("Edit Details:\n").unwrap() + "Edit Details:\n".len();
+        let json_part = &expanded[json_start..];
+        let json_with_spaces = json_part.replace('·', " ");
+        
+        // Should be able to parse the JSON part after converting dots back to spaces
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_with_spaces);
+        assert!(parsed.is_ok(), "JSON should be valid after converting dots to spaces: {}", json_with_spaces);
+    }
+
+    #[test]
+    fn test_format_json_for_tui() {
+        let input_json = r#"{
+  "path": "/test/file.txt",
+  "edits": [
+    {
+      "start_line": 1,
+      "end_line": 1,
+      "new_content": "test"
+    }
+  ]
+}"#;
+        
+        let formatted = format_json_for_tui(input_json);
+        
+        // Verify that leading spaces are replaced with centered dots
+        assert!(formatted.contains("··\"path\":"), "Second-level indentation should have 2 dots");
+        assert!(formatted.contains("··\"edits\":"), "Second-level indentation should have 2 dots");
+        assert!(formatted.contains("····{"), "Fourth-level indentation should have 4 dots");
+        assert!(formatted.contains("······\"start_line\":"), "Sixth-level indentation should have 6 dots");
+        
+        // Verify first and last lines (braces) have no dots
+        let lines: Vec<&str> = formatted.lines().collect();
+        assert_eq!(lines[0], "{", "First line should have no indentation");
+        assert_eq!(lines[lines.len() - 1], "}", "Last line should have no indentation");
+        
+        // Verify we can convert back to valid JSON
+        let json_with_spaces = formatted.replace('·', " ");
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&json_with_spaces);
+        assert!(parsed.is_ok(), "Should be valid JSON after converting dots back to spaces");
     }
 
     #[test]
