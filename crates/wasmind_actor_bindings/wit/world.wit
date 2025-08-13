@@ -141,6 +141,11 @@ interface http {
         /// base-delay-ms: Base delay in milliseconds for exponential backoff
         retry: func(max-attempts: u32, base-delay-ms: u64) -> request;
         
+        /// Configure which HTTP status codes should trigger retries
+        /// Only has effect when combined with retry() configuration
+        /// codes: List of HTTP status codes that should be retried (e.g., [429, 500, 502, 503, 504])
+        retry-on-status-codes: func(codes: list<u16>) -> request;
+        
         /// Execute the request and return the response
         send: func() -> result<response, request-error>;
     }

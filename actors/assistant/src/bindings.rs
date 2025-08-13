@@ -503,6 +503,37 @@ pub mod wasmind {
             }
             impl Request {
                 #[allow(unused_unsafe, clippy::all)]
+                /// Configure which HTTP status codes should trigger retries
+                /// Only has effect when combined with retry() configuration
+                /// codes: List of HTTP status codes that should be retried (e.g., [429, 500, 502, 503, 504])
+                pub fn retry_on_status_codes(&self, codes: &[u16]) -> Request {
+                    unsafe {
+                        let vec0 = codes;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "wasmind:actor/http@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]request.retry-on-status-codes"]
+                            fn wit_import1(_: i32, _: *mut u8, _: usize) -> i32;
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                        ) -> i32 {
+                            unreachable!()
+                        }
+                        let ret = unsafe {
+                            wit_import1((self).handle() as i32, ptr0.cast_mut(), len0)
+                        };
+                        unsafe { Request::from_handle(ret as u32) }
+                    }
+                }
+            }
+            impl Request {
+                #[allow(unused_unsafe, clippy::all)]
                 /// Execute the request and return the response
                 pub fn send(&self) -> Result<Response, RequestError> {
                     unsafe {
@@ -1297,13 +1328,13 @@ pub(crate) use __export_actor_world_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1310] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x9c\x09\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1373] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xdb\x09\x01A\x02\x01\
 A\x0a\x01B\x06\x01r\x02\x02oss\x04archs\x04\0\x07os-info\x03\0\0\x01@\0\0s\x04\0\
 \x1aget-host-working-directory\x01\x02\x01@\0\0\x01\x04\0\x10get-host-os-info\x01\
 \x03\x03\0\x1dwasmind:actor/host-info@0.1.0\x05\0\x01B\x03\x01p}\x01@\x02\x0cmes\
 sage-types\x07payload\0\x01\0\x04\0\x09broadcast\x01\x01\x03\0\x1dwasmind:actor/\
-messaging@0.1.0\x05\x01\x01B\x1b\x01o\x02ss\x01p\0\x01r\x01\x07headers\x01\x04\0\
+messaging@0.1.0\x05\x01\x01B\x1e\x01o\x02ss\x01p\0\x01r\x01\x07headers\x01\x04\0\
 \x07headers\x03\0\x02\x01q\x04\x0dnetwork-error\x01s\0\x07timeout\0\0\x0binvalid\
 -url\x01s\0\x0dbuilder-error\x01s\0\x04\0\x0drequest-error\x03\0\x04\x01p}\x01r\x03\
 \x06status{\x07headers\x03\x04body\x06\x04\0\x08response\x03\0\x07\x04\0\x07requ\
@@ -1313,19 +1344,20 @@ hod]request.header\x01\x0d\x01@\x02\x04self\x0c\x07headers\x03\0\x0a\x04\0\x17[m
 ethod]request.headers\x01\x0e\x01@\x02\x04self\x0c\x04body\x06\0\x0a\x04\0\x14[m\
 ethod]request.body\x01\x0f\x01@\x02\x04self\x0c\x07secondsy\0\x0a\x04\0\x17[meth\
 od]request.timeout\x01\x10\x01@\x03\x04self\x0c\x0cmax-attemptsy\x0dbase-delay-m\
-sw\0\x0a\x04\0\x15[method]request.retry\x01\x11\x01j\x01\x08\x01\x05\x01@\x01\x04\
-self\x0c\0\x12\x04\0\x14[method]request.send\x01\x13\x03\0\x18wasmind:actor/http\
-@0.1.0\x05\x02\x01B\x04\x01m\x04\x05debug\x04info\x04warn\x05error\x04\0\x09log-\
-level\x03\0\0\x01@\x02\x05level\x01\x07messages\x01\0\x04\0\x03log\x01\x02\x03\0\
-\x1awasmind:actor/logger@0.1.0\x05\x03\x01B\x0e\x01s\x04\0\x05scope\x03\0\0\x01p\
-}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-ids\x0afrom-scope\x01\x07payloa\
-d\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05actor\x03\x01\x01i\x05\x01@\x02\
-\x05scope\x01\x06configs\0\x06\x04\0\x12[constructor]actor\x01\x07\x01h\x05\x01@\
-\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[method]actor.handle-message\x01\x09\
-\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]actor.destructor\x01\x0a\x04\0\x19w\
-asmind:actor/actor@0.1.0\x05\x04\x04\0!assistant:actor/actor-world@0.1.0\x04\0\x0b\
-\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit\
--component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+sw\0\x0a\x04\0\x15[method]request.retry\x01\x11\x01p{\x01@\x02\x04self\x0c\x05co\
+des\x12\0\x0a\x04\0%[method]request.retry-on-status-codes\x01\x13\x01j\x01\x08\x01\
+\x05\x01@\x01\x04self\x0c\0\x14\x04\0\x14[method]request.send\x01\x15\x03\0\x18w\
+asmind:actor/http@0.1.0\x05\x02\x01B\x04\x01m\x04\x05debug\x04info\x04warn\x05er\
+ror\x04\0\x09log-level\x03\0\0\x01@\x02\x05level\x01\x07messages\x01\0\x04\0\x03\
+log\x01\x02\x03\0\x1awasmind:actor/logger@0.1.0\x05\x03\x01B\x0e\x01s\x04\0\x05s\
+cope\x03\0\0\x01p}\x01r\x05\x02ids\x0cmessage-types\x0dfrom-actor-ids\x0afrom-sc\
+ope\x01\x07payload\x02\x04\0\x10message-envelope\x03\0\x03\x04\0\x05actor\x03\x01\
+\x01i\x05\x01@\x02\x05scope\x01\x06configs\0\x06\x04\0\x12[constructor]actor\x01\
+\x07\x01h\x05\x01@\x02\x04self\x08\x07message\x04\x01\0\x04\0\x1c[method]actor.h\
+andle-message\x01\x09\x01@\x01\x04self\x08\x01\0\x04\0\x18[method]actor.destruct\
+or\x01\x0a\x04\0\x19wasmind:actor/actor@0.1.0\x05\x04\x04\0!assistant:actor/acto\
+r-world@0.1.0\x04\0\x0b\x11\x01\0\x0bactor-world\x03\0\0\0G\x09producers\x01\x0c\
+processed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

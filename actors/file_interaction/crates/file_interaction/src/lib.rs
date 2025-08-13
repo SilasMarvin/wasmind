@@ -5,9 +5,9 @@ use std::{
     time::SystemTime,
 };
 
-use wasmind_actor_utils::common_messages::tools::UIDisplayInfo;
 use serde::{Deserialize, Serialize};
 use similar::TextDiff;
+use wasmind_actor_utils::common_messages::tools::UIDisplayInfo;
 
 // Tool constants
 pub const READ_FILE_NAME: &str = "read_file";
@@ -104,7 +104,7 @@ To create a new file, use edit_file with a single edit:
 For existing files, you can apply multiple edits in one operation:
 ```json
 {
-  "path": "existing_file.txt", 
+  "path": "/absolute/path/to/existing_file.txt", 
   "edits": [
     {
       "start_line": 5,
@@ -120,18 +120,35 @@ For existing files, you can apply multiple edits in one operation:
 }
 ```
 
+**Common single-line operations:**
+```json
+{
+  "path": "/absolute/path/to/file.txt",
+  "edits": [{
+    "start_line": 10,
+    "end_line": 10,
+    "new_content": "Replace line 10 with this new content"
+  }]
+}
+```
+
+**Delete lines (use empty new_content):**
+```json
+{
+  "path": "/absolute/path/to/file.txt",
+  "edits": [{
+    "start_line": 5,
+    "end_line": 8,
+    "new_content": ""
+  }]
+}
+```
+
 ### Important Notes
 - **Always check the FilesReadAndEdited section** in the system prompt for currently open files
 - New files: Only single edit operations allowed (create content first, then edit in separate operations)
 - Cached files: Will warn if file was modified externally since last read
-- Automatic directory creation: Parent directories are created automatically if needed
-
-### FilesReadAndEdited Section
-The system prompt includes a special section called "FilesReadAndEdited" that contains:
-- Keys: Canonical file paths of all files that have been read or edited
-- Values: The current cached content of each file (with line numbers)
-
-This section is automatically updated whenever you read or edit files, giving you a complete view of all open files in your workspace."#;
+- Automatic directory creation: Parent directories are created automatically if needed"#;
 
 /// WASM-safe alternative to wasm_safe_normalize_path that works without OS-level path resolution
 fn wasm_safe_normalize_path(path: &Path) -> Result<PathBuf, io::Error> {
@@ -209,8 +226,8 @@ const SMALL_FILE_SIZE_BYTES: u64 = 64 * 1024; // 64KB limit for automatic full r
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FileSlice {
-    start_line: usize, // 1-indexed
-    end_line: usize,   // 1-indexed, inclusive
+    start_line: usize,  // 1-indexed
+    end_line: usize,    // 1-indexed, inclusive
     lines: Vec<String>, // Raw lines without line numbers
 }
 
@@ -508,8 +525,8 @@ impl FileInteractionManager {
         }
 
         let is_new_file = !path_ref.exists();
-        let is_single_create_edit = params.edits.len() == 1 
-            && params.edits[0].start_line == 1 
+        let is_single_create_edit = params.edits.len() == 1
+            && params.edits[0].start_line == 1
             && params.edits[0].end_line == 0;
 
         // Apply same validation as edit_file
@@ -517,7 +534,7 @@ impl FileInteractionManager {
             // Existing file - must be in cache (must have been read)
             let canonical_path = wasm_safe_normalize_path(path_ref)
                 .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
-            
+
             if !self.cache.contains_key(&canonical_path) {
                 return Err(format!(
                     "File '{}' must be read before it can be edited. Please use the read_file tool first.",
@@ -815,7 +832,9 @@ impl FileInteractionManager {
             if edit.start_line > current_total_lines + 1 {
                 return Err(format!(
                     "start_line cannot be greater than {} for a file with {} lines (got {})",
-                    current_total_lines + 1, current_total_lines, edit.start_line
+                    current_total_lines + 1,
+                    current_total_lines,
+                    edit.start_line
                 ));
             }
 
@@ -833,14 +852,10 @@ impl FileInteractionManager {
                         edit.end_line, edit.start_line
                     ));
                 }
-                if edit.end_line > current_total_lines {
-                    return Err(format!(
-                        "end_line cannot be greater than {} for a file with {} lines (got {})",
-                        current_total_lines, current_total_lines, edit.end_line
-                    ));
-                }
+                // Clamp end_line to the actual file length to allow "delete to end of file" operations
+                let effective_end_line = edit.end_line.min(current_total_lines);
 
-                for _ in edit.start_line..=edit.end_line {
+                for _ in edit.start_line..=effective_end_line {
                     lines.remove(edit.start_line - 1);
                 }
 
@@ -873,15 +888,14 @@ impl FileInteractionManager {
         }
 
         let is_new_file = !path_ref.exists();
-        let is_single_create_edit = edits.len() == 1 
-            && edits[0].start_line == 1 
-            && edits[0].end_line == 0;
+        let is_single_create_edit =
+            edits.len() == 1 && edits[0].start_line == 1 && edits[0].end_line == 0;
 
         if !is_new_file {
             // Existing file - must be in cache (must have been read)
             let canonical_path = wasm_safe_normalize_path(path_ref)
                 .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
-            
+
             if let Some(entry) = self.cache.get(&canonical_path) {
                 let metadata = fs::metadata(&canonical_path)
                     .map_err(|e| format!("Failed to read file metadata: {e}"))?;
@@ -918,8 +932,8 @@ impl FileInteractionManager {
         let canonical_path = wasm_safe_normalize_path(path_ref)
             .map_err(|e| format!("Failed to normalize path '{}': {}", path_ref.display(), e))?;
 
-        let content = fs::read_to_string(&canonical_path)
-            .map_err(|e| format!("Failed to read file: {e}"))?;
+        let content =
+            fs::read_to_string(&canonical_path).map_err(|e| format!("Failed to read file: {e}"))?;
 
         let new_content = self.apply_edits_to_content(&content, edits)?;
 
@@ -948,7 +962,11 @@ mod tests {
         let slice = FileSlice {
             start_line: 5,
             end_line: 7,
-            lines: vec!["line 5".to_string(), "line 6".to_string(), "line 7".to_string()],
+            lines: vec![
+                "line 5".to_string(),
+                "line 6".to_string(),
+                "line 7".to_string(),
+            ],
         };
 
         assert_eq!(slice.start_line, 5);
@@ -1013,33 +1031,6 @@ mod tests {
     }
 
     #[test]
-    fn test_manager_edit_file() {
-        let mut manager = FileInteractionManager::new();
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("edit_test.txt");
-
-        let params = EditFileParams {
-            path: file_path.to_string_lossy().to_string(),
-            edits: vec![Edit {
-                start_line: 1,
-                end_line: 0,
-                new_content: "Hello, World!".to_string(),
-            }],
-        };
-
-        let result = manager.edit_file(&params);
-        assert!(result.is_ok());
-
-        let edit_result = result.unwrap();
-        assert!(edit_result.message.contains("Edited:"));
-
-        // Verify file was created
-        assert!(file_path.exists());
-        let content = std::fs::read_to_string(&file_path).unwrap();
-        assert_eq!(content, "Hello, World!\n");
-    }
-
-    #[test]
     fn test_file_content_merge_slice_non_overlapping() {
         let slice1 = FileSlice {
             start_line: 1,
@@ -1074,7 +1065,11 @@ mod tests {
         let slice1 = FileSlice {
             start_line: 1,
             end_line: 3,
-            lines: vec!["line 1".to_string(), "line 2".to_string(), "line 3".to_string()],
+            lines: vec![
+                "line 1".to_string(),
+                "line 2".to_string(),
+                "line 3".to_string(),
+            ],
         };
 
         let mut content = FileContent::Partial {
@@ -1086,7 +1081,11 @@ mod tests {
         let new_slice = FileSlice {
             start_line: 3,
             end_line: 5,
-            lines: vec!["line 3".to_string(), "line 4".to_string(), "line 5".to_string()],
+            lines: vec![
+                "line 3".to_string(),
+                "line 4".to_string(),
+                "line 5".to_string(),
+            ],
         };
 
         content.merge_slice(new_slice);
@@ -1604,7 +1603,6 @@ mod tests {
         assert_eq!(content, expected);
     }
 
-
     #[test]
     fn test_improved_error_messages() {
         let mut manager = FileInteractionManager::new();
@@ -1634,7 +1632,12 @@ mod tests {
         };
         let result = manager.edit_file(&params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("start_line must be at least 1 (got 0)"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("start_line must be at least 1 (got 0)")
+        );
 
         // Test start_line > total_lines + 1
         let params = EditFileParams {
@@ -1647,7 +1650,12 @@ mod tests {
         };
         let result = manager.edit_file(&params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("start_line cannot be greater than 4 for a file with 3 lines (got 5)"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("start_line cannot be greater than 4 for a file with 3 lines (got 5)")
+        );
 
         // Test end_line < start_line
         let params = EditFileParams {
@@ -1660,20 +1668,29 @@ mod tests {
         };
         let result = manager.edit_file(&params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("end_line (1) must be greater than or equal to start_line (3)"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("end_line (1) must be greater than or equal to start_line (3)")
+        );
 
-        // Test end_line > total_lines
+        // Test end_line > total_lines (should now succeed by clamping to file length)
         let params = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
             edits: vec![Edit {
                 start_line: 2,
-                end_line: 5, // File has 3 lines
+                end_line: 5, // File has 3 lines, will be clamped to 3
                 new_content: "Test".to_string(),
             }],
         };
         let result = manager.edit_file(&params);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("end_line cannot be greater than 3 for a file with 3 lines (got 5)"));
+        assert!(result.is_ok()); // Should succeed due to clamping behavior
+
+        // Verify the content was modified correctly (should replace from line 2 to end of file)
+        let content = fs::read_to_string(&file_path).unwrap();
+        let expected = "Line 1\nTest\n";
+        assert_eq!(content, expected);
     }
 
     #[test]
@@ -1698,7 +1715,12 @@ mod tests {
 
         let result = manager.edit_file(&params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("must be read before it can be edited"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("must be read before it can be edited")
+        );
 
         // Now read the file first
         let read_params = ReadFileParams {
@@ -1775,7 +1797,6 @@ mod tests {
         let content = fs::read_to_string(&nested_path).unwrap();
         assert_eq!(content, "Content in nested directory\n");
     }
-
 
     #[test]
     fn test_get_edit_diff() {
@@ -1863,7 +1884,11 @@ mod tests {
 
         let result = manager.get_edit_diff(&params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("must be read before it can be edited"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("must be read before it can be edited")
+        );
 
         // Now read the file first
         let read_params = ReadFileParams {
@@ -1907,7 +1932,12 @@ mod tests {
         };
         let result = manager.read_file(params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("Invalid start_line: -1"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("Invalid start_line: -1")
+        );
 
         // Test negative end_line
         let params = ReadFileParams {
@@ -1917,7 +1947,12 @@ mod tests {
         };
         let result = manager.read_file(params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("Invalid end_line: -1"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("Invalid end_line: -1")
+        );
 
         // Test start_line > end_line (after converting to internal format, this should error when reading)
         let params = ReadFileParams {
@@ -1947,7 +1982,8 @@ mod tests {
         let file_path = temp_dir.path().join("overlapping_chunks.txt");
 
         // Create test file with 10 lines
-        let content = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10";
+        let content =
+            "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10";
         fs::write(&file_path, content).unwrap();
 
         // Read lines 1-5
@@ -1981,7 +2017,11 @@ mod tests {
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
 
-        if let FileContent::Partial { slices, total_lines } = &cached_entry.content {
+        if let FileContent::Partial {
+            slices,
+            total_lines,
+        } = &cached_entry.content
+        {
             assert_eq!(*total_lines, 10);
             assert_eq!(slices.len(), 1); // Should be merged into one slice
             assert_eq!(slices[0].start_line, 1);
@@ -2038,13 +2078,17 @@ mod tests {
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
 
-        if let FileContent::Partial { slices, total_lines } = &cached_entry.content {
+        if let FileContent::Partial {
+            slices,
+            total_lines,
+        } = &cached_entry.content
+        {
             assert_eq!(*total_lines, 9);
             assert_eq!(slices.len(), 1); // Should be merged into one slice
             assert_eq!(slices[0].start_line, 1);
             assert_eq!(slices[0].end_line, 9);
             assert_eq!(slices[0].lines.len(), 9);
-            
+
             // Verify content integrity
             for i in 0..9 {
                 assert_eq!(slices[0].lines[i], format!("line {}", i + 1));
@@ -2068,7 +2112,8 @@ mod tests {
         let file_path = temp_dir.path().join("gap_chunks.txt");
 
         // Create test file with 10 lines
-        let content = "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10";
+        let content =
+            "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10";
         fs::write(&file_path, content).unwrap();
 
         // Read lines 1-3
@@ -2099,21 +2144,28 @@ mod tests {
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
 
-        if let FileContent::Partial { slices, total_lines } = &cached_entry.content {
+        if let FileContent::Partial {
+            slices,
+            total_lines,
+        } = &cached_entry.content
+        {
             assert_eq!(*total_lines, 10);
             // After reading 1-3, 7-9, 5-6, the merge logic should result in:
             // 1-3, 5-9 (since 5-6 and 7-9 are adjacent and should merge)
             assert_eq!(slices.len(), 2);
-            
+
             // Verify chunks are properly ordered
             assert_eq!(slices[0].start_line, 1);
             assert_eq!(slices[0].end_line, 3);
             assert_eq!(slices[1].start_line, 5);
             assert_eq!(slices[1].end_line, 9); // Should have merged 5-6 and 7-9
-            
+
             // Verify content integrity
             assert_eq!(slices[0].lines, vec!["line 1", "line 2", "line 3"]);
-            assert_eq!(slices[1].lines, vec!["line 5", "line 6", "line 7", "line 8", "line 9"]);
+            assert_eq!(
+                slices[1].lines,
+                vec!["line 5", "line 6", "line 7", "line 8", "line 9"]
+            );
         } else {
             panic!("Expected partial content");
         }
@@ -2204,7 +2256,7 @@ mod tests {
         let sorted_paths: Vec<_> = files_info.iter().map(|(p, _)| p.clone()).collect();
         let mut expected_paths = vec![
             file3_path.clone(), // "another_small.txt" comes first
-            file2_path.clone(), // "partial_file.txt" 
+            file2_path.clone(), // "partial_file.txt"
             file1_path.clone(), // "small_file.txt"
         ];
         expected_paths.sort();
@@ -2318,11 +2370,15 @@ mod tests {
         // Verify the internal cache structure
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
-        
-        if let FileContent::Partial { slices, total_lines } = &cached_entry.content {
+
+        if let FileContent::Partial {
+            slices,
+            total_lines,
+        } = &cached_entry.content
+        {
             assert_eq!(*total_lines, 15);
             assert_eq!(slices.len(), 3); // Should have 3 chunks: 1-4, 7-9, 12-15
-            
+
             // Verify chunk boundaries
             assert_eq!(slices[0].start_line, 1);
             assert_eq!(slices[0].end_line, 4);
@@ -2373,10 +2429,17 @@ mod tests {
 
         // Verify cache wasn't re-read (same modification time)
         let cached_entry_after = manager.cache.get(&canonical_path).unwrap();
-        assert_eq!(cached_entry_after.last_modified_at_read, original_cache_time);
+        assert_eq!(
+            cached_entry_after.last_modified_at_read,
+            original_cache_time
+        );
 
         // Verify we still have the same cache structure
-        if let FileContent::Partial { slices, total_lines } = &cached_entry_after.content {
+        if let FileContent::Partial {
+            slices,
+            total_lines,
+        } = &cached_entry_after.content
+        {
             assert_eq!(*total_lines, 10);
             assert_eq!(slices.len(), 1); // Still one chunk
             assert_eq!(slices[0].start_line, 1);
@@ -2389,7 +2452,7 @@ mod tests {
         let result2_content = result2.unwrap();
         assert!(result2_content.message.contains("Read file:"));
         assert!(result2_content.ui_display.collapsed.contains("5–7"));
-        
+
         // Try reading a subset that's completely cached (lines 8-10)
         // This should hit the cache since we already have lines 1-10
         let params3 = ReadFileParams {
@@ -2402,7 +2465,10 @@ mod tests {
 
         // Verify cache structure is still the same (wasn't re-read)
         let cached_entry_final = manager.cache.get(&canonical_path).unwrap();
-        assert_eq!(cached_entry_final.last_modified_at_read, original_cache_time);
+        assert_eq!(
+            cached_entry_final.last_modified_at_read,
+            original_cache_time
+        );
 
         // Try reading completely beyond cached range (lines 15-20) - should fail
         let params4 = ReadFileParams {
@@ -2412,7 +2478,12 @@ mod tests {
         };
         let result4 = manager.read_file(params4);
         assert!(result4.is_err());
-        assert!(result4.unwrap_err().error_msg.contains("Invalid line range"));
+        assert!(
+            result4
+                .unwrap_err()
+                .error_msg
+                .contains("Invalid line range")
+        );
     }
 
     #[test]
@@ -2440,9 +2511,12 @@ mod tests {
         // Verify we have partial content
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
-        
+
         match &cached_entry.content {
-            FileContent::Partial { slices, total_lines } => {
+            FileContent::Partial {
+                slices,
+                total_lines,
+            } => {
                 assert_eq!(*total_lines, 5);
                 assert_eq!(slices.len(), 1);
                 assert_eq!(slices[0].start_line, 2);
@@ -2465,14 +2539,14 @@ mod tests {
 
         // Verify cache has Full content
         let cached_entry_after = manager.cache.get(&canonical_path).unwrap();
-        
+
         match &cached_entry_after.content {
             FileContent::Full(full_content) => {
                 // Should contain all lines
                 let lines: Vec<&str> = full_content.lines().collect();
                 assert_eq!(lines.len(), 5);
                 for i in 1..=5 {
-                    assert_eq!(lines[i-1], format!("line {}", i));
+                    assert_eq!(lines[i - 1], format!("line {}", i));
                 }
             }
             _ => panic!("Expected full content after full read"),
@@ -2497,7 +2571,7 @@ mod tests {
         // Cache should still be Full (no downgrade)
         let cached_entry_final = manager.cache.get(&canonical_path).unwrap();
         match &cached_entry_final.content {
-            FileContent::Full(_) => {}, // Good, still full
+            FileContent::Full(_) => {} // Good, still full
             _ => panic!("Cache should remain full after partial read on full content"),
         }
     }
@@ -2535,12 +2609,16 @@ mod tests {
         let canonical_path = wasm_safe_normalize_path(&file_path).unwrap();
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
 
-        if let FileContent::Partial { slices, total_lines } = &cached_entry.content {
+        if let FileContent::Partial {
+            slices,
+            total_lines,
+        } = &cached_entry.content
+        {
             assert_eq!(*total_lines, 10);
             assert_eq!(slices.len(), 1); // Should merge into single chunk
             assert_eq!(slices[0].start_line, 1);
             assert_eq!(slices[0].end_line, 10);
-            
+
             // Verify no duplication of line 5
             assert_eq!(slices[0].lines.len(), 10);
             for i in 0..10 {
@@ -2552,7 +2630,7 @@ mod tests {
 
         // Test the edge case where slices meet exactly (6-8, then 8-10)
         manager.cache.clear();
-        
+
         // Read lines 6-8
         let params3 = ReadFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -2561,7 +2639,7 @@ mod tests {
         };
         manager.read_file(params3).unwrap();
 
-        // Read lines 8-10 (shares boundary at line 8)  
+        // Read lines 8-10 (shares boundary at line 8)
         let params4 = ReadFileParams {
             path: file_path.to_string_lossy().to_string(),
             start_line: Some(8),
@@ -2614,7 +2692,11 @@ mod tests {
 
         // Verify cache structure didn't change (subset was already covered)
         let cached_entry = manager.cache.get(&canonical_path).unwrap();
-        if let FileContent::Partial { slices, total_lines } = &cached_entry.content {
+        if let FileContent::Partial {
+            slices,
+            total_lines,
+        } = &cached_entry.content
+        {
             assert_eq!(*total_lines, 10);
             assert_eq!(slices.len(), 1); // Still one chunk
             assert_eq!(slices[0].start_line, 1);
@@ -2687,7 +2769,7 @@ mod tests {
                 // Insert two lines after line 3
                 Edit {
                     start_line: 4,
-                    end_line: 3, // Insert position 
+                    end_line: 3, // Insert position
                     new_content: "inserted A\ninserted B".to_string(),
                 },
                 // Delete line 5 (this will be the original line 5, not affected by earlier operations since they're processed in reverse)
@@ -2704,11 +2786,11 @@ mod tests {
 
         // Verify the final content
         let content = fs::read_to_string(&file_path).unwrap();
-        
+
         // Processing order (reverse by line number):
-        // 1. Start: "line 1\nline 2\nline 3\nline 4\nline 5" 
+        // 1. Start: "line 1\nline 2\nline 3\nline 4\nline 5"
         // 2. Delete line 5: "line 1\nline 2\nline 3\nline 4"
-        // 3. Insert at line 4: "line 1\nline 2\nline 3\ninserted A\ninserted B\nline 4" 
+        // 3. Insert at line 4: "line 1\nline 2\nline 3\ninserted A\ninserted B\nline 4"
         // 4. Replace line 2: "line 1\nmodified line 2\nline 3\ninserted A\ninserted B\nline 4"
         let expected = "line 1\nmodified line 2\nline 3\ninserted A\ninserted B\nline 4\n";
         assert_eq!(content, expected);
@@ -2755,7 +2837,7 @@ mod tests {
             path: file_path.to_string_lossy().to_string(),
             edits: vec![Edit {
                 start_line: 6, // Insert after line 5 (the new total)
-                end_line: 5,   
+                end_line: 5,
                 new_content: "final line".to_string(),
             }],
         };
@@ -2779,7 +2861,12 @@ mod tests {
 
         let result3 = manager.edit_file(&edit_params3);
         assert!(result3.is_err());
-        assert!(result3.unwrap_err().error_msg.contains("start_line cannot be greater than"));
+        assert!(
+            result3
+                .unwrap_err()
+                .error_msg
+                .contains("start_line cannot be greater than")
+        );
     }
 
     #[test]
@@ -2842,7 +2929,7 @@ mod tests {
 
         // Verify the final content
         let content = fs::read_to_string(&file_path).unwrap();
-        
+
         // Expected processing order (reverse by line number):
         // 1. Start: "line 1\nline 2\nline 3\nline 4\nline 5\nline 6"
         // 2. Insert at line 7: "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nAPPENDED line"
@@ -2851,7 +2938,8 @@ mod tests {
         // 5. Insert at line 3: "line 1\nline 2\nINSERTED line\nline 3\nREPLACED line 6\nAPPENDED line"
         // 6. Replace line 1: "REPLACED line 1\nline 2\nINSERTED line\nline 3\nREPLACED line 6\nAPPENDED line"
 
-        let expected = "REPLACED line 1\nline 2\nINSERTED line\nline 3\nREPLACED line 6\nAPPENDED line\n";
+        let expected =
+            "REPLACED line 1\nline 2\nINSERTED line\nline 3\nREPLACED line 6\nAPPENDED line\n";
         assert_eq!(content, expected);
 
         // Verify the file has the expected number of lines
@@ -2893,7 +2981,12 @@ mod tests {
 
         let result = manager.edit_file(&edit_params);
         assert!(result.is_err());
-        assert!(result.unwrap_err().error_msg.contains("has been modified since last read"));
+        assert!(
+            result
+                .unwrap_err()
+                .error_msg
+                .contains("has been modified since last read")
+        );
 
         // Read the file again to update cache
         let read_params2 = ReadFileParams {
@@ -2914,7 +3007,11 @@ mod tests {
 
         // Test the staleness check for partial reads too
         manager.cache.clear();
-        fs::write(&file_path, "partial 1\npartial 2\npartial 3\npartial 4\npartial 5").unwrap();
+        fs::write(
+            &file_path,
+            "partial 1\npartial 2\npartial 3\npartial 4\npartial 5",
+        )
+        .unwrap();
 
         // Read partially
         let partial_params = ReadFileParams {
@@ -2940,7 +3037,12 @@ mod tests {
 
         let result3 = manager.edit_file(&edit_params3);
         assert!(result3.is_err());
-        assert!(result3.unwrap_err().error_msg.contains("has been modified since last read"));
+        assert!(
+            result3
+                .unwrap_err()
+                .error_msg
+                .contains("has been modified since last read")
+        );
     }
 
     #[test]
@@ -2983,7 +3085,7 @@ mod tests {
             path: file_path.to_string_lossy().to_string(),
             edits: vec![Edit {
                 start_line: 2,
-                end_line: 1, // Insert position
+                end_line: 1,                 // Insert position
                 new_content: "".to_string(), // Empty insert
             }],
         };
@@ -2997,11 +3099,13 @@ mod tests {
 
         // Test 3: Replace with empty string (delete)
         fs::write(&file_path, "test 1\ntest 2\ntest 3").unwrap();
-        manager.read_file(ReadFileParams {
-            path: file_path.to_string_lossy().to_string(),
-            start_line: None,
-            end_line: None,
-        }).unwrap();
+        manager
+            .read_file(ReadFileParams {
+                path: file_path.to_string_lossy().to_string(),
+                start_line: None,
+                end_line: None,
+            })
+            .unwrap();
 
         let edit_params3 = EditFileParams {
             path: file_path.to_string_lossy().to_string(),
@@ -3051,5 +3155,73 @@ mod tests {
         let content5 = fs::read_to_string(&file_path).unwrap();
         let expected5 = "new line 1\nnew line 2\n";
         assert_eq!(content5, expected5);
+    }
+
+    #[test]
+    fn test_edit_delete_to_end_of_file_with_large_end_line() {
+        let mut manager = FileInteractionManager::new();
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("delete_to_end_large_value.txt");
+
+        // Create initial file with 5 lines
+        let initial_content = "line 1\nline 2\nline 3\nline 4\nline 5";
+        fs::write(&file_path, initial_content).unwrap();
+
+        // Read the file first (required for editing)
+        let read_params = ReadFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            start_line: None,
+            end_line: None,
+        };
+        manager.read_file(read_params).unwrap();
+
+        // Delete from line 3 to end of file using large end_line value (9999)
+        // This should delete lines 3, 4, and 5, leaving only lines 1 and 2
+        let edit_params = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 3,
+                end_line: 9999, // Large value that exceeds file length (5 lines)
+                new_content: "".to_string(), // Delete operation
+            }],
+        };
+
+        let result = manager.edit_file(&edit_params);
+        assert!(result.is_ok());
+
+        // Verify the file content - should contain only lines 1 and 2
+        let content = fs::read_to_string(&file_path).unwrap();
+        let expected = "line 1\nline 2\n";
+        assert_eq!(content, expected);
+
+        // Verify the file has exactly 2 lines remaining
+        let line_count = content.lines().count();
+        assert_eq!(line_count, 2);
+
+        // Test another scenario: delete from line 1 to end with large end_line
+        // This should result in an empty file
+        fs::write(&file_path, "test 1\ntest 2\ntest 3").unwrap();
+        manager
+            .read_file(ReadFileParams {
+                path: file_path.to_string_lossy().to_string(),
+                start_line: None,
+                end_line: None,
+            })
+            .unwrap();
+
+        let edit_params2 = EditFileParams {
+            path: file_path.to_string_lossy().to_string(),
+            edits: vec![Edit {
+                start_line: 1,
+                end_line: 10000, // Very large value
+                new_content: "".to_string(),
+            }],
+        };
+
+        let result2 = manager.edit_file(&edit_params2);
+        assert!(result2.is_ok());
+
+        let content2 = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content2, ""); // File should be completely empty
     }
 }

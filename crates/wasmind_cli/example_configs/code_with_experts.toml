@@ -54,7 +54,7 @@ allow_edits = false
 source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
 
 [actors.python_typechecker_assistant.config]
-model_name = "gpt-oss-120b"
+model_name = "gemini-2.5-flash"
 require_tool_call = true
 
 [actors.python_typechecker_assistant.config.system_prompt.defaults]
@@ -108,14 +108,15 @@ You MUST follow this procedure for every `git diff` you receive:
         - **Action:** Call the `request_changes()` function.
         - When calling `request_changes`, provide a clear, concise, and actionable reason. This reason should be a markdown-formatted string that identifies each issue with a file/line, the incorrect code, and a suggestion for the fix.
 
-**IMPORTANT**: You may occasionally receive unrelated or empty diffs that are completely irrelevant for you to review. Approve it without comment.
+**CRITICALLY IMPORTANT**: You may occasionally receive unrelated or empty diffs that are completely irrelevant for you to review. Approve it without comment.
+**ONCE AGAGIN**: If the git diff is empty or not relevant to you, APPROVE IT!
 '''
 
 [actors.python_bestpractices_assistant]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
 
 [actors.python_bestpractices_assistant.config]
-model_name = "gpt-oss-120b"
+model_name = "gemini-2.5-flash"
 require_tool_call = true
 
 [actors.python_bestpractices_assistant.config.system_prompt.defaults]
@@ -178,14 +179,15 @@ You MUST follow this procedure for every `git diff` you receive:
         - **Action:** Call the `request_changes()` function.
         - The reason provided to the function must be a clear, markdown-formatted string that explains each issue, why it's a problem, and how to fix it.
 
-**IMPORTANT**: You may occasionally receive unrelated or empty diffs that are completely irrelevant for you to review. Approve it without comment.
+**CRITICALLY IMPORTANT**: You may occasionally receive unrelated or empty diffs that are completely irrelevant for you to review. Approve it without comment.
+**ONCE AGAGIN**: If the git diff is empty or not relevant to you, APPROVE IT!
 '''
 
 [actors.repo_architect_assistant]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
 
 [actors.repo_architect_assistant.config]
-model_name = "gpt-oss-120b"
+model_name = "gemini-2.5-flash"
 require_tool_call = true
 
 [actors.repo_architect_assistant.config.system_prompt.defaults]
@@ -247,7 +249,8 @@ You MUST follow this procedure for every `git diff` you receive:
     - **If ONE or MORE violations were found:** The change harms the codebase's structure.
         - **Action:** Call the `request_changes()` function, providing a clear markdown-formatted reason that explains the architectural principle being violated and a specific instruction for how to fix it (e.g., "Please move this function to `src/utils/helpers.py` to adhere to Separation of Concerns.").
 
-**IMPORTANT**: You may occasionally receive unrelated or empty diffs that are completely irrelevant for you to review. Approve it without comment.
+**CRITICALLY IMPORTANT**: You may occasionally receive unrelated or empty diffs that are completely irrelevant for you to review. Approve it without comment.
+**ONCE AGAGIN**: If the git diff is empty or not relevant to you, APPROVE IT!
 '''
 
 ##############################
@@ -258,7 +261,7 @@ You MUST follow this procedure for every `git diff` you receive:
 source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
 
 [actors.root_assistant.config]
-model_name = "gpt-oss-120b"
+model_name = "gemini-2.5-flash"
 
 [actors.root_assistant.config.system_prompt.defaults]
 identity = '''
@@ -319,6 +322,13 @@ model_name = "gpt-oss-120b"
 model = "openrouter/openai/gpt-oss-120b"
 api_key = "os.environ/OPENROUTER_API_KEY"
 provider = { only = ["cerebras"] }
+
+[[litellm.models]]
+model_name = "gemini-2.5-flash"
+
+[litellm.models.litellm_params]
+model = "openrouter/google/gemini-2.5-flash"
+api_key = "os.environ/OPENROUTER_API_KEY"
 
 # [[litellm.models]]
 # model_name = "qwen3-480b"

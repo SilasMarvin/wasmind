@@ -9,7 +9,9 @@ use wasmind::context::WasmindContext;
 use wasmind::scope::Scope;
 use wasmind_actor_utils::STARTING_SCOPE;
 use wasmind_actor_utils::common_messages::actors::Exit;
-use wasmind_actor_utils::common_messages::assistant::{AddMessage, InterruptAndForceStatus, Status, WaitReason};
+use wasmind_actor_utils::common_messages::assistant::{
+    AddMessage, InterruptAndForceStatus, Status, WaitReason,
+};
 use wasmind_actor_utils::llm_client_types::ChatMessage;
 
 use crate::config::ParsedTuiConfig;
@@ -161,8 +163,8 @@ where
                     // Broadcast InterruptAndForceStatus to the active agent
                     let interrupt_message = InterruptAndForceStatus {
                         agent: self.active_scope.clone(),
-                        status: Status::Wait { 
-                            reason: WaitReason::WaitingForUserInput 
+                        status: Status::Wait {
+                            reason: WaitReason::WaitingForUserInput,
                         },
                     };
                     if let Err(e) = self.context.broadcast_common_message(interrupt_message) {

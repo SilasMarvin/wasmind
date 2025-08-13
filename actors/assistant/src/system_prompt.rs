@@ -24,7 +24,7 @@ pub struct SystemPromptConfig {
 
 fn default_base_template() -> String {
     r#"{% for section_name, contributions in sections -%}
-## {{ section_name | title }}
+## {{ section_name }}
 
 {% for contribution in contributions -%}
 {{ contribution }}
@@ -542,7 +542,7 @@ mod tests {
         renderer.add_contribution(contribution).unwrap();
         let result = renderer.render().unwrap();
         
-        assert!(result.contains("## Default"));
+        assert!(result.contains("## default"));
         assert!(result.contains("No section specified"));
     }
 

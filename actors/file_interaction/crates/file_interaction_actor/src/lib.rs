@@ -130,8 +130,12 @@ impl FileInteractionActor {
             "files": files
         });
 
-        let default_template = r#"{% for file in data.files -%}
-<file path="{{ file.path }}">{{ file.content }}</file>
+        let default_template = r#"The current state of all read and edited files. This is updated automatically for you after each edit_file and read_file call. I.E. You do NOT need to call read_file after edit_file uses
+
+{% for file in data.files -%}
+<file path="{{ file.path }}">
+{{ file.content }}
+</file>
 {% endfor %}"#
             .to_string();
 
@@ -177,10 +181,20 @@ impl FileInteractionActor {
                     "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the read file",
                     result.message
                 );
-                self.send_success_result(tool_call_id, originating_request_id, message, result.ui_display);
+                self.send_success_result(
+                    tool_call_id,
+                    originating_request_id,
+                    message,
+                    result.ui_display,
+                );
             }
             Err(error) => {
-                self.send_error_result(tool_call_id, originating_request_id, error.error_msg, error.ui_display);
+                self.send_error_result(
+                    tool_call_id,
+                    originating_request_id,
+                    error.error_msg,
+                    error.ui_display,
+                );
             }
         }
     }
@@ -215,15 +229,31 @@ impl FileInteractionActor {
                     "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the updated edited file",
                     result.message
                 );
-                self.send_success_result(tool_call_id, originating_request_id, message, result.ui_display);
+                self.send_success_result(
+                    tool_call_id,
+                    originating_request_id,
+                    message,
+                    result.ui_display,
+                );
             }
             Err(error) => {
-                self.send_error_result(tool_call_id, originating_request_id, error.error_msg, error.ui_display);
+                self.send_error_result(
+                    tool_call_id,
+                    originating_request_id,
+                    error.error_msg,
+                    error.ui_display,
+                );
             }
         }
     }
 
-    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
+    fn send_error_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        error_msg: String,
+        ui_display: UIDisplayInfo,
+    ) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
             originating_request_id: originating_request_id.to_string(),
@@ -238,7 +268,13 @@ impl FileInteractionActor {
         let _ = Self::broadcast_common_message(update);
     }
 
-    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: String, ui_display: UIDisplayInfo) {
+    fn send_success_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        result: String,
+        ui_display: UIDisplayInfo,
+    ) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
             originating_request_id: originating_request_id.to_string(),

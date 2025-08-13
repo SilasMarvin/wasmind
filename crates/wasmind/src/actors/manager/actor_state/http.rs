@@ -19,6 +19,7 @@ pub struct HttpRequestResource {
 pub struct RetryConfig {
     max_attempts: u32,
     base_delay_ms: u64,
+    retryable_status_codes: Option<Vec<u16>>,
 }
 
 impl Clone for HttpRequestResource {
@@ -114,7 +115,30 @@ impl http::HostRequest for ActorState {
         req.retry_config = Some(RetryConfig {
             max_attempts,
             base_delay_ms,
+            retryable_status_codes: None,
         });
+        self.table.push(req).unwrap()
+    }
+
+    async fn retry_on_status_codes(
+        &mut self,
+        self_: Resource<HttpRequestResource>,
+        codes: Vec<u16>,
+    ) -> Resource<HttpRequestResource> {
+        let mut req = self.table.get(&self_).unwrap().clone();
+
+        // If there's existing retry config, update it; otherwise create a new one with defaults
+        if let Some(ref mut retry_config) = req.retry_config {
+            retry_config.retryable_status_codes = Some(codes);
+        } else {
+            // Create default retry config if none exists
+            req.retry_config = Some(RetryConfig {
+                max_attempts: 1, // No retries by default
+                base_delay_ms: 1000,
+                retryable_status_codes: Some(codes),
+            });
+        }
+
         self.table.push(req).unwrap()
     }
 
@@ -145,6 +169,35 @@ impl http::HostRequest for ActorState {
             match builder.send().await {
                 Ok(resp) => {
                     let status = resp.status().as_u16();
+
+                    // Check if this status code should trigger a retry
+                    let should_retry = if let Some(ref retry_config) = retry_config {
+                        if let Some(ref retryable_codes) = retry_config.retryable_status_codes {
+                            retryable_codes.contains(&status)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    // If we should retry and this isn't the last attempt, continue to next iteration
+                    if should_retry && attempt < max_attempts - 1 {
+                        tracing::info!(
+                            "HTTP request returned status {} (attempt {}), retrying...",
+                            status,
+                            attempt + 1
+                        );
+
+                        // Apply exponential backoff delay
+                        if let Some(retry_config) = retry_config.as_ref() {
+                            let delay_ms = retry_config.base_delay_ms * (2_u64.pow(attempt));
+                            let delay = Duration::from_millis(delay_ms);
+                            tokio::time::sleep(delay).await;
+                        }
+
+                        continue; // Retry the request
+                    }
 
                     // Convert headers
                     let mut headers_vec = Vec::new();

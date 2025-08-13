@@ -345,7 +345,6 @@ impl AgentNode {
     }
 }
 
-#[derive(MockComponent)]
 pub struct GraphAreaComponent {
     component: GraphArea,
     config: ParsedTuiConfig,
@@ -407,6 +406,32 @@ impl GraphArea {
                     .saturating_sub(self.viewport_height as u32);
                 self.scroll_offset = center_offset.min(max_offset);
             }
+        }
+    }
+
+    /// Formats key bindings for display in the keybindings box
+    fn format_keybindings(&self, config: &ParsedTuiConfig) -> String {
+        use crate::utils::key_event_to_string;
+
+        let mut bindings = Vec::new();
+
+        for (key_event, action) in &config.graph.key_bindings {
+            // Format the key combination to be user-friendly
+            let key_str = key_event_to_string(key_event);
+
+            // Format the action to be user-friendly
+            let action_str = match action {
+                GraphUserAction::SelectUp => "Select Up",
+                GraphUserAction::SelectDown => "Select Down",
+            };
+
+            bindings.push(format!("{}: {}", key_str, action_str));
+        }
+
+        if bindings.is_empty() {
+            "No key bindings configured".to_string()
+        } else {
+            bindings.join("\n")
         }
     }
 }
@@ -649,6 +674,90 @@ impl MockComponent for GraphArea {
 
     fn perform(&mut self, _cmd: Cmd) -> CmdResult {
         unreachable!()
+    }
+}
+
+impl MockComponent for GraphAreaComponent {
+    fn view(&mut self, frame: &mut Frame, area: Rect) {
+        // First render the main graph view
+        self.component.view(frame, area);
+
+        // Then render the keybindings box at bottom-right if we have a root node
+        if self.component.root_node.is_some() {
+            let keybindings_content = self.component.format_keybindings(&self.config);
+            let block = create_block_with_title(
+                "[ Key Bindings ]",
+                Borders::default(),
+                false,
+                Some(Padding::horizontal(1)),
+            );
+            let keybindings_paragraph = Paragraph::new(keybindings_content).block(block);
+
+            // Position at top-right, under the system stats
+            let content_width = keybindings_paragraph.line_width() as u16;
+            let content_height = keybindings_paragraph.line_count(content_width) as u16;
+
+            // Calculate the stats box height to position keybindings underneath
+            let stats_height = if let Some(ref root) = self.component.root_node {
+                // This mirrors the stats calculation from GraphArea::view
+                let live_agents = root.count();
+                let stats_content = format!(
+                    "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}",
+                    live_agents,
+                    self.component.stats.agents_spawned,
+                    self.component
+                        .stats
+                        .aggregated_agent_metrics
+                        .completion_requests_sent,
+                    self.component.stats.aggregated_agent_metrics.tools_called,
+                    self.component
+                        .stats
+                        .aggregated_agent_metrics
+                        .total_tokens_used
+                );
+                let stats_block = create_block_with_title(
+                    "[ System Stats ]",
+                    Borders::default(),
+                    false,
+                    Some(Padding::horizontal(1)),
+                );
+                let stats_paragraph = Paragraph::new(stats_content).block(stats_block);
+                stats_paragraph.line_count(stats_paragraph.line_width() as u16) as u16
+            } else {
+                0
+            };
+
+            // Create layout for top-right positioning, under stats
+            let [keybindings_area] = Layout::horizontal([content_width])
+                .flex(Flex::End)
+                .areas(area);
+
+            // Position vertically under the stats box with a small gap
+            let keybindings_area = Rect {
+                x: keybindings_area.x,
+                y: keybindings_area.y + stats_height + 1, // +1 for gap
+                width: content_width,
+                height: content_height,
+            };
+            Clear.render(keybindings_area, frame.buffer_mut());
+            frame.render_widget(keybindings_paragraph, keybindings_area);
+        }
+    }
+
+    fn query(&self, attr: Attribute) -> Option<AttrValue> {
+        self.component.query(attr)
+    }
+
+    fn attr(&mut self, attr: Attribute, value: AttrValue) {
+        self.component.attr(attr, value);
+    }
+
+    fn state(&self) -> State {
+        self.component.state()
+    }
+
+    fn perform(&mut self, cmd: Cmd) -> CmdResult {
+        self.component.perform(cmd)
     }
 }
 

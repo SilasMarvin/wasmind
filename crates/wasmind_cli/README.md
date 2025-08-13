@@ -133,10 +133,14 @@ WASMIND_LOG=debug wasmind_cli  # Debug level shows all messages sent through the
 WASMIND_LOG=info wasmind_cli   # Default level for general information
 ```
 
-**Key Bindings** (in TUI):
-- `Ctrl+A` - Assist (send message to agents)
-- `Ctrl+C` - Exit
+**Default Key Bindings** (in TUI):
+- `Ctrl+a` - Assist (send message to agents)
+- `Ctrl+t` - Toggle expanded tool displays
+- `esc` - Cancel the Agent's current action and force it to wait for your input
+- `Ctrl+c` - Exit
 - `Shift+Up/Down` - Navigate graph view
+
+NOTE: The cancel feature is  WIP and if the Agent is making a request it will finish making it before cancelling.
 
 ## Configuration
 

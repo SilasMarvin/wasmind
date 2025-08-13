@@ -236,6 +236,7 @@ impl Assistant {
             .header("Content-Type", "application/json")
             .body(&body)
             .retry(3, 1000) // 3 attempts, 1 second base delay with exponential backoff
+            .retry_on_status_codes(&[429, 500, 502, 503, 504]) // Retry on rate limiting and server errors
             .timeout(120) // 120 second timeout
             .send()
             .map_err(|e| {
@@ -244,10 +245,16 @@ impl Assistant {
                 error_msg
             })?;
 
-        // Check status
-        if response.status < 200 || response.status >= 300 {
+        // Check for non-retryable errors (retryable errors are handled by retry logic)
+        if response.status < 200 || (response.status >= 300 && ![429, 500, 502, 503, 504].contains(&response.status)) {
             let error_text = String::from_utf8_lossy(&response.body);
             let error_msg = format!("LLM API error ({}): {}", response.status, error_text);
+            logger::log(logger::LogLevel::Error, &error_msg);
+            return Err(error_msg);
+        } else if response.status >= 300 {
+            // This means we got a retryable error status after all retries were exhausted
+            let error_text = String::from_utf8_lossy(&response.body);
+            let error_msg = format!("LLM API error after retries ({}): {}", response.status, error_text);
             logger::log(logger::LogLevel::Error, &error_msg);
             return Err(error_msg);
         }

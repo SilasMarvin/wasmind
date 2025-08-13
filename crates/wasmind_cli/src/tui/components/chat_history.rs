@@ -555,7 +555,13 @@ impl AssistantInfo {
     }
 
     // This render function tracks total content height and supports scrolling
-    fn render_ref_mut(&mut self, area: Rect, buf: &mut Buffer, scroll_offset: u16, tools_expanded: bool) -> u16 {
+    fn render_ref_mut(
+        &mut self,
+        area: Rect,
+        buf: &mut Buffer,
+        scroll_offset: u16,
+        tools_expanded: bool,
+    ) -> u16 {
         let mut y_offset = 0;
 
         // Create or get cached title
@@ -746,15 +752,24 @@ impl MockComponent for ChatHistory {
 
                 // Store render area and get total content height
                 self.last_render_area = Some(area);
-                self.content_height =
-                    info.render_ref_mut(area, frame.buffer_mut(), self.scroll_offset, self.tools_expanded);
+                self.content_height = info.render_ref_mut(
+                    area,
+                    frame.buffer_mut(),
+                    self.scroll_offset,
+                    self.tools_expanded,
+                );
 
                 if is_scrolled_to_bottom && last_content_height != self.content_height {
                     frame.render_widget(Clear, area);
                     self.scroll_offset = self
                         .content_height
                         .saturating_sub(self.last_render_area.map(|a| a.height).unwrap_or(0));
-                    info.render_ref_mut(area, frame.buffer_mut(), self.scroll_offset, self.tools_expanded);
+                    info.render_ref_mut(
+                        area,
+                        frame.buffer_mut(),
+                        self.scroll_offset,
+                        self.tools_expanded,
+                    );
                 }
             } else {
                 tracing::error!("Trying to retrieve a scope that does not exist: {active_scope}");
