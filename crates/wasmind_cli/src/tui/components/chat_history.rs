@@ -35,10 +35,10 @@ const MESSAGE_GAP: u16 = 1;
 
 /// Trait for items that can be rendered with caching support
 trait CacheableRenderItem {
-    type Context;
+    type Context<'a>;
 
-    fn get_height(&mut self, area: Rect, context: &Self::Context) -> u16;
-    fn get_buffer(&mut self, area: Rect, context: &Self::Context) -> &Buffer;
+    fn get_height<'a>(&mut self, area: Rect, context: &Self::Context<'a>) -> u16;
+    fn get_buffer<'a>(&mut self, area: Rect, context: &Self::Context<'a>) -> &Buffer;
     fn invalidate_cache(&mut self);
 }
 
@@ -60,9 +60,9 @@ impl CachedParagraph {
 }
 
 impl CacheableRenderItem for CachedParagraph {
-    type Context = ();
+    type Context<'a> = ();
 
-    fn get_height(&mut self, area: Rect, _context: &()) -> u16 {
+    fn get_height<'a>(&mut self, area: Rect, _context: &()) -> u16 {
         if let Some(height) = self.height {
             height
         } else {
@@ -72,7 +72,7 @@ impl CacheableRenderItem for CachedParagraph {
         }
     }
 
-    fn get_buffer(&mut self, area: Rect, context: &()) -> &Buffer {
+    fn get_buffer<'a>(&mut self, area: Rect, context: &()) -> &Buffer {
         if self.buffer.is_some() {
             self.buffer.as_ref().unwrap()
         } else {
@@ -306,18 +306,18 @@ impl ChatMessageWidgetState {
 }
 
 impl CacheableRenderItem for ChatMessageWidgetState {
-    type Context = (HashMap<String, HashMap<String, ToolCallStatus>>, bool); // (tool_call_updates, tools_expanded)
+    type Context<'a> = (&'a HashMap<String, HashMap<String, ToolCallStatus>>, bool); // (tool_call_updates, tools_expanded)
 
-    fn get_height(&mut self, area: Rect, context: &Self::Context) -> u16 {
+    fn get_height<'a>(&mut self, area: Rect, context: &Self::Context<'a>) -> u16 {
         if let Some(height) = self.height {
             height
         } else {
-            self.build_widgets(area, &context.0, context.1);
+            self.build_widgets(area, context.0, context.1);
             self.height.unwrap()
         }
     }
 
-    fn get_buffer(&mut self, area: Rect, context: &Self::Context) -> &Buffer {
+    fn get_buffer<'a>(&mut self, area: Rect, context: &Self::Context<'a>) -> &Buffer {
         if self.buffer.is_some() {
             self.buffer.as_ref().unwrap()
         } else {
@@ -501,9 +501,9 @@ impl AssistantInfo {
     }
 
     /// Helper to render an item if visible and track offsets - eliminates repetition
-    fn render_and_track<T: CacheableRenderItem>(
+    fn render_and_track<'a, T: CacheableRenderItem>(
         item: &mut T,
-        context: &T::Context,
+        context: &T::Context<'a>,
         area: Rect,
         buf: &mut Buffer,
         scroll_offset: u16,
@@ -621,7 +621,7 @@ impl AssistantInfo {
 
                 Self::render_and_track(
                     message,
-                    &(self.tool_call_updates.clone(), tools_expanded),
+                    &(&self.tool_call_updates, tools_expanded),
                     area,
                     buf,
                     scroll_offset,
