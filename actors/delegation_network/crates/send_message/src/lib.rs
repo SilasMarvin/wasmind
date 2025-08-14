@@ -1,6 +1,9 @@
 use wasmind_actor_utils::{
     common_messages::{
-        assistant::{AddMessage, RequestStatusUpdate, Section, Status, SystemPromptContent, SystemPromptContribution, WaitReason},
+        assistant::{
+            AddMessage, RequestStatusUpdate, Section, Status, SystemPromptContent,
+            SystemPromptContribution, WaitReason,
+        },
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
     },
     llm_client_types::ChatMessage,
@@ -88,21 +91,29 @@ impl tools::Tool for SendMessageTool {
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
-        let params: SendMessageInput = match serde_json::from_str(&tool_call.tool_call.function.arguments) {
-            Ok(params) => params,
-            Err(e) => {
-                let error_msg = format!("Failed to parse send message parameters: {}", e);
-                let error_result = ToolCallResult {
-                    content: error_msg.clone(),
-                    ui_display_info: UIDisplayInfo {
-                        collapsed: "Parameters: Invalid format".to_string(),
-                        expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", error_msg)),
-                    },
-                };
-                self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
-                return;
-            }
-        };
+        let params: SendMessageInput =
+            match serde_json::from_str(&tool_call.tool_call.function.arguments) {
+                Ok(params) => params,
+                Err(e) => {
+                    let error_msg = format!("Failed to parse send message parameters: {}", e);
+                    let error_result = ToolCallResult {
+                        content: error_msg.clone(),
+                        ui_display_info: UIDisplayInfo {
+                            collapsed: "Parameters: Invalid format".to_string(),
+                            expanded: Some(format!(
+                                "Error: Failed to parse parameters\n\nDetails: {}",
+                                error_msg
+                            )),
+                        },
+                    };
+                    self.send_error_result(
+                        &tool_call.tool_call.id,
+                        &tool_call.originating_request_id,
+                        error_result,
+                    );
+                    return;
+                }
+            };
 
         let add_message = AddMessage {
             agent: params.agent_id.clone(),
@@ -119,7 +130,6 @@ impl tools::Tool for SendMessageTool {
                 status: Status::Wait {
                     reason: WaitReason::WaitingForAgentCoordination {
                         originating_request_id: tool_call.originating_request_id.clone(),
-                        coordinating_tool_call_id: tool_call.tool_call.id.clone(),
                         coordinating_tool_name: "send_message".to_string(),
                         target_agent_scope: Some(params.agent_id.clone()),
                         user_can_interrupt: true,
@@ -140,24 +150,39 @@ impl tools::Tool for SendMessageTool {
         let result = ToolCallResult {
             content: success_message.clone(),
             ui_display_info: UIDisplayInfo {
-                collapsed: format!("To {}: Message delivered{}", 
+                collapsed: format!(
+                    "To {}: Message delivered{}",
                     params.agent_id,
-                    if params.wait.unwrap_or(false) { " (waiting)" } else { "" }
+                    if params.wait.unwrap_or(false) {
+                        " (waiting)"
+                    } else {
+                        ""
+                    }
                 ),
-                expanded: Some(format!("Recipient: {}\nWaiting for response: {}\n\nMessage: {}", 
-                    params.agent_id, 
+                expanded: Some(format!(
+                    "Recipient: {}\nWaiting for response: {}\n\nMessage: {}",
+                    params.agent_id,
                     params.wait.unwrap_or(false),
                     params.message
                 )),
             },
         };
 
-        self.send_success_result(&tool_call.tool_call.id, &tool_call.originating_request_id, result);
+        self.send_success_result(
+            &tool_call.tool_call.id,
+            &tool_call.originating_request_id,
+            result,
+        );
     }
 }
 
 impl SendMessageTool {
-    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_result: ToolCallResult) {
+    fn send_error_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        error_result: ToolCallResult,
+    ) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
             originating_request_id: originating_request_id.to_string(),
@@ -172,13 +197,16 @@ impl SendMessageTool {
         );
     }
 
-    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: ToolCallResult) {
+    fn send_success_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        result: ToolCallResult,
+    ) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
             originating_request_id: originating_request_id.to_string(),
-            status: ToolCallStatus::Done {
-                result: Ok(result),
-            },
+            status: ToolCallStatus::Done { result: Ok(result) },
         };
 
         bindings::wasmind::actor::messaging::broadcast(

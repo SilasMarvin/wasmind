@@ -128,22 +128,32 @@ pub type ChatMessageForLLM = ChatMessage<AssistantChatMessage>;
 /// Type alias for ChatMessage used in internal broadcasting (with request ID tracking)
 pub type ChatMessageWithRequestId = ChatMessage<AssistantChatMessageWithOriginatingRequestId>;
 
-impl ChatMessage {
-    pub fn system(content: impl Into<String>) -> Self {
+impl<T> ChatMessage<T> {
+    pub fn system(content: impl ToString) -> Self {
         Self::System(SystemChatMessage {
-            content: content.into(),
+            content: content.to_string(),
         })
     }
 
-    pub fn user(content: impl Into<String>) -> Self {
+    pub fn user(content: impl ToString) -> Self {
         Self::User(UserChatMessage {
-            content: content.into(),
+            content: content.to_string(),
         })
     }
 
-    pub fn assistant(content: impl Into<String>) -> Self {
+    pub fn tool(tool_call_id: impl ToString, name: impl ToString, content: impl ToString) -> Self {
+        Self::Tool(ToolChatMessage {
+            tool_call_id: tool_call_id.to_string(),
+            name: name.to_string(),
+            content: content.to_string(),
+        })
+    }
+}
+
+impl ChatMessageForLLM {
+    pub fn assistant(content: impl ToString) -> Self {
         Self::Assistant(AssistantChatMessage {
-            content: Some(content.into()),
+            content: Some(content.to_string()),
             tool_calls: None,
             reasoning_content: None,
             thinking_blocks: None,
@@ -160,28 +170,32 @@ impl ChatMessage {
             provider_specific_fields: None,
         })
     }
-
-    pub fn tool(
-        tool_call_id: impl Into<String>,
-        name: impl Into<String>,
-        content: impl Into<String>,
-    ) -> Self {
-        Self::Tool(ToolChatMessage {
-            tool_call_id: tool_call_id.into(),
-            name: name.into(),
-            content: content.into(),
-        })
-    }
 }
 
 impl ChatMessageWithRequestId {
     pub fn assistant_with_request_id(
-        message: AssistantChatMessage,
-        originating_request_id: String,
+        content: impl ToString,
+        originating_request_id: impl ToString,
     ) -> Self {
         Self::Assistant(AssistantChatMessageWithOriginatingRequestId::new(
-            message,
-            originating_request_id,
+            AssistantChatMessage::new_with_content(content),
+            originating_request_id.to_string(),
+        ))
+    }
+
+    pub fn assistant_with_request_id_with_tools(
+        tool_calls: Vec<ToolCall>,
+        originating_request_id: impl ToString,
+    ) -> Self {
+        Self::Assistant(AssistantChatMessageWithOriginatingRequestId::new(
+            AssistantChatMessage {
+                content: None,
+                tool_calls: Some(tool_calls),
+                reasoning_content: None,
+                thinking_blocks: None,
+                provider_specific_fields: None,
+            },
+            originating_request_id.to_string(),
         ))
     }
 }
@@ -270,22 +284,23 @@ mod tests {
 
     #[test]
     fn test_chat_message_serialization() {
-        let system_msg = ChatMessage::system("You are helpful");
+        let system_msg = ChatMessageWithRequestId::system("You are helpful");
         let json = serde_json::to_value(&system_msg).unwrap();
         assert_eq!(json["role"], "system");
         assert_eq!(json["content"], "You are helpful");
 
-        let user_msg = ChatMessage::user("Hello");
+        let user_msg = ChatMessageWithRequestId::user("Hello");
         let json = serde_json::to_value(&user_msg).unwrap();
         assert_eq!(json["role"], "user");
         assert_eq!(json["content"], "Hello");
 
-        let assistant_msg = ChatMessage::assistant("Hi there");
+        let assistant_msg =
+            ChatMessageWithRequestId::assistant_with_request_id("Hi there", "filler".to_string());
         let json = serde_json::to_value(&assistant_msg).unwrap();
         assert_eq!(json["role"], "assistant");
         assert_eq!(json["content"], "Hi there");
 
-        let tool_msg = ChatMessage::tool("call_123", "test_tool", "result");
+        let tool_msg = ChatMessageWithRequestId::tool("call_123", "test_tool", "result");
         let json = serde_json::to_value(&tool_msg).unwrap();
         assert_eq!(json["role"], "tool");
         assert_eq!(json["tool_call_id"], "call_123");
@@ -295,7 +310,7 @@ mod tests {
 
     #[test]
     fn test_chat_message_helpers() {
-        let system_msg = ChatMessage::system("You are a helpful assistant");
+        let system_msg = ChatMessageWithRequestId::system("You are a helpful assistant");
         match system_msg {
             ChatMessage::System(SystemChatMessage { content }) => {
                 assert_eq!(content, "You are a helpful assistant");
@@ -303,7 +318,7 @@ mod tests {
             _ => panic!("Expected System message"),
         }
 
-        let user_msg = ChatMessage::user("Hello!");
+        let user_msg = ChatMessageWithRequestId::user("Hello!");
         match user_msg {
             ChatMessage::User(UserChatMessage { content }) => {
                 assert_eq!(content, "Hello!");
@@ -311,7 +326,7 @@ mod tests {
             _ => panic!("Expected User message"),
         }
 
-        let assistant_msg = ChatMessage::assistant("Hi there!");
+        let assistant_msg = ChatMessageForLLM::assistant("Hi there!");
         match assistant_msg {
             ChatMessage::Assistant(AssistantChatMessage {
                 content,
@@ -324,7 +339,7 @@ mod tests {
             _ => panic!("Expected Assistant message"),
         }
 
-        let tool_msg = ChatMessage::tool("call_123", "get_weather", "{\"temp\": 72}");
+        let tool_msg = ChatMessageForLLM::tool("call_123", "get_weather", "{\"temp\": 72}");
         match tool_msg {
             ChatMessage::Tool(ToolChatMessage {
                 tool_call_id,

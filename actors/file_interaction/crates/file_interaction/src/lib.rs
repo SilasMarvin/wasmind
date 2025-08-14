@@ -20,13 +20,13 @@ fn format_string_for_error(s: &str) -> String {
 
 // Tool constants
 pub const READ_FILE_NAME: &str = "read_file";
-pub const READ_FILE_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER:CONTENT. You can read a specific chunk by providing start_line and end_line. IMPORTANT: Always use absolute paths (starting with /) - relative paths will fail.";
+pub const READ_FILE_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER:CONTENT. You can read a specific chunk by providing start_line and end_line.";
 pub const READ_FILE_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
         "path": {
             "type": "string",
-            "description": "ABSOLUTE path to the file (must start with /). Relative paths are not supported and will cause errors."
+            "description": "Path to the file. Can be iether absolute (starting with /) or relative to the current working directory."
         },
         "start_line": {
             "type": "integer",
@@ -1640,4 +1640,3 @@ mod tests {
         assert_eq!(final_content, "This file was edited using relative paths!");
     }
 }
-

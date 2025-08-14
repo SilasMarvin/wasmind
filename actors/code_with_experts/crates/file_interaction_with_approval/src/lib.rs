@@ -4,7 +4,6 @@ use bindings::{
     exports::wasmind::actor::actor::MessageEnvelope,
     wasmind::actor::{actor::Scope, agent::spawn_agent, host_info},
 };
-use std::path::PathBuf;
 use code_with_experts_common::ApprovalResponse;
 use file_interaction::{
     EDIT_FILE_DESCRIPTION, EDIT_FILE_NAME, EDIT_FILE_SCHEMA, EditFileParams,
@@ -12,9 +11,13 @@ use file_interaction::{
     READ_FILE_SCHEMA, ReadFileParams,
 };
 use serde::Deserialize;
+use std::path::PathBuf;
 use wasmind_actor_utils::{
     common_messages::{
-        assistant::{AddMessage, Section, SystemPromptContent, SystemPromptContribution},
+        assistant::{
+            AddMessage, Section, Status, StatusUpdate, SystemPromptContent,
+            SystemPromptContribution, WaitReason,
+        },
         tools::{
             ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, ToolsAvailable,
             UIDisplayInfo,
@@ -85,7 +88,7 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
         // Get the host working directory and create the manager with it
         let working_directory = host_info::get_host_working_directory();
         let manager = FileInteractionManager::new(PathBuf::from(working_directory));
-        
+
         Self {
             config,
             scope: scope.clone(),
@@ -155,6 +158,25 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
                 _ => (),
             }
         }
+
+        // Handle conversation compaction - clear file cache
+        // We look for the switch into the status of compacting conversation so we broadcast our
+        // system status update before the compaction finishes or we will be in a race condition
+        // and the assistant will start its request with its new conversation history but old file
+        // system in the system prompt
+        if let Some(status_update) = Self::parse_as::<StatusUpdate>(&message)
+            && matches!(
+                status_update,
+                StatusUpdate {
+                    status: Status::Wait {
+                        reason: WaitReason::CompactingConversation
+                    }
+                }
+            )
+        {
+            self.manager.clear_cache();
+            self.update_unified_files_system_prompt();
+        }
     }
 
     fn destructor(&mut self) {}
@@ -181,7 +203,7 @@ impl FileInteractionWIthApprovalActor {
 
         // Get the current working directory
         let working_directory = host_info::get_host_working_directory();
-        
+
         let data = serde_json::json!({
             "working_directory": working_directory,
             "files": files

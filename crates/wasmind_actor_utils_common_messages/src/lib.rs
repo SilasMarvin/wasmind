@@ -51,7 +51,7 @@ pub mod actors {
 pub mod assistant {
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
-    use wasmind_llm_types::ChatMessage;
+    use wasmind_llm_types::ChatMessageWithRequestId;
 
     use super::{Message, Scope, tools};
 
@@ -71,7 +71,6 @@ pub mod assistant {
         },
         WaitingForAgentCoordination {
             originating_request_id: String,
-            coordinating_tool_call_id: String,
             coordinating_tool_name: String,
             target_agent_scope: Option<Scope>,
             user_can_interrupt: bool,
@@ -81,6 +80,7 @@ pub mod assistant {
             tool_calls: HashMap<String, PendingToolCall>,
         },
         WaitingForLiteLLM,
+        CompactingConversation,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -299,11 +299,15 @@ pub mod assistant {
         const MESSAGE_TYPE: &str = "wasmind.common.assistant.SystemPromptContribution";
     }
 
-    // wasmind.common.assistant.CompactConversation
+    // wasmind.common.assistant.CompactedConversation
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct CompactConversation {
+    pub struct CompactedConversation {
         pub agent: Scope,
-        pub messages: Vec<ChatMessage>,
+        pub messages: Vec<ChatMessageWithRequestId>,
+    }
+
+    impl Message for CompactedConversation {
+        const MESSAGE_TYPE: &str = "wasmind.common.assistant.CompactedConversation";
     }
 }
 

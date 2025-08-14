@@ -42,7 +42,6 @@ pub fn spawn_agent(scope: &Scope, coordinator: &mut WasmindCoordinator) -> TuiRe
         5 => Status::Wait {
             reason: WaitReason::WaitingForAgentCoordination {
                 originating_request_id: "Filler".to_string(),
-                coordinating_tool_call_id: "Filler".to_string(),
                 coordinating_tool_name: "Filler".to_string(),
                 target_agent_scope: None,
                 user_can_interrupt: true,
@@ -215,12 +214,12 @@ pub async fn run() -> TuiResult<()> {
                 }
             ),
             wasmind_actor_utils::llm_client_types::ChatMessageWithRequestId::assistant_with_request_id(
-                wasmind_actor_utils::llm_client_types::AssistantChatMessage::new_with_content(assistant_content),
-                "example-request-id".to_string(),
+                assistant_content,
+                "example-request-id",
             ),
-            wasmind_actor_utils::llm_client_types::ChatMessageWithRequestId::assistant_with_request_id(
-                wasmind_actor_utils::llm_client_types::AssistantChatMessage::new_with_tools(tool_calls),
-                "example-request-id".to_string(),
+            wasmind_actor_utils::llm_client_types::ChatMessageWithRequestId::assistant_with_request_id_with_tools(
+                tool_calls,
+                "example-request-id",
             ),
         ],
     };

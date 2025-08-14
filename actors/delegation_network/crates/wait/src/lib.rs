@@ -1,6 +1,9 @@
 use wasmind_actor_utils::{
     common_messages::{
-        assistant::{RequestStatusUpdate, Section, Status, SystemPromptContent, SystemPromptContribution, WaitReason},
+        assistant::{
+            RequestStatusUpdate, Section, Status, SystemPromptContent, SystemPromptContribution,
+            WaitReason,
+        },
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
     },
     messages::Message,
@@ -79,12 +82,15 @@ impl tools::Tool for WaitTool {
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
         // Parse the tool parameters (optional)
-        let params: WaitInput = match serde_json::from_str(&tool_call.tool_call.function.arguments) {
+        let params: WaitInput = match serde_json::from_str(&tool_call.tool_call.function.arguments)
+        {
             Ok(params) => params,
             Err(_) => WaitInput { reason: None },
         };
 
-        let wait_reason = params.reason.unwrap_or_else(|| "Waiting for system input".to_string());
+        let wait_reason = params
+            .reason
+            .unwrap_or_else(|| "Waiting for system input".to_string());
 
         // Create a status update request to put the agent into wait mode
         let status_update_request = RequestStatusUpdate {
@@ -92,7 +98,6 @@ impl tools::Tool for WaitTool {
             status: Status::Wait {
                 reason: WaitReason::WaitingForAgentCoordination {
                     originating_request_id: tool_call.originating_request_id.clone(),
-                    coordinating_tool_call_id: tool_call.tool_call.id.clone(),
                     coordinating_tool_name: "wait".to_string(),
                     target_agent_scope: None,
                     user_can_interrupt: true,
@@ -109,16 +114,17 @@ impl tools::Tool for WaitTool {
             content: "Waiting...".to_string(),
             ui_display_info: UIDisplayInfo {
                 collapsed: format!("Waiting: {}", wait_reason),
-                expanded: Some(format!("Waiting for system input\n\nReason: {}", wait_reason)),
+                expanded: Some(format!(
+                    "Waiting for system input\n\nReason: {}",
+                    wait_reason
+                )),
             },
         };
 
         let update = ToolCallStatusUpdate {
             id: tool_call.tool_call.id,
             originating_request_id: tool_call.originating_request_id,
-            status: ToolCallStatus::Done {
-                result: Ok(result),
-            },
+            status: ToolCallStatus::Done { result: Ok(result) },
         };
 
         bindings::wasmind::actor::messaging::broadcast(
@@ -127,3 +133,4 @@ impl tools::Tool for WaitTool {
         );
     }
 }
+

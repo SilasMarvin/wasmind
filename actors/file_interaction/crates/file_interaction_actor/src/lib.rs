@@ -1,16 +1,16 @@
-use bindings::{
-    exports::wasmind::actor::actor::MessageEnvelope, 
-    wasmind::actor::host_info
-};
+use bindings::{exports::wasmind::actor::actor::MessageEnvelope, wasmind::actor::host_info};
 use file_interaction::{
     EDIT_FILE_DESCRIPTION, EDIT_FILE_NAME, EDIT_FILE_SCHEMA, EditFileParams,
     FILE_TOOLS_USAGE_GUIDE, FileInteractionManager, READ_FILE_DESCRIPTION, READ_FILE_NAME,
     READ_FILE_SCHEMA, ReadFileParams,
 };
-use std::path::PathBuf;
 use serde::Deserialize;
+use std::path::PathBuf;
 use wasmind_actor_utils::common_messages::{
-    assistant::{Section, SystemPromptContent, SystemPromptContribution},
+    assistant::{
+        CompactedConversation, Section, Status, StatusUpdate, SystemPromptContent,
+        SystemPromptContribution, WaitReason,
+    },
     tools::{
         ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, ToolsAvailable,
         UIDisplayInfo,
@@ -107,6 +107,25 @@ impl GeneratedActorTrait for FileInteractionActor {
                 _ => {}
             }
         }
+
+        // Handle conversation compaction - clear file cache
+        // We look for the switch into the status of compacting conversation so we broadcast our
+        // system status update before the compaction finishes or we will be in a race condition
+        // and the assistant will start its request with its new conversation history but old file
+        // system in the system prompt
+        if let Some(status_update) = Self::parse_as::<StatusUpdate>(&message)
+            && matches!(
+                status_update,
+                StatusUpdate {
+                    status: Status::Wait {
+                        reason: WaitReason::CompactingConversation
+                    }
+                }
+            )
+        {
+            self.manager.clear_cache();
+            self.update_unified_files_system_prompt();
+        }
     }
 
     fn destructor(&mut self) {
@@ -136,7 +155,7 @@ impl FileInteractionActor {
 
         // Get the current working directory
         let working_directory = host_info::get_host_working_directory();
-        
+
         let data = serde_json::json!({
             "working_directory": working_directory,
             "files": files

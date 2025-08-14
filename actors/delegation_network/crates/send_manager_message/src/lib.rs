@@ -1,7 +1,10 @@
 use bindings::wasmind::actor::agent::get_parent_scope;
 use wasmind_actor_utils::{
     common_messages::{
-        assistant::{AddMessage, RequestStatusUpdate, Section, Status, SystemPromptContent, SystemPromptContribution, WaitReason},
+        assistant::{
+            AddMessage, RequestStatusUpdate, Section, Status, SystemPromptContent,
+            SystemPromptContribution, WaitReason,
+        },
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
     },
     llm_client_types::ChatMessage,
@@ -88,27 +91,34 @@ impl tools::Tool for SendManagerMessageTool {
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
         // Parse the tool parameters
-        let params: SendManagerMessageInput = match serde_json::from_str(&tool_call.tool_call.function.arguments) {
-            Ok(params) => params,
-            Err(e) => {
-                let error_msg = format!("Failed to parse send manager message parameters: {}", e);
-                let error_result = ToolCallResult {
-                    content: error_msg.clone(),
-                    ui_display_info: UIDisplayInfo {
-                        collapsed: "Parameter Error".to_string(),
-                        expanded: Some(format!("Parameter Error:\n{}", error_msg)),
-                    },
-                };
-                self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
-                return;
-            }
-        };
+        let params: SendManagerMessageInput =
+            match serde_json::from_str(&tool_call.tool_call.function.arguments) {
+                Ok(params) => params,
+                Err(e) => {
+                    let error_msg =
+                        format!("Failed to parse send manager message parameters: {}", e);
+                    let error_result = ToolCallResult {
+                        content: error_msg.clone(),
+                        ui_display_info: UIDisplayInfo {
+                            collapsed: "Parameter Error".to_string(),
+                            expanded: Some(format!("Parameter Error:\n{}", error_msg)),
+                        },
+                    };
+                    self.send_error_result(
+                        &tool_call.tool_call.id,
+                        &tool_call.originating_request_id,
+                        error_result,
+                    );
+                    return;
+                }
+            };
 
         // Get parent scope to send message to manager
         let parent_scope = match get_parent_scope() {
             Some(parent) => parent,
             None => {
-                let error_msg = "No manager available - you are at the top level of the agent hierarchy";
+                let error_msg =
+                    "No manager available - you are at the top level of the agent hierarchy";
                 let error_result = ToolCallResult {
                     content: error_msg.to_string(),
                     ui_display_info: UIDisplayInfo {
@@ -116,7 +126,11 @@ impl tools::Tool for SendManagerMessageTool {
                         expanded: Some(error_msg.to_string()),
                     },
                 };
-                self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
+                self.send_error_result(
+                    &tool_call.tool_call.id,
+                    &tool_call.originating_request_id,
+                    error_result,
+                );
                 return;
             }
         };
@@ -137,7 +151,6 @@ impl tools::Tool for SendManagerMessageTool {
                 status: Status::Wait {
                     reason: WaitReason::WaitingForAgentCoordination {
                         originating_request_id: tool_call.originating_request_id.clone(),
-                        coordinating_tool_call_id: tool_call.tool_call.id.clone(),
                         coordinating_tool_name: "send_manager_message".to_string(),
                         target_agent_scope: Some(parent_scope.clone()),
                         user_can_interrupt: true,
@@ -150,9 +163,8 @@ impl tools::Tool for SendManagerMessageTool {
         }
 
         // Create success result
-        let success_message = format!(
-            "Message sent to your manager - please allow time for a response."
-        );
+        let success_message =
+            format!("Message sent to your manager - please allow time for a response.");
 
         let result = ToolCallResult {
             content: success_message.clone(),
@@ -162,12 +174,21 @@ impl tools::Tool for SendManagerMessageTool {
             },
         };
 
-        self.send_success_result(&tool_call.tool_call.id, &tool_call.originating_request_id, result);
+        self.send_success_result(
+            &tool_call.tool_call.id,
+            &tool_call.originating_request_id,
+            result,
+        );
     }
 }
 
 impl SendManagerMessageTool {
-    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_result: ToolCallResult) {
+    fn send_error_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        error_result: ToolCallResult,
+    ) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
             originating_request_id: originating_request_id.to_string(),
@@ -182,13 +203,16 @@ impl SendManagerMessageTool {
         );
     }
 
-    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: ToolCallResult) {
+    fn send_success_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        result: ToolCallResult,
+    ) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
             originating_request_id: originating_request_id.to_string(),
-            status: ToolCallStatus::Done {
-                result: Ok(result),
-            },
+            status: ToolCallStatus::Done { result: Ok(result) },
         };
 
         bindings::wasmind::actor::messaging::broadcast(
@@ -197,3 +221,4 @@ impl SendManagerMessageTool {
         );
     }
 }
+

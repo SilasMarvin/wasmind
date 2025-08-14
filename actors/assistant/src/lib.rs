@@ -4,8 +4,8 @@ use wasmind_actor_utils::{
     common_messages::{
         actors::{self, Exit},
         assistant::{
-            self, ChatState, ChatStateUpdated, Request, Status, StatusUpdate,
-            SystemPromptContribution, WaitReason,
+            self, ChatState, ChatStateUpdated, CompactedConversation, Request, Status,
+            StatusUpdate, SystemPromptContribution, WaitReason,
         },
         litellm,
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
@@ -123,12 +123,12 @@ impl Assistant {
                 if let Some(choice) = response.choices.first() {
                     match &choice.message {
                         ChatMessage::Assistant(assistant_msg) => {
-                            self.add_chat_messages([
-                                ChatMessageWithRequestId::assistant_with_request_id(
-                                    assistant_msg.clone(),
-                                    request_id.clone(),
-                                ),
-                            ]);
+                            self.add_chat_messages([ChatMessageWithRequestId::Assistant(
+                                AssistantChatMessageWithOriginatingRequestId {
+                                    message: assistant_msg.clone(),
+                                    originating_request_id: request_id.clone(),
+                                },
+                            )]);
 
                             // Notify other components that we have a response ready
                             let _ = Self::broadcast_common_message(assistant::Response {
@@ -202,7 +202,7 @@ impl Assistant {
             "No LiteLLM base URL available! This should be impossible to reach. Please report this as a bug".to_string()
         })?;
 
-        let system_message = match ChatMessage::system(system_prompt) {
+        let system_message = match ChatMessageForLLM::system(system_prompt) {
             ChatMessage::System(msg) => msg,
             _ => unreachable!(),
         };
@@ -247,7 +247,9 @@ impl Assistant {
             })?;
 
         // Check for non-retryable errors (retryable errors are handled by retry logic)
-        if response.status < 200 || (response.status >= 300 && ![429, 500, 502, 503, 504].contains(&response.status)) {
+        if response.status < 200
+            || (response.status >= 300 && ![429, 500, 502, 503, 504].contains(&response.status))
+        {
             let error_text = String::from_utf8_lossy(&response.body);
             let error_msg = format!("LLM API error ({}): {}", response.status, error_text);
             logger::log(logger::LogLevel::Error, &error_msg);
@@ -255,7 +257,10 @@ impl Assistant {
         } else if response.status >= 300 {
             // This means we got a retryable error status after all retries were exhausted
             let error_text = String::from_utf8_lossy(&response.body);
-            let error_msg = format!("LLM API error after retries ({}): {}", response.status, error_text);
+            let error_msg = format!(
+                "LLM API error after retries ({}): {}",
+                response.status, error_text
+            );
             logger::log(logger::LogLevel::Error, &error_msg);
             return Err(error_msg);
         }
@@ -283,8 +288,11 @@ impl Assistant {
 
     fn add_chat_messages(&mut self, messages: impl IntoIterator<Item = ChatMessageWithRequestId>) {
         self.chat_history.extend(messages);
+        self.broadcast_chat_state_updated();
+    }
 
-        let system_message = match ChatMessage::system(self.render_system_prompt()) {
+    fn broadcast_chat_state_updated(&self) {
+        let system_message = match ChatMessageWithRequestId::system(self.render_system_prompt()) {
             ChatMessage::System(msg) => msg,
             _ => unreachable!(),
         };
@@ -385,7 +393,6 @@ impl Assistant {
                     reason:
                         WaitReason::WaitingForAgentCoordination {
                             originating_request_id,
-                            coordinating_tool_call_id,
                             coordinating_tool_name,
                             ..
                         },
@@ -659,6 +666,19 @@ impl GeneratedActorTrait for Assistant {
 
             // Force the agent to the specified status
             self.set_status(interrupt.status, true);
+        }
+
+        // Handle conversation compaction
+        if let Some(compact) = Self::parse_as::<CompactedConversation>(&message)
+            && compact.agent == self.scope
+        {
+            self.chat_history = compact.messages;
+            logger::log(
+                logger::LogLevel::Info,
+                "Chat history cleared due to conversation compaction",
+            );
+            self.broadcast_chat_state_updated();
+            self.submit(true);
         }
 
         // Handle add message

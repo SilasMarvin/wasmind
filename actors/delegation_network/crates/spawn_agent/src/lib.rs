@@ -1,4 +1,5 @@
 use delegation_network_common_types::{AgentSpawned, AgentType};
+use serde::Deserialize;
 use wasmind_actor_utils::{
     common_messages::{
         assistant::{
@@ -10,7 +11,6 @@ use wasmind_actor_utils::{
     llm_client_types::ChatMessage,
     tools,
 };
-use serde::Deserialize;
 
 #[allow(warnings)]
 mod bindings;
@@ -157,10 +157,17 @@ impl tools::Tool for SpawnAgentTool {
                         content: error_msg.clone(),
                         ui_display_info: UIDisplayInfo {
                             collapsed: "Parameters: Invalid format".to_string(),
-                            expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", error_msg)),
+                            expanded: Some(format!(
+                                "Error: Failed to parse parameters\n\nDetails: {}",
+                                error_msg
+                            )),
                         },
                     };
-                    self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
+                    self.send_error_result(
+                        &tool_call.tool_call.id,
+                        &tool_call.originating_request_id,
+                        error_result,
+                    );
                     return;
                 }
             };
@@ -174,7 +181,11 @@ impl tools::Tool for SpawnAgentTool {
                     expanded: Some("Error: No agents were specified for spawning\n\nAt least one agent must be provided in the agents_to_spawn array.".to_string()),
                 },
             };
-            self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
+            self.send_error_result(
+                &tool_call.tool_call.id,
+                &tool_call.originating_request_id,
+                error_result,
+            );
             return;
         }
 
@@ -190,21 +201,33 @@ impl tools::Tool for SpawnAgentTool {
             };
 
             // Use the host's spawn_agent function
-            let agent_id =
-                match bindings::wasmind::actor::agent::spawn_agent(&actors, &agent_def.agent_role) {
-                    Ok(scope) => scope,
-                    Err(e) => {
-                        let error_result = ToolCallResult {
-                            content: format!("Failed to spawn agent: {}", e),
-                            ui_display_info: UIDisplayInfo {
-                                collapsed: format!("Agent spawn: Failed to create {:?}", agent_def.agent_type),
-                                expanded: Some(format!("Operation: Create agent\nAgent Type: {:?}\nError: {}", agent_def.agent_type, e)),
-                            },
-                        };
-                        self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_result);
-                        return;
-                    }
-                };
+            let agent_id = match bindings::wasmind::actor::agent::spawn_agent(
+                &actors,
+                &agent_def.agent_role,
+            ) {
+                Ok(scope) => scope,
+                Err(e) => {
+                    let error_result = ToolCallResult {
+                        content: format!("Failed to spawn agent: {}", e),
+                        ui_display_info: UIDisplayInfo {
+                            collapsed: format!(
+                                "Agent spawn: Failed to create {:?}",
+                                agent_def.agent_type
+                            ),
+                            expanded: Some(format!(
+                                "Operation: Create agent\nAgent Type: {:?}\nError: {}",
+                                agent_def.agent_type, e
+                            )),
+                        },
+                    };
+                    self.send_error_result(
+                        &tool_call.tool_call.id,
+                        &tool_call.originating_request_id,
+                        error_result,
+                    );
+                    return;
+                }
+            };
 
             // Add task to the agent's system prompt
             let system_prompt_contribution = SystemPromptContribution {
@@ -252,7 +275,6 @@ impl tools::Tool for SpawnAgentTool {
                 status: Status::Wait {
                     reason: WaitReason::WaitingForAgentCoordination {
                         originating_request_id: tool_call.originating_request_id.clone(),
-                        coordinating_tool_call_id: tool_call.tool_call.id.clone(),
                         coordinating_tool_name: "spawn_agent".to_string(),
                         target_agent_scope: None,
                         user_can_interrupt: true,
@@ -282,19 +304,32 @@ impl tools::Tool for SpawnAgentTool {
                 collapsed: format!(
                     "{} agent{} created: {}",
                     params.agents_to_spawn.len(),
-                    if params.agents_to_spawn.len() == 1 { "" } else { "s" },
+                    if params.agents_to_spawn.len() == 1 {
+                        ""
+                    } else {
+                        "s"
+                    },
                     spawned_agents.join(", ")
                 ),
                 expanded: Some(format!("Operation: Create agents\n\n{}", success_message)),
             },
         };
 
-        self.send_success_result(&tool_call.tool_call.id, &tool_call.originating_request_id, result);
+        self.send_success_result(
+            &tool_call.tool_call.id,
+            &tool_call.originating_request_id,
+            result,
+        );
     }
 }
 
 impl SpawnAgentTool {
-    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_result: ToolCallResult) {
+    fn send_error_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        error_result: ToolCallResult,
+    ) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
             originating_request_id: originating_request_id.to_string(),
@@ -305,7 +340,12 @@ impl SpawnAgentTool {
         let _ = Self::broadcast_common_message(update);
     }
 
-    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: ToolCallResult) {
+    fn send_success_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        result: ToolCallResult,
+    ) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
             originating_request_id: originating_request_id.to_string(),

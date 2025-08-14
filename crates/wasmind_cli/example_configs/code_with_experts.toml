@@ -1,4 +1,4 @@
-starting_actors = ["root_assistant", "file_interaction_with_approval", "execute_bash"]
+starting_actors = ["root_assistant", "file_interaction_with_approval", "execute_bash", "conversation_compaction"]
 
 ##############################
 ##############################
@@ -45,6 +45,14 @@ source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction", p
 
 [actors.expert_file_reader.config]
 allow_edits = false
+
+[actors.conversation_compaction]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/conversation_compaction" }
+
+[actors.conversation_compaction.config]
+model_name = "gemini-2.5-flash"
+token_threshold = 50000
+
 
 ##############################
 # Expert Approvers ###########

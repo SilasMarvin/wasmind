@@ -16,7 +16,7 @@ use tuirealm::{
     ratatui::layout::Rect,
 };
 use wasmind::{actors::MessageEnvelope, scope::Scope};
-use wasmind_actor_utils::common_messages::assistant::Status as AgentStatus;
+use wasmind_actor_utils::common_messages::assistant::{Status as AgentStatus, WaitReason};
 
 use crate::tui::{model::TuiMessage, throbber_in_title_ext::ThrobberInTitleExt, utils};
 
@@ -101,14 +101,15 @@ fn format_agent_status(status: &AgentStatus) -> &'static str {
     match status {
         AgentStatus::Processing { .. } => "Processing ⌘",
         AgentStatus::Wait { reason } => match reason {
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForUserInput => "Waiting on user",
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForSystemInput { .. } => "Waiting on system ⌘",
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForAgentCoordination { .. } => "Waiting on coordination ⌘",
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForTools { .. } => "Calling tool ⌘",
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForAllActorsReady => "Waiting on actors ⌘",
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForLiteLLM => "Waiting on LiteLLM ⌘",
+            WaitReason::WaitingForUserInput => "Waiting on user",
+            WaitReason::WaitingForSystemInput { .. } => "Waiting on system ⌘",
+            WaitReason::WaitingForAgentCoordination { .. } => "Waiting on coordination ⌘",
+            WaitReason::WaitingForTools { .. } => "Calling tool ⌘",
+            WaitReason::WaitingForAllActorsReady => "Waiting on actors ⌘",
+            WaitReason::WaitingForLiteLLM => "Waiting on LiteLLM ⌘",
+            WaitReason::CompactingConversation => "Compacting Conversation ⌘",
         },
-        AgentStatus::Done {..} => "Done",
+        AgentStatus::Done { .. } => "Done",
     }
 }
 
@@ -116,14 +117,15 @@ fn get_throbber_for_agent_status(status: &AgentStatus) -> Option<throbber::Set> 
     match status {
         AgentStatus::Processing { .. } => Some(BLACK_CIRCLE),
         AgentStatus::Wait { reason } => match reason {
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForUserInput => None,
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForSystemInput { .. } => Some(OGHAM_C),
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForAgentCoordination { .. } => Some(OGHAM_C),
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForTools { .. } => Some(VERTICAL_BLOCK),
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForAllActorsReady => Some(OGHAM_C),
-            wasmind_actor_utils::common_messages::assistant::WaitReason::WaitingForLiteLLM => Some(OGHAM_C),
+            WaitReason::WaitingForUserInput => None,
+            WaitReason::WaitingForSystemInput { .. } => Some(OGHAM_C),
+            WaitReason::WaitingForAgentCoordination { .. } => Some(OGHAM_C),
+            WaitReason::WaitingForTools { .. } => Some(VERTICAL_BLOCK),
+            WaitReason::WaitingForAllActorsReady => Some(OGHAM_C),
+            WaitReason::WaitingForLiteLLM => Some(OGHAM_C),
+            WaitReason::CompactingConversation => Some(VERTICAL_BLOCK),
         },
-        AgentStatus::Done {..} => None,
+        AgentStatus::Done { .. } => None,
     }
 }
 
