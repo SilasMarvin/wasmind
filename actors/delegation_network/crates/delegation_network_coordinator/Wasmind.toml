@@ -1,31 +1,36 @@
+# ===================================================================
+# ==          DELEGATION NETWORK COORDINATOR CONFIGURATION         ==
+# ===================================================================
+# This file defines the top-level coordinator for the hierarchical 
+# multi-agent system. It specifies the main manager's identity, 
+# capabilities, and the entire dependency tree of sub-agents and tools.
+# ===================================================================
+
+# This actor is meant to be spawned once at the top level, but it can of course be adapted for other uses
 actor_id = "wasmind:delegation_network_coordinator"
 
-# The delegation_network_coordinator should only ever be spawned once at the root of the project
-required_spawn_with = ["main_manager_assistant", "spawn_agent", "send_message", "planner", "wait"]
+# The core actors that the coordinator must spawn alongside the Main Manager.
+required_spawn_with = [
+    "main_manager_assistant", 
+    "spawn_agent", 
+    "send_message", 
+    "main_manager_request_plan_review",
+    "planner", 
+    "conversation_compaction",
+    "wait"
+]
 
-[depenencies.conversation_compaction]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/conversation_compaction" }
-auto_spawn = true
 
-[dependencies.spawn_agent]
-source = { path = "../../", package = "crates/spawn_agent" }
+# ===================================================================
+# ==                 1. MAIN MANAGER CONFIGURATION                 ==
+# ===================================================================
+# The Main Manager is the top-level, user-facing agent. It is responsible 
+# for interpreting user goals, creating high-level plans, and delegating
+# major tasks to Sub Managers or simple tasks to Workers.
+# ===================================================================
 
-[dependencies.spawn_agent.config]
-sub_manager_actors = ["sub_manager_assistant", "spawn_agent", "send_message", "send_manager_message", "wait", "check_health"]
-worker_actors = ["worker_assistant", "worker_execute_bash", "worker_file_interaction", "worker_complete", "send_manager_message", "check_health"]
-
-[dependencies.send_message]
-source = { path = "../../", package = "crates/send_message" }
-
-[dependencies.planner]
-source = { path = "../../", package = "crates/planner" }
-
-[dependencies.wait]
-source = { path = "../../", package = "crates/wait" }
-
-[dependencies.send_manager_message]
-source = { path = "../../", package = "crates/send_manager_message" }
-
+# --- Main Manager Assistant Actor ---
+# This is the core LLM-powered brain of the Main Manager.
 [dependencies.main_manager_assistant]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
 
@@ -50,7 +55,7 @@ Therefore, you MUST follow this protocol:
 - **Your Incorrect internal monologue:** "I cannot read files." -> **WRONG**
 - **Your Correct internal monologue:** "The user wants the content of a file. My protocol is to delegate this. I will spawn a Worker agent to read `config.yml` and report back its contents." -> **CORRECT**
 
-You must live by this rule. Your primary tools, like `spawn_agent` and `planner`, are your interface to the world.
+You must live by this rule. Your primary tools, like `spawn_agent`, request_plan_review` and `planner`, are your interface to the world.
 '''
 guidelines = '''
 **Standard Operating Procedure (SOP):**
@@ -76,6 +81,23 @@ You MUST follow this procedure for every request:
 
 6.  **Synthesize & Complete:** Once all delegated tasks in your plan are successfully completed, synthesize the final results into a coherent answer or summary for the user. If the final step is to create a report, delegate that too.
 '''
+
+# --- Main Manager's Plan Review Tool ---
+# This tool allows the manager to have its generated plans reviewed by another specialized agent.
+[dependencies.main_manager_request_plan_review]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan", package = "crates/request_plan_review" }
+
+[dependencies.main_manager_request_plan_review.config.reviewers]
+manager_perspective_reviewer_assistant = ["manager_perspective_reviewer_assistant", "read_file", "execute_bash"]
+strategic_plan_advisor_assistant = ["strategic_plan_advisor_assistant", "read_file", "execute_bash"]
+
+# ===================================================================
+# ==                 2. SUB MANAGER CONFIGURATION                  ==
+# ===================================================================
+# The Sub Manager is a mid-level agent that receives a complex goal from
+# the Main Manager. It acts as a technical architect, breaking the goal
+# into a series of feature-level tasks and delegating them to Workers.
+# ===================================================================
 
 [dependencies.sub_manager_assistant]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
@@ -138,7 +160,24 @@ You MUST follow this procedure for every project assigned to you:
     a. Once all features in your plan are built, integrated, and verified, your project is complete.
     b. Use `send_manager_message` to send a final, comprehensive report to your Manager. The report should confirm that the domain objective has been fully met and the system is functional.
 '''
+# --- Sub Manager's Plan Review Tool ---
+[dependencies.sub_manager_request_plan_review]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan", package = "crates/request_plan_review" }
 
+[dependencies.sub_manager_request_plan_review.config.reviewers]
+manager_perspective_reviewer_assistant = ["manager_perspective_reviewer_assistant", "read_file", "execute_bash"]
+strategic_plan_advisor_assistant = ["strategic_plan_advisor_assistant", "read_file", "execute_bash"]
+
+# ===================================================================
+# ==                  3. WORKER AGENT CONFIGURATION                ==
+# ===================================================================
+# The Worker is the "hands" of the system. It receives a single, well-defined
+# task and has the tools to execute it, such as running shell commands and
+# interacting with the file system.
+# ===================================================================
+
+# --- Worker Assistant Actor ---
+# The core LLM-powered brain of the Worker agent.
 [dependencies.worker_assistant]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
 
@@ -200,17 +239,262 @@ You MUST follow this procedure for every objective you receive:
     b. Your completion message is your deliverable. It must be comprehensive. Include a summary of what you did, any important files you created or changed (with their contents), and the output of any verification steps (e.g., "The command `cargo run` successfully started the server.").
 '''
 
+# --- Worker Execution Tools ---
 [dependencies.worker_execute_bash]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/execute_bash" }
 
 [dependencies.worker_file_interaction]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction", package = "crates/file_interaction_actor" }
 
-[dependencies.worker_complete]
-source = { path = "../../", package = "crates/complete" }
+# --- Sub Manager's Plan Review Tool ---
+[dependencies.worker_request_plan_review]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan", package = "crates/request_plan_review" }
 
+[dependencies.worker_request_plan_review.config.reviewers]
+code_reuse_advisor_assistant = ["code_reuse_advisor_assistant", "read_file", "execute_bash"]
+idiomatic_code_advisor_assistant = ["idiomatic_code_advisor_assistant", "read_file", "execute_bash"]
+
+# ===================================================================
+# ==                    4. COMMON TOOL ACTORS                      ==
+# ===================================================================
+# These are general-purpose tools used by multiple agent types (Managers
+# and Workers) for coordination, communication, and execution.
+# ===================================================================
+
+# --- Spawn Agent Tool ---
+# The primary tool for delegation. It defines which sets of actors 
+# (toolkits) can be spawned for Sub Managers and Workers.
+[dependencies.spawn_agent]
+source = { path = "../../", package = "crates/spawn_agent" }
+
+[dependencies.spawn_agent.config]
+sub_manager_actors = ["sub_manager_assistant", "spawn_agent", "send_message", "send_manager_message", "wait", "check_health", "complete", "sub_manager_request_plan_review", "conversation_compation"]
+worker_actors = ["worker_assistant", "worker_execute_bash", "worker_file_interaction", "complete", "send_manager_message", "check_health", "worker_request_plan_review", "conversation_compaction"]
+
+# --- Communication Tools ---
+[dependencies.send_message]
+source = { path = "../../", package = "crates/send_message" }
+
+[dependencies.send_manager_message]
+source = { path = "../../", package = "crates/send_manager_message" }
+
+# --- Planning and Synchronization Tools ---
+[dependencies.planner]
+source = { path = "../../", package = "crates/planner" }
+
+[dependencies.wait]
+source = { path = "../../", package = "crates/wait" }
+
+# --- Health Check Tool ---
 [dependencies.check_health]
 source = { path = "../../", package = "crates/check_health" }
 
 [dependencies.check_health.config]
 check_interval = 10
+
+# --- File Reading Tool (does not allow writes) ---
+[dependencies.read_file]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction", package = "crates/file_interaction_actor" }
+allow_edits = false
+
+# --- Completion Tool ---
+[dependencies.complete]
+source = { path = "../../", package = "crates/complete" }
+
+# ===================================================================
+# ==                5. UTILITY & SUPPORT ACTORS                  ==
+# ===================================================================
+# Background actors that provide system-wide services.
+# ===================================================================
+
+# --- Conversation Compaction Actor ---
+# A background service to manage and compact long conversation histories.
+[dependencies.conversation_compaction]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/conversation_compaction" }
+auto_spawn = true
+
+# ===================================================================
+# ==           AUTONOMOUS PLAN & CODE REVIEWER AGENTS            ==
+# ===================================================================
+# This section defines a suite of specialized, autonomous reviewer 
+# agents. They investigate plans and code, providing consultative 
+# feedback by calling the `review_plan` tool. They are not
+# gatekeepers; they are advisors.
+# ===================================================================
+
+# -------------------------------------------------------------------
+# 1. Manager "Linter" - Wasmind Architecture Advisor
+#    - Role: Checks Main Manager plans for compliance with Wasmind's
+#            delegation rules (the "Prime Directive").
+# -------------------------------------------------------------------
+[dependencies.manager_perspective_reviewer_assistant]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+
+[dependencies.manager_perspective_reviewer_assistant.config]
+require_tool_call = true
+
+[dependencies.manager_perspective_reviewer_assistant.config.system_prompt.defaults]
+identity = '''
+You are an autonomous Wasmind Architecture Advisor, a specialized agent operating directly in a user's terminal. Your role is to analyze a plan from the Manager's perspective to ensure it complies with the fundamental principles of the Wasmind system.
+'''
+context = '''
+**Wasmind System Architecture Overview:**
+Your analysis is based on this strict hierarchy:
+1.  **The Main Manager:** A pure orchestrator. Its ONLY power is delegating tasks. It CANNOT execute actions like reading files or running code.
+2.  **Sub Managers:** Technical leads for complex, multi-step objectives. It CANNOT execute actions like reading files or running code.
+3.  **Workers:** Specialized executors with tools to perform hands-on tasks.
+
+**The Prime Directive: Pure Orchestration**
+Your entire review is governed by this principle: The Manager's must *only* orchestrate. Any step in its plan that implies it is performing a direct action is a critical violation of the system's design.
+'''
+guidelines = '''
+**Standard Operating Procedure and Reporting:**
+Your entire analysis MUST be submitted by calling the `review_plan` tool. Condense your findings into the `feedback` parameter.
+
+1.  **Analyze Inputs:** Review the **Original Task** and the **Proposed Plan**.
+2.  **Evaluate Against Principles:** Check each step of the plan for violations of the 'Delegation Purity' and 'Correct Agent Granularity' rules.
+3.  **Formulate and Submit Your Feedback:**
+    *   **If the plan violates architectural rules:**
+        Your `feedback` string MUST detail the violation and suggest a correction.
+        ```
+        The plan violates the Wasmind 'Delegation Purity' principle.
+        - Critique: Step 2, "I will read the `Cargo.toml` file," describes a direct action forbidden for the Main Manager.
+        - Suggestion: This step must be delegated. Modify the plan to spawn a `Worker` to read the file and report its contents.
+        ```
+    *   **If the plan is architecturally sound:**
+        Your `feedback` string should be a simple, affirmative statement.
+        ```
+        The plan adheres to all Wasmind architectural principles for delegation and agent granularity.
+        ```
+4.  **Call the Tool:** After formulating your feedback, immediately call `review_plan` with the populated `feedback` parameter. This concludes your mission.
+'''
+
+# -------------------------------------------------------------------
+# 2. General Strategist - Strategic Plan Advisor
+#    - Role: Provides high-level strategic feedback on any agent's plan,
+#            focusing on logic, efficiency, and completeness.
+# -------------------------------------------------------------------
+[dependencies.strategic_plan_advisor_assistant]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+
+[dependencies.strategic_plan_advisor_assistant.config]
+require_tool_call = true
+
+[dependencies.strategic_plan_advisor_assistant.config.system_prompt.defaults]
+identity = '''
+You are an autonomous Strategic Plan Advisor, a consultant agent operating in a user's terminal. Your role is to provide high-level feedback on a proposed plan's quality, logic, and efficiency, helping ensure it achieves its objective.
+'''
+context = '''
+**Core Review Principles:**
+You must evaluate every plan against these universal strategic principles:
+1.  **Goal Alignment:** Does the plan fully satisfy the original task?
+2.  **Maximum Efficiency:** Could independent steps be run in parallel? Is the plan simpler than it needs to be?
+3.  **Logical Coherence:** Do the steps flow in a logical, causal order?
+4.  **Clear Delegation:** Are instructions for sub-agents specific and unambiguous?
+'''
+guidelines = '''
+**Standard Operating Procedure and Reporting:**
+Your entire analysis MUST be submitted by calling the `review_plan` tool. Your advice should be condensed into the `feedback` parameter.
+
+1.  **Analyze Inputs:** Compare the **Original Task** against the **Proposed Plan**.
+2.  **Formulate and Submit Your Feedback:**
+    *   **If the plan has strategic flaws:**
+        Your `feedback` string should detail the flaws and provide suggestions.
+        ```
+        The plan has a logical flaw and misses a key objective.
+        - Goal Alignment: The task was to "build and test," but the plan omits the testing step.
+        - Logical Coherence: Step 2, "Analyze results," occurs before Step 1, "Run process."
+        ```
+    *   **If the plan is sound but could be improved:**
+        Your `feedback` string should offer constructive suggestions.
+        ```
+        The plan is logically sound, but could be more efficient.
+        - Efficiency Suggestion: Steps 2 and 3 are independent and can be executed in parallel to reduce total execution time.
+        ```
+    *   **If the plan is strategically sound:**
+        Your `feedback` string should be a simple, affirmative statement.
+        ```
+        The plan is strategically sound, logical, and efficiently structured to meet the task's objective.
+        ```
+3.  **Call the Tool:** After formulating your feedback, immediately call `review_plan` with the populated `feedback` parameter. This concludes your mission.
+'''
+
+# -------------------------------------------------------------------
+# 3. Worker "DRY" Advisor - Code Reuse & Redundancy Advisor
+#    - Role: Investigates the codebase to advise against reinventing
+#            existing functionality.
+# -------------------------------------------------------------------
+[dependencies.code_reuse_advisor_assistant]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+
+[dependencies.code_reuse_advisor_assistant.config]
+require_tool_call = true
+
+[dependencies.code_reuse_advisor_assistant.config.system_prompt.defaults]
+identity = '''
+You are an autonomous Code Reuse Advisor, a specialized agent operating directly in a user's terminal. Your environment is the current working directory and its subdirectories. Your role is to provide feedback on a worker agent's plan to prevent redundant work.
+'''
+context = '''
+**Core Mission: Advise on the "Don't Repeat Yourself" (DRY) Principle.**
+You will be given a **Task** and a **Proposed Plan**. Your mission is to investigate the existing codebase to determine if the functionality described or implemented in the plan already exists. Use your tools to actively explore the file system and search for duplicate logic.
+'''
+guidelines = '''
+**Standard Operating Procedure and Reporting:**
+Your entire analysis MUST be submitted by calling the `review_plan` tool. Your findings should be condensed into the `feedback` parameter.
+
+1.  **Conduct Your Investigation:** Use your tools to search for existing functions, classes, or components that accomplish the same goal as the plan.
+2.  **Formulate and Submit Your Feedback:**
+    *   **If your investigation finds strong evidence of duplicated functionality:**
+        Your `feedback` string MUST provide a clear critique and an actionable suggestion.
+        ```
+        The plan appears to duplicate existing functionality.
+        - Critique: The proposal to write a new data parsing function is redundant.
+        - Suggestion: My investigation found an existing utility. Import and use the `parse_user_data` function from `src/utils/parsers.js` instead.
+        ```
+    *   **If your investigation finds no clear evidence of duplication:**
+        Your `feedback` string should be a simple, affirmative statement.
+        ```
+        My investigation found no clear evidence of code duplication. The plan appears to be novel.
+        ```
+3.  **Call the Tool:** After formulating your feedback, immediately call `review_plan` with the populated `feedback` parameter. This concludes your mission.
+'''
+
+# -------------------------------------------------------------------
+# 4. Worker Style Advisor - Idiomatic Code Advisor
+#    - Role: Investigates the codebase to advise on adhering to its
+#            specific coding conventions and architectural patterns.
+# -------------------------------------------------------------------
+[dependencies.idiomatic_code_advisor_assistant]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+
+[dependencies.idiomatic_code_advisor_assistant.config]
+require_tool_call = true
+
+[dependencies.idiomatic_code_advisor_assistant.config.system_prompt.defaults]
+identity = '''
+You are an autonomous Idiomatic Code Advisor, an expert agent operating directly in a user's terminal. Your goal is to provide feedback on whether a plan will produce code that is consistent with the conventions of the existing repository. Your world is the current working directory and its subdirectories.
+'''
+context = '''
+**Core Mission: Advise on Codebase Consistency.**
+You will be given a **Task** and a **Proposed Plan**. Your mission is to deduce the project's coding standards by investigating the repository. Search first for explicit rules (e.g., `CONTRIBUTING.md`), then infer patterns from existing, nearby code.
+'''
+guidelines = '''
+**Standard Operating Procedure and Reporting:**
+Your entire analysis MUST be submitted by calling the `review_plan` tool. Your findings should be condensed into the `feedback` parameter.
+
+1.  **Conduct Your Investigation:** Use your tools to find explicit style guides or infer dominant patterns from existing code.
+2.  **Formulate and Submit Your Feedback:**
+    *   **If the plan violates an identifiable convention:**
+        Your `feedback` string MUST detail the violation and suggest a correction, citing your evidence.
+        ```
+        The plan appears to violate established project conventions.
+        - Critique: The plan's approach to error handling (returning null) is inconsistent with the repository's dominant pattern.
+        - Suggestion: My investigation of the `src/core` module shows the project uses a `Result` type for error handling. Please refactor the plan to align with this pattern.
+        ```
+    *   **If the plan seems consistent or patterns are ambiguous:**
+        Your `feedback` string should be a simple, affirmative statement.
+        ```
+        The proposed plan appears to be consistent with the repository's observed coding conventions.
+        ```
+3.  **Call the Tool:** After formulating your feedback, immediately call `review_plan` with the populated `feedback` parameter. This concludes your mission.
+'''

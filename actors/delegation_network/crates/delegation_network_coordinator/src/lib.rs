@@ -7,19 +7,14 @@ use bindings::{
     exports::wasmind::actor::actor::MessageEnvelope, wasmind::actor::agent::get_parent_scope_of,
 };
 use delegation_network_common_types::{AgentSpawned, AgentType};
-use wasmind_actor_utils::{
-    common_messages::{
-        assistant::{AddMessage, Status, StatusUpdate},
-        tools::ExecuteTool,
-    },
-    llm_client_types::{ChatMessage, SystemChatMessage},
-};
+use wasmind_actor_utils::common_messages::assistant::{Status, StatusUpdate};
 
 #[allow(warnings)]
 mod bindings;
 
 wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
+#[allow(dead_code)]
 struct StoredAgent {
     agent_type: AgentType,
     active_agents: HashSet<String>,
@@ -78,23 +73,7 @@ impl GeneratedActorTrait for DelegationNetworkCoordinator {
             }
         }
 
-        // Don't let managers use the `wait` tool if they have no acive agents to wait on
-        if let Some(execute_tool_call) = Self::parse_as::<ExecuteTool>(&message) {
-            if execute_tool_call.tool_call.function.name == "wait" {
-                if let Some(active_agent) = self.active_agents.get(&message.from_scope) {
-                    if active_agent.agent_type == AgentType::SubManager
-                        && active_agent.active_agents.is_empty()
-                    {
-                        let _ = Self::broadcast_common_message(AddMessage {
-                            agent: message.from_scope.clone(),
-                            message: ChatMessage::System(SystemChatMessage {
-                                content: "ERROR: You have no active spawned agents. Waiting will do nothing! Do ANYTHING else!".to_string(),
-                            }),
-                        });
-                    }
-                }
-            }
-        }
+        // Do something here someday?
     }
 
     fn destructor(&mut self) {}

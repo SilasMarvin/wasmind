@@ -1,0 +1,13 @@
+[package]
+name = "review_plan_common"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+readme.workspace = true
+authors.workspace = true
+
+[dependencies]
+wasmind_actor_utils.workspace = true
+serde.workspace = true

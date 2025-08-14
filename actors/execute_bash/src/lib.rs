@@ -1,5 +1,8 @@
 use wasmind_actor_utils::{
-    common_messages::tools::{ExecuteTool, UIDisplayInfo},
+    common_messages::{
+        assistant::{Section, SystemPromptContent, SystemPromptContribution},
+        tools::{ExecuteTool, UIDisplayInfo},
+    },
     messages::Message,
     tools,
 };
@@ -7,6 +10,40 @@ use wasmind_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
+const EXECUTE_BASH_USAGE_GUIDE: &str = r#"## execute_command Tool - System Commands & File Exploration
+
+**Purpose**: Execute bash commands for system tasks, builds, tests, and file exploration.
+
+**File Exploration Best Practices**:
+
+Use modern tools when exploring codebases:
+- `rg "pattern"` instead of `grep -r` for searching file contents
+- `fd filename` instead of `find -name` for locating files
+- Both respect .gitignore and are much more efficient
+
+**Common Exploration Patterns**:
+```bash
+# Find where a function is defined
+rg "def function_name"
+
+# Locate all test files
+fd test
+
+# Get project structure
+tree -L 2 -I 'node_modules|__pycache__'
+
+# Search with context
+rg "error" -C 2
+
+# Count occurrences
+rg "TODO" --count
+```
+
+**Tips**:
+- Start with `ls -la` to understand the current directory
+- Use `head`/`tail` to sample large files
+- Pipe to `wc -l` for line counts
+- Add `--type` or `-t` flags to filter by file type"#;
 
 const MAX_COMMAND_OUTPUT_CHARS: usize = 16_384;
 const TRUNCATION_HEAD_CHARS: usize = 4_000; // Keep first 4k chars
@@ -49,6 +86,20 @@ struct CommandTool {
 
 impl tools::Tool for CommandTool {
     fn new(scope: String, _config: String) -> Self {
+        // Broadcast usage guidelines for file exploration
+        bindings::wasmind::actor::messaging::broadcast(
+            SystemPromptContribution::MESSAGE_TYPE,
+            &serde_json::to_string(&SystemPromptContribution {
+                agent: scope.clone(),
+                key: "execute_bash:usage_guide".to_string(),
+                content: SystemPromptContent::Text(EXECUTE_BASH_USAGE_GUIDE.to_string()),
+                priority: 800,
+                section: Some(Section::Tools),
+            })
+            .unwrap()
+            .into_bytes(),
+        );
+        
         Self { scope }
     }
 

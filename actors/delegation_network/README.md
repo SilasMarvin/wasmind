@@ -66,6 +66,8 @@ The delegation network consists of 10 specialized actors, each designed to be si
 
 To use the delegation network, configure it in your Wasmind system:
 
+TODO: FINALIZE THIS
+
 ```toml
 starting_actors = ["delegation_network_coordinator"]
 

@@ -1,14 +1,20 @@
+use delegation_network_common_types::AgentSpawned;
+use std::collections::HashMap;
 use wasmind_actor_utils::{
     common_messages::{
+        actors::Exit,
         assistant::{
             AddMessage, RequestStatusUpdate, Section, Status, SystemPromptContent,
             SystemPromptContribution, WaitReason,
         },
-        tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
+        tools::{
+            ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, ToolsAvailable,
+            UIDisplayInfo,
+        },
     },
     llm_client_types::ChatMessage,
+    llm_client_types::{Tool, ToolFunctionDefinition},
     messages::Message,
-    tools,
 };
 
 #[allow(warnings)]
@@ -42,41 +48,28 @@ const SEND_MESSAGE_USAGE_GUIDE: &str = r#"## send_message Tool - Communicate wit
 
 **wait Parameter**: Set to `true` if you need to pause and wait for their response before continuing."#;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Clone, Debug)]
+enum AgentStatus {
+    Active,
+    Shutdown,
+}
+
+#[derive(serde::Deserialize)]
 struct SendMessageInput {
     agent_id: String,
     message: String,
     wait: Option<bool>,
 }
 
-#[derive(tools::macros::Tool)]
-#[tool(
-    name = "send_message",
-    description = "Send a message to a subordinate agent. Use this to communicate with agents that you have spawned or that are working under your management.",
-    schema = r#"{
-        "type": "object",
-        "properties": {
-            "agent_id": {
-                "type": "string",
-                "description": "The ID of the agent to send the message to"
-            },
-            "message": {
-                "type": "string",
-                "description": "The message to send"
-            },
-            "wait": {
-                "type": "boolean",
-                "description": "If `true` pause and wait for a response else continue performing actions (default `false`)"
-            }
-        },
-        "required": ["agent_id", "message"]
-    }"#
-)]
-struct SendMessageTool {
+wasmind_actor_utils::actors::macros::generate_actor_trait!();
+
+#[derive(wasmind_actor_utils::actors::macros::Actor)]
+struct SendMessageValidator {
     scope: String,
+    tracked_agents: HashMap<String, AgentStatus>,
 }
 
-impl tools::Tool for SendMessageTool {
+impl GeneratedActorTrait for SendMessageValidator {
     fn new(scope: String, _config: String) -> Self {
         // Broadcast guidance about how to use the send_message tool
         let _ = Self::broadcast_common_message(SystemPromptContribution {
@@ -87,10 +80,82 @@ impl tools::Tool for SendMessageTool {
             section: Some(Section::Tools),
         });
 
-        Self { scope }
+        // Broadcast the send_message tool to make it available
+        let send_message_tool = Tool {
+            tool_type: "function".to_string(),
+            function: ToolFunctionDefinition {
+                name: "send_message".to_string(),
+                description: "Send a message to a subordinate agent. Use this to communicate with agents that you have spawned or that are working under your management.".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "agent_id": {
+                            "type": "string",
+                            "description": "The ID of the agent to send the message to"
+                        },
+                        "message": {
+                            "type": "string",
+                            "description": "The message to send"
+                        },
+                        "wait": {
+                            "type": "boolean",
+                            "description": "If `true` pause and wait for a response else continue performing actions (default `false`)"
+                        }
+                    },
+                    "required": ["agent_id", "message"]
+                }),
+            },
+        };
+
+        let _ = Self::broadcast_common_message(ToolsAvailable {
+            tools: vec![send_message_tool],
+        });
+
+        Self {
+            scope,
+            tracked_agents: HashMap::new(),
+        }
     }
 
-    fn handle_call(&mut self, tool_call: ExecuteTool) {
+    fn handle_message(
+        &mut self,
+        message: bindings::exports::wasmind::actor::actor::MessageEnvelope,
+    ) {
+        // Handle AgentSpawned messages to track new agents
+        // Only track agents spawned from our scope
+        if message.from_scope == self.scope
+            && let Some(agent_spawned) = Self::parse_as::<AgentSpawned>(&message)
+        {
+            self.tracked_agents
+                .insert(agent_spawned.agent_id.clone(), AgentStatus::Active);
+            return;
+        }
+
+        // Handle Exit messages to mark agents as shutdown
+        // Only handle exits from agents we're tracking
+        if let Some(_exit) = Self::parse_as::<Exit>(&message) {
+            // Mark the agent that sent the exit message as shutdown
+            if let Some(status) = self.tracked_agents.get_mut(&message.from_scope) {
+                *status = AgentStatus::Shutdown;
+            }
+            return;
+        }
+
+        // Handle send_message tool calls from our own scope
+        if message.from_scope == self.scope {
+            if let Some(execute_tool) = Self::parse_as::<ExecuteTool>(&message) {
+                if execute_tool.tool_call.function.name == "send_message" {
+                    self.handle_send_message_tool_call(execute_tool);
+                }
+            }
+        }
+    }
+
+    fn destructor(&mut self) {}
+}
+
+impl SendMessageValidator {
+    fn handle_send_message_tool_call(&mut self, tool_call: ExecuteTool) {
         let params: SendMessageInput =
             match serde_json::from_str(&tool_call.tool_call.function.arguments) {
                 Ok(params) => params,
@@ -115,6 +180,58 @@ impl tools::Tool for SendMessageTool {
                 }
             };
 
+        // Check if agent exists and its status
+        match self.tracked_agents.get(&params.agent_id) {
+            None => {
+                let error_result = ToolCallResult {
+                    content: format!(
+                        "Agent '{}' does not exist. You can only send messages to agents you have spawned.",
+                        params.agent_id
+                    ),
+                    ui_display_info: UIDisplayInfo {
+                        collapsed: format!("Agent '{}' does not exist", params.agent_id),
+                        expanded: Some(format!(
+                            "Error: Agent does not exist\n\nAgent ID: {}\n\nYou can only send messages to agents that you have spawned using the spawn_agent tool.",
+                            params.agent_id
+                        )),
+                    },
+                };
+                self.send_error_result(
+                    &tool_call.tool_call.id,
+                    &tool_call.originating_request_id,
+                    error_result,
+                );
+                return;
+            }
+            Some(AgentStatus::Shutdown) => {
+                let error_result = ToolCallResult {
+                    content: format!(
+                        "Agent '{}' is shutdown and you can no longer message it. The agent has completed its task or been terminated.",
+                        params.agent_id
+                    ),
+                    ui_display_info: UIDisplayInfo {
+                        collapsed: format!("Agent '{}' is shutdown", params.agent_id),
+                        expanded: Some(format!(
+                            "Error: Agent is shutdown\n\nAgent ID: {}\n\nThis agent has completed its task or been terminated. You cannot send messages to shutdown agents.",
+                            params.agent_id
+                        )),
+                    },
+                };
+                self.send_error_result(
+                    &tool_call.tool_call.id,
+                    &tool_call.originating_request_id,
+                    error_result,
+                );
+                return;
+            }
+            Some(AgentStatus::Active) => {
+                // Agent exists and is active, proceed with sending the message
+                self.send_message_to_agent(params, tool_call);
+            }
+        }
+    }
+
+    fn send_message_to_agent(&self, params: SendMessageInput, tool_call: ExecuteTool) {
         let add_message = AddMessage {
             agent: params.agent_id.clone(),
             message: ChatMessage::system(&params.message),
@@ -174,9 +291,7 @@ impl tools::Tool for SendMessageTool {
             result,
         );
     }
-}
 
-impl SendMessageTool {
     fn send_error_result(
         &self,
         tool_call_id: &str,
@@ -215,3 +330,4 @@ impl SendMessageTool {
         );
     }
 }
+

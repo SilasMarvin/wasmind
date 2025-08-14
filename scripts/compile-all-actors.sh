@@ -29,6 +29,9 @@ compile_actor() {
     # Change to actor directory
     cd "$actor_path"
     
+    # Run cargo clean first
+    cargo clean >/dev/null 2>&1
+    
     # Capture stderr to temporary file
     TEMP_ERR=$(mktemp)
     
@@ -58,6 +61,12 @@ echo -e "\n${BOLD}Code with experts actors:${NC}"
 compile_actor "$ACTORS_DIR/code_with_experts/crates/approve" "approve"
 compile_actor "$ACTORS_DIR/code_with_experts/crates/file_interaction_with_approval" "file_interaction_with_approval"
 compile_actor "$ACTORS_DIR/code_with_experts/crates/request_changes" "request_changes"
+
+# Compile review_plan actors
+echo -e "\n${BOLD}Review plan actors:${NC}"
+compile_actor "$ACTORS_DIR/review_plan/crates/review_plan_common" "review_plan_common"
+compile_actor "$ACTORS_DIR/review_plan/crates/request_plan_review" "request_plan_review"
+compile_actor "$ACTORS_DIR/review_plan/crates/review_plan" "review_plan"
 
 # Compile delegation_network actors
 echo -e "\n${BOLD}Delegation network actors:${NC}"
