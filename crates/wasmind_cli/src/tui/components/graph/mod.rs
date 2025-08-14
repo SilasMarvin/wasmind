@@ -12,7 +12,10 @@ use tuirealm::{
 use wasmind::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message_as};
 use wasmind_actor_utils::common_messages::{
     actors::{AgentSpawned, Exit},
-    assistant::{self, Request as AssistantRequest, Status as AgentStatus, StatusUpdate},
+    assistant::{
+        self, Request as AssistantRequest, Response as AssistantResponse, Status as AgentStatus,
+        StatusUpdate,
+    },
     tools::ExecuteTool,
 };
 
@@ -810,6 +813,23 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                 else if parse_common_message_as::<ExecuteTool>(&envelope).is_some() {
                     if let Some(root) = &mut self.component.root_node {
                         let metrics = AgentMetrics::with_tool_call();
+                        self.component.stats.aggregated_agent_metrics += metrics;
+                        {
+                            let scope = &envelope.from_scope;
+                            root.increment_metrics(scope, metrics);
+                        }
+                        None
+                    } else {
+                        None
+                    }
+                }
+                // Handle AssistantResponse messages
+                else if let Some(response) =
+                    parse_common_message_as::<AssistantResponse>(&envelope)
+                {
+                    if let Some(root) = &mut self.component.root_node {
+                        let tokens = response.usage.total_tokens as u64;
+                        let metrics = AgentMetrics::with_tokens(tokens);
                         self.component.stats.aggregated_agent_metrics += metrics;
                         {
                             let scope = &envelope.from_scope;

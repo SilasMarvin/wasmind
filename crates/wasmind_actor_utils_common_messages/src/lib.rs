@@ -51,6 +51,7 @@ pub mod actors {
 pub mod assistant {
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
+    use wasmind_llm_types::ChatMessage;
 
     use super::{Message, Scope, tools};
 
@@ -166,6 +167,7 @@ pub mod assistant {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct Response {
         pub message: wasmind_llm_types::AssistantChatMessageWithOriginatingRequestId,
+        pub usage: wasmind_llm_types::Usage,
     }
 
     impl Message for Response {
@@ -295,6 +297,13 @@ pub mod assistant {
 
     impl Message for SystemPromptContribution {
         const MESSAGE_TYPE: &str = "wasmind.common.assistant.SystemPromptContribution";
+    }
+
+    // wasmind.common.assistant.CompactConversation
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CompactConversation {
+        pub agent: Scope,
+        pub messages: Vec<ChatMessage>,
     }
 }
 

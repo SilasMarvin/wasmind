@@ -46,6 +46,13 @@ impl AgentMetrics {
             ..Default::default()
         }
     }
+
+    pub fn with_tokens(tokens: u64) -> Self {
+        Self {
+            total_tokens_used: tokens,
+            ..Default::default()
+        }
+    }
 }
 
 impl std::ops::AddAssign<AgentMetrics> for AgentMetrics {
@@ -226,10 +233,10 @@ impl Agent {
 
             // Line 4: All metrics in 4-column layout
             content_lines.push(Line::from(vec![
-                Span::raw(format!("Ctx:{:3} ", self.context_size)),
-                Span::raw(format!("Reqs:{:3} ", self.metrics.completion_requests_sent)),
-                Span::raw(format!("Tools:{:3} ", self.metrics.tools_called)),
-                Span::raw(format!("Tok:{:4}", self.metrics.total_tokens_used)),
+                Span::raw(format!("Ctx:{:5} ", self.context_size)),
+                Span::raw(format!("Reqs:{:5} ", self.metrics.completion_requests_sent)),
+                Span::raw(format!("Tools:{:5} ", self.metrics.tools_called)),
+                Span::raw(format!("Tok:{:7}", self.metrics.total_tokens_used)),
             ]));
 
             // Calculate which lines to show based on trim_top and available height

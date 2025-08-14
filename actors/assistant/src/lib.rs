@@ -136,6 +136,7 @@ impl Assistant {
                                     assistant_msg.clone(),
                                     request_id,
                                 ),
+                                usage: response.usage.clone(),
                             });
                         }
                         _ => {

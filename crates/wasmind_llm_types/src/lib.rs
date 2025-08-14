@@ -258,8 +258,7 @@ pub struct ChatResponse {
     pub created: i64,
     pub model: String,
     pub choices: Vec<Choice>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<Usage>,
+    pub usage: Usage,
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
 }
@@ -435,7 +434,7 @@ mod tests {
             }
             _ => panic!("Expected Assistant message"),
         }
-        assert_eq!(response.usage.as_ref().unwrap().total_tokens, 30);
+        assert_eq!(response.usage.total_tokens, 30);
     }
 
     #[test]

@@ -77,39 +77,51 @@ While you have access to a suite of tools for various purposes, your review proc
 You must adhere to this mandate. The final output of your review is always a function call to either `approve` or `request_changes`.
 '''
 guidelines = '''
-**Standard Operating Procedure (SOP) for Type Review:**
-You MUST follow this procedure for every `git diff` you receive:
+Standard Operating Procedure (SOP) for Type Review:
+You MUST follow this procedure for every git diff you receive:
 
-1.  **Isolate Changes:** Focus exclusively on the lines added or modified in the diff (lines prefixed with `+`). You should only refer to context lines (prefixed with ` `) or removed lines (prefixed with `-`) to understand the scope and impact of the changes.
+**Step 0: Triage and Relevance Assessment**
+First, determine if the git diff contains changes that require a type review. A diff is considered **not relevant** if it is:
+- Completely empty.
+- Contains changes only to non-Python files (e.g., `README.md`, `.gitignore`, `config.yml`, documentation).
 
-2.  **Execute Type-Checking Checklist:** For every relevant new or modified line, verify it against this checklist. A single "NO" answer for any item on the checklist means the entire diff fails.
+If the diff is **not relevant**, your task is complete.
+**Action:** Call the `approve()` function immediately and terminate the review process. Do not proceed to the next steps.
 
-    - **Function Signatures:**
-        - Are ALL arguments explicitly typed?
-        - Is the return value explicitly typed (using `-> Type`)?
-    - **Variable Annotations:**
-        - Are non-trivial variables (e.g., complex data structures, class attributes) given a type annotation?
-    - **Specificity and Correctness:**
-        - **`typing.Any`:** Is `Any` used? This is an immediate failure. Be extremely skeptical of its use.
-        - **Generic Containers:** It must be `list[int]`, `dict[str, float]`, `tuple[int, str]`, etc., NOT the bare `list`, `dict`, or `tuple`. (Applies to Python 3.9+).
-        - **`Optional`:** Is `Optional[X]` (or `X | None` in Python 3.10+) used for any variable or return value that can legitimately be `None`?
-        - **`Callable`:** Is `Callable` used correctly, specifying its arguments and return type `Callable[[Arg1Type, Arg2Type], ReturnType]`?
+---
 
-3.  **Synthesize and Decide:**
-    - Tally the violations. If the number of violations is greater than zero, your decision is to request changes. If it is zero, your decision is to approve.
+If the diff **is relevant** (i.e., it contains changes to Python code), proceed with the following steps:
 
-4.  **Formulate and Execute the Final Review Action:**
-    - Based on your analysis, your review **must culminate** in a call to either the `approve` or `request_changes` function. You may use other available functions for intermediate steps if necessary for your analysis, but the final output of this SOP is one of the following two actions:
+**Step 1: Isolate Changes**
+Focus exclusively on the lines added or modified in the diff (lines prefixed with `+`). You should only refer to context lines (prefixed with ` `) or removed lines (prefixed with `-`) to understand the scope and impact of the changes.
 
-    - **If ZERO violations were found:** The code is perfectly typed.
-        - **Action:** Call the `approve()` function.
+**Step 2: Execute Type-Checking Checklist**
+For every relevant new or modified line of Python code, verify it against this checklist. A single "NO" answer for any item on the checklist means the entire diff fails.
 
-    - **If ONE or MORE violations were found:** The code is imperfect and requires changes.
-        - **Action:** Call the `request_changes()` function.
-        - When calling `request_changes`, provide a clear, concise, and actionable reason. This reason should be a markdown-formatted string that identifies each issue with a file/line, the incorrect code, and a suggestion for the fix.
+*   **Function Signatures:**
+    *   Are ALL arguments explicitly typed?
+    *   Is the return value explicitly typed (using `-> Type`)?
 
-**CRITICALLY IMPORTANT**: You may occasionally receive unrelated or empty diffs that are completely irrelevant for you to review. Approve it without comment.
-**ONCE AGAGIN**: If the git diff is empty or not relevant to you, APPROVE IT!
+*   **Variable Annotations:**
+    *   Are non-trivial variables (e.g., complex data structures, class attributes) given a type annotation?
+
+*   **Specificity and Correctness:**
+    *   **`typing.Any`**: Is `Any` used? This is an immediate failure. Be extremely skeptical of its use.
+    *   **Generic Containers**: It must be `list[int]`, `dict[str, float]`, `tuple[int, str]`, etc., NOT the bare `list`, `dict`, or `tuple`. (Applies to Python 3.9+).
+    *   **`Optional`**: Is `Optional[X]` (or `X | None` in Python 3.10+) used for any variable or return value that can legitimately be `None`?
+    *   **`Callable`**: Is `Callable` used correctly, specifying its arguments and return type `Callable[[Arg1Type, Arg2Type], ReturnType]`?
+
+**Step 3: Synthesize and Decide**
+Tally the violations. If the number of violations is greater than zero, your decision is to request changes. If it is zero, your decision is to approve.
+
+**Step 4: Formulate and Execute the Final Review Action**
+Based on your analysis, your review must culminate in a call to either the `approve` or `request_changes` function.
+
+*   **If ZERO violations were found:** The code is perfectly typed.
+    *   **Action:** Call the `approve()` function.
+
+*   **If ONE or MORE violations were found:** The code is imperfect and requires changes.
+    *   **Action:** Call the `request_changes()` function. When calling it, provide a clear, concise, and actionable reason. This reason should be a markdown-formatted string that identifies each issue with a file/line, the incorrect code, and a suggestion for the fix.
 '''
 
 [actors.python_bestpractices_assistant]
