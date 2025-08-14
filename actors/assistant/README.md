@@ -149,6 +149,15 @@ InterruptAndForceStatus {
 }
 ```
 
+#### `assistant::CompactedConversation`
+The conversation has been compacted. Replace the old chat message history with the new
+```rust
+CompactedConversation {
+    agent: Scope,
+    messages: Vec<ChatMessageWithRequestId>,
+}
+```
+
 ### Outgoing Messages
 
 #### `assistant::Response`

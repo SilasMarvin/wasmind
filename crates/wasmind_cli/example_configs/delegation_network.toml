@@ -36,6 +36,10 @@ model_name = "gpt-oss-120b"
 [actor_overrides.check_health_assistant.config]
 model_name = "gpt-oss-120b"
 
+[actor_overrides.conversation_compaction.config]
+max_tokens = 50000
+model_name = "gpt-oss-120b"
+
 ##############################
 # LiteLLM Config #############
 ##############################

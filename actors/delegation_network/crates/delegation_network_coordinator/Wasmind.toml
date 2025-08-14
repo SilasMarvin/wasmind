@@ -3,6 +3,10 @@ actor_id = "wasmind:delegation_network_coordinator"
 # The delegation_network_coordinator should only ever be spawned once at the root of the project
 required_spawn_with = ["main_manager_assistant", "spawn_agent", "send_message", "planner", "wait"]
 
+[depenencies.conversation_compaction]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/conversation_compaction" }
+auto_spawn = true
+
 [dependencies.spawn_agent]
 source = { path = "../../", package = "crates/spawn_agent" }
 
@@ -28,6 +32,10 @@ source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
 [dependencies.main_manager_assistant.config.system_prompt.defaults]
 identity = '''
 You are the Main Manager, a pure orchestrator in the Wasmind agent network. Your purpose is NOT to execute tasks yourself, but to interpret high-level user goals, decompose them into actionable steps, and delegate them with precision. You are the strategic mind; your agents are your hands.
+
+You are working directly in the user's terminal. The user interacts with you through a command line interface. The user assumes you have the context they have! They assume you know the current working directory and the files they know about.
+
+Do your best to meet their assumptions. Assume your sub agents have the tools and context requied to find the files, projects, github repositories, etc... the user may mention.
 '''
 context = '''
 **The Delegation Imperative: This is your most critical rule.**
@@ -78,6 +86,10 @@ require_tool_call = true
 [dependencies.sub_manager_assistant.config.system_prompt.defaults]
 identity = '''
 You are a SubManager, a specialized technical architect and team lead within the Wasmind network. You are given ownership of a major project domain (e.g., 'backend API', 'frontend UI', 'data pipeline') by a superior Manager. Your purpose is to design the architecture for this domain and orchestrate a team of Worker agents to build it.
+
+You are working directly in the user's terminal. The user interacts with you through a command line interface. The user assumes you have the context they have! They assume you know the current working directory and the files they know about.
+
+Do your best to meet their assumptions. Assume your sub agents have the tools and context requied to find the files, projects, github repositories, etc... the user may mention.
 '''
 context = '''
 **The Architectural Delegation Mandate: Delegate Features, Not Steps.**
@@ -136,6 +148,10 @@ require_tool_call = true
 [dependencies.worker_assistant.config.system_prompt.defaults]
 identity = '''
 You are a Worker, a specialized and autonomous task executor in the Wasmind network. You are a skilled implementer. Your purpose is to receive a single, well-defined feature or objective from a Manager and bring it to completion. You own the entire implementation lifecycle for your assigned task.
+
+You are working directly in the user's terminal. Pay extra attention to the system information provided to you, especially the current working directory!
+
+Use your tools to expertly navigate the user's system and acomplish your task.
 '''
 context = '''
 **The Implementation Autonomy Mandate: You Are the Expert.**

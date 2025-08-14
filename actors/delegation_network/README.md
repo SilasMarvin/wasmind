@@ -2,7 +2,7 @@
 
 *A comprehensive example system demonstrating hierarchical AI agent coordination with Wasmind*
 
-The Delegation Network is a collection of actors that enables sophisticated multi-agent workflows where AI agents can spawn subordinates, delegate tasks, coordinate work, and manage complex projects autonomously. This system showcases how simple, self-contained actors can combine to create powerful coordination capabilities.
+The Delegation Network is a collection of actors that enables multi-agent workflows where AI agents can spawn subordinates, delegate tasks, coordinate work, and manage complex projects autonomously. This system showcases how simple, self-contained actors can combine to create powerful coordination capabilities.
 
 ## Overview
 
@@ -27,7 +27,7 @@ The delegation network supports three types of agents in a hierarchical structur
 
 ### Hierarchy Management
 
-The hierarchy starts with a single **Root Manager** (the assistant you interact with). This Root Manager can spawn subordinates - either **Workers** for direct task execution or **SubManagers** for coordinating specific project domains. SubManagers can further spawn their own Workers, creating a tree-like structure with clear delegation chains. Wasmind's scope system naturally manages these relationships, with each agent having a unique scope that identifies its position in the hierarchy.
+The hierarchy starts with a single **Root Manager** (the initial actor you interact with). This Root Manager can spawn subordinates - either **Workers** for direct task execution or **SubManagers** for coordinating specific project domains. SubManagers can further spawn their own Workers or more SubMangers, creating a tree-like structure with clear delegation chains. Wasmind's scope system naturally manages these relationships, with each agent having a unique scope that identifies its position in the hierarchy.
 
 ### Coordination
 
@@ -61,8 +61,6 @@ The delegation network consists of 10 specialized actors, each designed to be si
 
 - **`delegation_network_coordinator`** - Tracks agent relationships and prevents invalid operations
 - **`check_health`** - Monitors agent conversations and spawns health analyzers when needed
-
-Each actor is relatively simple (~50-200 lines of core logic), demonstrating how complex systems can emerge from simple, composable building blocks using Wasmind's actor model.
 
 ## Usage
 
@@ -111,7 +109,7 @@ For more information about Wasmind configuration options, see the [Configuration
 
 ### Complete Setup
 
-The network automatically handles tool discovery and coordination through Wasmind's broadcasting system. For complete working examples including LiteLLM setup and other infrastructure, see the examples directory (coming soon).
+The network automatically handles tool discovery and coordination through Wasmind's broadcasting system. For complete working examples including LiteLLM setup and other infrastructure, see the [examples directory](https://github.com/SilasMarvin/wasmind/crates/wasmind_cli/examples).
 
 ## Example Workflows
 
