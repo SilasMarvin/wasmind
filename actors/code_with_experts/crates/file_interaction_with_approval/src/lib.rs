@@ -363,7 +363,7 @@ Current state of all read and edited files. This section updates automatically a
                 status: ToolCallStatus::Received {
                     display_info: UIDisplayInfo {
                         collapsed: format!(
-                            "Waiting for {}/{} experts",
+                            "Waiting for experts: {}/{}",
                             active_edit_file_call
                                 .approver_responses
                                 .values()

@@ -8,16 +8,13 @@ use review_plan_common::PlanReviewResponse;
 use serde::Deserialize;
 use wasmind_actor_utils::{
     common_messages::{
-        assistant::{
-            AddMessage, AgentTaskResponse, RequestStatusUpdate, Section, Status,
-            SystemPromptContent, SystemPromptContribution,
-        },
+        assistant::{AddMessage, Section, SystemPromptContent, SystemPromptContribution},
         tools::{
             ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, ToolsAvailable,
             UIDisplayInfo,
         },
     },
-    llm_client_types::{ChatMessage, SystemChatMessage, UserChatMessage},
+    llm_client_types::{ChatMessage, UserChatMessage},
 };
 
 #[allow(warnings)]
@@ -79,7 +76,8 @@ const REQUEST_PLAN_REVIEW_USAGE_GUIDE: &str = r#"## request_plan_review Tool - G
 Remember: A few minutes of review can save hours of fixing mistakes!"#;
 
 const REQUEST_PLAN_REVIEW_NAME: &str = "request_plan_review";
-const REQUEST_PLAN_REVIEW_DESCRIPTION: &str = "Submit a task and plan for review by expert reviewers before execution";
+const REQUEST_PLAN_REVIEW_DESCRIPTION: &str =
+    "Submit a task and plan for review by expert reviewers before execution";
 const REQUEST_PLAN_REVIEW_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
@@ -296,13 +294,10 @@ impl RequestPlanReviewActor {
                 status: ToolCallStatus::Received {
                     display_info: UIDisplayInfo {
                         collapsed: format!(
-                            "Waiting for reviews ({}/{})",
+                            "Waiting for reviews: {}/{}",
                             completed_reviews, total_reviews
                         ),
-                        expanded: Some(format!(
-                            "Plan review in progress. Received {} of {} required reviews.",
-                            completed_reviews, total_reviews
-                        )),
+                        expanded: None,
                     },
                 },
             });
@@ -329,4 +324,3 @@ impl RequestPlanReviewActor {
         let _ = Self::broadcast_common_message(update);
     }
 }
-
