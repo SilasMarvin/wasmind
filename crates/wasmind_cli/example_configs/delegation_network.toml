@@ -25,32 +25,32 @@ starting_actors = ["delegation_network_coordinator"]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/delegation_network", package = "crates/delegation_network_coordinator" }
 
 [actor_overrides.main_manager_assistant.config]
-model_name = "gemini-2.5-flash"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.sub_manager_assistant.config]
-model_name = "gemini-2.5-flash"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.worker_assistant.config]
-model_name = "gemini-2.5-flash"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.check_health_assistant.config]
-model_name = "gemini-2.5-flash"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.manager_perspective_reviewer_assistant.config]
-model_name = "gemini-2.5-flash"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.strategic_plan_advisor_assistant.config]
-model_name = "gemini-2.5-flash"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.code_reuse_advisor_assistant.config]
-model_name = "gemini-2.5-flash"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.idiomatic_code_advisor_assistant.config]
-model_name = "gemini-2.5-flash"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.conversation_compaction.config]
 token_threshold = 50000
-model_name = "gemini-2.5-flash"
+model_name = "qwen/qwen3-coder"
 
 ##############################
 # LiteLLM Config #############
@@ -74,4 +74,11 @@ model_name = "gemini-2.5-flash"
 
 [litellm.models.litellm_params]
 model = "openrouter/google/gemini-2.5-flash"
+api_key = "os.environ/OPENROUTER_API_KEY"
+
+[[litellm.models]]
+model_name = "qwen/qwen3-coder"
+
+[litellm.models.litellm_params]
+model = "openrouter/qwen/qwen3-coder"
 api_key = "os.environ/OPENROUTER_API_KEY"

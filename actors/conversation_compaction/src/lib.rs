@@ -114,7 +114,7 @@ Yes, the United flight for $450 is perfect. Let's lock that in as the plan. Now,
 
 #[derive(Deserialize)]
 struct ConversationCompactionConfig {
-    token_threshold: u64,
+    token_threshold: i32,
     model_name: String,
 }
 
@@ -125,7 +125,6 @@ pub struct ConversationCompactionActor {
     scope: String,
     base_url: Option<String>,
     last_chat_state: Option<ChatState>,
-    total_tokens: u64,
     config: ConversationCompactionConfig,
 }
 
@@ -146,7 +145,6 @@ impl GeneratedActorTrait for ConversationCompactionActor {
             scope,
             base_url: None,
             last_chat_state: None,
-            total_tokens: 0,
             config,
         }
     }
@@ -171,10 +169,7 @@ impl GeneratedActorTrait for ConversationCompactionActor {
 
         // Monitor token usage from responses
         if let Some(response) = Self::parse_as::<AssistantResponse>(&message) {
-            self.total_tokens += response.usage.total_tokens as u64;
-
-            // Check if we need to compact
-            if self.total_tokens >= self.config.token_threshold {
+            if response.usage.total_tokens >= self.config.token_threshold {
                 self.trigger_compaction();
             }
         }
@@ -227,9 +222,6 @@ impl ConversationCompactionActor {
                     agent: self.scope.clone(),
                     messages: vec![ChatMessageWithRequestId::user(format!("Below is the current state from the last task you were executing before your history was compacted:\n\n<current_state_summary>{}</current_state_summary>\n\nContinue where you left off", compacted_summary))],
                 });
-
-                // Reset token counter
-                self.total_tokens = 0;
 
                 logger::log(
                     logger::LogLevel::Info,

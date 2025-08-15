@@ -240,9 +240,6 @@ You MUST follow this procedure for every objective you receive:
 '''
 
 # --- Worker Execution Tools ---
-[dependencies.worker_execute_bash]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/execute_bash" }
-
 [dependencies.worker_file_interaction]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction", package = "crates/file_interaction_actor" }
 
@@ -269,7 +266,7 @@ source = { path = "../../", package = "crates/spawn_agent" }
 
 [dependencies.spawn_agent.config]
 sub_manager_actors = ["sub_manager_assistant", "spawn_agent", "send_message", "send_manager_message", "wait", "check_health", "complete", "sub_manager_request_plan_review", "conversation_compation"]
-worker_actors = ["worker_assistant", "worker_execute_bash", "worker_file_interaction", "complete", "send_manager_message", "check_health", "worker_request_plan_review", "conversation_compaction"]
+worker_actors = ["worker_assistant", "execute_bash", "worker_file_interaction", "complete", "send_manager_message", "check_health", "worker_request_plan_review", "conversation_compaction"]
 
 # --- Communication Tools ---
 [dependencies.send_message]
@@ -300,6 +297,10 @@ allow_edits = false
 # --- Completion Tool ---
 [dependencies.complete]
 source = { path = "../../", package = "crates/complete" }
+
+# --- Execute Bash Tool ---
+[dependencies.execute_bash]
+source = { path = "/Users/silasmarvin/github/wasmind/actors/execute_bash" }
 
 # ===================================================================
 # ==                5. UTILITY & SUPPORT ACTORS                  ==

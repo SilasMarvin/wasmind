@@ -276,10 +276,13 @@ impl SystemPromptRenderer {
         // Group contributions by section
         let mut sections: HashMap<Section, Vec<String>> = HashMap::new();
         for contribution in rendered_contributions {
-            sections
-                .entry(contribution.section)
-                .or_insert_with(Vec::new)
-                .push(contribution.content);
+            let trimmed_content = contribution.content.trim();
+            if !trimmed_content.is_empty() {
+                sections
+                    .entry(contribution.section)
+                    .or_insert_with(Vec::new)
+                    .push(trimmed_content.to_string());
+            }
         }
 
         // Sort sections by enum ordering (Identity, Context, etc., then Custom alphabetically)
@@ -579,6 +582,53 @@ mod tests {
 
         assert!(result.contains("For this agent"));
         assert!(!result.contains("For other agent"));
+    }
+
+    #[test]
+    fn test_whitespace_trimming() {
+        let mut renderer =
+            SystemPromptRenderer::new_for_testing(SystemPromptConfig::default(), test_agent_scope());
+
+        // Test contribution with excessive whitespace
+        let whitespace_contribution = SystemPromptContribution {
+            agent: test_agent_scope(),
+            key: "test:whitespace".to_string(),
+            content: SystemPromptContent::Text("\n\n\n\n\nContent with lots of whitespace\n\n\n\n\n".to_string()),
+            priority: 100,
+            section: Some(Section::Context),
+        };
+
+        // Test contribution that is only whitespace (should be excluded)
+        let only_whitespace_contribution = SystemPromptContribution {
+            agent: test_agent_scope(),
+            key: "test:only_whitespace".to_string(),
+            content: SystemPromptContent::Text("\n\n\n\n\n".to_string()),
+            priority: 100,
+            section: Some(Section::Context),
+        };
+
+        renderer.add_contribution(whitespace_contribution).unwrap();
+        renderer.add_contribution(only_whitespace_contribution).unwrap();
+
+        let result = renderer.render().unwrap();
+
+        // Should contain the trimmed content without excessive whitespace
+        assert!(result.contains("Content with lots of whitespace"));
+        
+        // Should not have trailing whitespace before closing tag
+        assert!(!result.contains("Content with lots of whitespace\n\n\n\n\n</context>"));
+        
+        // Should not have leading whitespace after opening tag
+        assert!(!result.contains("<context>\n\n\n\n\nContent with lots of whitespace"));
+        
+        // The only-whitespace contribution should not appear at all
+        let context_section = result.find("<context>").unwrap();
+        let context_end = result.find("</context>").unwrap();
+        let context_content = &result[context_section..context_end];
+        
+        // Should only contain the actual content, not empty lines from whitespace-only contribution
+        let content_lines: Vec<&str> = context_content.lines().filter(|line| !line.trim().is_empty()).collect();
+        assert_eq!(content_lines.len(), 2); // <context> and actual content line
     }
 
     // Note: test_system_context_variables removed because it requires WebAssembly host functions

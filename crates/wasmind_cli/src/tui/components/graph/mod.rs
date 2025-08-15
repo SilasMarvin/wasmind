@@ -13,7 +13,7 @@ use wasmind::{actors::MessageEnvelope, scope::Scope, utils::parse_common_message
 use wasmind_actor_utils::common_messages::{
     actors::{AgentSpawned, Exit},
     assistant::{
-        self, Request as AssistantRequest, Response as AssistantResponse, Status as AgentStatus,
+        Request as AssistantRequest, Response as AssistantResponse, Status as AgentStatus,
         StatusUpdate,
     },
     tools::ExecuteTool,
@@ -269,8 +269,11 @@ impl AgentNode {
                 }
             } else {
                 // The removed node wasn't selected, so no selection change needed
-                // Return the currently selected node's scope if any
-                return self.find_selected_scope();
+                // Return the currently selected node's scope if any, otherwise return parent scope to indicate success
+                return Some(
+                    self.find_selected_scope()
+                        .unwrap_or_else(|| self.scope().clone()),
+                );
             }
         }
 
@@ -906,20 +909,8 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                 {
                     if let Some(root) = &mut self.component.root_node {
                         let agent_scope = &envelope.from_scope;
-                        if matches!(agent_status_update.status, assistant::Status::Done { .. }) {
-                            if let Some(scope) = root.remove(agent_scope) {
-                                // Center on the newly selected node after removal
-                                self.component.center_on_selected();
-                                Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
-                                    scope.to_string(),
-                                )))
-                            } else {
-                                None
-                            }
-                        } else {
-                            root.set_status(agent_scope, &agent_status_update.status);
-                            None
-                        }
+                        root.set_status(agent_scope, &agent_status_update.status);
+                        None
                     } else {
                         None
                     }
@@ -948,5 +939,85 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
             }
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wasmind::scope::Scope;
+
+    fn create_test_agent_node(id: &str, name: &str) -> AgentNode {
+        let scope: Scope = id.to_string();
+        let component = AgentComponent::new(scope, name.to_string(), vec![], false);
+        AgentNode::new(component)
+    }
+
+    #[test]
+    fn test_remove_child_should_not_remove_siblings() {
+        // Create test tree structure:
+        // Root
+        // ├── Child A
+        // │   ├── Grandchild A1
+        // │   └── Grandchild A2
+        // └── Child B
+
+        let mut root = create_test_agent_node("root", "Root Agent");
+
+        let mut child_a = create_test_agent_node("root.child_a", "Child A");
+        let grandchild_a1 = create_test_agent_node("root.child_a.grandchild_a1", "Grandchild A1");
+        let grandchild_a2 = create_test_agent_node("root.child_a.grandchild_a2", "Grandchild A2");
+
+        let child_b = create_test_agent_node("root.child_b", "Child B");
+
+        // Build the tree
+        child_a.spawned_agents.push(grandchild_a1);
+        child_a.spawned_agents.push(grandchild_a2);
+        root.spawned_agents.push(child_a);
+        root.spawned_agents.push(child_b);
+
+        // Verify initial structure
+        assert_eq!(root.spawned_agents.len(), 2); // Child A and Child B
+        assert_eq!(root.spawned_agents[0].spawned_agents.len(), 2); // Grandchild A1 and A2
+        assert_eq!(root.spawned_agents[1].spawned_agents.len(), 0); // Child B has no children
+
+        // Remove Grandchild A1
+        let grandchild_a1_scope: Scope = "root.child_a.grandchild_a1".to_string();
+        let result = root.remove(&grandchild_a1_scope);
+
+        // Assert that the removal succeeded
+        assert!(
+            result.is_some(),
+            "Remove should return a new selection scope"
+        );
+
+        // Assert tree structure after removal
+        assert_eq!(
+            root.spawned_agents.len(),
+            2,
+            "Root should still have 2 children (Child A and Child B)"
+        );
+        assert_eq!(
+            root.spawned_agents[0].spawned_agents.len(),
+            1,
+            "Child A should have 1 child remaining (Grandchild A2)"
+        );
+        assert_eq!(
+            root.spawned_agents[1].spawned_agents.len(),
+            0,
+            "Child B should still have no children"
+        );
+
+        // Verify that Grandchild A2 is still there
+        let remaining_grandchild_scope = &root.spawned_agents[0].spawned_agents[0].scope();
+        assert_eq!(
+            remaining_grandchild_scope.to_string(),
+            "root.child_a.grandchild_a2",
+            "The remaining grandchild should be A2, not A1"
+        );
+
+        // Verify Child A and Child B are still there
+        assert_eq!(root.spawned_agents[0].scope().to_string(), "root.child_a");
+        assert_eq!(root.spawned_agents[1].scope().to_string(), "root.child_b");
     }
 }

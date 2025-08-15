@@ -43,11 +43,15 @@ rg "TODO" --count
 - Start with `ls -la` to understand the current directory
 - Use `head`/`tail` to sample large files
 - Pipe to `wc -l` for line counts
-- Add `--type` or `-t` flags to filter by file type"#;
+- Add `--type` or `-t` flags to filter by file type"
 
-const MAX_COMMAND_OUTPUT_CHARS: usize = 16_384;
-const TRUNCATION_HEAD_CHARS: usize = 4_000; // Keep first 4k chars
-const TRUNCATION_TAIL_CHARS: usize = 4_000; // Keep last 4k chars
+**Trunaction**:
+- Large outputs are automatically truncated!
+- Pipe output into `rg`, `head`, `tail`, etc... to locate specific context"#;
+
+const MAX_COMMAND_OUTPUT_CHARS: usize = 2_000;
+const TRUNCATION_HEAD_CHARS: usize = 1_000;
+const TRUNCATION_TAIL_CHARS: usize = 1_000;
 
 #[derive(tools::macros::Tool)]
 #[tool(
@@ -99,25 +103,34 @@ impl tools::Tool for CommandTool {
             .unwrap()
             .into_bytes(),
         );
-        
+
         Self { scope }
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
-        let params: CommandParams =
-            match serde_json::from_str(&tool_call.tool_call.function.arguments) {
-                Ok(params) => params,
-                Err(e) => {
-                    let error_msg = format!("Failed to parse command parameters: {}", e);
-                    let ui_display = UIDisplayInfo {
-                        collapsed: "Parameters: Invalid format".to_string(),
-                        expanded: Some(format!("Command: execute_command\nError: Failed to parse parameters\n\nDetails: {}", e)),
-                    };
+        let params: CommandParams = match serde_json::from_str(
+            &tool_call.tool_call.function.arguments,
+        ) {
+            Ok(params) => params,
+            Err(e) => {
+                let error_msg = format!("Failed to parse command parameters: {}", e);
+                let ui_display = UIDisplayInfo {
+                    collapsed: "Parameters: Invalid format".to_string(),
+                    expanded: Some(format!(
+                        "Command: execute_command\nError: Failed to parse parameters\n\nDetails: {}",
+                        e
+                    )),
+                };
 
-                    self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_msg, ui_display);
-                    return;
-                }
-            };
+                self.send_error_result(
+                    &tool_call.tool_call.id,
+                    &tool_call.originating_request_id,
+                    error_msg,
+                    ui_display,
+                );
+                return;
+            }
+        };
 
         // Clamp timeout between 1-600 seconds for safety
         let timeout = params.timeout.unwrap_or(30).min(600).max(1);
@@ -133,7 +146,13 @@ impl tools::Tool for CommandTool {
         };
 
         // Execute the command directly - no processing state in simplified version
-        self.execute_command(&params, &full_command, timeout, &tool_call.tool_call.id, &tool_call.originating_request_id);
+        self.execute_command(
+            &params,
+            &full_command,
+            timeout,
+            &tool_call.tool_call.id,
+            &tool_call.originating_request_id,
+        );
     }
 }
 
@@ -193,14 +212,21 @@ fn format_command_outcome_for_ui_display(command: &str, outcome: CommandOutcome)
                 let stdout_lines = stdout.lines().count();
                 let stderr_lines = stderr.lines().count();
                 if stderr_lines > 0 {
-                    format!("{} lines output, {} lines stderr", stdout_lines, stderr_lines)
+                    format!(
+                        "{} lines output, {} lines stderr",
+                        stdout_lines, stderr_lines
+                    )
                 } else {
                     format!("{} lines output", stdout_lines)
                 }
             };
             format!("{}: Success ({})", command, output_summary)
         }
-        CommandOutcome::Failed { exit_code, stdout, stderr } => {
+        CommandOutcome::Failed {
+            exit_code,
+            stdout,
+            stderr,
+        } => {
             let output_info = if stdout.is_empty() && stderr.is_empty() {
                 "no output".to_string()
             } else {
@@ -216,7 +242,11 @@ fn format_command_outcome_for_ui_display(command: &str, outcome: CommandOutcome)
             format!("{}: Terminated by signal", command)
         }
         CommandOutcome::Error(error) => {
-            format!("{}: Error ({})", command, error.lines().next().unwrap_or("unknown error"))
+            format!(
+                "{}: Error ({})",
+                command,
+                error.lines().next().unwrap_or("unknown error")
+            )
         }
     };
 
@@ -228,10 +258,16 @@ fn format_command_outcome_for_ui_display(command: &str, outcome: CommandOutcome)
             format_command_output(&header, stdout, stderr)
         }
         CommandOutcome::Timeout => {
-            format!("Command: {}\n\nResult: Execution timed out (no output)", command)
+            format!(
+                "Command: {}\n\nResult: Execution timed out (no output)",
+                command
+            )
         }
         CommandOutcome::Signal => {
-            format!("Command: {}\n\nResult: Terminated by signal (no output)", command)
+            format!(
+                "Command: {}\n\nResult: Terminated by signal (no output)",
+                command
+            )
         }
         CommandOutcome::Error(error) => {
             format!("Command: {}\n\nError: {}", command, error)
@@ -271,7 +307,13 @@ fn format_command_output(header: &str, stdout: &str, stderr: &str) -> String {
 
 impl CommandTool {
     /// Send error result with UI display
-    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_msg: String, ui_display: UIDisplayInfo) {
+    fn send_error_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        error_msg: String,
+        ui_display: UIDisplayInfo,
+    ) {
         use wasmind_actor_utils::common_messages::tools::{
             ToolCallResult, ToolCallStatus, ToolCallStatusUpdate,
         };
@@ -295,7 +337,13 @@ impl CommandTool {
     }
 
     /// Send success result with UI display
-    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, result: String, ui_display: UIDisplayInfo) {
+    fn send_success_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        result: String,
+        ui_display: UIDisplayInfo,
+    ) {
         use wasmind_actor_utils::common_messages::tools::{
             ToolCallResult, ToolCallStatus, ToolCallStatusUpdate,
         };
@@ -343,7 +391,12 @@ impl CommandTool {
         // Execute the command
         match cmd.run() {
             Ok(output) => {
-                self.handle_command_output(full_command, output, tool_call_id, originating_request_id);
+                self.handle_command_output(
+                    full_command,
+                    output,
+                    tool_call_id,
+                    originating_request_id,
+                );
             }
             Err(e) => {
                 let error_msg = format!("Failed to execute command '{}': {}", full_command, e);
@@ -465,10 +518,20 @@ impl CommandTool {
         // Send appropriate result
         match &output.status {
             ExitStatus::Exited(0) => {
-                self.send_success_result(tool_call_id, originating_request_id, result_content, ui_display);
+                self.send_success_result(
+                    tool_call_id,
+                    originating_request_id,
+                    result_content,
+                    ui_display,
+                );
             }
             _ => {
-                self.send_error_result(tool_call_id, originating_request_id, result_content, ui_display);
+                self.send_error_result(
+                    tool_call_id,
+                    originating_request_id,
+                    result_content,
+                    ui_display,
+                );
             }
         }
     }
