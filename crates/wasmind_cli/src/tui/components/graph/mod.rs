@@ -77,6 +77,24 @@ impl AgentNode {
         }
     }
 
+    /// Find the currently selected agent and return its scope and actors
+    fn find_selected_agent_info(&self) -> Option<(String, Vec<String>)> {
+        if self.component.component.is_selected {
+            return Some((
+                self.scope().clone(),
+                self.component.component.actors.clone(),
+            ));
+        }
+
+        for child in &self.spawned_agents {
+            if let Some(info) = child.find_selected_agent_info() {
+                return Some(info);
+            }
+        }
+
+        None
+    }
+
     /// Returns the Scope of the newly selected node, or None if no next node available
     fn select_next(&mut self) -> Option<Scope> {
         if self.component.component.is_selected {
@@ -440,6 +458,33 @@ impl GraphArea {
             bindings.join("\n")
         }
     }
+
+    /// Formats status bar content for the currently selected agent
+    fn format_status_bar(&self, max_width: u16) -> String {
+        if let Some(root) = &self.root_node {
+            if let Some((scope, actors)) = root.find_selected_agent_info() {
+                let actors_str = if actors.is_empty() {
+                    "none".to_string()
+                } else {
+                    actors.join(", ")
+                };
+
+                let full_content = format!("Selected: {} | Actors: {}", scope, actors_str);
+
+                // Truncate if too long for the available width
+                if full_content.len() > max_width as usize {
+                    let truncated = &full_content[..max_width.saturating_sub(3) as usize];
+                    format!("{}...", truncated)
+                } else {
+                    full_content
+                }
+            } else {
+                "No agent selected".to_string()
+            }
+        } else {
+            "No agent selected".to_string()
+        }
+    }
 }
 
 fn render_tree_node(
@@ -620,19 +665,35 @@ impl MockComponent for GraphArea {
             // Clear the entire area before rendering to prevent visual artifacts
             Clear.render(area, frame.buffer_mut());
 
-            // Update viewport dimensions
-            self.viewport_height = area.height;
+            // Reserve space for status bar at the bottom with spacing
+            // 1 line for spacer + 3 lines for status bar (border + content + border)
+            let status_section_height = 4;
+            let tree_area = Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: area.height.saturating_sub(status_section_height),
+            };
+            let status_bar_area = Rect {
+                x: area.x,
+                y: area.y + tree_area.height + 1, // +1 for spacer line
+                width: area.width,
+                height: 3, // Just the status bar itself
+            };
+
+            // Update viewport dimensions for the tree area
+            self.viewport_height = tree_area.height;
 
             // Calculate viewport bounds
             let viewport_start = self.scroll_offset;
-            let viewport_end = self.scroll_offset + area.height as u32;
+            let viewport_end = self.scroll_offset + tree_area.height as u32;
 
-            // Render the agent graph with viewport culling
+            // Render the agent graph with viewport culling in the tree area
             let mut y_offset = 0;
             if let Some(root) = &mut self.root_node {
                 render_tree_node(
                     frame,
-                    area,
+                    tree_area,
                     root,
                     0,
                     &mut y_offset,
@@ -640,7 +701,7 @@ impl MockComponent for GraphArea {
                     viewport_end,
                 );
 
-                // Render the overall stats (always visible in top-right)
+                // Render the overall stats (always visible in top-right of tree area)
                 let live_agents = root.count();
                 let block = create_block_with_title(
                     "[ System Stats ]",
@@ -658,11 +719,24 @@ impl MockComponent for GraphArea {
                 )).block(block);
                 let [mut stats_area] = Layout::horizontal([stats_paragraph.line_width() as u16])
                     .flex(Flex::End)
-                    .areas(area);
+                    .areas(tree_area);
                 stats_area.height = stats_paragraph.line_count(stats_area.width) as u16;
                 Clear.render(stats_area, frame.buffer_mut());
                 frame.render_widget(stats_paragraph, stats_area);
             }
+
+            // Blank line above status bar for visual separation (no rendering needed)
+
+            // Render the status bar at the bottom with subtle styling
+            let status_content = self.format_status_bar(status_bar_area.width.saturating_sub(4));
+            let status_block = create_block_with_title(
+                "[ Agent Actors ]",
+                Borders::default(),
+                false,
+                Some(Padding::horizontal(1)),
+            );
+            let status_paragraph = Paragraph::new(status_content).block(status_block);
+            frame.render_widget(status_paragraph, status_bar_area);
         }
     }
 
@@ -1536,6 +1610,27 @@ mod tests {
                 ("root.child_b", &["root.child_b.grandchild_b1"]),
             ],
         );
+    }
+
+    #[test]
+    fn test_find_selected_agent_info() {
+        let mut root = create_standard_test_tree();
+
+        // Test with no selection
+        assert_eq!(root.find_selected_agent_info(), None);
+
+        // Test with root selected
+        root.component.component.is_selected = true;
+        let (scope, actors) = root.find_selected_agent_info().unwrap();
+        assert_eq!(scope, "root");
+        assert_eq!(actors, vec![] as Vec<String>); // Root has no actors in test
+
+        // Test with child selected
+        root.component.component.is_selected = false;
+        root.spawned_agents[0].component.component.is_selected = true;
+        let (scope, actors) = root.find_selected_agent_info().unwrap();
+        assert_eq!(scope, "root.child_a");
+        assert_eq!(actors, vec![] as Vec<String>); // Test agents have no actors
     }
 
     #[test]

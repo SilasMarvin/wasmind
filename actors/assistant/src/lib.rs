@@ -417,6 +417,9 @@ impl Assistant {
                     // 1. We begin processing and will call the Wait tool: our state = Processing || AwaitingTools
                     // 2. We receive a user / system message we add it to the pending messages but our state remains: Processing || AwaitingTools
                     // 3. The wait too finishes
+                    //
+                    // Basically, we called the Wait tool but while calling it we got the messages
+                    // we were waiting for
                     if self.pending_message.has_content() {
                         self.submit(false);
                     }

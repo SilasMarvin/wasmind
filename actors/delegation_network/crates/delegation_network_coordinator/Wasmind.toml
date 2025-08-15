@@ -16,7 +16,6 @@ required_spawn_with = [
     "send_message", 
     "main_manager_request_plan_review",
     "planner", 
-    "conversation_compaction",
     "wait"
 ]
 
@@ -244,8 +243,8 @@ You MUST follow this procedure for every objective you receive:
 source = { path = "/Users/silasmarvin/github/wasmind/actors/code_with_experts", package = "crates/file_interaction_with_approval" }
 
 [dependencies.worker_file_interaction_with_approval.config.approvers]
-strategic_plan_advisor = ["strategic_plan_advisor_assistant", "read_file", "execute_bash"]
-code_reuse_advisor = ["code_reuse_advisor_assistant", "read_file", "execute_bash"]
+idiomatic_code_approver_advisor = ["idiomatic_code_approver_assistant", "read_file", "execute_bash"]
+redundancy_approver_advisor = ["redundancy_approver_assistant", "read_file", "execute_bash"]
 correctness_logic_approver = ["correctness_logic_approver_assistant", "read_file", "execute_bash"]
 
 # --- Sub Manager's Plan Review Tool ---
@@ -270,8 +269,8 @@ idiomatic_code_advisor_assistant = ["idiomatic_code_advisor_assistant", "read_fi
 source = { path = "../../", package = "crates/spawn_agent" }
 
 [dependencies.spawn_agent.config]
-sub_manager_actors = ["sub_manager_assistant", "spawn_agent", "send_message", "send_manager_message", "wait", "check_health", "complete", "sub_manager_request_plan_review", "conversation_compation"]
-worker_actors = ["worker_assistant", "execute_bash", "worker_file_interaction_with_approval", "complete", "send_manager_message", "check_health", "worker_request_plan_review", "conversation_compaction"]
+sub_manager_actors = ["sub_manager_assistant", "spawn_agent", "send_message", "send_manager_message", "wait", "check_health", "complete", "sub_manager_request_plan_review"]
+worker_actors = ["worker_assistant", "execute_bash", "worker_file_interaction_with_approval", "complete", "send_manager_message", "check_health", "worker_request_plan_review"]
 
 # --- Communication Tools ---
 [dependencies.send_message]

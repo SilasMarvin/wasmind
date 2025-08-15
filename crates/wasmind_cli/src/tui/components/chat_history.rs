@@ -148,7 +148,7 @@ fn create_system_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) 
 /// Creates a tool call widget with dynamic status and expansion support
 fn create_tool_widget(
     tool_call: &ToolCall,
-    status: &ToolCallStatus,
+    status: Option<&ToolCallStatus>,
     area: Rect,
     is_expanded: bool,
 ) -> (Box<dyn WidgetRef>, u16) {
@@ -157,7 +157,16 @@ fn create_tool_widget(
 
     let expand_icon = if is_expanded { "-" } else { "+" };
     let (errored, title, content, expanded_content) = match status {
-        ToolCallStatus::Received { display_info } => {
+        None => {
+            // Tool call exists but no status update received yet
+            (
+                false,
+                format!("[ {} Tool: {} ]", expand_icon, tool_call.function.name),
+                "Queued for execution".to_string(),
+                Some(default_expanded_content.clone()),
+            )
+        }
+        Some(ToolCallStatus::Received { display_info }) => {
             let (content, expanded_content) = (
                 display_info.collapsed.clone(),
                 display_info.expanded.clone(),
@@ -169,7 +178,7 @@ fn create_tool_widget(
                 expanded_content,
             )
         }
-        ToolCallStatus::AwaitingSystem { details } => {
+        Some(ToolCallStatus::AwaitingSystem { details }) => {
             let content = format!("Awaiting system: {}", details.ui_display_info.collapsed);
             (
                 false,
@@ -178,7 +187,7 @@ fn create_tool_widget(
                 details.ui_display_info.expanded.clone(),
             )
         }
-        ToolCallStatus::Done { result } => {
+        Some(ToolCallStatus::Done { result }) => {
             let (errored, content, expanded_content) = match result {
                 Ok(res) => (
                     false,
@@ -207,7 +216,13 @@ fn create_tool_widget(
         content
     };
 
-    let border_color = if errored { Color::Red } else { Color::Yellow };
+    let border_color = if errored {
+        Color::Red
+    } else if status.is_some() {
+        Color::Yellow
+    } else {
+        Color::default() // Gray/default for pending state
+    };
     let borders = tuirealm::props::Borders::default().color(border_color);
     let block = create_block_with_title(title, borders, false, Some(Padding::horizontal(1)));
     let p = Paragraph::new(content)
@@ -255,9 +270,8 @@ fn create_assistant_widgets(
                 .get(request_id)
                 .and_then(|request_updates| request_updates.get(&tool_call.id));
 
-            if let Some(status) = status {
-                widgets.push(create_tool_widget(tool_call, status, area, tools_expanded));
-            }
+            // Always create a widget for the tool call, regardless of status
+            widgets.push(create_tool_widget(tool_call, status, area, tools_expanded));
         }
     }
 
@@ -839,6 +853,36 @@ impl Component<TuiMessage, MessageEnvelope> for ChatHistoryComponent {
                             convert_from_chat_state_to_chat_message_widget_state(
                                 chat_updated.chat_state,
                             );
+                    }
+                }
+                // Handle AddMessage if its a SystemMessage
+                else if let Some(add_message) = parse_common_message_as::<AddMessage>(&envelope)
+                    && let Some(actor_info) =
+                        self.component.chat_history_map.get_mut(&add_message.agent)
+                {
+                    match add_message.message {
+                        ChatMessage::System(system_message) => {
+                            actor_info
+                                .chat_message_widget_state
+                                .push(ChatMessageWidgetState {
+                                    message: ChatMessageWithRequestId::System(system_message),
+                                    height: None,
+                                    buffer: None,
+                                    widgets: vec![],
+                                });
+                        }
+                        ChatMessage::Tool(tool_message) => {
+                            actor_info
+                                .chat_message_widget_state
+                                .push(ChatMessageWidgetState {
+                                    message: ChatMessageWithRequestId::Tool(tool_message),
+                                    height: None,
+                                    buffer: None,
+                                    widgets: vec![],
+                                });
+                        }
+                        ChatMessage::Assistant(_) => (), // This will get caught almost immediatly with the ChatStateUpdated broadcast
+                        ChatMessage::User(_) => (),      // This is handled by pending messages
                     }
                 }
                 // Handle ToolCallStatusUpdate

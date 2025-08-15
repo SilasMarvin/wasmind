@@ -96,6 +96,15 @@ fn create_sample_tool_calls() -> Vec<ToolCall> {
             },
             index: Some(2),
         },
+        ToolCall {
+            id: "tool_call_4_pending".to_string(),
+            tool_type: "function".to_string(),
+            function: Function {
+                name: "write_file".to_string(),
+                arguments: r#"{"path": "/tmp/output.md", "content": "Analysis Results: TODO items report"}"#.to_string(),
+            },
+            index: Some(3),
+        },
     ]
 }
 

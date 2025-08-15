@@ -17,7 +17,7 @@ mod bindings;
 
 const SEND_MANAGER_MESSAGE_USAGE_GUIDE: &str = r#"## send_manager_message Tool - Escalate to Your Manager
 
-**Purpose**: Send messages upward to your direct manager when you need guidance, are blocked, or have critical updates.
+**Purpose**: Send messages upward to your direct manager when you need guidance, are blocked, have critical updates or have been messaged.
 
 **When to Use**:
 - ✅ You're blocked and need guidance to proceed
@@ -25,6 +25,7 @@ const SEND_MANAGER_MESSAGE_USAGE_GUIDE: &str = r#"## send_manager_message Tool -
 - ✅ You need clarification on requirements or priorities
 - ✅ You've discovered important information that affects the overall plan
 - ✅ You need additional resources or permissions
+- ✅ You're manager explicitly messages you first
 
 **When NOT to Use**:
 - ❌ Regular status updates (managers get these automatically)
@@ -49,7 +50,10 @@ const SEND_MANAGER_MESSAGE_USAGE_GUIDE: &str = r#"## send_manager_message Tool -
 #[derive(Debug, serde::Deserialize)]
 struct SendManagerMessageInput {
     message: String,
-    #[serde(default, deserialize_with = "wasmind_actor_utils::utils::deserialize_flexible_bool")]
+    #[serde(
+        default,
+        deserialize_with = "wasmind_actor_utils::utils::deserialize_flexible_bool"
+    )]
     wait: Option<bool>,
 }
 
@@ -222,4 +226,3 @@ impl SendManagerMessageTool {
         );
     }
 }
-

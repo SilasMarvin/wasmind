@@ -48,6 +48,10 @@ const SEND_MESSAGE_USAGE_GUIDE: &str = r#"## send_message Tool - Communicate wit
 
 **wait Parameter**: Set to `true` if you need to pause and wait for their response before continuing."#;
 
+fn format_message_for_agent_from_manager(message: &str) -> String {
+    format!("New message from your manager:\n{message}\n\n\nPlease respond immediatly!")
+}
+
 #[derive(Clone, Debug)]
 enum AgentStatus {
     Active,
@@ -58,7 +62,10 @@ enum AgentStatus {
 struct SendMessageInput {
     agent_id: String,
     message: String,
-    #[serde(default, deserialize_with = "wasmind_actor_utils::utils::deserialize_flexible_bool")]
+    #[serde(
+        default,
+        deserialize_with = "wasmind_actor_utils::utils::deserialize_flexible_bool"
+    )]
     wait: Option<bool>,
 }
 
@@ -235,7 +242,7 @@ impl SendMessageValidator {
     fn send_message_to_agent(&self, params: SendMessageInput, tool_call: ExecuteTool) {
         let add_message = AddMessage {
             agent: params.agent_id.clone(),
-            message: ChatMessage::system(&params.message),
+            message: ChatMessage::system(format_message_for_agent_from_manager(&params.message)),
         };
 
         // Deliver message to the target agent
@@ -249,7 +256,7 @@ impl SendMessageValidator {
                     reason: WaitReason::WaitingForAgentCoordination {
                         originating_request_id: tool_call.originating_request_id.clone(),
                         coordinating_tool_name: "send_message".to_string(),
-                        target_agent_scope: Some(params.agent_id.clone()),
+                        target_agent_scope: None,
                         user_can_interrupt: true,
                     },
                 },
@@ -261,7 +268,7 @@ impl SendMessageValidator {
 
         // Create success result
         let success_message = format!(
-            "Message sent to agent {} - please allow at least 5 minutes for a response.",
+            "Message sent to agent {} - please be patient while waiting for a response.",
             params.agent_id
         );
 
@@ -331,4 +338,3 @@ impl SendMessageValidator {
         );
     }
 }
-
