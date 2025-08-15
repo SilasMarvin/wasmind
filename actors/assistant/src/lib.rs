@@ -236,7 +236,7 @@ impl Assistant {
         let response = request
             .header("Content-Type", "application/json")
             .body(&body)
-            .retry(3, 1000) // 3 attempts, 1 second base delay with exponential backoff
+            .retry(7, 1000) // 7 attempts, 1 second base delay with exponential backoff
             .retry_on_status_codes(&[429, 500, 502, 503, 504]) // Retry on rate limiting and server errors
             .timeout(120) // 120 second timeout
             .send()

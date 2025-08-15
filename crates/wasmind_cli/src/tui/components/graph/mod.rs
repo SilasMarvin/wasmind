@@ -953,6 +953,75 @@ mod tests {
         AgentNode::new(component)
     }
 
+    /// Helper to create a standard test tree:
+    /// Root
+    /// ├── Child A
+    /// │   ├── Grandchild A1
+    /// │   └── Grandchild A2
+    /// └── Child B
+    ///     └── Grandchild B1
+    fn create_standard_test_tree() -> AgentNode {
+        let mut root = create_test_agent_node("root", "Root Agent");
+
+        let mut child_a = create_test_agent_node("root.child_a", "Child A");
+        let grandchild_a1 = create_test_agent_node("root.child_a.grandchild_a1", "Grandchild A1");
+        let grandchild_a2 = create_test_agent_node("root.child_a.grandchild_a2", "Grandchild A2");
+
+        let mut child_b = create_test_agent_node("root.child_b", "Child B");
+        let grandchild_b1 = create_test_agent_node("root.child_b.grandchild_b1", "Grandchild B1");
+
+        // Build the tree
+        child_a.spawned_agents.push(grandchild_a1);
+        child_a.spawned_agents.push(grandchild_a2);
+        child_b.spawned_agents.push(grandchild_b1);
+        root.spawned_agents.push(child_a);
+        root.spawned_agents.push(child_b);
+
+        root
+    }
+
+    /// Helper to assert tree structure matches expected pattern
+    fn assert_tree_structure(root: &AgentNode, expected_children: &[(&str, &[&str])]) {
+        assert_eq!(root.spawned_agents.len(), expected_children.len());
+
+        for (i, (expected_child_scope, expected_grandchildren)) in
+            expected_children.iter().enumerate()
+        {
+            assert_eq!(root.spawned_agents[i].scope(), expected_child_scope);
+            assert_eq!(
+                root.spawned_agents[i].spawned_agents.len(),
+                expected_grandchildren.len()
+            );
+
+            for (j, expected_grandchild_scope) in expected_grandchildren.iter().enumerate() {
+                assert_eq!(
+                    root.spawned_agents[i].spawned_agents[j].scope(),
+                    expected_grandchild_scope
+                );
+            }
+        }
+    }
+
+    /// Helper to find which node is currently selected
+    fn find_selected_node_scope(root: &AgentNode) -> Option<String> {
+        root.find_selected_scope()
+    }
+
+    /// Helper to set a specific node as selected in the tree
+    fn select_node_by_scope(root: &mut AgentNode, target_scope: &str) -> bool {
+        if root.scope() == target_scope {
+            root.component.component.is_selected = true;
+            return true;
+        }
+
+        for child in &mut root.spawned_agents {
+            if select_node_by_scope(child, target_scope) {
+                return true;
+            }
+        }
+        false
+    }
+
     #[test]
     fn test_remove_child_should_not_remove_siblings() {
         // Create test tree structure:
@@ -1019,5 +1088,487 @@ mod tests {
         // Verify Child A and Child B are still there
         assert_eq!(root.spawned_agents[0].scope().to_string(), "root.child_a");
         assert_eq!(root.spawned_agents[1].scope().to_string(), "root.child_b");
+    }
+
+    #[test]
+    fn test_remove_selected_leaf_selects_previous_sibling() {
+        let mut root = create_standard_test_tree();
+
+        // Select Grandchild A2 (second child of Child A)
+        select_node_by_scope(&mut root, "root.child_a.grandchild_a2");
+        assert_eq!(
+            find_selected_node_scope(&root),
+            Some("root.child_a.grandchild_a2".to_string())
+        );
+
+        // Remove the selected node
+        let result = root.remove(&"root.child_a.grandchild_a2".to_string());
+
+        // Should select the previous sibling (Grandchild A1)
+        assert!(result.is_some());
+        let new_selection = result.unwrap();
+        assert_eq!(new_selection, "root.child_a.grandchild_a1");
+
+        // Verify tree structure
+        assert_tree_structure(
+            &root,
+            &[
+                ("root.child_a", &["root.child_a.grandchild_a1"]),
+                ("root.child_b", &["root.child_b.grandchild_b1"]),
+            ],
+        );
+
+        // Verify the correct node is now selected
+        assert_eq!(
+            find_selected_node_scope(&root),
+            Some("root.child_a.grandchild_a1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_remove_selected_first_child_selects_parent() {
+        let mut root = create_standard_test_tree();
+
+        // Select Grandchild A1 (first child of Child A)
+        select_node_by_scope(&mut root, "root.child_a.grandchild_a1");
+        assert_eq!(
+            find_selected_node_scope(&root),
+            Some("root.child_a.grandchild_a1".to_string())
+        );
+
+        // Remove the selected node
+        let result = root.remove(&"root.child_a.grandchild_a1".to_string());
+
+        // Should select the parent (Child A) since there's no previous sibling
+        assert!(result.is_some());
+        let new_selection = result.unwrap();
+        assert_eq!(new_selection, "root.child_a");
+
+        // Verify tree structure
+        assert_tree_structure(
+            &root,
+            &[
+                ("root.child_a", &["root.child_a.grandchild_a2"]),
+                ("root.child_b", &["root.child_b.grandchild_b1"]),
+            ],
+        );
+
+        // Verify the parent is now selected
+        assert_eq!(
+            find_selected_node_scope(&root),
+            Some("root.child_a".to_string())
+        );
+    }
+
+    #[test]
+    fn test_remove_unselected_node_preserves_selection() {
+        let mut root = create_standard_test_tree();
+
+        // Select Grandchild B1
+        select_node_by_scope(&mut root, "root.child_b.grandchild_b1");
+        assert_eq!(
+            find_selected_node_scope(&root),
+            Some("root.child_b.grandchild_b1".to_string())
+        );
+
+        // Remove an unselected node (Grandchild A1)
+        let result = root.remove(&"root.child_a.grandchild_a1".to_string());
+
+        // Should succeed and preserve the original selection
+        assert!(result.is_some());
+        assert_eq!(
+            find_selected_node_scope(&root),
+            Some("root.child_b.grandchild_b1".to_string())
+        );
+
+        // Verify tree structure
+        assert_tree_structure(
+            &root,
+            &[
+                ("root.child_a", &["root.child_a.grandchild_a2"]),
+                ("root.child_b", &["root.child_b.grandchild_b1"]),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_remove_with_no_initial_selection() {
+        let mut root = create_standard_test_tree();
+
+        // Verify no selection initially
+        assert_eq!(find_selected_node_scope(&root), None);
+
+        // Remove a node
+        let result = root.remove(&"root.child_a.grandchild_a1".to_string());
+
+        // Should succeed and return parent scope to indicate success
+        assert!(result.is_some());
+        let returned_scope = result.unwrap();
+        assert_eq!(returned_scope, "root.child_a"); // Parent scope
+
+        // Verify tree structure
+        assert_tree_structure(
+            &root,
+            &[
+                ("root.child_a", &["root.child_a.grandchild_a2"]),
+                ("root.child_b", &["root.child_b.grandchild_b1"]),
+            ],
+        );
+
+        // Still no selection (we don't auto-select when removing unselected nodes)
+        assert_eq!(find_selected_node_scope(&root), None);
+    }
+
+    #[test]
+    fn test_remove_only_child_leaves_parent_childless() {
+        let mut root = create_test_agent_node("root", "Root Agent");
+        let child = create_test_agent_node("root.only_child", "Only Child");
+        root.spawned_agents.push(child);
+
+        // Verify initial structure
+        assert_eq!(root.spawned_agents.len(), 1);
+
+        // Remove the only child
+        let result = root.remove(&"root.only_child".to_string());
+
+        // Should succeed
+        assert!(result.is_some());
+
+        // Parent should now be childless
+        assert_eq!(root.spawned_agents.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_middle_child_maintains_siblings() {
+        let mut root = create_test_agent_node("root", "Root Agent");
+        let child1 = create_test_agent_node("root.child1", "Child 1");
+        let child2 = create_test_agent_node("root.child2", "Child 2");
+        let child3 = create_test_agent_node("root.child3", "Child 3");
+
+        root.spawned_agents.push(child1);
+        root.spawned_agents.push(child2);
+        root.spawned_agents.push(child3);
+
+        // Remove middle child
+        let result = root.remove(&"root.child2".to_string());
+
+        // Should succeed
+        assert!(result.is_some());
+
+        // Should have 2 children remaining
+        assert_eq!(root.spawned_agents.len(), 2);
+        assert_eq!(root.spawned_agents[0].scope(), "root.child1");
+        assert_eq!(root.spawned_agents[1].scope(), "root.child3");
+    }
+
+    #[test]
+    fn test_remove_parent_removes_entire_subtree() {
+        let mut root = create_standard_test_tree();
+
+        // Remove Child A (which has 2 grandchildren)
+        let result = root.remove(&"root.child_a".to_string());
+
+        // Should succeed
+        assert!(result.is_some());
+
+        // Should only have Child B remaining
+        assert_tree_structure(&root, &[("root.child_b", &["root.child_b.grandchild_b1"])]);
+    }
+
+    #[test]
+    fn test_remove_root_returns_none() {
+        let mut root = create_standard_test_tree();
+
+        // Try to remove root from itself
+        let result = root.remove(&"root".to_string());
+
+        // Should return None (can't remove self)
+        assert!(result.is_none());
+
+        // Tree should be unchanged
+        assert_tree_structure(
+            &root,
+            &[
+                (
+                    "root.child_a",
+                    &["root.child_a.grandchild_a1", "root.child_a.grandchild_a2"],
+                ),
+                ("root.child_b", &["root.child_b.grandchild_b1"]),
+            ],
+        );
+    }
+
+    /// Helper to create a deep tree for testing:
+    /// Root
+    /// └── Child A
+    ///     └── Grandchild A1
+    ///         └── Great-Grandchild A1-1
+    ///             └── Great-Great-Grandchild A1-1-1
+    fn create_deep_test_tree() -> AgentNode {
+        let mut root = create_test_agent_node("root", "Root Agent");
+        let mut child_a = create_test_agent_node("root.child_a", "Child A");
+        let mut grandchild_a1 =
+            create_test_agent_node("root.child_a.grandchild_a1", "Grandchild A1");
+        let mut great_grandchild =
+            create_test_agent_node("root.child_a.grandchild_a1.great1", "Great-Grandchild A1-1");
+        let great_great_grandchild = create_test_agent_node(
+            "root.child_a.grandchild_a1.great1.great2",
+            "Great-Great-Grandchild A1-1-1",
+        );
+
+        great_grandchild.spawned_agents.push(great_great_grandchild);
+        grandchild_a1.spawned_agents.push(great_grandchild);
+        child_a.spawned_agents.push(grandchild_a1);
+        root.spawned_agents.push(child_a);
+
+        root
+    }
+
+    #[test]
+    fn test_remove_deeply_nested_node() {
+        let mut root = create_deep_test_tree();
+
+        // Remove the deepest node
+        let result = root.remove(&"root.child_a.grandchild_a1.great1.great2".to_string());
+
+        // Should succeed
+        assert!(result.is_some());
+
+        // Verify structure - great-grandchild should now be childless
+        assert_eq!(root.spawned_agents.len(), 1);
+        assert_eq!(root.spawned_agents[0].spawned_agents.len(), 1);
+        assert_eq!(
+            root.spawned_agents[0].spawned_agents[0]
+                .spawned_agents
+                .len(),
+            1
+        );
+        assert_eq!(
+            root.spawned_agents[0].spawned_agents[0].spawned_agents[0]
+                .spawned_agents
+                .len(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_remove_from_complex_multi_level_tree() {
+        // Create a more complex tree:
+        // Root
+        // ├── Child A
+        // │   ├── Grandchild A1
+        // │   │   └── Great-Grandchild A1-1
+        // │   └── Grandchild A2
+        // └── Child B
+        //     └── Grandchild B1
+        //         └── Great-Grandchild B1-1
+
+        let mut root = create_test_agent_node("root", "Root Agent");
+
+        let mut child_a = create_test_agent_node("root.child_a", "Child A");
+        let mut grandchild_a1 =
+            create_test_agent_node("root.child_a.grandchild_a1", "Grandchild A1");
+        let great_grandchild_a1 =
+            create_test_agent_node("root.child_a.grandchild_a1.great1", "Great-Grandchild A1-1");
+        let grandchild_a2 = create_test_agent_node("root.child_a.grandchild_a2", "Grandchild A2");
+
+        let mut child_b = create_test_agent_node("root.child_b", "Child B");
+        let mut grandchild_b1 =
+            create_test_agent_node("root.child_b.grandchild_b1", "Grandchild B1");
+        let great_grandchild_b1 =
+            create_test_agent_node("root.child_b.grandchild_b1.great1", "Great-Grandchild B1-1");
+
+        grandchild_a1.spawned_agents.push(great_grandchild_a1);
+        grandchild_b1.spawned_agents.push(great_grandchild_b1);
+        child_a.spawned_agents.push(grandchild_a1);
+        child_a.spawned_agents.push(grandchild_a2);
+        child_b.spawned_agents.push(grandchild_b1);
+        root.spawned_agents.push(child_a);
+        root.spawned_agents.push(child_b);
+
+        // Remove a deeply nested node from Child A's branch
+        let result = root.remove(&"root.child_a.grandchild_a1.great1".to_string());
+
+        // Should succeed
+        assert!(result.is_some());
+
+        // Verify that Child B's branch is unaffected
+        assert_eq!(
+            root.spawned_agents[1].spawned_agents[0]
+                .spawned_agents
+                .len(),
+            1
+        );
+        assert_eq!(
+            root.spawned_agents[1].spawned_agents[0].spawned_agents[0].scope(),
+            "root.child_b.grandchild_b1.great1"
+        );
+
+        // Verify that Grandchild A1 is now childless but Grandchild A2 remains
+        assert_eq!(root.spawned_agents[0].spawned_agents.len(), 2);
+        assert_eq!(
+            root.spawned_agents[0].spawned_agents[0]
+                .spawned_agents
+                .len(),
+            0
+        ); // A1 now childless
+        assert_eq!(
+            root.spawned_agents[0].spawned_agents[1].scope(),
+            "root.child_a.grandchild_a2"
+        ); // A2 still there
+    }
+
+    #[test]
+    fn test_selection_moves_to_previous_sibling_last_descendant() {
+        // Create tree where removing a selected node should select previous sibling's deepest child
+        let mut root = create_test_agent_node("root", "Root Agent");
+
+        let mut child1 = create_test_agent_node("root.child1", "Child 1");
+        let mut grandchild1 = create_test_agent_node("root.child1.grandchild1", "Grandchild 1");
+        let great_grandchild1 =
+            create_test_agent_node("root.child1.grandchild1.great1", "Great-Grandchild 1");
+
+        let child2 = create_test_agent_node("root.child2", "Child 2");
+
+        grandchild1.spawned_agents.push(great_grandchild1);
+        child1.spawned_agents.push(grandchild1);
+        root.spawned_agents.push(child1);
+        root.spawned_agents.push(child2);
+
+        // Select child2
+        select_node_by_scope(&mut root, "root.child2");
+
+        // Remove child2 (selected)
+        let result = root.remove(&"root.child2".to_string());
+
+        // Should select the last descendant of the previous sibling (great-grandchild1)
+        assert!(result.is_some());
+        let new_selection = result.unwrap();
+        assert_eq!(new_selection, "root.child1.grandchild1.great1");
+
+        // Verify the correct node is selected
+        assert_eq!(
+            find_selected_node_scope(&root),
+            Some("root.child1.grandchild1.great1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_selection_moves_to_parent_when_no_previous_sibling() {
+        let mut root = create_standard_test_tree();
+
+        // Select the first grandchild (no previous sibling)
+        select_node_by_scope(&mut root, "root.child_a.grandchild_a1");
+
+        // Remove it
+        let result = root.remove(&"root.child_a.grandchild_a1".to_string());
+
+        // Should select the parent
+        assert!(result.is_some());
+        let new_selection = result.unwrap();
+        assert_eq!(new_selection, "root.child_a");
+
+        // Verify the parent is selected
+        assert_eq!(
+            find_selected_node_scope(&root),
+            Some("root.child_a".to_string())
+        );
+    }
+
+    #[test]
+    fn test_remove_nonexistent_scope_returns_none() {
+        let mut root = create_standard_test_tree();
+
+        // Try to remove a scope that doesn't exist
+        let result = root.remove(&"root.nonexistent.child".to_string());
+
+        // Should return None
+        assert!(result.is_none());
+
+        // Tree should be unchanged
+        assert_tree_structure(
+            &root,
+            &[
+                (
+                    "root.child_a",
+                    &["root.child_a.grandchild_a1", "root.child_a.grandchild_a2"],
+                ),
+                ("root.child_b", &["root.child_b.grandchild_b1"]),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_remove_from_empty_tree() {
+        let mut root = create_test_agent_node("root", "Root Agent");
+
+        // Tree has no children
+        assert_eq!(root.spawned_agents.len(), 0);
+
+        // Try to remove a non-existent child
+        let result = root.remove(&"root.nonexistent".to_string());
+
+        // Should return None
+        assert!(result.is_none());
+
+        // Tree should still be empty
+        assert_eq!(root.spawned_agents.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_with_partial_scope_match() {
+        let mut root = create_standard_test_tree();
+
+        // Try to remove with a scope that's a prefix of an existing scope
+        let result = root.remove(&"root.child".to_string());
+
+        // Should return None (no exact match)
+        assert!(result.is_none());
+
+        // Tree should be unchanged
+        assert_tree_structure(
+            &root,
+            &[
+                (
+                    "root.child_a",
+                    &["root.child_a.grandchild_a1", "root.child_a.grandchild_a2"],
+                ),
+                ("root.child_b", &["root.child_b.grandchild_b1"]),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_remove_maintains_selection_invariants() {
+        let mut root = create_standard_test_tree();
+
+        // Select a node
+        select_node_by_scope(&mut root, "root.child_a.grandchild_a1");
+        assert_eq!(
+            find_selected_node_scope(&root),
+            Some("root.child_a.grandchild_a1".to_string())
+        );
+
+        // Remove a different node
+        let result = root.remove(&"root.child_b.grandchild_b1".to_string());
+
+        // Should succeed and preserve selection
+        assert!(result.is_some());
+        assert_eq!(
+            find_selected_node_scope(&root),
+            Some("root.child_a.grandchild_a1".to_string())
+        );
+
+        // Tree structure should be correct
+        assert_tree_structure(
+            &root,
+            &[
+                (
+                    "root.child_a",
+                    &["root.child_a.grandchild_a1", "root.child_a.grandchild_a2"],
+                ),
+                ("root.child_b", &[]), // Child B now has no children
+            ],
+        );
     }
 }

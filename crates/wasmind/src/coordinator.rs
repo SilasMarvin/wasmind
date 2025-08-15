@@ -72,6 +72,7 @@ impl WasmindCoordinator {
                         };
                     tracing::debug!(
                         name = "wasmind_coordinator_received_message",
+                        scope = msg.from_scope,
                         actor_id = msg.from_actor_id,
                         message_type = msg.message_type,
                         message = %message_json

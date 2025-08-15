@@ -58,6 +58,7 @@ enum AgentStatus {
 struct SendMessageInput {
     agent_id: String,
     message: String,
+    #[serde(default, deserialize_with = "wasmind_actor_utils::utils::deserialize_flexible_bool")]
     wait: Option<bool>,
 }
 

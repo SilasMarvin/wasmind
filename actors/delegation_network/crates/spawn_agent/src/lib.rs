@@ -83,6 +83,7 @@ struct AgentDefinition {
 #[derive(serde::Deserialize)]
 struct SpawnAgentsInput {
     agents_to_spawn: Vec<AgentDefinition>,
+    #[serde(default, deserialize_with = "wasmind_actor_utils::utils::deserialize_flexible_bool")]
     wait: Option<bool>,
 }
 

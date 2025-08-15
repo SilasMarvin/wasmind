@@ -48,6 +48,15 @@ model_name = "qwen/qwen3-coder"
 [actor_overrides.idiomatic_code_advisor_assistant.config]
 model_name = "qwen/qwen3-coder"
 
+[actor_overrides.idiomatic_code_approver_assistant.config]
+model_name = "qwen/qwen3-coder"
+
+[actor_overrides.redundancy_approver_assistant.config]
+model_name = "qwen/qwen3-coder"
+
+[actor_overrides.correctness_logic_approver_assistant.config]
+model_name = "qwen/qwen3-coder"
+
 [actor_overrides.conversation_compaction.config]
 token_threshold = 50000
 model_name = "qwen/qwen3-coder"
@@ -61,20 +70,20 @@ image = "ghcr.io/berriai/litellm:main-latest"
 port = 4000
 container_name = "wasmind-litellm"
 
-[[litellm.models]]
-model_name = "gpt-oss-120b"
-
-[litellm.models.litellm_params]
-model = "openrouter/openai/gpt-oss-120b"
-api_key = "os.environ/OPENROUTER_API_KEY"
-provider = { only = ["cerebras"] }
-
-[[litellm.models]]
-model_name = "gemini-2.5-flash"
-
-[litellm.models.litellm_params]
-model = "openrouter/google/gemini-2.5-flash"
-api_key = "os.environ/OPENROUTER_API_KEY"
+# [[litellm.models]]
+# model_name = "gpt-oss-120b"
+#
+# [litellm.models.litellm_params]
+# model = "openrouter/openai/gpt-oss-120b"
+# api_key = "os.environ/OPENROUTER_API_KEY"
+# provider = { only = ["cerebras"] }
+#
+# [[litellm.models]]
+# model_name = "gemini-2.5-flash"
+#
+# [litellm.models.litellm_params]
+# model = "openrouter/google/gemini-2.5-flash"
+# api_key = "os.environ/OPENROUTER_API_KEY"
 
 [[litellm.models]]
 model_name = "qwen/qwen3-coder"

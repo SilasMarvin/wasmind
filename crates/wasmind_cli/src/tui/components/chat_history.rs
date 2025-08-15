@@ -30,6 +30,15 @@ const ROOT_AGENT_NAME: &str = "Root Agent";
 const MESSAGE_GAP: u16 = 1;
 
 // =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
+
+/// Trims leading and trailing newlines from message content while preserving internal formatting
+fn trim_message_content(content: &str) -> &str {
+    content.trim_start_matches('\n').trim_end_matches('\n')
+}
+
+// =============================================================================
 // CACHING SYSTEM
 // =============================================================================
 
@@ -107,7 +116,7 @@ fn create_user_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) {
         false,
         Some(Padding::horizontal(1)),
     );
-    let message_paragraph = Paragraph::new(content.to_string())
+    let message_paragraph = Paragraph::new(trim_message_content(content).to_string())
         .block(block)
         .style(Style::new())
         .alignment(Alignment::Left)
@@ -126,7 +135,7 @@ fn create_system_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) 
         false,
         Some(Padding::horizontal(1)),
     );
-    let message_paragraph = Paragraph::new(content.to_string())
+    let message_paragraph = Paragraph::new(trim_message_content(content).to_string())
         .block(block)
         .style(Style::new())
         .alignment(Alignment::Left)
@@ -231,7 +240,7 @@ fn create_assistant_widgets(
             false,
             Some(Padding::horizontal(1)),
         );
-        let p = Paragraph::new(text_content.clone())
+        let p = Paragraph::new(trim_message_content(text_content).to_string())
             .block(block)
             .style(Style::new())
             .alignment(Alignment::Left)
@@ -647,11 +656,12 @@ impl AssistantInfo {
                         false,
                         Some(Padding::horizontal(1)),
                     );
-                    let message_paragraph = Paragraph::new(pending_message.clone())
-                        .block(block)
-                        .style(Style::new())
-                        .alignment(Alignment::Left)
-                        .wrap(Wrap { trim: true });
+                    let message_paragraph =
+                        Paragraph::new(trim_message_content(pending_message).to_string())
+                            .block(block)
+                            .style(Style::new())
+                            .alignment(Alignment::Left)
+                            .wrap(Wrap { trim: true });
                     self.cached_pending = Some(CachedParagraph::new(message_paragraph));
                 }
 

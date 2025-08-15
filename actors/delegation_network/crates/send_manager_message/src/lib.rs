@@ -49,6 +49,7 @@ const SEND_MANAGER_MESSAGE_USAGE_GUIDE: &str = r#"## send_manager_message Tool -
 #[derive(Debug, serde::Deserialize)]
 struct SendManagerMessageInput {
     message: String,
+    #[serde(default, deserialize_with = "wasmind_actor_utils::utils::deserialize_flexible_bool")]
     wait: Option<bool>,
 }
 
