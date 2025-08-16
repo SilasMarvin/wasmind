@@ -50,7 +50,7 @@ The Conversation Compaction Actor operates as a background monitor that:
 
 ## Messages Broadcast
 
-- **`assistant::InterruptAndForceStatus`**: Pauses the assistant during compaction
+- **`assistant::QueueStatusChange`**: Queues a status change for the assistant during compaction
   - Sets status to `CompactingConversation` to signal the compaction is starting
   - Other actors can listen for this status change to perform cleanup (like clearing file caches)
 
@@ -65,7 +65,7 @@ When token threshold is exceeded, the actor:
 
 ### 1. Sets Compaction Status
 ```rust
-InterruptAndForceStatus {
+QueueStatusChange {
     agent: scope,
     status: Wait {
         reason: CompactingConversation

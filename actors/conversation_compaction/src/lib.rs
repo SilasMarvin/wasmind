@@ -5,7 +5,7 @@ use bindings::{
 use serde::Deserialize;
 use wasmind_actor_utils::common_messages::{
     assistant::{
-        ChatState, ChatStateUpdated, CompactedConversation, InterruptAndForceStatus,
+        ChatState, ChatStateUpdated, CompactedConversation, QueueStatusChange,
         Response as AssistantResponse, Status, WaitReason,
     },
     litellm::BaseUrlUpdate,
@@ -197,23 +197,56 @@ impl ConversationCompactionActor {
             return;
         };
 
-        // Interrupt the assistant and force it to wait
-        let _ = Self::broadcast_common_message(InterruptAndForceStatus {
+        // Queue a status change for the assistant to wait
+        let _ = Self::broadcast_common_message(QueueStatusChange {
             agent: self.scope.clone(),
             status: Status::Wait {
                 reason: WaitReason::CompactingConversation,
             },
         });
 
-        // Make the compaction request
-        // Maybe add system prompt here?
-        match self.make_compaction_request(base_url, &chat_state.messages) {
+        // Find the last assistant message to determine compaction boundary
+        let last_assistant = chat_state.messages.iter()
+            .enumerate()
+            .rev()
+            .find_map(|(idx, msg)| {
+                if let ChatMessageWithRequestId::Assistant(assistant_msg) = msg {
+                    Some((idx, assistant_msg.originating_request_id.clone()))
+                } else {
+                    None
+                }
+            });
+
+        let (messages_to_compact, compacted_to_id) = if let Some((idx, request_id)) = last_assistant {
+            if idx > 0 {
+                // Compact everything BEFORE the last assistant message
+                (&chat_state.messages[..idx], request_id)
+            } else {
+                // Last assistant is the first message, nothing to compact
+                logger::log(
+                    logger::LogLevel::Info,
+                    "Last assistant message is first in history, skipping compaction",
+                );
+                return;
+            }
+        } else {
+            // No assistant messages found, can't determine boundary
+            logger::log(
+                logger::LogLevel::Warn,
+                "No assistant messages found, cannot determine compaction boundary",
+            );
+            return;
+        };
+
+        // Make the compaction request with trimmed messages
+        match self.make_compaction_request(base_url, messages_to_compact) {
             Ok(compacted_summary) => {
                 logger::log(
                     logger::LogLevel::Info,
                     &format!(
-                        "Successfully compacted conversation. Summary length: {} chars",
-                        compacted_summary.len()
+                        "Successfully compacted conversation. Summary length: {} chars, compacted to request: {}",
+                        compacted_summary.len(),
+                        compacted_to_id
                     ),
                 );
 
@@ -221,6 +254,7 @@ impl ConversationCompactionActor {
                 let _ = Self::broadcast_common_message(CompactedConversation {
                     agent: self.scope.clone(),
                     messages: vec![ChatMessageWithRequestId::user(format!("Below is the current state from the last task you were executing before your history was compacted:\n\n<current_state_summary>{}</current_state_summary>\n\nContinue where you left off", compacted_summary))],
+                    compacted_to: compacted_to_id,
                 });
 
                 logger::log(
@@ -235,7 +269,7 @@ impl ConversationCompactionActor {
                 );
 
                 // On failure, still need to unblock the assistant
-                let _ = Self::broadcast_common_message(InterruptAndForceStatus {
+                let _ = Self::broadcast_common_message(QueueStatusChange {
                     agent: self.scope.clone(),
                     status: Status::Wait {
                         reason: WaitReason::WaitingForUserInput,

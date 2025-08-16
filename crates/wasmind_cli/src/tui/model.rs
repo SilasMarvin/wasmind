@@ -10,7 +10,7 @@ use wasmind::scope::Scope;
 use wasmind_actor_utils::STARTING_SCOPE;
 use wasmind_actor_utils::common_messages::actors::Exit;
 use wasmind_actor_utils::common_messages::assistant::{
-    AddMessage, InterruptAndForceStatus, Status, WaitReason,
+    AddMessage, QueueStatusChange, Status, WaitReason,
 };
 use wasmind_actor_utils::llm_client_types::ChatMessage;
 
@@ -160,15 +160,15 @@ where
                     self.redraw = true;
                 }
                 TuiMessage::InterruptAgent => {
-                    // Broadcast InterruptAndForceStatus to the active agent
-                    let interrupt_message = InterruptAndForceStatus {
+                    // Broadcast QueueStatusChange to the active agent
+                    let queue_message = QueueStatusChange {
                         agent: self.active_scope.clone(),
                         status: Status::Wait {
                             reason: WaitReason::WaitingForUserInput,
                         },
                     };
-                    if let Err(e) = self.context.broadcast_common_message(interrupt_message) {
-                        tracing::error!("Failed to broadcast InterruptAndForceStatus: {}", e);
+                    if let Err(e) = self.context.broadcast_common_message(queue_message) {
+                        tracing::error!("Failed to broadcast QueueStatusChange: {}", e);
                     }
                     self.redraw = true;
                 }

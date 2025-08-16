@@ -91,3 +91,4 @@ model_name = "qwen/qwen3-coder"
 [litellm.models.litellm_params]
 model = "openrouter/qwen/qwen3-coder"
 api_key = "os.environ/OPENROUTER_API_KEY"
+provider = { only = ["fireworks", "cerebras"] }

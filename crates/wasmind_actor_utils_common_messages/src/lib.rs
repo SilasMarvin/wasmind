@@ -124,15 +124,15 @@ pub mod assistant {
         const MESSAGE_TYPE: &str = "wasmind.common.assistant.RequestStatusUpdate";
     }
 
-    // wasmind.common.assistant.InterruptAndForceStatus
+    // wasmind.common.assistant.QueueStatusChange
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct InterruptAndForceStatus {
+    pub struct QueueStatusChange {
         pub agent: Scope,
         pub status: Status,
     }
 
-    impl Message for InterruptAndForceStatus {
-        const MESSAGE_TYPE: &str = "wasmind.common.assistant.InterruptAndForceStatus";
+    impl Message for QueueStatusChange {
+        const MESSAGE_TYPE: &str = "wasmind.common.assistant.QueueStatusChange";
     }
 
     // wasmind.common.assistant.AddMessage
@@ -304,6 +304,7 @@ pub mod assistant {
     pub struct CompactedConversation {
         pub agent: Scope,
         pub messages: Vec<ChatMessageWithRequestId>,
+        pub compacted_to: String, // Last originating_request_id NOT included in compaction
     }
 
     impl Message for CompactedConversation {

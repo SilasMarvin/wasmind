@@ -1,7 +1,7 @@
 use wasmind_actor_utils::{
     common_messages::{
         assistant::{
-            AddMessage, AgentTaskResponse, InterruptAndForceStatus,
+            AddMessage, AgentTaskResponse, QueueStatusChange,
             RequestStatusUpdate, Status, WaitReason,
         },
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
@@ -64,7 +64,7 @@ impl tools::Tool for FlagIssueTool {
         if let Some(parent_scope) = parent_scope
             && let Some(grandparent_scope) = grandparent_scope
         {
-            let _ = Self::broadcast_common_message(InterruptAndForceStatus {
+            let _ = Self::broadcast_common_message(QueueStatusChange {
                 agent: parent_scope.clone(),
                 status: Status::Wait {
                     reason: WaitReason::WaitingForSystemInput {

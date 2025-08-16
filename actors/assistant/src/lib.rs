@@ -4,8 +4,8 @@ use wasmind_actor_utils::{
     common_messages::{
         actors::{self, Exit},
         assistant::{
-            self, ChatState, ChatStateUpdated, CompactedConversation, Request, Status,
-            StatusUpdate, SystemPromptContribution, WaitReason,
+            self, ChatState, ChatStateUpdated, CompactedConversation, QueueStatusChange, Request,
+            Status, StatusUpdate, SystemPromptContribution, WaitReason,
         },
         litellm,
         tools::{self, ToolCallStatus, ToolCallStatusUpdate},
@@ -103,6 +103,7 @@ pub struct Assistant {
     chat_history: Vec<ChatMessageWithRequestId>,
     available_tools: Vec<Tool>,
     status: Status,
+    queued_status: Option<Status>,
     config: AssistantConfig,
     base_url: Option<String>,
     system_prompt_renderer: SystemPromptRenderer,
@@ -327,15 +328,21 @@ impl Assistant {
 
         let request_id = format!("req_{}", wasmind_actor_utils::utils::generate_id(6));
 
-        self.set_status(
+        // Check if there's a queued status change
+        let status = if let Some(queued) = self.queued_status.take() {
+            queued
+        } else {
             Status::Processing {
                 request_id: request_id.clone(),
-            },
-            true,
-        );
+            }
+        };
 
-        // Submit and process the request with automatic retry
-        self.submit_and_process(request_id);
+        self.set_status(status.clone(), true);
+
+        // Only submit and process if we're actually processing
+        if matches!(status, Status::Processing { .. }) {
+            self.submit_and_process(request_id);
+        }
     }
 
     fn handle_tool_call_update(&mut self, update: ToolCallStatusUpdate) {
@@ -452,6 +459,7 @@ impl GeneratedActorTrait for Assistant {
             chat_history: vec![],
             available_tools: vec![],
             status: initial_status,
+            queued_status: None,
             pending_message: PendingMessage::new(),
             config,
             base_url,
@@ -654,32 +662,53 @@ impl GeneratedActorTrait for Assistant {
             }
         }
 
-        // Handle interrupt and force status
-        if let Some(interrupt) = Self::parse_as::<assistant::InterruptAndForceStatus>(&message)
-            && interrupt.agent == self.scope
+        if let Some(queue_change) = Self::parse_as::<assistant::QueueStatusChange>(&message)
+            && queue_change.agent == self.scope
         {
-            // Check if the last message in chat history is a tool call that needs to be removed
-            // This prevents errors when the manager sends a message after interruption
-            if let Some(ChatMessageWithRequestId::Assistant(msg)) = self.chat_history.last() {
-                if msg.message.tool_calls.is_some() {
-                    // Remove the tool call message since we won't have responses for it
-                    self.chat_history.pop();
-                }
-            }
-
-            // Force the agent to the specified status
-            self.set_status(interrupt.status, true);
+            // Queue the status change for the next submit operation
+            self.queued_status = Some(queue_change.status);
         }
 
         // Handle conversation compaction
         if let Some(compact) = Self::parse_as::<CompactedConversation>(&message)
             && compact.agent == self.scope
         {
-            self.chat_history = compact.messages;
-            logger::log(
-                logger::LogLevel::Info,
-                "Chat history cleared due to conversation compaction",
-            );
+            // Find the assistant message with the compacted_to ID
+            let cutoff_index = self.chat_history.iter()
+                .position(|msg| {
+                    if let ChatMessageWithRequestId::Assistant(a) = msg {
+                        a.originating_request_id == compact.compacted_to
+                    } else {
+                        false
+                    }
+                });
+            
+            match cutoff_index {
+                Some(idx) => {
+                    // Replace everything BEFORE this message, keep this message and everything after
+                    let mut new_history = compact.messages;
+                    new_history.extend_from_slice(&self.chat_history[idx..]);
+                    
+                    logger::log(
+                        logger::LogLevel::Info,
+                        &format!("Compacted history before request {}, preserved {} messages", 
+                            compact.compacted_to, self.chat_history.len() - idx)
+                    );
+                    
+                    self.chat_history = new_history;
+                }
+                None => {
+                    // Couldn't find the cutoff point - this is an error condition
+                    logger::log(
+                        logger::LogLevel::Error,
+                        &format!("Compacted_to ID {} not found in chat history, cannot merge safely", 
+                            compact.compacted_to)
+                    );
+                    // Don't replace history if we can't find the boundary
+                    return;
+                }
+            }
+            
             self.broadcast_chat_state_updated();
             self.submit(true);
         }

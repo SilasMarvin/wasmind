@@ -11,7 +11,7 @@ This is just one version of an Assistant that can be used within Wasmind with sa
 
 **Key Concepts:**
 - **Default State**: `WaitingForSystemInput` with `interruptible_by_user: true` 
-- **External Control**: Any state can be overridden via `RequestStatusUpdate` or `InterruptAndForceStatus`
+- **External Control**: Any state can be overridden via `RequestStatusUpdate` or `QueueStatusChange`
 - **Tool Status Updates**: Tools can request status changes and have their results queued until coordination completes
 - **System Prompt**: Dynamic contributions from any actor using `SystemPromptContribution` messages
 
@@ -25,7 +25,7 @@ This is just one version of an Assistant that can be used within Wasmind with sa
 **Key Messages:**
 - `AddMessage` - Add user/system messages to conversation
 - `SystemPromptContribution` - Contribute content to system prompt
-- `InterruptAndForceStatus` - External state control
+- `QueueStatusChange` - External state control (queued for next submit)
 - `ToolCallStatusUpdate` - Tool execution results
 
 ## Overview
@@ -135,10 +135,10 @@ SystemPromptContribution {
 }
 ```
 
-#### `assistant::InterruptAndForceStatus`
-Interrupts the assistant and forces it to a specific status, providing external control over state. See [State Management](#state-management) for details on available states.
+#### `assistant::QueueStatusChange`
+Queues a status change for the assistant's next submit operation, providing external control over state without interrupting current operations. See [State Management](#state-management) for details on available states.
 ```rust
-InterruptAndForceStatus {
+QueueStatusChange {
     agent: "assistant-scope".to_string(), // Must match this assistant's scope
     status: Status::Wait {
         reason: WaitReason::WaitingForSystemInput {
@@ -186,7 +186,7 @@ The Assistant Actor uses a state machine to manage conversation flow and coordin
 | `Processing` | LLM request/response cycle | Assistant | ✓ |
 | `Done` | Task completion & shutdown | External only | ✓ |
 
-**External State Control**: Any state can be overridden using `RequestStatusUpdate` or `InterruptAndForceStatus` messages from other actors. See [Tool-Initiated Status Updates](#tool-initiated-status-updates) for implementation details.
+**External State Control**: Any state can be overridden using `RequestStatusUpdate` or `QueueStatusChange` messages from other actors. See [Tool-Initiated Status Updates](#tool-initiated-status-updates) for implementation details.
 
 ### Initialization States
 
@@ -221,7 +221,7 @@ Waits for the language model service to become available.
   - `WaitingForLiteLLM` - after LLM becomes available
   - `Processing` - after LLM responds without tool calls (automatically with `interruptible_by_user: true`)
   - `Processing` - after any errors occur during LLM communication (this may change)
-  - External control via `RequestStatusUpdate` or `InterruptAndForceStatus` messages
+  - External control via `RequestStatusUpdate` or `QueueStatusChange` messages
 - **Exits to**:
   - `Processing` - when appropriate message is received (system message from required scope, or user message if interruptible)
 - **Default configuration**: The assistant typically uses `required_scope: None, interruptible_by_user: true`, allowing it to respond to both users and any system actor
@@ -232,7 +232,7 @@ A specialized state that only accepts user messages, queuing but not immediately
 - **Note**: This state is never set by the assistant itself - only by external actors
 - **Enters from**:
   - External `RequestStatusUpdate` message
-  - External `InterruptAndForceStatus` message
+  - External `QueueStatusChange` message
 - **Exits to**:
   - `Processing` - when user sends a message
 
@@ -246,7 +246,7 @@ Manages inter-agent communication through tool-based coordination.
   - `user_can_interrupt` - whether users can interrupt the coordination
 - **Enters from**:
   - External `RequestStatusUpdate` message from tools that need agent coordination
-  - External `InterruptAndForceStatus` message
+  - External `QueueStatusChange` message
 - **Exits to**:
   - `Processing` - when coordination completes (tool call finishes)
 
@@ -255,7 +255,7 @@ Tracks execution of multiple tool calls from an LLM response.
 - **Purpose**: Manages parallel tool execution and result collection
 - **Enters from**:
   - `Processing` - when LLM response includes tool calls
-  - External control via `RequestStatusUpdate` or `InterruptAndForceStatus` messages
+  - External control via `RequestStatusUpdate` or `QueueStatusChange` messages
 - **Exits to**:
   - `Processing` - automatically when all tools complete (resubmits to LLM with results)
 
@@ -281,7 +281,7 @@ Final state indicating the conversation or task has completed.
 - **Note**: This state is never set by the assistant itself - only by external actors
 - **Enters from**:
   - External `RequestStatusUpdate` message with `Done` status
-  - External `InterruptAndForceStatus` message with `Done` status
+  - External `QueueStatusChange` message with `Done` status
   - Typically sent by tools that determine task completion (e.g., task completion tools, user exit commands)
 - **Exits to**: None (terminal state, triggers shutdown)
 
@@ -312,11 +312,11 @@ WaitingForAllActorsReady → WaitingForSystemInput
 
 ### External State Control Examples
 ```
-WaitingForSystemInput → [InterruptAndForceStatus] → WaitingForUserInput
+WaitingForSystemInput → [QueueStatusChange] → WaitingForUserInput
 WaitingForTools → [RequestStatusUpdate] → WaitingForAgentCoordination
-Processing → [InterruptAndForceStatus] → Done
+Processing → [QueueStatusChange] → Done
 ```
-External actors can override any state using `RequestStatusUpdate` or `InterruptAndForceStatus`
+External actors can override any state using `RequestStatusUpdate` or `QueueStatusChange`
 
 ### Error Recovery
 ```
@@ -326,7 +326,7 @@ Any LLM communication error → Return to default waiting state with user interr
 
 ### Task Completion Flow
 ```
-Any State → [External InterruptAndForceStatus] → Done → [Exit Broadcast] → [System Shutdown]
+Any State → [External QueueStatusChange] → Done → [Exit Broadcast] → [System Shutdown]
 ```
 External completion signal → Terminal state → Shutdown message → All actors in scope terminate
 
