@@ -183,16 +183,19 @@ impl http::HostRequest for ActorState {
 
                     // If we should retry and this isn't the last attempt, continue to next iteration
                     if should_retry && attempt < max_attempts - 1 {
-                        tracing::info!(
-                            "HTTP request returned status {} (attempt {}), retrying...",
-                            status,
-                            attempt + 1
-                        );
-
                         // Apply exponential backoff delay
                         if let Some(retry_config) = retry_config.as_ref() {
                             let delay_ms = retry_config.base_delay_ms * (2_u64.pow(attempt));
                             let delay = Duration::from_millis(delay_ms);
+
+                            tracing::info!(
+                                "HTTP request failed with status {} (attempt {}/{}), retrying in {}ms",
+                                status,
+                                attempt + 1,
+                                max_attempts,
+                                delay_ms
+                            );
+
                             tokio::time::sleep(delay).await;
                         }
 
@@ -233,8 +236,9 @@ impl http::HostRequest for ActorState {
                         let delay = Duration::from_millis(delay_ms);
 
                         tracing::info!(
-                            "HTTP request attempt {} failed, retrying in {}ms",
+                            "HTTP request failed with network error (attempt {}/{}), retrying in {}ms",
                             attempt + 1,
+                            max_attempts,
                             delay_ms
                         );
                         tokio::time::sleep(delay).await;

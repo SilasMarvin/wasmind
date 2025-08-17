@@ -86,62 +86,6 @@
 //! - `ScrollStep(Length)`: Defines the maximum amount of rows to scroll
 //! - `Title(Title)`: Set box title
 //!
-//! ### Footer and status format
-//!
-//! The status and footer bars support a special syntax. The following keys can be inserted into the string:
-//!
-//! - `{ROW}`: current row
-//! - `{COL}`: current column
-//!
-//! ## Example
-//!
-//! ```rust
-//! use std::{fs, io::{self, BufRead}};
-//! use tuirealm::{
-//!     application::PollStrategy,
-//!     command::{Cmd, CmdResult, Direction, Position},
-//!     event::{Event, Key, KeyEvent, KeyModifiers},
-//!     props::{Alignment, AttrValue, Attribute, BorderType, Borders, Color, Style, TextModifiers},
-//!     terminal::TerminalBridge,
-//!     Application, Component, EventListenerCfg, MockComponent, NoUserEvent, State, StateValue,
-//!     Update,
-//! };
-//! use tui_realm_textarea::TextArea;
-//!
-//! let textarea = match fs::File::open("README.md") {
-//!     Ok(reader) => TextArea::new(
-//!         io::BufReader::new(reader)
-//!             .lines()
-//!             .map(|l| l.unwrap())
-//!             .collect::<_>(),
-//!     ),
-//!     Err(_) => TextArea::default(),
-//! };
-//! let component = textarea
-//!     .borders(
-//!         Borders::default()
-//!             .color(Color::LightYellow)
-//!             .modifiers(BorderType::Double),
-//!     )
-//!     .cursor_line_style(Style::default())
-//!     .cursor_style(Style::default().add_modifier(TextModifiers::REVERSED))
-//!     .footer_bar("Press <ESC> to quit", Style::default())
-//!     .line_number_style(
-//!         Style::default()
-//!             .fg(Color::LightBlue)
-//!             .add_modifier(TextModifiers::ITALIC),
-//!     )
-//!     .max_histories(64)
-//!     .scroll_step(4)
-//!     .status_bar(
-//!         "README.md Ln {ROW}, Col {COL}",
-//!         Style::default().add_modifier(TextModifiers::REVERSED),
-//!     )
-//!     .tab_length(4)
-//!     .title("Editing README.md", Alignment::Left);
-//! ```
-//!
-
 #[cfg(feature = "clipboard")]
 use cli_clipboard::{ClipboardContext, ClipboardProvider};
 use ratatui::text::Span;

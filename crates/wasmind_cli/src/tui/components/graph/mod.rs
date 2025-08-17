@@ -63,13 +63,13 @@ impl TryFrom<&str> for GraphUserAction {
     }
 }
 
-#[allow(clippy::vec_box)]
 struct AgentNode {
     component: AgentComponent,
     spawned_agents: Vec<AgentNode>,
 }
 
 impl AgentNode {
+    /// Creates a new AgentNode.
     fn new(component: AgentComponent) -> Self {
         Self {
             component,
@@ -77,295 +77,212 @@ impl AgentNode {
         }
     }
 
-    /// Find the currently selected agent and return its scope and actors
-    fn find_selected_agent_info(&self) -> Option<(String, Vec<String>)> {
-        if self.component.component.is_selected {
-            return Some((
-                self.scope().clone(),
-                self.component.component.actors.clone(),
-            ));
-        }
-
-        for child in &self.spawned_agents {
-            if let Some(info) = child.find_selected_agent_info() {
-                return Some(info);
-            }
-        }
-
-        None
-    }
-
-    /// Returns the Scope of the newly selected node, or None if no next node available
-    fn select_next(&mut self) -> Option<Scope> {
-        if self.component.component.is_selected {
-            if let Some(child) = self.spawned_agents.first_mut() {
-                child.component.component.is_selected = true;
-                self.component.component.is_selected = false;
-                Some(child.scope().clone())
-            } else {
-                None
-            }
-        } else {
-            let spawned_agent_len = self.spawned_agents.len();
-            for (index, agent) in self.spawned_agents.iter_mut().enumerate() {
-                // First check if this child contains the selected node
-                if agent.contains_selected() {
-                    // Try to select next within this child
-                    if let Some(selected_scope) = agent.select_next() {
-                        return Some(selected_scope);
-                    } else {
-                        // Child contains selected but couldn't go next, try next sibling
-                        if spawned_agent_len > index + 1 {
-                            agent.clear_selected();
-                            self.spawned_agents[index + 1]
-                                .component
-                                .component
-                                .is_selected = true;
-                            return Some(self.spawned_agents[index + 1].scope().clone());
-                        } else {
-                            return None;
-                        }
-                    }
-                }
-            }
-            None
-        }
-    }
-
-    /// Returns the Scope of the newly selected node, or None if no previous node available
-    fn select_previous(&mut self) -> Option<Scope> {
-        // First, check if any child contains the selected node
-        for (index, agent) in self.spawned_agents.iter_mut().enumerate() {
-            if agent.contains_selected() {
-                // Try to select previous within this child
-                if let Some(selected_scope) = agent.select_previous() {
-                    return Some(selected_scope);
-                } else {
-                    // Child contains selected but couldn't go previous
-                    if index > 0 {
-                        // Move to the previous sibling's last descendant
-                        agent.clear_selected();
-                        let prev_sibling = &mut self.spawned_agents[index - 1];
-                        return Some(prev_sibling.select_last());
-                    } else {
-                        // This is the first child, so select the parent (self)
-                        agent.clear_selected();
-                        self.component.component.is_selected = true;
-                        return Some(self.scope().clone());
-                    }
-                }
-            }
-        }
-
-        // If no child contains the selected node, check if self is selected
-        if self.component.component.is_selected {
-            // Can't go previous from here
-            None
-        } else {
-            // Selected node is not in this subtree
-            None
-        }
-    }
-
-    /// Helper function to check if this subtree contains the selected node
-    fn contains_selected(&self) -> bool {
-        if self.component.component.is_selected {
-            return true;
-        }
-        self.spawned_agents
-            .iter()
-            .any(|child| child.contains_selected())
-    }
-
-    /// Helper function to select the last descendant in the subtree and return its Scope
-    fn select_last(&mut self) -> Scope {
-        if let Some(last_child) = self.spawned_agents.last_mut() {
-            last_child.select_last()
-        } else {
-            self.component.component.is_selected = true;
-            self.scope().clone()
-        }
-    }
-
-    fn clear_selected(&mut self) {
-        self.component.component.is_selected = false;
-        for agent in &mut self.spawned_agents {
-            agent.clear_selected();
-        }
-    }
-
-    fn increment_metrics(&mut self, scope: &Scope, metrics: AgentMetrics) -> bool {
-        if self.scope() == scope {
-            self.component.increment_metrics(metrics);
-            true
-        } else {
-            self.spawned_agents
-                .iter_mut()
-                .any(|child| child.increment_metrics(scope, metrics))
-        }
-    }
-
-    fn count(&self) -> u32 {
-        1 + self
-            .spawned_agents
-            .iter()
-            .fold(0, |acc, spa| acc + spa.count())
-    }
+    // --- Private Helper Functions for State and Identification ---
 
     fn scope(&self) -> &Scope {
         &self.component.component.id
     }
-
-    fn set_status(&mut self, scope: &Scope, status: &AgentStatus) -> bool {
-        if self.scope() == scope {
-            self.component.set_status(status.clone());
-            true
-        } else {
-            self.spawned_agents
-                .iter_mut()
-                .any(|agent| agent.set_status(scope, status))
-        }
+    fn is_selected(&self) -> bool {
+        self.component.component.is_selected
+    }
+    fn select(&mut self) {
+        self.component.component.is_selected = true;
+    }
+    fn unselect(&mut self) {
+        self.component.component.is_selected = false;
     }
 
-    #[allow(clippy::result_large_err)]
-    fn insert(&mut self, parent_scope: &Scope, node: AgentNode) -> Result<(), AgentNode> {
-        if self.scope() == parent_scope {
-            self.spawned_agents.push(node);
-            return Ok(());
+    // --- Core Tree Traversal Helpers ---
+
+    /// Recursively finds a mutable reference to a node with the given scope.
+    fn find_mut(&mut self, scope: &Scope) -> Option<&mut AgentNode> {
+        if self.scope() == scope {
+            return Some(self);
         }
-
-        let mut node_to_insert = node;
-
-        for child in &mut self.spawned_agents {
-            match child.insert(parent_scope, node_to_insert) {
-                Ok(()) => {
-                    return Ok(());
-                }
-                Err(returned_node) => {
-                    node_to_insert = returned_node;
-                }
-            }
-        }
-
-        Err(node_to_insert)
+        self.spawned_agents
+            .iter_mut()
+            .find_map(|child| child.find_mut(scope))
     }
 
-    /// Removes the node with the given scope and selects the previous node.
-    /// Returns the scope of the newly selected node, or None if no previous node exists.
-    fn remove(&mut self, scope: &Scope) -> Option<Scope> {
-        // Check if we need to remove self
-        if self.scope() == scope {
-            // Can't remove self from within the method
-            // This case should be handled by the parent
-            return None;
-        }
-
-        // Find and remove the child with the matching scope
-        let mut child_index = None;
-        for (index, child) in self.spawned_agents.iter().enumerate() {
-            if child.scope() == scope {
-                child_index = Some(index);
-                break;
-            }
-        }
-
-        if let Some(index) = child_index {
-            // Remove the child
-            let removed_child = self.spawned_agents.remove(index);
-
-            // Determine what to select next
-            if removed_child.component.component.is_selected {
-                // The removed node was selected, so select previous
-                if index > 0 {
-                    // Select the last descendant of the previous sibling
-                    let prev_sibling = &mut self.spawned_agents[index - 1];
-                    return Some(prev_sibling.select_last());
-                } else {
-                    // No previous sibling, select parent (self)
-                    self.component.component.is_selected = true;
-                    return Some(self.scope().clone());
-                }
-            } else {
-                // The removed node wasn't selected, so no selection change needed
-                // Return the currently selected node's scope if any, otherwise return parent scope to indicate success
-                return Some(
-                    self.find_selected_scope()
-                        .unwrap_or_else(|| self.scope().clone()),
-                );
-            }
-        }
-
-        // Try to remove from children
-        for (index, child) in self.spawned_agents.iter_mut().enumerate() {
-            if child.contains_scope(scope) {
-                if let Some(new_selection) = child.remove(scope) {
-                    return Some(new_selection);
-                } else {
-                    // Child couldn't handle the removal (trying to remove itself)
-                    // Remove this child and handle selection
-                    let removed_child = self.spawned_agents.remove(index);
-
-                    if removed_child.contains_selected() {
-                        // Need to select previous
-                        if index > 0 {
-                            let prev_sibling = &mut self.spawned_agents[index - 1];
-                            return Some(prev_sibling.select_last());
-                        } else {
-                            self.component.component.is_selected = true;
-                            return Some(self.scope().clone());
-                        }
-                    } else {
-                        return self.find_selected_scope();
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    /// Helper function to check if this subtree contains a node with the given scope
-    fn contains_scope(&self, scope: &Scope) -> bool {
-        if self.scope() == scope {
-            return true;
+    /// Recursively finds an immutable reference to the currently selected node.
+    fn find_selected(&self) -> Option<&AgentNode> {
+        if self.is_selected() {
+            return Some(self);
         }
         self.spawned_agents
             .iter()
-            .any(|child| child.contains_scope(scope))
+            .find_map(|child| child.find_selected())
     }
 
-    /// Helper function to find and return the scope of the currently selected node
-    fn find_selected_scope(&self) -> Option<Scope> {
-        if self.component.component.is_selected {
-            return Some(self.scope().clone());
-        }
-
+    /// Builds a flattened, depth-first list of immutable references to node Scopes.
+    /// This is the core of the safe navigation strategy.
+    fn get_scopes_in_order<'a>(&'a self, scopes: &mut Vec<&'a Scope>) {
+        scopes.push(self.scope());
         for child in &self.spawned_agents {
-            if let Some(selected_scope) = child.find_selected_scope() {
-                return Some(selected_scope);
+            child.get_scopes_in_order(scopes);
+        }
+    }
+
+    // --- Public API ---
+
+    /// Finds the currently selected agent and returns its scope and actors.
+    fn find_selected_agent_info(&self) -> Option<(Scope, Vec<String>)> {
+        self.find_selected().map(|node| {
+            (
+                node.scope().clone(),
+                node.component.component.actors.clone(),
+            )
+        })
+    }
+
+    /// Selects the next node in a depth-first traversal order.
+    fn select_next(&mut self) -> Option<Scope> {
+        // 1. Find the scope of the currently selected node.
+        let current_scope = self.find_selected()?.scope().clone();
+
+        // 2. Get a safe, ordered list of all scope references.
+        let mut scopes = Vec::new();
+        self.get_scopes_in_order(&mut scopes);
+
+        // 3. Find the position of the current node and determine the next scope.
+        let current_pos = scopes.iter().position(|s| **s == current_scope)?;
+        let next_scope_ref = scopes.get(current_pos + 1)?;
+        let next_scope = (*next_scope_ref).clone();
+
+        // 4. Perform the state change with two separate, non-conflicting traversals.
+        if let Some(current_node) = self.find_mut(&current_scope) {
+            current_node.unselect();
+        }
+        if let Some(next_node) = self.find_mut(&next_scope) {
+            next_node.select();
+            Some(next_node.scope().clone())
+        } else {
+            None // Should be unreachable if the scopes list is correct
+        }
+    }
+
+    /// Selects the previous node in a depth-first traversal order.
+    fn select_previous(&mut self) -> Option<Scope> {
+        let current_scope = self.find_selected()?.scope().clone();
+
+        let prev_scope = {
+            let mut scopes = Vec::new();
+            self.get_scopes_in_order(&mut scopes);
+
+            let current_pos = scopes.iter().position(|s| **s == current_scope)?;
+            if current_pos == 0 {
+                return None;
+            } // Already at the first node
+            scopes.get(current_pos - 1)?.to_string()
+        };
+
+        if let Some(current_node) = self.find_mut(&current_scope) {
+            current_node.unselect();
+        }
+        if let Some(prev_node) = self.find_mut(&prev_scope) {
+            prev_node.select();
+            Some(prev_node.scope().clone())
+        } else {
+            None
+        }
+    }
+
+    /// Inserts a new node under the given parent. Returns `true` on success.
+    fn insert(&mut self, parent_scope: &Scope, node: AgentNode) -> Result<(), AgentNode> {
+        if let Some(parent_node) = self.find_mut(parent_scope) {
+            parent_node.spawned_agents.push(node);
+            Ok(())
+        } else {
+            Err(node)
+        }
+    }
+
+    /// Removes the node with the given scope and selects the previous node.
+    /// Returns the scope of the newly selected node.
+    fn remove(&mut self, scope_to_remove: &Scope) -> Option<Scope> {
+        if self.scope() == scope_to_remove {
+            return None;
+        } // Cannot remove the root
+
+        // 1. Get the ordered list of scope references BEFORE mutation.
+        let mut scopes = Vec::new();
+        self.get_scopes_in_order(&mut scopes);
+
+        // 2. Find the position of the node to remove.
+        let removal_pos = scopes.iter().position(|s| *s == scope_to_remove)?;
+
+        // 3. Determine which scope to select after removal (the previous one).
+        // Must clone here because the original reference will be invalidated by the removal.
+        let new_scope_to_select = if removal_pos > 0 {
+            scopes[removal_pos - 1].clone()
+        } else {
+            self.scope().clone()
+        };
+
+        // 4. Perform the actual removal via a recursive helper.
+        let removed_node = self.remove_recursive(scope_to_remove)?;
+
+        // 5. If the removed node was the selected one, update the selection.
+        if removed_node.is_selected() {
+            if let Some(newly_selected_node) = self.find_mut(&new_scope_to_select) {
+                newly_selected_node.select();
             }
         }
 
-        None
+        Some(new_scope_to_select)
     }
 
-    /// Find the Y position of the selected node in the tree
-    fn find_selected_y_position(&self, current_y: &mut u32) -> Option<u32> {
-        if self.component.component.is_selected {
-            return Some(*current_y + agent::WIDGET_HEIGHT as u32 / 2); // Center of the node
+    /// Recursive helper to find and remove a child node. Returns the removed node.
+    fn remove_recursive(&mut self, scope: &Scope) -> Option<AgentNode> {
+        if let Some(index) = self.spawned_agents.iter().position(|c| c.scope() == scope) {
+            return Some(self.spawned_agents.remove(index));
         }
+        self.spawned_agents
+            .iter_mut()
+            .find_map(|child| child.remove_recursive(scope))
+    }
 
-        // Update y for this node
-        *current_y += agent::WIDGET_HEIGHT as u32 + 1;
-
-        // Check children
-        for child in &self.spawned_agents {
-            if let Some(selected_y) = child.find_selected_y_position(current_y) {
-                return Some(selected_y);
-            }
+    /// Sets the status for the agent with the given scope. Returns `true` on success.
+    fn set_status(&mut self, scope: &Scope, status: AgentStatus) -> bool {
+        if let Some(node) = self.find_mut(scope) {
+            node.component.set_status(status);
+            true
+        } else {
+            false
         }
+    }
 
-        None
+    /// Increments metrics for the agent with the given scope. Returns `true` on success.
+    fn increment_metrics(&mut self, scope: &Scope, metrics: AgentMetrics) -> bool {
+        if let Some(node) = self.find_mut(scope) {
+            node.component.increment_metrics(metrics);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Counts the total number of nodes in this subtree.
+    fn count(&self) -> u32 {
+        1 + self.spawned_agents.iter().map(|c| c.count()).sum::<u32>()
+    }
+
+    /// Finds the Y position of the selected node in the tree for rendering.
+    fn find_selected_y_position(&self) -> Option<u32> {
+        let mut scopes = Vec::new();
+        self.get_scopes_in_order(&mut scopes);
+
+        let selected_scope = self.find_selected()?.scope();
+
+        let position = scopes.iter().position(|s| *s == selected_scope)?;
+
+        let center_offset = agent::WIDGET_HEIGHT / 2;
+
+        Some(
+            (position as u32 * agent::WIDGET_HEIGHT as u32)
+                + center_offset as u32
+                + position as u32,
+        )
     }
 }
 
@@ -420,8 +337,7 @@ impl GraphArea {
         }
 
         if let Some(ref root) = self.root_node {
-            let mut y_position = 0;
-            if let Some(selected_y) = root.find_selected_y_position(&mut y_position) {
+            if let Some(selected_y) = root.find_selected_y_position() {
                 // Calculate scroll offset to center the selected node
                 let center_offset = selected_y.saturating_sub(self.viewport_height as u32 / 2);
 
@@ -456,33 +372,6 @@ impl GraphArea {
             "No key bindings configured".to_string()
         } else {
             bindings.join("\n")
-        }
-    }
-
-    /// Formats status bar content for the currently selected agent
-    fn format_status_bar(&self, max_width: u16) -> String {
-        if let Some(root) = &self.root_node {
-            if let Some((scope, actors)) = root.find_selected_agent_info() {
-                let actors_str = if actors.is_empty() {
-                    "none".to_string()
-                } else {
-                    actors.join(", ")
-                };
-
-                let full_content = format!("Selected: {} | Actors: {}", scope, actors_str);
-
-                // Truncate if too long for the available width
-                if full_content.len() > max_width as usize {
-                    let truncated = &full_content[..max_width.saturating_sub(3) as usize];
-                    format!("{}...", truncated)
-                } else {
-                    full_content
-                }
-            } else {
-                "No agent selected".to_string()
-            }
-        } else {
-            "No agent selected".to_string()
         }
     }
 }
@@ -665,21 +554,8 @@ impl MockComponent for GraphArea {
             // Clear the entire area before rendering to prevent visual artifacts
             Clear.render(area, frame.buffer_mut());
 
-            // Reserve space for status bar at the bottom with spacing
-            // 1 line for spacer + 3 lines for status bar (border + content + border)
-            let status_section_height = 4;
-            let tree_area = Rect {
-                x: area.x,
-                y: area.y,
-                width: area.width,
-                height: area.height.saturating_sub(status_section_height),
-            };
-            let status_bar_area = Rect {
-                x: area.x,
-                y: area.y + tree_area.height + 1, // +1 for spacer line
-                width: area.width,
-                height: 3, // Just the status bar itself
-            };
+            // Use full area for tree rendering
+            let tree_area = area;
 
             // Update viewport dimensions for the tree area
             self.viewport_height = tree_area.height;
@@ -703,6 +579,24 @@ impl MockComponent for GraphArea {
 
                 // Render the overall stats (always visible in top-right of tree area)
                 let live_agents = root.count();
+
+                // Get selected agent's actors
+                let selected_section =
+                    if let Some((scope, actors)) = root.find_selected_agent_info() {
+                        let mut section = format!("-----\nSelected: {}", scope);
+                        if actors.is_empty() {
+                            section.push_str("\nActors: none");
+                        } else {
+                            section.push_str("\nActors:");
+                            for actor in &actors {
+                                section.push_str(&format!("\n  {}", actor));
+                            }
+                        }
+                        section
+                    } else {
+                        "-----\nNo agent selected".to_string()
+                    };
+
                 let block = create_block_with_title(
                     "[ System Stats ]",
                     Borders::default(),
@@ -710,12 +604,13 @@ impl MockComponent for GraphArea {
                     Some(Padding::horizontal(1)),
                 );
                 let stats_paragraph = Paragraph::new(format!(
-                    "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}",
+                    "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}\n{}", 
                     live_agents,
                     self.stats.agents_spawned,
                     self.stats.aggregated_agent_metrics.completion_requests_sent,
                     self.stats.aggregated_agent_metrics.tools_called,
-                    self.stats.aggregated_agent_metrics.total_tokens_used
+                    self.stats.aggregated_agent_metrics.total_tokens_used,
+                    selected_section
                 )).block(block);
                 let [mut stats_area] = Layout::horizontal([stats_paragraph.line_width() as u16])
                     .flex(Flex::End)
@@ -724,19 +619,6 @@ impl MockComponent for GraphArea {
                 Clear.render(stats_area, frame.buffer_mut());
                 frame.render_widget(stats_paragraph, stats_area);
             }
-
-            // Blank line above status bar for visual separation (no rendering needed)
-
-            // Render the status bar at the bottom with subtle styling
-            let status_content = self.format_status_bar(status_bar_area.width.saturating_sub(4));
-            let status_block = create_block_with_title(
-                "[ Agent Actors ]",
-                Borders::default(),
-                false,
-                Some(Padding::horizontal(1)),
-            );
-            let status_paragraph = Paragraph::new(status_content).block(status_block);
-            frame.render_widget(status_paragraph, status_bar_area);
         }
     }
 
@@ -781,8 +663,26 @@ impl MockComponent for GraphAreaComponent {
             let stats_height = if let Some(ref root) = self.component.root_node {
                 // This mirrors the stats calculation from GraphArea::view
                 let live_agents = root.count();
+
+                // Get selected agent's actors (same logic as in GraphArea::view)
+                let selected_section =
+                    if let Some((scope, actors)) = root.find_selected_agent_info() {
+                        let mut section = format!("-----\nSelected: {}", scope);
+                        if actors.is_empty() {
+                            section.push_str("\nActors: none");
+                        } else {
+                            section.push_str("\nActors:");
+                            for actor in &actors {
+                                section.push_str(&format!("\n  {}", actor));
+                            }
+                        }
+                        section
+                    } else {
+                        "-----\nNo agent selected".to_string()
+                    };
+
                 let stats_content = format!(
-                    "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}",
+                    "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}\n{}",
                     live_agents,
                     self.component.stats.agents_spawned,
                     self.component
@@ -793,7 +693,8 @@ impl MockComponent for GraphAreaComponent {
                     self.component
                         .stats
                         .aggregated_agent_metrics
-                        .total_tokens_used
+                        .total_tokens_used,
+                    selected_section
                 );
                 let stats_block = create_block_with_title(
                     "[ System Stats ]",
@@ -983,7 +884,7 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                 {
                     if let Some(root) = &mut self.component.root_node {
                         let agent_scope = &envelope.from_scope;
-                        root.set_status(agent_scope, &agent_status_update.status);
+                        root.set_status(agent_scope, agent_status_update.status);
                         None
                     } else {
                         None
@@ -1078,7 +979,7 @@ mod tests {
 
     /// Helper to find which node is currently selected
     fn find_selected_node_scope(root: &AgentNode) -> Option<String> {
-        root.find_selected_scope()
+        root.find_selected().map(|x| x.scope().clone())
     }
 
     /// Helper to set a specific node as selected in the tree
