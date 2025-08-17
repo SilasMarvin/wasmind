@@ -1,4 +1,5 @@
 use crate::config::ParsedTuiConfig;
+use crate::tui::global_throbber;
 use crate::tui::model::TuiMessage;
 use ratatui::layout::{Constraint, Direction, Layout};
 use tuirealm::{
@@ -117,6 +118,7 @@ impl MockComponent for Dashboard {
 impl Component<TuiMessage, MessageEnvelope> for DashboardComponent {
     fn on(&mut self, ev: Event<MessageEnvelope>) -> Option<TuiMessage> {
         if let Event::Tick = &ev {
+            global_throbber::tick();
             return Some(TuiMessage::Redraw);
         }
 

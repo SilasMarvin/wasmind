@@ -29,9 +29,15 @@ use wasmind_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
+fn default_min_diff_size() -> u64 {
+    return 20;
+}
+
 #[derive(Deserialize)]
 struct ApprovalConfig {
     approvers: HashMap<String, Vec<String>>,
+    #[serde(default = "default_min_diff_size")]
+    min_diff_size: u64,
 }
 
 wasmind_actor_utils::actors::macros::generate_actor_trait!();
@@ -318,41 +324,50 @@ Current state of all read and edited files. This section updates automatically a
             }
         };
 
-        let approver_scopes: Vec<Scope> = self
-            .config
-            .approvers
-            .iter()
-            .map(|(approver_name, approver_actors)| {
-                let mut approver_actors = approver_actors.clone();
-                approver_actors.extend_from_slice(&[
-                    "hcwe_approve".to_string(),
-                    "hcwe_request_changes".to_string(),
-                ]);
-                spawn_agent(&approver_actors, &approver_name)
-                    .expect("Error spawning initial actors")
-            })
-            .collect();
+        if (diff.len() as u64) < self.config.min_diff_size {
+            self.do_edit_file(
+                tool_call_id,
+                &execute_tool.originating_request_id,
+                &params,
+                None,
+            );
+        } else {
+            let approver_scopes: Vec<Scope> = self
+                .config
+                .approvers
+                .iter()
+                .map(|(approver_name, approver_actors)| {
+                    let mut approver_actors = approver_actors.clone();
+                    approver_actors.extend_from_slice(&[
+                        "hcwe_approve".to_string(),
+                        "hcwe_request_changes".to_string(),
+                    ]);
+                    spawn_agent(&approver_actors, &approver_name)
+                        .expect("Error spawning initial actors")
+                })
+                .collect();
 
-        let message_content = format!("Review the change:\n\n{diff}");
-        for scope in &approver_scopes {
-            let message = ChatMessage::System(SystemChatMessage {
-                content: message_content.clone(),
+            let message_content = format!("Review the change:\n\n{diff}");
+            for scope in &approver_scopes {
+                let message = ChatMessage::System(SystemChatMessage {
+                    content: message_content.clone(),
+                });
+                let _ = Self::broadcast_common_message(AddMessage {
+                    agent: scope.clone(),
+                    message,
+                });
+            }
+
+            self.active_edit_file_call = Some(ActiveEditFileCall {
+                tool_call_id: execute_tool.tool_call.id,
+                originating_request_id: execute_tool.originating_request_id,
+                edit_file_params: params.clone(),
+                approver_responses: approver_scopes.iter().map(|x| (x.clone(), None)).collect(),
+                approver_scopes,
             });
-            let _ = Self::broadcast_common_message(AddMessage {
-                agent: scope.clone(),
-                message,
-            });
+
+            self.update_tool_call_status();
         }
-
-        self.active_edit_file_call = Some(ActiveEditFileCall {
-            tool_call_id: execute_tool.tool_call.id,
-            originating_request_id: execute_tool.originating_request_id,
-            edit_file_params: params.clone(),
-            approver_responses: approver_scopes.iter().map(|x| (x.clone(), None)).collect(),
-            approver_scopes,
-        });
-
-        self.update_tool_call_status();
     }
 
     fn update_tool_call_status(&self) {

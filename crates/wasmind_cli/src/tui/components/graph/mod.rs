@@ -583,13 +583,13 @@ impl MockComponent for GraphArea {
                 // Get selected agent's actors
                 let selected_section =
                     if let Some((scope, actors)) = root.find_selected_agent_info() {
-                        let mut section = format!("-----\nSelected: {}", scope);
+                        let mut section = format!("-----\nSelected: {scope}");
                         if actors.is_empty() {
                             section.push_str("\nActors: none");
                         } else {
                             section.push_str("\nActors:");
                             for actor in &actors {
-                                section.push_str(&format!("\n  {}", actor));
+                                section.push_str(&format!("\n  {actor}"));
                             }
                         }
                         section
@@ -667,13 +667,13 @@ impl MockComponent for GraphAreaComponent {
                 // Get selected agent's actors (same logic as in GraphArea::view)
                 let selected_section =
                     if let Some((scope, actors)) = root.find_selected_agent_info() {
-                        let mut section = format!("-----\nSelected: {}", scope);
+                        let mut section = format!("-----\nSelected: {scope}");
                         if actors.is_empty() {
                             section.push_str("\nActors: none");
                         } else {
                             section.push_str("\nActors:");
                             for actor in &actors {
-                                section.push_str(&format!("\n  {}", actor));
+                                section.push_str(&format!("\n  {actor}"));
                             }
                         }
                         section

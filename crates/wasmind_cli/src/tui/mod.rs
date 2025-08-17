@@ -10,6 +10,7 @@ use wasmind::actors::MessageEnvelope;
 use wasmind::context::WasmindContext;
 
 pub mod components;
+pub mod global_throbber;
 pub mod icons;
 mod model;
 mod throbber_in_title_ext;

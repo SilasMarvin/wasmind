@@ -2,7 +2,9 @@ use ratatui::layout::Alignment;
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph, Widget, WidgetRef, Wrap};
 use ratatui::{buffer::Buffer, widgets::Clear};
+use std::cell::RefCell;
 use std::collections::HashMap;
+use throbber_widgets_tui::{OGHAM_C, Throbber, VERTICAL_BLOCK, symbols::throbber};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
@@ -18,6 +20,7 @@ use wasmind_actor_utils::llm_client_types::{
     AssistantChatMessage, ChatMessage, ChatMessageWithRequestId, ToolCall,
 };
 
+use crate::tui::throbber_in_title_ext::ThrobberInTitleExt;
 use crate::tui::utils::{center_horizontal, create_block_with_title};
 use crate::tui::{icons, model::TuiMessage};
 
@@ -28,6 +31,45 @@ const STARTING_SCOPE: &str = wasmind_actor_utils::STARTING_SCOPE;
 const ROOT_AGENT_NAME: &str = "Root Agent";
 
 const MESSAGE_GAP: u16 = 1;
+
+// Thread-local storage for throbber state during rendering (legacy - can be removed)
+thread_local! {
+    static CURRENT_THROBBER_STATE: RefCell<Option<()>> = const { RefCell::new(None) };
+}
+
+// =============================================================================
+// THROBBER PARAGRAPH WIDGET
+// =============================================================================
+
+/// A paragraph widget that can render with animated throbbers in the title
+struct ThrobberParagraph {
+    paragraph: Paragraph<'static>,
+    throbber_pos: usize,
+    throbber_set: throbber::Set,
+}
+
+impl ThrobberParagraph {
+    fn new(
+        paragraph: Paragraph<'static>,
+        throbber_pos: usize,
+        throbber_set: throbber::Set,
+    ) -> Self {
+        Self {
+            paragraph,
+            throbber_pos,
+            throbber_set,
+        }
+    }
+}
+
+impl WidgetRef for ThrobberParagraph {
+    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+        let throbber = Throbber::default().throbber_set(self.throbber_set.clone());
+        self.paragraph
+            .clone()
+            .render_buf_with_throbber(buf, area, self.throbber_pos, throbber);
+    }
+}
 
 // =============================================================================
 // UTILITY FUNCTIONS
@@ -49,6 +91,9 @@ trait CacheableRenderItem {
     fn get_height<'a>(&mut self, area: Rect, context: &Self::Context<'a>) -> u16;
     fn get_buffer<'a>(&mut self, area: Rect, context: &Self::Context<'a>) -> &Buffer;
     fn invalidate_cache(&mut self);
+    fn has_active_throbber<'a>(&self, _context: &Self::Context<'a>) -> bool {
+        false
+    } // Default implementation: no throbber
 }
 
 // Cached wrapper for simple Paragraph widgets
@@ -158,10 +203,10 @@ fn create_tool_widget(
     let expand_icon = if is_expanded { "-" } else { "+" };
     let (errored, title, content, expanded_content) = match status {
         None => {
-            // Tool call exists but no status update received yet
+            // Tool call exists but no status update received yet - show throbber
             (
                 false,
-                format!("[ {} Tool: {} ]", expand_icon, tool_call.function.name),
+                format!("[ {} Tool: {} ⌘ ]", expand_icon, tool_call.function.name),
                 "Queued for execution".to_string(),
                 Some(default_expanded_content.clone()),
             )
@@ -171,18 +216,20 @@ fn create_tool_widget(
                 display_info.collapsed.clone(),
                 display_info.expanded.clone(),
             );
+            // Tool is running - show throbber
             (
                 false,
-                format!("[ {} Tool: {} ]", expand_icon, tool_call.function.name),
+                format!("[ {} Tool: {} ⌘ ]", expand_icon, tool_call.function.name),
                 content,
                 expanded_content,
             )
         }
         Some(ToolCallStatus::AwaitingSystem { details }) => {
             let content = format!("Awaiting system: {}", details.ui_display_info.collapsed);
+            // Tool is waiting - show throbber
             (
                 false,
-                format!("[ {} Tool: {} ]", expand_icon, tool_call.function.name),
+                format!("[ {} Tool: {} ⌘ ]", expand_icon, tool_call.function.name),
                 content,
                 details.ui_display_info.expanded.clone(),
             )
@@ -201,6 +248,7 @@ fn create_tool_widget(
                 ),
             };
 
+            // Tool is done - no throbber
             (
                 errored,
                 format!("[ {} Tool: {} ]", expand_icon, tool_call.function.name),
@@ -224,7 +272,12 @@ fn create_tool_widget(
         Color::default() // Gray/default for pending state
     };
     let borders = tuirealm::props::Borders::default().color(border_color);
-    let block = create_block_with_title(title, borders, false, Some(Padding::horizontal(1)));
+
+    // Check if we need to render a throbber (if title contains ⌘)
+    let maybe_throbber_pos = title.chars().position(|c| c == '⌘');
+
+    let block =
+        create_block_with_title(title.clone(), borders, false, Some(Padding::horizontal(1)));
     let p = Paragraph::new(content)
         .block(block)
         .style(Style::new())
@@ -232,7 +285,22 @@ fn create_tool_widget(
         .wrap(Wrap { trim: true });
     let min_height = p.line_count(area.width.saturating_sub(4)) as u16;
 
-    (Box::new(p), min_height)
+    // If we have a throbber position, create a ThrobberParagraph
+    if let Some(throbber_pos) = maybe_throbber_pos {
+        // Choose throbber type based on status
+        let throbber_set = match status {
+            None => VERTICAL_BLOCK, // Queued - use tool execution throbber
+            Some(ToolCallStatus::Received { .. }) => VERTICAL_BLOCK, // Running - use tool execution throbber
+            Some(ToolCallStatus::AwaitingSystem { .. }) => OGHAM_C, // Waiting - use system wait throbber
+            Some(ToolCallStatus::Done { .. }) => VERTICAL_BLOCK, // Done - shouldn't happen but fallback
+        };
+
+        let throbber_paragraph = ThrobberParagraph::new(p, throbber_pos, throbber_set);
+        (Box::new(throbber_paragraph), min_height)
+    } else {
+        // No throbber needed, return regular paragraph
+        (Box::new(p), min_height)
+    }
 }
 
 /// Creates widgets for assistant messages, including text content and tool calls
@@ -371,6 +439,35 @@ impl CacheableRenderItem for ChatMessageWidgetState {
         self.height = None;
         self.buffer = None;
         self.widgets.clear();
+    }
+
+    fn has_active_throbber<'a>(&self, context: &Self::Context<'a>) -> bool {
+        // Check if this message contains assistant with tool calls that are loading
+        if let ChatMessageWithRequestId::Assistant(assistant_with_request_id) = &self.message {
+            if let Some(tool_calls) = &assistant_with_request_id.message.tool_calls {
+                let tool_call_updates = context.0;
+                let request_id = &assistant_with_request_id.originating_request_id;
+
+                // Check if any tool call is in a loading state
+                for tool_call in tool_calls {
+                    let status = tool_call_updates
+                        .get(request_id)
+                        .and_then(|request_updates| request_updates.get(&tool_call.id));
+
+                    // Tool is loading if:
+                    // 1. No status (None) - queued for execution
+                    // 2. Status is Received - actively running
+                    // 3. Status is AwaitingSystem - waiting for system
+                    match status {
+                        None => return true,                                        // Queued
+                        Some(ToolCallStatus::Received { .. }) => return true,       // Running
+                        Some(ToolCallStatus::AwaitingSystem { .. }) => return true, // Waiting
+                        Some(ToolCallStatus::Done { .. }) => {} // Completed, check next
+                    }
+                }
+            }
+        }
+        false
     }
 }
 
@@ -585,6 +682,14 @@ impl AssistantInfo {
         scroll_offset: u16,
         tools_expanded: bool,
     ) -> u16 {
+        // Check each message for active throbbers and invalidate their cache
+        // Since throbber state is now global, we need to invalidate caches for any message with active throbbers
+        for message in &mut self.chat_message_widget_state {
+            if message.has_active_throbber(&(&self.tool_call_updates, tools_expanded)) {
+                message.invalidate_cache();
+            }
+        }
+
         let mut y_offset = 0;
 
         // Create or get cached title

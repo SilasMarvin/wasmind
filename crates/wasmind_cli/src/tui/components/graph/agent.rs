@@ -1,12 +1,8 @@
-use std::time::{Duration, Instant};
-
 use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
-use throbber_widgets_tui::{
-    BLACK_CIRCLE, OGHAM_C, Throbber, ThrobberState, VERTICAL_BLOCK, symbols::throbber,
-};
+use throbber_widgets_tui::{BLACK_CIRCLE, OGHAM_C, Throbber, VERTICAL_BLOCK, symbols::throbber};
 use tuirealm::{
     AttrValue, Attribute, Component, Event, Frame, MockComponent, Props, State,
     command::{Cmd, CmdResult},
@@ -19,8 +15,6 @@ use wasmind::{actors::MessageEnvelope, scope::Scope};
 use wasmind_actor_utils::common_messages::assistant::{Status as AgentStatus, WaitReason};
 
 use crate::tui::{model::TuiMessage, throbber_in_title_ext::ThrobberInTitleExt, utils};
-
-const MIN_THROBBER_UPDATE_GAP: Duration = Duration::from_millis(300);
 
 pub const WIDGET_WIDTH: u16 = 50;
 pub const WIDGET_HEIGHT: u16 = 6;
@@ -82,8 +76,6 @@ impl AgentComponent {
                 props: Props::default(),
                 status: None,
                 context_size: 0,
-                throbber_state: ThrobberState::default(),
-                last_throbber_update: Instant::now(),
             },
         }
     }
@@ -139,8 +131,6 @@ pub struct Agent {
     state: State,
     context_size: u64,
     status: Option<AgentStatus>,
-    throbber_state: ThrobberState,
-    last_throbber_update: Instant,
 }
 
 impl Agent {
@@ -165,8 +155,6 @@ impl Agent {
                 borders.sides.remove(BorderSides::BOTTOM);
             }
 
-            // Only show title if we're showing the top
-            // TODO: FIGURE OUT WHY THIS IS BLANK
             let title = if !trim_top {
                 if let Some(status) = &self.status {
                     format!("[ {} | {} ]", self.id, format_agent_status(status))
@@ -186,11 +174,7 @@ impl Agent {
                 && let Some(throbber_set) = get_throbber_for_agent_status(status)
             {
                 let throbber = Throbber::default().throbber_set(throbber_set);
-                if self.last_throbber_update.elapsed() >= MIN_THROBBER_UPDATE_GAP {
-                    self.throbber_state.calc_next();
-                    self.last_throbber_update = Instant::now();
-                }
-                div.render_with_throbber(frame, area, loc, throbber, &mut self.throbber_state);
+                div.render_with_throbber(frame, area, loc, throbber);
             } else {
                 frame.render_widget_ref(div, area);
             }

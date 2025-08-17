@@ -49,8 +49,8 @@ pub fn generate_id(len: usize) -> String {
 /// Accepts:
 /// - Boolean values: `true`, `false`
 /// - String values: `"true"`, `"false"`, `"True"`, `"False"`, `"TRUE"`, `"FALSE"`,
-///                  `"yes"`, `"no"`, `"Yes"`, `"No"`, `"YES"`, `"NO"`,
-///                  `"1"`, `"0"`
+///   `"yes"`, `"no"`, `"Yes"`, `"No"`, `"YES"`, `"NO"`,
+///   `"1"`, `"0"`
 pub fn deserialize_flexible_bool<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
 where
     D: Deserializer<'de>,
@@ -69,8 +69,7 @@ where
             "true" | "yes" | "1" => Ok(Some(true)),
             "false" | "no" | "0" => Ok(Some(false)),
             _ => Err(serde::de::Error::custom(format!(
-                "Invalid boolean string '{}'. Expected: true, false, yes, no, 1, or 0 (case-insensitive)",
-                s
+                "Invalid boolean string '{s}'. Expected: true, false, yes, no, 1, or 0 (case-insensitive)"
             ))),
         },
         FlexibleBool::Null => Ok(None),
