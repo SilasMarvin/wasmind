@@ -11,7 +11,7 @@ This tool actor provides AI agents with the ability to execute bash commands in 
 
 This actor exposes the following tool to AI agents:
 
-### `execute_command`
+### `execute_bash`
 - **Description**: Execute a bash command in a stateless environment with full shell features
 - **Parameters**:
   - `command`: The bash command to execute (required)
@@ -42,7 +42,7 @@ This actor is essential for AI agents that need to interact with the underlying 
 
 ## Messages Broadcast
 
-- `tools::ToolsAvailable` - Announces the `execute_command` tool to AI agents when initialized
+- `tools::ToolsAvailable` - Announces the `execute_bash` tool to AI agents when initialized
 - `tools::ToolCallStatusUpdate` - Broadcasts command execution results back to the requesting agent
   - Includes both success and failure outcomes with detailed output information
   - Provides structured UI display information for better user experience
@@ -55,7 +55,7 @@ No configuration required. The actor is ready to use once included in your actor
 
 When activated in a Wasmind system, this actor:
 
-1. **Registers the `execute_command` tool** with AI agents, making it available for use
+1. **Registers the `execute_bash` tool** with AI agents, making it available for use
 2. **Receives tool calls** when agents decide to run shell commands
 3. **Executes commands safely** using `bash -c` in isolated environments
 4. **Handles all execution outcomes** including success, failure, timeouts, and signals

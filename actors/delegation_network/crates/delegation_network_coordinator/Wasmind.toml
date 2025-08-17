@@ -372,6 +372,8 @@ Your entire analysis MUST be submitted by calling the `review_plan` tool. Conden
         The plan adheres to all Wasmind architectural principles for delegation and agent granularity.
         ```
 4.  **Call the Tool:** After formulating your feedback, immediately call `review_plan` with the populated `feedback` parameter. This concludes your mission.
+
+CRITICAL: Focus on providing succinct valuable feedback! Do not be overly verbose or wordy!
 '''
 
 # -------------------------------------------------------------------
@@ -422,6 +424,8 @@ Your entire analysis MUST be submitted by calling the `review_plan` tool. Your a
         The plan is strategically sound, logical, and efficiently structured to meet the task's objective.
         ```
 3.  **Call the Tool:** After formulating your feedback, immediately call `review_plan` with the populated `feedback` parameter. This concludes your mission.
+
+CRITICAL: Focus on providing succinct valuable feedback! Do not be overly verbose or wordy!
 '''
 
 # -------------------------------------------------------------------
@@ -462,6 +466,8 @@ Your entire analysis MUST be submitted by calling the `review_plan` tool. Your f
         My investigation found no clear evidence of code duplication. The plan appears to be novel.
         ```
 3.  **Call the Tool:** After formulating your feedback, immediately call `review_plan` with the populated `feedback` parameter. This concludes your mission.
+
+CRITICAL: Focus on providing succinct valuable feedback! Do not be overly verbose or wordy!
 '''
 
 # -------------------------------------------------------------------
@@ -502,6 +508,8 @@ Your entire analysis MUST be submitted by calling the `review_plan` tool. Your f
         The proposed plan appears to be consistent with the repository's observed coding conventions.
         ```
 3.  **Call the Tool:** After formulating your feedback, immediately call `review_plan` with the populated `feedback` parameter. This concludes your mission.
+
+CRITICAL: Focus on providing succinct valuable feedback! Do not be overly verbose or wordy!
 '''
 
 # ===================================================================
@@ -554,6 +562,8 @@ You MUST conclude your work by calling either the `approve` or `request_changes`
     - Critique: The function `fetch_user` returns `null` on failure.
     - Suggestion: My investigation shows this repository uses a `Result` type for all fallible operations. Please refactor this function to return a `Result<User, Error>` to maintain consistency with the pattern found in `src/api/utils.rs`.
     ```
+
+CRITICAL: Focus on providing succinct valuable feedback! Do not be overly verbose or wordy!
 '''
 
 
@@ -598,6 +608,7 @@ You MUST conclude your work by calling either the `approve` or `request_changes`
     - Critique: The new `isValidEmail` function in the diff duplicates functionality that already exists.
     - Suggestion: Do not add this new function. Instead, import and use the existing `validate_email_format` utility from `src/common/validators.js`.
     ```
+CRITICAL: Focus on providing succinct valuable feedback! Do not be overly verbose or wordy!
 '''
 
 
@@ -647,4 +658,5 @@ You MUST conclude your work by calling either the `approve` or `request_changes`
     - Bug: The loop condition `for i in 0..items.len()` should be `for i in 0..items.len() - 1` to avoid an index-out-of-bounds error.
     - Edge Case: The function does not correctly handle an empty `items` list and will panic. Add a check at the beginning of the function to handle this case.
     ```
+CRITICAL: Focus on providing succinct valuable feedback! Do not be overly verbose or wordy!
 '''

@@ -8,7 +8,7 @@ use wasmind_actor_utils::{
             Status, StatusUpdate, SystemPromptContribution, WaitReason,
         },
         litellm,
-        tools::{self, ToolCallStatus, ToolCallStatusUpdate},
+        tools::{self, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate},
     },
     llm_client_types::{
         AssistantChatMessageWithOriginatingRequestId, ChatMessage, ChatMessageForLLM,
@@ -610,10 +610,37 @@ impl GeneratedActorTrait for Assistant {
 
                             // Broadcast tool calls for execution
                             for tool_call in tool_calls {
-                                let _ = Self::broadcast_common_message(tools::ExecuteTool {
-                                    tool_call: tool_call.clone(),
-                                    originating_request_id: current_request_id.clone(),
-                                });
+                                if self
+                                    .available_tools
+                                    .iter()
+                                    .find(|tool| tool.function.name == tool_call.function.name)
+                                    .is_none()
+                                {
+                                    self.handle_tool_call_update(ToolCallStatusUpdate {
+                                        status: ToolCallStatus::Done {
+                                            result: Err(ToolCallResult {
+                                                content: format!(
+                                                    "Tool `{}` not found",
+                                                    tool_call.function.name
+                                                ),
+                                                ui_display_info: tools::UIDisplayInfo {
+                                                    collapsed: format!(
+                                                        "Tool `{}` not found",
+                                                        tool_call.function.name
+                                                    ),
+                                                    expanded: None,
+                                                },
+                                            }),
+                                        },
+                                        id: tool_call.id.clone(),
+                                        originating_request_id: current_request_id.clone(),
+                                    });
+                                } else {
+                                    let _ = Self::broadcast_common_message(tools::ExecuteTool {
+                                        tool_call: tool_call.clone(),
+                                        originating_request_id: current_request_id.clone(),
+                                    });
+                                }
                             }
                         } else {
                             if self.config.require_tool_call {
@@ -674,41 +701,45 @@ impl GeneratedActorTrait for Assistant {
             && compact.agent == self.scope
         {
             // Find the assistant message with the compacted_to ID
-            let cutoff_index = self.chat_history.iter()
-                .position(|msg| {
-                    if let ChatMessageWithRequestId::Assistant(a) = msg {
-                        a.originating_request_id == compact.compacted_to
-                    } else {
-                        false
-                    }
-                });
-            
+            let cutoff_index = self.chat_history.iter().position(|msg| {
+                if let ChatMessageWithRequestId::Assistant(a) = msg {
+                    a.originating_request_id == compact.compacted_to
+                } else {
+                    false
+                }
+            });
+
             match cutoff_index {
                 Some(idx) => {
                     // Replace everything BEFORE this message, keep this message and everything after
                     let mut new_history = compact.messages;
                     new_history.extend_from_slice(&self.chat_history[idx..]);
-                    
+
                     logger::log(
                         logger::LogLevel::Info,
-                        &format!("Compacted history before request {}, preserved {} messages", 
-                            compact.compacted_to, self.chat_history.len() - idx)
+                        &format!(
+                            "Compacted history before request {}, preserved {} messages",
+                            compact.compacted_to,
+                            self.chat_history.len() - idx
+                        ),
                     );
-                    
+
                     self.chat_history = new_history;
                 }
                 None => {
                     // Couldn't find the cutoff point - this is an error condition
                     logger::log(
                         logger::LogLevel::Error,
-                        &format!("Compacted_to ID {} not found in chat history, cannot merge safely", 
-                            compact.compacted_to)
+                        &format!(
+                            "Compacted_to ID {} not found in chat history, cannot merge safely",
+                            compact.compacted_to
+                        ),
                     );
                     // Don't replace history if we can't find the boundary
                     return;
                 }
             }
-            
+
             self.broadcast_chat_state_updated();
             self.submit(true);
         }

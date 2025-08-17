@@ -10,7 +10,7 @@ use wasmind_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
-const EXECUTE_BASH_USAGE_GUIDE: &str = r#"## execute_command Tool - System Commands & File Exploration
+const EXECUTE_BASH_USAGE_GUIDE: &str = r#"## execute_bash Tool - System Commands & File Exploration
 
 **Purpose**: Execute bash commands for system tasks, builds, tests, and file exploration.
 
@@ -55,7 +55,7 @@ const TRUNCATION_TAIL_CHARS: usize = 1_000;
 
 #[derive(tools::macros::Tool)]
 #[tool(
-    name = "execute_command",
+    name = "execute_bash",
     description = "Execute a bash command in a stateless environment. Commands are executed using 'bash -c', supporting all bash features including pipes (|), redirections (>, >>), command chaining (&&, ||), and other shell operators. Each command runs in a fresh, isolated bash environment without any session state from previous commands. Examples: echo 'test' > file.txt, ls | grep pattern, command1 && command2",
     schema = r#"{
     "type": "object",
@@ -108,29 +108,28 @@ impl tools::Tool for CommandTool {
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
-        let params: CommandParams = match serde_json::from_str(
-            &tool_call.tool_call.function.arguments,
-        ) {
-            Ok(params) => params,
-            Err(e) => {
-                let error_msg = format!("Failed to parse command parameters: {}", e);
-                let ui_display = UIDisplayInfo {
-                    collapsed: "Parameters: Invalid format".to_string(),
-                    expanded: Some(format!(
-                        "Command: execute_command\nError: Failed to parse parameters\n\nDetails: {}",
-                        e
-                    )),
-                };
+        let params: CommandParams =
+            match serde_json::from_str(&tool_call.tool_call.function.arguments) {
+                Ok(params) => params,
+                Err(e) => {
+                    let error_msg = format!("Failed to parse command parameters: {}", e);
+                    let ui_display = UIDisplayInfo {
+                        collapsed: "Parameters: Invalid format".to_string(),
+                        expanded: Some(format!(
+                            "Error: Failed to parse parameters\n\nDetails: {}",
+                            e
+                        )),
+                    };
 
-                self.send_error_result(
-                    &tool_call.tool_call.id,
-                    &tool_call.originating_request_id,
-                    error_msg,
-                    ui_display,
-                );
-                return;
-            }
-        };
+                    self.send_error_result(
+                        &tool_call.tool_call.id,
+                        &tool_call.originating_request_id,
+                        error_msg,
+                        ui_display,
+                    );
+                    return;
+                }
+            };
 
         // Clamp timeout between 1-600 seconds for safety
         let timeout = params.timeout.unwrap_or(30).min(600).max(1);
@@ -718,11 +717,12 @@ mod tests {
                 id: "test-id".to_string(),
                 tool_type: "function".to_string(),
                 function: wasmind_actor_utils::llm_client_types::Function {
-                    name: "execute_command".to_string(),
+                    name: "execute_bash".to_string(),
                     arguments: r#"{"command": "echo test", "timeout": 700}"#.to_string(),
                 },
                 index: None,
             },
+            originating_request_id: "Filler".to_string(),
         };
 
         let params: CommandParams =

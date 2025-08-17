@@ -599,7 +599,7 @@ Self::broadcast(assistant::SystemPromptContribution {
 Self::broadcast(tools::ToolsAvailable {
     tools: vec![
         Tool {
-            name: "execute_command".to_string(),
+            name: "execute_bash".to_string(),
             description: "Execute shell commands".to_string(),
             // ... tool definition
         }
