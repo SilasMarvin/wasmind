@@ -3,6 +3,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use wasmind_actor_loader::LoadedActor;
+use wasmtime::Engine;
 
 mod manager;
 
@@ -26,6 +27,7 @@ pub trait ActorExecutor: Send + Sync {
         tx: broadcast::Sender<MessageEnvelope>,
         rx: broadcast::Receiver<MessageEnvelope>,
         context: Arc<WasmindContext>,
+        engine: Engine,
     ) -> Pin<Box<dyn Future<Output = ()> + Send>>;
 }
 
@@ -55,13 +57,24 @@ impl ActorExecutor for LoadedActor {
         tx: broadcast::Sender<MessageEnvelope>,
         rx: broadcast::Receiver<MessageEnvelope>,
         context: Arc<WasmindContext>,
+        engine: Engine,
     ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let id = self.id.clone();
         let wasm = self.wasm.clone();
         let config = self.config.clone();
 
         Box::pin(async move {
-            let manager = manager::Manager::new(id, &wasm, scope, tx, rx, context, config).await;
+            let params = manager::ManagerParams {
+                actor_id: id,
+                wasm: &wasm,
+                scope,
+                tx,
+                rx,
+                context,
+                actor_config: config,
+                engine,
+            };
+            let manager = manager::Manager::new(params).await;
             manager.run();
         })
     }

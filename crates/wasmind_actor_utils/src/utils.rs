@@ -156,12 +156,7 @@ mod tests {
         for case in cases {
             let json = json!({ "optional_bool": case });
             let result: TestStruct = serde_json::from_value(json).unwrap();
-            assert_eq!(
-                result.optional_bool,
-                Some(false),
-                "Failed for case: {}",
-                case
-            );
+            assert_eq!(result.optional_bool, Some(false), "Failed for case: {case}");
         }
     }
 
@@ -171,24 +166,14 @@ mod tests {
         for case in true_cases {
             let json = json!({ "optional_bool": case });
             let result: TestStruct = serde_json::from_value(json).unwrap();
-            assert_eq!(
-                result.optional_bool,
-                Some(true),
-                "Failed for case: {}",
-                case
-            );
+            assert_eq!(result.optional_bool, Some(true), "Failed for case: {case}");
         }
 
         let false_cases = vec!["no", "No", "NO"];
         for case in false_cases {
             let json = json!({ "optional_bool": case });
             let result: TestStruct = serde_json::from_value(json).unwrap();
-            assert_eq!(
-                result.optional_bool,
-                Some(false),
-                "Failed for case: {}",
-                case
-            );
+            assert_eq!(result.optional_bool, Some(false), "Failed for case: {case}");
         }
     }
 
@@ -231,11 +216,11 @@ mod tests {
     fn test_required_bool_with_valid_value() {
         let json = json!({ "required_bool": true });
         let result: TestStructRequired = serde_json::from_value(json).unwrap();
-        assert_eq!(result.required_bool, true);
+        assert!(result.required_bool);
 
         let json = json!({ "required_bool": "false" });
         let result: TestStructRequired = serde_json::from_value(json).unwrap();
-        assert_eq!(result.required_bool, false);
+        assert!(!result.required_bool);
     }
 
     #[test]

@@ -71,6 +71,8 @@ interface command {
         stdout: list<u8>,
         stderr: list<u8>,
         status: exit-status,
+        stdout-truncated: bool,
+        stderr-truncated: bool,
     }
 
     resource cmd {
@@ -78,6 +80,7 @@ interface command {
         args: func(args: list<string>) -> cmd;
         current-dir: func(dir: string) -> cmd;
         timeout: func(seconds: u32) -> cmd;
+        max-output-bytes: func(bytes: u32) -> cmd;
         env: func(key: string, value: string) -> cmd;
         env-clear: func() -> cmd;
         run: func() -> result<command-output, string>;

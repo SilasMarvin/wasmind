@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use wasmind_actor_utils::STARTING_SCOPE;
 use wasmind_actor_utils::common_messages::actors::AgentSpawned;
+use wasmtime::{Config, Engine};
 
 use crate::{SerializationSnafu, WasmindResult, actors::MessageEnvelope, scope::Scope};
 use snafu::ResultExt;
@@ -24,6 +25,9 @@ pub struct WasmindContext {
     /// Track parent-child relationships between scopes
     /// Arc<Mutex<>> for concurrent access from spawn_agent calls
     pub scope_parents: Arc<Mutex<HashMap<Scope, Option<Scope>>>>,
+
+    /// Global WASM engine for compilation and management of wasm modules
+    pub engine: Engine,
 }
 
 impl WasmindContext {
@@ -39,11 +43,17 @@ impl WasmindContext {
             actor_executors.insert(logical_name, Arc::new(actor) as Arc<dyn ActorExecutor>);
         }
 
+        // Create the WASM engine with async support
+        let mut config = Config::new();
+        config.async_support(true);
+        let engine = Engine::new(&config).unwrap();
+
         Self {
             tx,
             actor_executors,
             scope_tracking: Arc::new(Mutex::new(HashMap::new())),
             scope_parents: Arc::new(Mutex::new(HashMap::new())),
+            engine,
         }
     }
 
@@ -143,7 +153,13 @@ impl WasmindContext {
             actors_spawned.insert(actor.actor_id().to_string());
             actor
                 .clone()
-                .run(scope.clone(), self.tx.clone(), rx, context)
+                .run(
+                    scope.clone(),
+                    self.tx.clone(),
+                    rx,
+                    context,
+                    self.engine.clone(),
+                )
                 .await;
         }
 

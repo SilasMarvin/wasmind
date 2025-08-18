@@ -256,7 +256,7 @@ impl http::HostRequest for ActorState {
             if let Ok(notification) = serde_json::to_string(&UserNotification {
                 level: NotificationLevel::Error,
                 title: "HTTP Request Failed".to_string(),
-                message: format!("Request failed after {} attempts", max_attempts),
+                message: format!("Request failed after {max_attempts} attempts"),
                 source: Some("HTTP".to_string()),
             }) {
                 let _ = self.tx.send(crate::actors::MessageEnvelope {

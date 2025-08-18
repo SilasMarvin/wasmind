@@ -4,7 +4,7 @@ use tracing::{Instrument, Level};
 use wasmind::actor::{agent, command, host_info, http, logger, messaging};
 use wasmind_actor_utils::{common_messages::actors, messages::Message};
 use wasmtime::{
-    Config, Engine, Store,
+    Engine, Store,
     component::{Component, HasSelf, Linker, ResourceAny, bindgen},
 };
 
@@ -40,6 +40,17 @@ impl PartialOrd for MessageEnvelope {
 
 impl Eq for MessageEnvelope {}
 
+pub struct ManagerParams<'a> {
+    pub actor_id: ActorId,
+    pub wasm: &'a [u8],
+    pub scope: Scope,
+    pub tx: broadcast::Sender<MessageEnvelope>,
+    pub rx: broadcast::Receiver<MessageEnvelope>,
+    pub context: Arc<WasmindContext>,
+    pub actor_config: Option<toml::Table>,
+    pub engine: Engine,
+}
+
 pub struct Manager {
     actor_id: ActorId,
     actor_world: ActorWorld,
@@ -51,30 +62,26 @@ pub struct Manager {
 }
 
 impl Manager {
-    pub async fn new(
-        actor_id: ActorId,
-        wasm: &[u8],
-        scope: Scope,
-        tx: broadcast::Sender<MessageEnvelope>,
-        rx: broadcast::Receiver<MessageEnvelope>,
-        context: Arc<WasmindContext>,
-        actor_config: Option<toml::Table>,
-    ) -> Self {
-        let mut config = Config::new();
-        config.async_support(true);
-        let engine = Engine::new(&config).unwrap();
-
-        let component = match Component::from_binary(&engine, wasm) {
+    pub async fn new(params: ManagerParams<'_>) -> Self {
+        let component = match Component::from_binary(&params.engine, params.wasm) {
             Ok(component) => component,
-            Err(e) => panic!("Error creating wasm component for: {actor_id} - {e:?}"),
+            Err(e) => panic!(
+                "Error creating wasm component for: {} - {e:?}",
+                params.actor_id
+            ),
         };
 
         let mut store = Store::new(
-            &engine,
-            ActorState::new(actor_id.clone(), scope.clone(), tx.clone(), context),
+            &params.engine,
+            ActorState::new(
+                params.actor_id.clone(),
+                params.scope.clone(),
+                params.tx.clone(),
+                params.context,
+            ),
         );
 
-        let mut linker = Linker::new(&engine);
+        let mut linker = Linker::new(&params.engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut linker).unwrap();
         messaging::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
         command::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state).unwrap();
@@ -87,25 +94,26 @@ impl Manager {
             .await
             .unwrap();
 
-        let config_str = actor_config
+        let config_str = params
+            .actor_config
             .map(|c| toml::to_string(&c).unwrap_or_default())
             .unwrap_or_default();
 
         let actor_resource = actor_world
             .wasmind_actor_actor()
             .actor()
-            .call_constructor(&mut store, &scope.to_string(), &config_str)
+            .call_constructor(&mut store, &params.scope.to_string(), &config_str)
             .await
             .unwrap();
 
         Manager {
-            actor_id,
+            actor_id: params.actor_id,
             store,
             actor_resource,
             actor_world,
-            tx,
-            rx,
-            scope,
+            tx: params.tx,
+            rx: params.rx,
+            scope: params.scope,
         }
     }
 

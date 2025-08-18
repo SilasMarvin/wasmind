@@ -45,13 +45,10 @@ rg "TODO" --count
 - Pipe to `wc -l` for line counts
 - Add `--type` or `-t` flags to filter by file type"
 
-**Trunaction**:
-- Large outputs are automatically truncated!
-- Pipe output into `rg`, `head`, `tail`, etc... to locate specific context"#;
-
-const MAX_COMMAND_OUTPUT_CHARS: usize = 2_000;
-const TRUNCATION_HEAD_CHARS: usize = 1_000;
-const TRUNCATION_TAIL_CHARS: usize = 1_000;
+**Output Limits**:
+- Command output is limited to prevent memory issues
+- Truncation is indicated when output exceeds limits
+- Use pipes like `| head -100` or `| grep pattern` to filter output"#;
 
 #[derive(tools::macros::Tool)]
 #[tool(
@@ -85,7 +82,7 @@ const TRUNCATION_TAIL_CHARS: usize = 1_000;
 }"#
 )]
 struct CommandTool {
-    scope: String,
+    _scope: String,
 }
 
 impl tools::Tool for CommandTool {
@@ -104,7 +101,7 @@ impl tools::Tool for CommandTool {
             .into_bytes(),
         );
 
-        Self { scope }
+        Self { _scope: scope }
     }
 
     fn handle_call(&mut self, tool_call: ExecuteTool) {
@@ -180,26 +177,6 @@ enum CommandOutcome {
     Error(String),
 }
 
-/// Smart truncation that preserves the beginning and end of the output
-fn smart_truncate(text: &str) -> String {
-    let char_count = text.chars().count();
-    if char_count <= MAX_COMMAND_OUTPUT_CHARS {
-        return text.to_string();
-    }
-
-    let chars: Vec<char> = text.chars().collect();
-    let head: String = chars.iter().take(TRUNCATION_HEAD_CHARS).collect();
-    let tail: String = chars
-        .iter()
-        .skip(char_count - TRUNCATION_TAIL_CHARS)
-        .collect();
-
-    let truncated_chars = char_count - TRUNCATION_HEAD_CHARS - TRUNCATION_TAIL_CHARS;
-    format!(
-        "{}\n... {} characters truncated ...\n{}\n\nNote: Output was truncated. To search within the full output, try: command | rg 'pattern' or command | head -50",
-        head, truncated_chars, tail
-    )
-}
 
 /// Create UI display info for command execution
 fn format_command_outcome_for_ui_display(command: &str, outcome: CommandOutcome) -> UIDisplayInfo {
@@ -458,22 +435,28 @@ impl CommandTool {
         let result_content = match &output.status {
             ExitStatus::Exited(0) => {
                 // Success case
-                if stdout.is_empty() && stderr.is_empty() {
+                let mut result = if stdout.is_empty() && stderr.is_empty() {
                     "Command completed successfully with no output".to_string()
                 } else if stderr.is_empty() {
-                    smart_truncate(&stdout)
+                    stdout.clone()
                 } else if stdout.is_empty() {
-                    smart_truncate(&stderr)
+                    stderr.clone()
                 } else {
-                    smart_truncate(&format!(
+                    format!(
                         "=== stdout ===\n{}\n\n=== stderr ===\n{}",
                         stdout, stderr
-                    ))
+                    )
+                };
+                
+                // Add truncation notice if needed
+                if output.stdout_truncated || output.stderr_truncated {
+                    result.push_str("\n\n[Output truncated - use pipes like `| head` or `| grep` to filter output]");
                 }
+                result
             }
             ExitStatus::Exited(exit_code) => {
                 // Failure case
-                let error_msg = if stdout.is_empty() && stderr.is_empty() {
+                let mut error_msg = if stdout.is_empty() && stderr.is_empty() {
                     format!("Command failed with exit code {} (no output)", exit_code)
                 } else if !stdout.is_empty() && stderr.is_empty() {
                     format!("Command failed with exit code {}:\n{}", exit_code, stdout)
@@ -485,10 +468,15 @@ impl CommandTool {
                         exit_code, stdout, stderr
                     )
                 };
-                smart_truncate(&error_msg)
+                
+                // Add truncation notice if needed
+                if output.stdout_truncated || output.stderr_truncated {
+                    error_msg.push_str("\n\n[Output truncated - use pipes like `| head` or `| grep` to filter output]");
+                }
+                error_msg
             }
             ExitStatus::Signaled(signal) => {
-                let error_msg = if stdout.is_empty() && stderr.is_empty() {
+                let mut error_msg = if stdout.is_empty() && stderr.is_empty() {
                     format!("Command terminated by signal {} (no output)", signal)
                 } else {
                     format!(
@@ -496,13 +484,18 @@ impl CommandTool {
                         signal, stdout, stderr
                     )
                 };
-                smart_truncate(&error_msg)
+                
+                // Add truncation notice if needed
+                if output.stdout_truncated || output.stderr_truncated {
+                    error_msg.push_str("\n\n[Output truncated - use pipes like `| head` or `| grep` to filter output]");
+                }
+                error_msg
             }
             ExitStatus::FailedToStart(msg) => {
-                smart_truncate(&format!("Failed to start command: {}", msg))
+                format!("Failed to start command: {}", msg)
             }
             ExitStatus::TimeoutExpired => {
-                let error_msg = if stdout.is_empty() && stderr.is_empty() {
+                let mut error_msg = if stdout.is_empty() && stderr.is_empty() {
                     "Command timed out (no output)".to_string()
                 } else {
                     format!(
@@ -510,7 +503,12 @@ impl CommandTool {
                         stdout, stderr
                     )
                 };
-                smart_truncate(&error_msg)
+                
+                // Add truncation notice if needed
+                if output.stdout_truncated || output.stderr_truncated {
+                    error_msg.push_str("\n\n[Output truncated - use pipes like `| head` or `| grep` to filter output]");
+                }
+                error_msg
             }
         };
 
@@ -575,47 +573,6 @@ mod tests {
         let json = r#"{"args": ["test"]}"#; // Missing required "command" field
         let result: Result<CommandParams, _> = serde_json::from_str(json);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_smart_truncate_small_output() {
-        let small_text = "This is a small output";
-        let result = smart_truncate(small_text);
-        assert_eq!(result, small_text);
-    }
-
-    #[test]
-    fn test_smart_truncate_large_output() {
-        // Create a large string that exceeds MAX_COMMAND_OUTPUT_CHARS
-        let large_text = "a".repeat(20_000);
-        let result = smart_truncate(&large_text);
-
-        // Check that the result contains the truncation message
-        assert!(result.contains("... "));
-        assert!(result.contains(" characters truncated ..."));
-
-        // Check that it starts with the beginning of the original text
-        assert!(result.starts_with(&"a".repeat(TRUNCATION_HEAD_CHARS)));
-
-        // Check that it contains the tail portion
-        assert!(result.contains(&"a".repeat(TRUNCATION_TAIL_CHARS)));
-
-        // Check for the helpful note
-        assert!(result.contains("Note: Output was truncated"));
-    }
-
-    #[test]
-    fn test_smart_truncate_unicode() {
-        // Test with unicode characters
-        let unicode_text = "🦀".repeat(6_000); // Rust crab emoji
-        let result = smart_truncate(&unicode_text);
-
-        if unicode_text.chars().count() > MAX_COMMAND_OUTPUT_CHARS {
-            assert!(result.contains("... "));
-            assert!(result.contains(" characters truncated ..."));
-        } else {
-            assert_eq!(result, unicode_text);
-        }
     }
 
     #[test]

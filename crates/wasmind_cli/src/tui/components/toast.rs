@@ -33,13 +33,8 @@ struct Toast {
     created_at: Instant,
 }
 
-impl ToastComponent {
-    const TOAST_TIMEOUT_MS: u64 = 5000;
-    const MAX_TOASTS: usize = 5;
-    const TOAST_WIDTH: u16 = 50;
-    const TOAST_HEIGHT: u16 = 3;
-
-    pub fn new() -> Self {
+impl Default for ToastComponent {
+    fn default() -> Self {
         Self {
             component: ToastContainer {
                 props: Props::default(),
@@ -48,6 +43,13 @@ impl ToastComponent {
             },
         }
     }
+}
+
+impl ToastComponent {
+    const TOAST_TIMEOUT_MS: u64 = 5000;
+    const MAX_TOASTS: usize = 5;
+    const TOAST_WIDTH: u16 = 50;
+    const TOAST_HEIGHT: u16 = 3;
 }
 
 impl MockComponent for ToastContainer {
@@ -122,7 +124,7 @@ impl MockComponent for ToastContainer {
             // Create spans for styling (title is now in block border)
             let content_spans = if let Some(ref source) = toast.source {
                 vec![
-                    Span::styled(format!("[{}] ", source), Style::default().fg(Color::Gray)),
+                    Span::styled(format!("[{source}] "), Style::default().fg(Color::Gray)),
                     Span::styled(toast.message.clone(), Style::default().fg(Color::White)),
                 ]
             } else {

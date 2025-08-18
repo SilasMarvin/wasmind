@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 use wasmtime::component::Resource;
@@ -16,6 +17,7 @@ pub struct CommandResource {
 pub struct CommandResourceInner {
     pub command: Command,
     pub timeout_seconds: Option<u32>,
+    pub max_output_bytes: Option<u32>,
 }
 
 impl command::Host for ActorState {}
@@ -26,6 +28,7 @@ impl command::HostCmd for ActorState {
             inner: Arc::new(Mutex::new(CommandResourceInner {
                 command: Command::new(command),
                 timeout_seconds: None,
+                max_output_bytes: Some(100_000), // Default 100KB
             })),
         };
 
@@ -109,13 +112,29 @@ impl command::HostCmd for ActorState {
         self.table.push(new_resource).unwrap()
     }
 
+    async fn max_output_bytes(
+        &mut self,
+        self_: Resource<CommandResource>,
+        bytes: u32,
+    ) -> Resource<CommandResource> {
+        let cmd = self.table.get(&self_).unwrap();
+        let mut inner = cmd.inner.lock().unwrap();
+        inner.max_output_bytes = Some(bytes);
+        drop(inner);
+
+        let new_resource = CommandResource {
+            inner: Arc::clone(&cmd.inner),
+        };
+        self.table.push(new_resource).unwrap()
+    }
+
     async fn run(
         &mut self,
         self_: Resource<CommandResource>,
     ) -> std::result::Result<command::CommandOutput, String> {
         let cmd_resource = self.table.get(&self_).map_err(|e| e.to_string())?;
 
-        let (mut new_command, timeout_seconds) = {
+        let (mut new_command, timeout_seconds, max_output_bytes) = {
             let inner = cmd_resource.inner.lock().unwrap();
 
             let program = inner.command.as_std().get_program();
@@ -147,59 +166,167 @@ impl command::HostCmd for ActorState {
             new_command.stderr(std::process::Stdio::piped());
             new_command.stdin(std::process::Stdio::null());
 
-            (new_command, inner.timeout_seconds)
+            (
+                new_command,
+                inner.timeout_seconds,
+                inner.max_output_bytes.unwrap_or(100_000),
+            )
         };
 
-        let child = match new_command.spawn() {
+        let mut child = match new_command.spawn() {
             Ok(child) => child,
             Err(e) => {
                 return Ok(command::CommandOutput {
                     stdout: vec![],
                     stderr: vec![],
                     status: command::ExitStatus::FailedToStart(e.to_string()),
+                    stdout_truncated: false,
+                    stderr_truncated: false,
                 });
             }
         };
 
-        let output = if let Some(timeout_seconds) = timeout_seconds {
+        // Take ownership of stdout and stderr streams
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Read streams with size limits
+        let read_limited = async {
+            let mut stdout_data = Vec::new();
+            let mut stderr_data = Vec::new();
+            let mut stdout_truncated = false;
+            let mut stderr_truncated = false;
+
+            // Read stdout with limit
+            if let Some(stdout) = stdout {
+                let mut reader = BufReader::new(stdout);
+                let mut buffer = vec![0u8; 8192]; // 8KB chunks
+
+                while stdout_data.len() < max_output_bytes as usize {
+                    match reader.read(&mut buffer).await {
+                        Ok(0) => break, // EOF
+                        Ok(n) => {
+                            let remaining =
+                                (max_output_bytes as usize).saturating_sub(stdout_data.len());
+                            if n <= remaining {
+                                stdout_data.extend_from_slice(&buffer[..n]);
+                            } else {
+                                stdout_data.extend_from_slice(&buffer[..remaining]);
+                                stdout_truncated = true;
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+
+            // Read stderr with limit
+            if let Some(stderr) = stderr {
+                let mut reader = BufReader::new(stderr);
+                let mut buffer = vec![0u8; 8192]; // 8KB chunks
+
+                while stderr_data.len() < max_output_bytes as usize {
+                    match reader.read(&mut buffer).await {
+                        Ok(0) => break, // EOF
+                        Ok(n) => {
+                            let remaining =
+                                (max_output_bytes as usize).saturating_sub(stderr_data.len());
+                            if n <= remaining {
+                                stderr_data.extend_from_slice(&buffer[..n]);
+                            } else {
+                                stderr_data.extend_from_slice(&buffer[..remaining]);
+                                stderr_truncated = true;
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+
+            // Kill the process if we hit the limit
+            if stdout_truncated || stderr_truncated {
+                let _ = child.kill().await;
+            }
+
+            // Wait for the child to exit
+            let status = match child.wait().await {
+                Ok(status) => status,
+                Err(e) => {
+                    return Err(format!("Failed to wait for process: {e}"));
+                }
+            };
+
+            Ok((
+                stdout_data,
+                stderr_data,
+                stdout_truncated,
+                stderr_truncated,
+                status,
+            ))
+        };
+
+        let result = if let Some(timeout_seconds) = timeout_seconds {
             let duration = Duration::from_secs(timeout_seconds as u64);
-            match timeout(duration, child.wait_with_output()).await {
-                Ok(Ok(output)) => output,
+            match timeout(duration, read_limited).await {
+                Ok(Ok((stdout_data, stderr_data, stdout_truncated, stderr_truncated, status))) => (
+                    stdout_data,
+                    stderr_data,
+                    stdout_truncated,
+                    stderr_truncated,
+                    status,
+                ),
                 Ok(Err(e)) => {
                     return Ok(command::CommandOutput {
                         stdout: vec![],
                         stderr: vec![],
-                        status: command::ExitStatus::FailedToStart(e.to_string()),
+                        status: command::ExitStatus::FailedToStart(e),
+                        stdout_truncated: false,
+                        stderr_truncated: false,
                     });
                 }
                 Err(_) => {
+                    let _ = child.kill().await;
                     return Ok(command::CommandOutput {
                         stdout: vec![],
                         stderr: vec![],
                         status: command::ExitStatus::TimeoutExpired,
+                        stdout_truncated: false,
+                        stderr_truncated: false,
                     });
                 }
             }
         } else {
-            match child.wait_with_output().await {
-                Ok(output) => output,
+            match read_limited.await {
+                Ok((stdout_data, stderr_data, stdout_truncated, stderr_truncated, status)) => (
+                    stdout_data,
+                    stderr_data,
+                    stdout_truncated,
+                    stderr_truncated,
+                    status,
+                ),
                 Err(e) => {
                     return Ok(command::CommandOutput {
                         stdout: vec![],
                         stderr: vec![],
-                        status: command::ExitStatus::FailedToStart(e.to_string()),
+                        status: command::ExitStatus::FailedToStart(e),
+                        stdout_truncated: false,
+                        stderr_truncated: false,
                     });
                 }
             }
         };
 
-        let status = if let Some(code) = output.status.code() {
+        let (stdout_data, stderr_data, stdout_truncated, stderr_truncated, status) = result;
+
+        let exit_status = if let Some(code) = status.code() {
             command::ExitStatus::Exited(code as u8)
         } else {
             #[cfg(unix)]
             {
                 use std::os::unix::process::ExitStatusExt;
-                if let Some(signal) = output.status.signal() {
+                if let Some(signal) = status.signal() {
                     command::ExitStatus::Signaled(signal as u8)
                 } else {
                     command::ExitStatus::FailedToStart("Unknown error".to_string())
@@ -212,9 +339,11 @@ impl command::HostCmd for ActorState {
         };
 
         Ok(command::CommandOutput {
-            stdout: output.stdout,
-            stderr: output.stderr,
-            status,
+            stdout: stdout_data,
+            stderr: stderr_data,
+            status: exit_status,
+            stdout_truncated,
+            stderr_truncated,
         })
     }
 

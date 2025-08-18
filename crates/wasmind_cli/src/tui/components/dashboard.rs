@@ -63,7 +63,7 @@ impl DashboardComponent {
                 show_splash: initial_prompt.is_none(),
                 chat_area_component: ChatAreaComponent::new(config.clone(), initial_prompt),
                 splash_component: SplashComponent::new(config.clone()),
-                toast_component: ToastComponent::new(),
+                toast_component: ToastComponent::default(),
             },
             config,
         }
