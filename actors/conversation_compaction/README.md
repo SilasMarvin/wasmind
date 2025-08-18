@@ -8,7 +8,10 @@ The Conversation Compaction Actor automatically monitors token usage and compact
 ## Configuration
 
 ```toml
-[conversation_compaction]
+[actors.file_interaction_with_approval]
+source = { url = "https://github.com/SilasMarvin/wasmind", package = "actors/code_with_experts/crates/file_interaction_with_approval" }
+
+[actors.conversation_compaction.config]
 token_threshold = 50000  # Trigger compaction when total tokens exceed this limit
 model_name = "gpt-4o-mini"  # Model to use for generating conversation summaries
 ```
