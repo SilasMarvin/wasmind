@@ -247,8 +247,28 @@ impl http::HostRequest for ActorState {
             }
         }
 
-        // All attempts failed, return the last error
+        // All attempts failed, send notification and return the last error
         let e = last_error.unwrap();
+
+        // Send toast notification about retry failure
+        if max_attempts > 1 {
+            use wasmind_actor_utils::common_messages::ui::{NotificationLevel, UserNotification};
+            if let Ok(notification) = serde_json::to_string(&UserNotification {
+                level: NotificationLevel::Error,
+                title: "HTTP Request Failed".to_string(),
+                message: format!("Request failed after {} attempts", max_attempts),
+                source: Some("HTTP".to_string()),
+            }) {
+                let _ = self.tx.send(crate::actors::MessageEnvelope {
+                    id: "http-retry-failure".to_string(),
+                    message_type: "wasmind.common.ui.UserNotification".to_string(),
+                    from_actor_id: self.actor_id.clone(),
+                    from_scope: self.scope.clone(),
+                    payload: notification.into_bytes(),
+                });
+            }
+        }
+
         if e.is_timeout() {
             Err(http::RequestError::Timeout)
         } else if e.is_builder() {

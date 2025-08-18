@@ -5,3 +5,4 @@ pub mod graph;
 pub mod scrollable;
 pub mod splash;
 pub mod textarea;
+pub mod toast;

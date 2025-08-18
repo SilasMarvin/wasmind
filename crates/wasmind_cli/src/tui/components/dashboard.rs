@@ -13,6 +13,7 @@ use wasmind_actor_utils::common_messages::assistant::AddMessage;
 use super::chat::ChatAreaComponent;
 use super::graph::GraphAreaComponent;
 use super::splash::SplashComponent;
+use super::toast::ToastComponent;
 
 pub const DASHBOARD_SCOPE: &str = "DASHBD";
 
@@ -62,6 +63,7 @@ impl DashboardComponent {
                 show_splash: initial_prompt.is_none(),
                 chat_area_component: ChatAreaComponent::new(config.clone(), initial_prompt),
                 splash_component: SplashComponent::new(config.clone()),
+                toast_component: ToastComponent::new(),
             },
             config,
         }
@@ -74,6 +76,7 @@ struct Dashboard {
     graph_area_component: GraphAreaComponent,
     chat_area_component: ChatAreaComponent,
     splash_component: SplashComponent,
+    toast_component: ToastComponent,
     show_splash: bool,
 }
 
@@ -91,6 +94,9 @@ impl MockComponent for Dashboard {
                 self.graph_area_component.view(frame, chunks[0]);
                 self.chat_area_component.view(frame, chunks[1]);
             }
+
+            // Render toasts as overlay on top of everything
+            self.toast_component.view(frame, area);
         }
     }
 
@@ -117,60 +123,55 @@ impl MockComponent for Dashboard {
 
 impl Component<TuiMessage, MessageEnvelope> for DashboardComponent {
     fn on(&mut self, ev: Event<MessageEnvelope>) -> Option<TuiMessage> {
+        // Handle tick events
         if let Event::Tick = &ev {
             global_throbber::tick();
             return Some(TuiMessage::Redraw);
         }
 
+        // Handle keyboard events
         if let Event::Keyboard(key_event) = &ev
             && let Some(action) = self.config.dashboard.key_bindings.get(key_event)
         {
             match action {
-                DashboardUserAction::Exit => {
-                    return Some(TuiMessage::Exit);
-                }
-                DashboardUserAction::InterruptAgent => {
-                    return Some(TuiMessage::InterruptAgent);
-                }
+                DashboardUserAction::Exit => return Some(TuiMessage::Exit),
+                DashboardUserAction::InterruptAgent => return Some(TuiMessage::InterruptAgent),
             }
         }
 
+        // Handle AddMessage special case - hide splash and route to graph + chat only
         if let Event::User(envelope) = &ev {
             if parse_common_message_as::<AddMessage>(envelope).is_some() {
                 self.component.show_splash = false;
 
-                return match (
-                    self.component.graph_area_component.on(ev.clone()),
-                    self.component.chat_area_component.on(ev),
-                ) {
-                    (None, None) => Some(TuiMessage::Redraw),
-                    (None, Some(msg)) => Some(msg),
-                    (Some(msg), None) => Some(msg),
-                    (Some(msg1), Some(msg2)) => Some(TuiMessage::Batch(vec![msg1, msg2])),
+                let mut messages = Vec::new();
+                messages.extend(self.component.graph_area_component.on(ev.clone()));
+                messages.extend(self.component.chat_area_component.on(ev.clone()));
+
+                return if messages.is_empty() {
+                    Some(TuiMessage::Redraw)
+                } else {
+                    Some(TuiMessage::Batch(messages))
                 };
             }
         }
 
-        let mut conditional_msg_set = match (self.component.show_splash, &ev) {
-            (_, Event::User(_)) => {
-                vec![
-                    self.component.chat_area_component.on(ev.clone()),
-                    self.component.splash_component.on(ev.clone()),
-                ]
-            }
-            (false, _) => {
-                vec![self.component.chat_area_component.on(ev.clone())]
-            }
-            (true, _) => {
-                vec![self.component.splash_component.on(ev.clone())]
-            }
-        };
+        // Route events to appropriate components based on current state
+        let mut messages = Vec::new();
 
-        let graph_area_component_msg = self.component.graph_area_component.on(ev);
-        conditional_msg_set.extend([graph_area_component_msg]);
+        // Graph component always gets events
+        messages.extend(self.component.graph_area_component.on(ev.clone()));
 
-        Some(TuiMessage::Batch(
-            conditional_msg_set.into_iter().flatten().collect(),
-        ))
+        // Route to main content components based on splash state
+        if self.component.show_splash {
+            messages.extend(self.component.splash_component.on(ev.clone()));
+        } else {
+            messages.extend(self.component.chat_area_component.on(ev.clone()));
+        }
+
+        // Toast component always gets events (handles UserNotification and Tick internally)
+        messages.extend(self.component.toast_component.on(ev));
+
+        Some(TuiMessage::Batch(messages))
     }
 }

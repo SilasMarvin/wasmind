@@ -8,6 +8,7 @@ use wasmind_actor_utils::common_messages::{
     tools::{
         AwaitingSystemDetails, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo,
     },
+    ui::{NotificationLevel, UserNotification},
 };
 use wasmind_actor_utils::llm_client_types::{Function, SystemChatMessage, ToolCall};
 use wasmind_cli::{TuiResult, tui};
@@ -242,7 +243,88 @@ pub async fn run() -> TuiResult<()> {
         coordinator.broadcast_common_message(status_update, false)?;
     }
 
-    tokio::time::sleep(Duration::from_secs(150)).await;
+    // Wait a moment before starting toast notifications
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    // Broadcast 6 test toast notifications to demonstrate the toast system
+
+    // 1. Info notification - Preview started
+    coordinator.broadcast_common_message(
+        UserNotification {
+            level: NotificationLevel::Info,
+            title: "Preview Started".to_string(),
+            message: "TUI preview is now running with sample data".to_string(),
+            source: Some("System".to_string()),
+        },
+        false,
+    )?;
+
+    tokio::time::sleep(Duration::from_millis(800)).await;
+
+    // 2. Warning notification - High memory usage
+    coordinator.broadcast_common_message(
+        UserNotification {
+            level: NotificationLevel::Warning,
+            title: "High Memory Usage".to_string(),
+            message: "Memory usage is approaching 85% capacity".to_string(),
+            source: Some("Monitor".to_string()),
+        },
+        false,
+    )?;
+
+    tokio::time::sleep(Duration::from_millis(800)).await;
+
+    // 3. Error notification - Connection failed
+    coordinator.broadcast_common_message(
+        UserNotification {
+            level: NotificationLevel::Error,
+            title: "Connection Failed".to_string(),
+            message: "Unable to connect to external service after 3 retry attempts".to_string(),
+            source: Some("Network".to_string()),
+        },
+        false,
+    )?;
+
+    tokio::time::sleep(Duration::from_millis(800)).await;
+
+    // 4. Info notification - Data loaded
+    coordinator.broadcast_common_message(
+        UserNotification {
+            level: NotificationLevel::Info,
+            title: "Data Loaded".to_string(),
+            message: "Successfully loaded 1,247 records from database".to_string(),
+            source: Some("Database".to_string()),
+        },
+        false,
+    )?;
+
+    tokio::time::sleep(Duration::from_millis(800)).await;
+
+    // 5. Warning notification - API deprecation
+    coordinator.broadcast_common_message(
+        UserNotification {
+            level: NotificationLevel::Warning,
+            title: "Deprecated API".to_string(),
+            message: "Using deprecated v1 API, please upgrade to v2 by end of month".to_string(),
+            source: Some("API".to_string()),
+        },
+        false,
+    )?;
+
+    tokio::time::sleep(Duration::from_millis(800)).await;
+
+    // 6. Error notification - Timeout occurred
+    coordinator.broadcast_common_message(
+        UserNotification {
+            level: NotificationLevel::Error,
+            title: "Timeout Occurred".to_string(),
+            message: "Request timed out after 30 seconds, operation cancelled".to_string(),
+            source: Some("Agent".to_string()),
+        },
+        false,
+    )?;
+
+    tokio::time::sleep(Duration::from_secs(140)).await;
 
     Ok(())
 }

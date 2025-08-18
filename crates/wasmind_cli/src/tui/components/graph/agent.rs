@@ -19,11 +19,13 @@ use crate::tui::{model::TuiMessage, throbber_in_title_ext::ThrobberInTitleExt, u
 pub const WIDGET_WIDTH: u16 = 50;
 pub const WIDGET_HEIGHT: u16 = 6;
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, Debug)]
 pub struct AgentMetrics {
     pub completion_requests_sent: u64,
     pub tools_called: u64,
     pub total_tokens_used: u64,
+    pub prompt_tokens_used: u64,
+    pub completion_tokens_used: u64,
 }
 
 impl AgentMetrics {
@@ -41,9 +43,11 @@ impl AgentMetrics {
         }
     }
 
-    pub fn with_tokens(tokens: u64) -> Self {
+    pub fn with_tokens(total_tokens: u64, prompt_tokens: u64, completion_tokens: u64) -> Self {
         Self {
-            total_tokens_used: tokens,
+            total_tokens_used: total_tokens,
+            prompt_tokens_used: prompt_tokens,
+            completion_tokens_used: completion_tokens,
             ..Default::default()
         }
     }
@@ -51,10 +55,11 @@ impl AgentMetrics {
 
 impl std::ops::AddAssign<AgentMetrics> for AgentMetrics {
     fn add_assign(&mut self, rhs: AgentMetrics) {
-        self.completion_requests_sent =
-            self.completion_requests_sent + rhs.completion_requests_sent;
-        self.tools_called = self.tools_called + rhs.tools_called;
-        self.total_tokens_used = self.total_tokens_used + rhs.total_tokens_used;
+        self.completion_requests_sent += rhs.completion_requests_sent;
+        self.tools_called += rhs.tools_called;
+        self.total_tokens_used += rhs.total_tokens_used;
+        self.prompt_tokens_used += rhs.prompt_tokens_used;
+        self.completion_tokens_used += rhs.completion_tokens_used;
     }
 }
 

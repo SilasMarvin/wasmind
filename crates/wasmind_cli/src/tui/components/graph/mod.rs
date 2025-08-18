@@ -604,12 +604,14 @@ impl MockComponent for GraphArea {
                     Some(Padding::horizontal(1)),
                 );
                 let stats_paragraph = Paragraph::new(format!(
-                    "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}\n{}", 
+                    "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}\n  Prompt: {}\n  Completion: {}\n{}", 
                     live_agents,
                     self.stats.agents_spawned,
                     self.stats.aggregated_agent_metrics.completion_requests_sent,
                     self.stats.aggregated_agent_metrics.tools_called,
                     self.stats.aggregated_agent_metrics.total_tokens_used,
+                    self.stats.aggregated_agent_metrics.prompt_tokens_used,
+                    self.stats.aggregated_agent_metrics.completion_tokens_used,
                     selected_section
                 )).block(block);
                 let [mut stats_area] = Layout::horizontal([stats_paragraph.line_width() as u16])
@@ -682,7 +684,7 @@ impl MockComponent for GraphAreaComponent {
                     };
 
                 let stats_content = format!(
-                    "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}\n{}",
+                    "Active Agents: {}\nAgents Spawned: {}\nCompletion Requests: {}\nTools Called: {}\nTokens Used: {}\n  Prompt: {}\n  Completion: {}\n{}",
                     live_agents,
                     self.component.stats.agents_spawned,
                     self.component
@@ -694,6 +696,14 @@ impl MockComponent for GraphAreaComponent {
                         .stats
                         .aggregated_agent_metrics
                         .total_tokens_used,
+                    self.component
+                        .stats
+                        .aggregated_agent_metrics
+                        .prompt_tokens_used,
+                    self.component
+                        .stats
+                        .aggregated_agent_metrics
+                        .completion_tokens_used,
                     selected_section
                 );
                 let stats_block = create_block_with_title(
@@ -806,8 +816,14 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                     parse_common_message_as::<AssistantResponse>(&envelope)
                 {
                     if let Some(root) = &mut self.component.root_node {
-                        let tokens = response.usage.total_tokens as u64;
-                        let metrics = AgentMetrics::with_tokens(tokens);
+                        let total_tokens = response.usage.total_tokens as u64;
+                        let prompt_tokens = response.usage.prompt_tokens as u64;
+                        let completion_tokens = response.usage.completion_tokens as u64;
+                        let metrics = AgentMetrics::with_tokens(
+                            total_tokens,
+                            prompt_tokens,
+                            completion_tokens,
+                        );
                         self.component.stats.aggregated_agent_metrics += metrics;
                         {
                             let scope = &envelope.from_scope;

@@ -397,3 +397,28 @@ pub mod litellm {
         const MESSAGE_TYPE: &str = "wasmind.common.litellm.BaseUrlUpdate";
     }
 }
+
+pub mod ui {
+    use super::Message;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub enum NotificationLevel {
+        Info,    // Blue - general information
+        Warning, // Yellow - non-critical issues
+        Error,   // Red - problems that need attention
+    }
+
+    // wasmind.common.ui.UserNotification
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct UserNotification {
+        pub level: NotificationLevel,
+        pub title: String,
+        pub message: String,
+        pub source: Option<String>, // Which actor sent it
+    }
+
+    impl Message for UserNotification {
+        const MESSAGE_TYPE: &str = "wasmind.common.ui.UserNotification";
+    }
+}

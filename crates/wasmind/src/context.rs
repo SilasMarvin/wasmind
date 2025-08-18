@@ -31,7 +31,7 @@ impl WasmindContext {
     where
         T: ActorExecutor + 'static,
     {
-        let (tx, _) = broadcast::channel(4096);
+        let (tx, _) = broadcast::channel(1024);
 
         let mut actor_executors = HashMap::new();
         for actor in actors {

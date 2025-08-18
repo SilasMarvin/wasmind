@@ -206,7 +206,9 @@ impl ConversationCompactionActor {
         });
 
         // Find the last assistant message to determine compaction boundary
-        let last_assistant = chat_state.messages.iter()
+        let last_assistant = chat_state
+            .messages
+            .iter()
             .enumerate()
             .rev()
             .find_map(|(idx, msg)| {
@@ -217,7 +219,8 @@ impl ConversationCompactionActor {
                 }
             });
 
-        let (messages_to_compact, compacted_to_id) = if let Some((idx, request_id)) = last_assistant {
+        let (messages_to_compact, compacted_to_id) = if let Some((idx, request_id)) = last_assistant
+        {
             if idx > 0 {
                 // Compact everything BEFORE the last assistant message
                 (&chat_state.messages[..idx], request_id)

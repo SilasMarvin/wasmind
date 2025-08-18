@@ -4,11 +4,12 @@ use wasmind_actor_utils::{
     common_messages::{
         actors::{self, Exit},
         assistant::{
-            self, ChatState, ChatStateUpdated, CompactedConversation, QueueStatusChange, Request,
-            Status, StatusUpdate, SystemPromptContribution, WaitReason,
+            self, ChatState, ChatStateUpdated, CompactedConversation, Request, Status,
+            StatusUpdate, SystemPromptContribution, WaitReason,
         },
         litellm,
         tools::{self, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate},
+        ui::{NotificationLevel, UserNotification},
     },
     llm_client_types::{
         AssistantChatMessageWithOriginatingRequestId, ChatMessage, ChatMessageForLLM,
@@ -131,7 +132,6 @@ impl Assistant {
                                 },
                             )]);
 
-                            // Notify other components that we have a response ready
                             let _ = Self::broadcast_common_message(assistant::Response {
                                 message: AssistantChatMessageWithOriginatingRequestId::new(
                                     assistant_msg.clone(),
@@ -148,6 +148,15 @@ impl Assistant {
                                     choice.message
                                 ),
                             );
+
+                            let _ = Self::broadcast_common_message(UserNotification {
+                                level: NotificationLevel::Error,
+                                title: "LLM Response Error".to_string(),
+                                message: "Received unexpected response format from language model"
+                                    .to_string(),
+                                source: Some("Assistant".to_string()),
+                            });
+
                             self.set_status(
                                 Status::Wait {
                                     reason: WaitReason::WaitingForSystemInput {
@@ -164,6 +173,14 @@ impl Assistant {
                         logger::LogLevel::Error,
                         "LLM response contained no choices - empty response",
                     );
+
+                    let _ = Self::broadcast_common_message(UserNotification {
+                        level: NotificationLevel::Error,
+                        title: "LLM Response Error".to_string(),
+                        message: "Language model returned an empty response".to_string(),
+                        source: Some("Assistant".to_string()),
+                    });
+
                     self.set_status(
                         Status::Wait {
                             reason: WaitReason::WaitingForSystemInput {
@@ -180,6 +197,14 @@ impl Assistant {
                     logger::LogLevel::Error,
                     &format!("Error making completion request: {e:?}"),
                 );
+
+                let _ = Self::broadcast_common_message(UserNotification {
+                    level: NotificationLevel::Error,
+                    title: "LLM Request Failed".to_string(),
+                    message: "Failed to communicate with language model after retries".to_string(),
+                    source: Some("Assistant".to_string()),
+                });
+
                 self.set_status(
                     Status::Wait {
                         reason: WaitReason::WaitingForSystemInput {
