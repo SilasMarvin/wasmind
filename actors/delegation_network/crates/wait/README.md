@@ -59,3 +59,7 @@ When activated in a Wasmind system, this actor:
 6. **Prevents unnecessary waiting** through guidance that discourages arbitrary delays
 
 The actor ensures that agents wait intelligently and purposefully, with the system automatically waking them when relevant events occur rather than using fixed timeouts.
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

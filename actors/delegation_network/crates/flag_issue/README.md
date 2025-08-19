@@ -60,3 +60,7 @@ When activated in a Wasmind system, this actor:
 6. **Triggers analyzer exit** after successfully flagging the issue
 
 This actor provides critical intervention capabilities, allowing automated health checks to pause problematic agents and escalate issues to human or AI managers for resolution.
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

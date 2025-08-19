@@ -64,3 +64,7 @@ cargo component build
 ```
 
 This generates `target/wasm32-wasip1/debug/delegation_network_coordinator.wasm` for use in the Wasmind system.
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

@@ -60,3 +60,7 @@ When activated in a Wasmind system, this actor:
 6. **Maintains system integrity** by ensuring proper task lifecycle management
 
 This actor ensures that tasks are formally closed with appropriate documentation and notification, enabling effective coordination in multi-agent delegation workflows.
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

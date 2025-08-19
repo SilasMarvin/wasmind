@@ -55,3 +55,7 @@ When activated in a Wasmind system, this actor:
 6. **Enables early intervention** by detecting issues before they impact task completion
 
 The actor provides passive monitoring that spawns active health assessments, creating a non-intrusive supervision system for AI agents in delegation networks.
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

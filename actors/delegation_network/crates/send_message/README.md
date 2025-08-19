@@ -62,3 +62,7 @@ When activated in a Wasmind system, this actor:
 6. **Prevents micromanagement** through guidance about appropriate usage patterns
 
 The actor facilitates controlled, purposeful communication between agents while encouraging good delegation practices and agent autonomy.
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

@@ -71,6 +71,23 @@ security_expert = ["security_expert_assistant", "read_file", "execute_bash", ...
 5. Feedback is consolidated and returned to the requesting agent
 6. Agent refines their plan based on the feedback before execution
 
+## Actor Communication Flow
+
+Review Plan uses Wasmind's message passing for coordination:
+
+### Tool Discovery
+- `request_plan_review` broadcasts its tool for agents to discover
+- `review_plan` actors broadcast their tool to expert agents
+
+### Review Process
+- Expert agents receive the task and plan as user messages
+- Experts use the `review_plan` tool to provide feedback
+- `PlanReviewResponse` messages coordinate feedback between actors
+
+### Status Updates
+- Tool call status updates show review progress (e.g., "Waiting for reviews: 1/2")
+- Final results include all expert feedback consolidated in the response
+
 ---
 
 *This README is part of the Wasmind actor system. For more information, see the main project documentation.*

@@ -81,3 +81,7 @@ Run the test suite:
 ```bash
 cargo test
 ```
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

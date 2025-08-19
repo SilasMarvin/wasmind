@@ -61,3 +61,7 @@ When activated in a Wasmind system, this actor:
 6. **Prevents over-escalation** through guidance about when not to contact managers
 
 The actor facilitates effective upward communication while encouraging agent autonomy and appropriate escalation practices.
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

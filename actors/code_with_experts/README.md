@@ -87,6 +87,23 @@ senior_dev = ["senior_dev_assistant", "read_file", "execute_bash", ...]
    - If any request changes: feedback is consolidated and returned
 5. Agent receives the `edit_file` result with expert feedback
 
+## Actor Communication Flow
+
+Code with Experts uses Wasmind's message passing for coordination:
+
+### Tool Discovery
+- `file_interaction_with_approval` broadcasts available file tools (`read_file`, `edit_file`)
+- `approve` and `request_changes` actors broadcast their tools to expert agents
+
+### Review Process
+- Expert agents receive diffs as system messages
+- Experts use `approve` or `request_changes` tools to respond
+- `ApprovalResponse` messages coordinate decisions between actors
+
+### Status Updates
+- Tool call status updates show review progress (e.g., "Waiting for experts: 1/2")
+- Final results include expert feedback directly in the response
+
 ---
 
 *This README is part of the Wasmind actor system. For more information, see the main project documentation.*

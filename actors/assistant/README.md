@@ -1,5 +1,7 @@
 # Assistant Actor
 
+*Conversational AI agent for chat interactions and tool execution*
+
 The Assistant Actor is a conversational AI agent that manages chat interactions, tool execution, and dynamic system prompt generation within the Wasmind actor system.
 
 This is just one version of an Assistant that can be used within Wasmind with sane defaults and reasonable interoperability. In reality, anyone can create their own assistant with their own state management and messages.
@@ -65,6 +67,10 @@ You are a helpful AI assistant.
 # Exclude unwanted contributions
 exclude = ["debug.verbose_info"]
 ```
+
+## Tools Provided
+
+This actor does not provide tools to other agents. Instead, it consumes tools provided by other actors and coordinates their execution during LLM interactions.
 
 ## Message Handling
 

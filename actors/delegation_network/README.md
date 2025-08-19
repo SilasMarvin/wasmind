@@ -1,25 +1,33 @@
 # Delegation Network
 
-*A comprehensive example system demonstrating hierarchical AI agent coordination with Wasmind*
+*Hierarchical AI agent coordination with multi-level delegation*
 
-The Delegation Network is a collection of actors that enables multi-agent workflows where AI agents can spawn subordinates, delegate tasks, coordinate work, and manage complex projects autonomously. This system showcases how simple, self-contained actors can combine to create powerful coordination capabilities.
+The Delegation Network is a collection of actors that enables multi-agent workflows where AI agents can spawn subordinates, delegate tasks, coordinate work, and manage complex projects autonomously.
 
 ## Overview
 
-The delegation network solves the challenge of coordinating multiple AI agents working together on complex tasks. Instead of having a single agent try to handle everything, this system enables:
+The delegation network coordinates multiple AI agents working together on complex tasks. Instead of having a single agent try to handle everything, it enables:
 
 - **Hierarchical task delegation**: Managers can spawn specialized Workers and SubManagers
 - **Autonomous coordination**: Agents communicate and coordinate without central control
-- **Intelligent monitoring**: Built-in health checking and issue escalation
+- **Health monitoring**: Built-in health checking and issue escalation
 - **Flexible workflows**: Support for both simple delegation and complex multi-level management
 
-The entire system is built using Wasmind's actor primitives, demonstrating how message passing and actor composition can create sophisticated multi-agent behaviors.
+The delegation network coordinator manages the spawning and coordination of all agents in the hierarchy.
 
 ## Architecture
 
-The delegation network supports three types of agents in a hierarchical structure:
+### How It Works
+
+1. **Initial Setup**: The `delegation_network_coordinator` starts and manages the entire network
+2. **Agent Spawning**: Root Managers spawn SubManagers and Workers as needed
+3. **Task Execution**: Agents use delegation tools to communicate and coordinate work
+4. **Health Monitoring**: The coordinator monitors agent health and intervenes when needed
+5. **Completion**: Work flows back up the hierarchy with status updates and results
 
 ### Agent Types
+
+The delegation network supports three types of agents in a hierarchical structure:
 
 - **Root Manager**: The initial agent you interact with - the top-level coordinator of all work
 - **SubManagers**: Mid-level managers spawned by the Root Manager to handle specific domains within larger projects
@@ -64,9 +72,7 @@ The delegation network consists of 10 specialized actors, each designed to be si
 
 ## Usage
 
-To use the delegation network, configure it in your Wasmind system:
-
-TODO: FINALIZE THIS
+To use the delegation network, configure the `delegation_network_coordinator`:
 
 ```toml
 starting_actors = ["delegation_network_coordinator"]
@@ -225,17 +231,6 @@ The delegation network uses several specific assistant actor statuses to coordin
 
 This status system ensures that the delegation network operates smoothly while keeping users in full control of the process.
 
-## Building Similar Systems
-
-This delegation network demonstrates key patterns for building hierarchical agent systems with Wasmind:
-
-- **Composable actors**: Each actor has a single, clear responsibility
-- **Message-driven coordination**: Actors communicate through clean message interfaces  
-- **Emergent behavior**: Complex workflows emerge from simple actor interactions
-- **Flexible hierarchies**: The same patterns can support various organizational structures
-
-The same architectural principles could be applied to build other coordination systems like customer service networks, research teams, or automated workflows.
-
 ---
 
-*The delegation network showcases the power of Wasmind's actor model - sophisticated multi-agent coordination built from simple, self-contained building blocks.*
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

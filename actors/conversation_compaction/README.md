@@ -1,5 +1,7 @@
 # Conversation Compaction Actor
 
+*Automatic conversation history compaction to prevent context overflow*
+
 The Conversation Compaction Actor automatically monitors token usage and compacts conversation history when it exceeds configured thresholds, preventing context overflow while preserving essential task state through LLM-powered summarization.
 
 ## Actor ID
@@ -22,6 +24,10 @@ model_name = "gpt-4o-mini"  # Model to use for generating conversation summaries
 - **`model_name`**: The LLM model used for summarization. Choose a capable model that can understand and distill complex conversations.
 
 **IMPORTANT**: This actor has no default configuration. You must specify a config.
+
+## Tools Provided
+
+This actor does not provide tools to other agents. It operates as a background service that monitors conversation state and automatically performs compaction when needed.
 
 ## How It Works
 

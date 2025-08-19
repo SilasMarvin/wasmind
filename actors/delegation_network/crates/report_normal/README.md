@@ -56,3 +56,7 @@ When activated in a Wasmind system, this actor:
 5. **Enables clean workflow completion** for temporary health check agents
 
 This actor provides a simple, clean mechanism for health analyzers to report positive assessments and properly terminate, maintaining efficient resource usage in the delegation network.
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

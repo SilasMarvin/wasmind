@@ -1,5 +1,7 @@
 # File Interaction Actor
 
+*File reading and editing with line-by-line precision*
+
 This actor gives AI agents the ability to read and edit files with line-by-line precision. It handles everything from simple file reads to complex multi-edit operations, with built-in caching and safety features to prevent data loss.
 
 ## Architecture
@@ -47,6 +49,10 @@ Include this actor when you need AI agents to:
 - **Development workflows**: Code editing, refactoring, and file management tasks
 
 This actor is essential for AI agents that need to interact with codebases, manage project files, or perform any file-based development tasks.
+
+## Configuration
+
+This actor requires no configuration. It is ready to use once included in your actor list.
 
 ## Messages Listened For
 
@@ -111,3 +117,7 @@ Run the test suite:
 ```bash
 cargo test
 ```
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*

@@ -62,3 +62,7 @@ When activated in a Wasmind system, this actor:
 6. **Enables strategic thinking** by encouraging agents to plan before executing complex workflows
 
 The actor helps agents approach complex tasks methodically, with clear planning phases and systematic progress tracking throughout the execution lifecycle.
+
+---
+
+*This README is part of the Wasmind actor system. For more information, see the main project documentation.*
