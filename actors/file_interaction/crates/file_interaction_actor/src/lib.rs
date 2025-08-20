@@ -1,8 +1,8 @@
 use bindings::{exports::wasmind::actor::actor::MessageEnvelope, wasmind::actor::host_info};
 use file_interaction::{
-    EDIT_FILE_DESCRIPTION, EDIT_FILE_NAME, EDIT_FILE_SCHEMA, EditFileParams,
-    FILE_TOOLS_USAGE_GUIDE, FileInteractionManager, READ_FILE_DESCRIPTION, READ_FILE_NAME,
-    READ_FILE_SCHEMA, ReadFileParams,
+    EDIT_FILE_DESCRIPTION, EDIT_FILE_NAME, EDIT_FILE_SCHEMA, EDIT_FILE_USAGE_GUIDE, EditFileParams,
+    FileInteractionManager, READ_FILE_DESCRIPTION, READ_FILE_NAME,
+    READ_FILE_SCHEMA, READ_FILE_USAGE_GUIDE, ReadFileParams,
 };
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -76,13 +76,25 @@ impl GeneratedActorTrait for FileInteractionActor {
 
         let _ = Self::broadcast_common_message(ToolsAvailable { tools });
 
+        // Always broadcast read_file usage guide
         let _ = Self::broadcast_common_message(SystemPromptContribution {
             agent: scope.clone(),
-            key: "file_interaction:usage_guide".to_string(),
-            content: SystemPromptContent::Text(FILE_TOOLS_USAGE_GUIDE.to_string()),
+            key: "file_interaction:read_file_usage_guide".to_string(),
+            content: SystemPromptContent::Text(format!("<tool name=\"{}\">{}</tool>", READ_FILE_NAME, READ_FILE_USAGE_GUIDE)),
             priority: 900,
             section: Some(Section::Tools),
         });
+
+        // Conditionally broadcast edit_file usage guide based on config
+        if config.allow_edits {
+            let _ = Self::broadcast_common_message(SystemPromptContribution {
+                agent: scope.clone(),
+                key: "file_interaction:edit_file_usage_guide".to_string(),
+                content: SystemPromptContent::Text(format!("<tool name=\"{}\">{}</tool>", EDIT_FILE_NAME, EDIT_FILE_USAGE_GUIDE)),
+                priority: 901,
+                section: Some(Section::Tools),
+            });
+        }
 
         // Get the host working directory and create the manager with it
         let working_directory = host_info::get_host_working_directory();

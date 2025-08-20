@@ -6,9 +6,9 @@ use bindings::{
 };
 use code_with_experts_common::ApprovalResponse;
 use file_interaction::{
-    EDIT_FILE_DESCRIPTION, EDIT_FILE_NAME, EDIT_FILE_SCHEMA, EditFileParams,
-    FILE_TOOLS_USAGE_GUIDE, FileInteractionManager, READ_FILE_DESCRIPTION, READ_FILE_NAME,
-    READ_FILE_SCHEMA, ReadFileParams,
+    EDIT_FILE_DESCRIPTION, EDIT_FILE_NAME, EDIT_FILE_SCHEMA, EDIT_FILE_USAGE_GUIDE, EditFileParams,
+    FileInteractionManager, READ_FILE_DESCRIPTION, READ_FILE_NAME,
+    READ_FILE_SCHEMA, READ_FILE_USAGE_GUIDE, ReadFileParams,
 };
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -85,11 +85,21 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
         ];
         let _ = Self::broadcast_common_message(ToolsAvailable { tools });
 
+        // Always broadcast read_file usage guide
         let _ = Self::broadcast_common_message(SystemPromptContribution {
             agent: scope.clone(),
-            key: "file_interaction:usage_guide".to_string(),
-            content: SystemPromptContent::Text(FILE_TOOLS_USAGE_GUIDE.to_string()),
+            key: "file_interaction:read_file_usage_guide".to_string(),
+            content: SystemPromptContent::Text(format!("<tool name=\"{}\">{}</tool>", READ_FILE_NAME, READ_FILE_USAGE_GUIDE)),
             priority: 900,
+            section: Some(Section::Tools),
+        });
+
+        // Always broadcast edit_file usage guide (this actor always allows edits)
+        let _ = Self::broadcast_common_message(SystemPromptContribution {
+            agent: scope.clone(),
+            key: "file_interaction:edit_file_usage_guide".to_string(),
+            content: SystemPromptContent::Text(format!("<tool name=\"{}\">{}</tool>", EDIT_FILE_NAME, EDIT_FILE_USAGE_GUIDE)),
+            priority: 901,
             section: Some(Section::Tools),
         });
 

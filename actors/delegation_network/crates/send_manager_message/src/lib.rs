@@ -15,7 +15,7 @@ use wasmind_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
-const SEND_MANAGER_MESSAGE_USAGE_GUIDE: &str = r#"## send_manager_message Tool - Escalate to Your Manager
+const SEND_MANAGER_MESSAGE_USAGE_GUIDE: &str = r#"<tool name="send_manager_message">Escalate to Your Manager
 
 **Purpose**: Send messages upward to your direct manager when you need guidance, are blocked, have critical updates or have been messaged.
 
@@ -45,7 +45,8 @@ const SEND_MANAGER_MESSAGE_USAGE_GUIDE: &str = r#"## send_manager_message Tool -
 - "I've discovered that the database migration will require 6+ hours of downtime. This conflicts with the 2pm deployment deadline. Should I proceed or adjust the timeline?"
 - "The client requirements document mentions features X and Y, but our current sprint only accounts for X. Should I implement Y as well, or clarify scope first?"
 
-**wait Parameter**: Set to `true` if you need to pause all work and wait for manager's response before continuing."#;
+**wait Parameter**: Set to `true` if you need to pause all work and wait for manager's response before continuing.
+</tool>"#;
 
 #[derive(Debug, serde::Deserialize)]
 struct SendManagerMessageInput {

@@ -27,7 +27,7 @@ struct ReviewConfig {
 
 wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
-const REQUEST_PLAN_REVIEW_USAGE_GUIDE: &str = r#"## request_plan_review Tool - Get Expert Review Before Execution
+const REQUEST_PLAN_REVIEW_USAGE_GUIDE: &str = r#"<tool name="request_plan_review">Get Expert Review Before Execution
 
 **CRITICAL: Always use this tool BEFORE creating your final plan and executing tasks!**
 
@@ -73,7 +73,8 @@ const REQUEST_PLAN_REVIEW_USAGE_GUIDE: &str = r#"## request_plan_review Tool - G
 4. Revise plan based on feedback
 5. Begin execution with confidence
 
-Remember: A few minutes of review can save hours of fixing mistakes!"#;
+Remember: A few minutes of review can save hours of fixing mistakes!
+</tool>"#;
 
 const REQUEST_PLAN_REVIEW_NAME: &str = "request_plan_review";
 const REQUEST_PLAN_REVIEW_DESCRIPTION: &str =

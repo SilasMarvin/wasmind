@@ -27,7 +27,7 @@ enum AgentStatus {
 
 wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
-const WAIT_USAGE_GUIDE: &str = r#"## wait Tool - Resume Waiting After an Interruption
+const WAIT_USAGE_GUIDE: &str = r#"<tool name="wait">Resume Waiting After an Interruption
 
 **Purpose**: To PAUSE your execution and RESUME waiting for agent responses after you have been interrupted by an external event (like a new user message).
 
@@ -43,7 +43,8 @@ const WAIT_USAGE_GUIDE: &str = r#"## wait Tool - Resume Waiting After an Interru
 3. You delegate the user's request: `spawn_agent(task="Run 'python --version' and report the output", type="Worker", wait=true)`. After it finishes, you report back to the user.
 4. Now that you've handled the user's interruption, you must go back to waiting for the original test suite to finish. You call `wait(reason="Resuming wait for the integration test suite to complete.")`.
 
-**Best Practice**: Always include a clear reason for why you're waiting so the user understands the current state."#;
+**Best Practice**: Always include a clear reason for why you're waiting so the user understands the current state.
+</tool>"#;
 
 #[derive(wasmind_actor_utils::actors::macros::Actor)]
 struct WaitValidator {

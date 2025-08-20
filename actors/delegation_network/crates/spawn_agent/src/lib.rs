@@ -15,7 +15,7 @@ use wasmind_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
-const SPAWN_AGENT_USAGE_GUIDE: &str = r#"## spawn_agent Tool - Create and Delegate to Specialized Agents
+const SPAWN_AGENT_USAGE_GUIDE: &str = r#"<tool name="spawn_agent">Create and Delegate to Specialized Agents
 
 **Purpose**: Create one or more new SubManager or Worker agents to delegate tasks. You can spawn multiple agents in a single call for parallel execution.
 
@@ -134,7 +134,7 @@ To handle dependent tasks, you must make separate spawn_agent calls
 ```
 
 NOTE: The examples above have simplified `task_description`s It is CRITICAL you write highly detailed `task_description`s. They must clearly state everything you want the agent to acomplish. Do NOT expect it to know what you desire unless clearly stated.
-"#;
+</tool>"#;
 
 #[derive(Clone, Deserialize)]
 pub struct SpawnAgentConfig {

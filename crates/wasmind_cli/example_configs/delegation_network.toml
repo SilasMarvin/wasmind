@@ -25,41 +25,41 @@ starting_actors = ["delegation_network_coordinator"]
 source = { path = "/Users/silasmarvin/github/wasmind/actors/delegation_network", package = "crates/delegation_network_coordinator" }
 
 [actor_overrides.main_manager_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.sub_manager_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.worker_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.check_health_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.manager_perspective_reviewer_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.strategic_plan_advisor_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.code_reuse_advisor_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.idiomatic_code_advisor_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.idiomatic_code_approver_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.redundancy_approver_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.correctness_logic_approver_assistant.config]
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 [actor_overrides.conversation_compaction.config]
 token_threshold = 50000
-model_name = "openai/gpt-5-mini"
+model_name = "qwen/qwen3-coder"
 
 ##############################
 # LiteLLM Config #############

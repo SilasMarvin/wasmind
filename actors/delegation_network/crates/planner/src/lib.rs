@@ -10,7 +10,7 @@ use wasmind_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
-const PLANNER_USAGE_GUIDE: &str = r#"## planner Tool - Strategic Planning and Progress Tracking
+const PLANNER_USAGE_GUIDE: &str = r#"<tool name="planner">Strategic Planning and Progress Tracking
 
 **Purpose**: Create structured plans for complex multi-step tasks and track progress systematically.
 
@@ -60,7 +60,8 @@ Steps:
 6. Deployment - Production rollout with monitoring
 ```
 
-**Progress Tracking**: Use this tool to update plan status as work progresses and identify any blockers."#;
+**Progress Tracking**: Use this tool to update plan status as work progresses and identify any blockers.
+</tool>"#;
 
 #[derive(Debug, serde::Deserialize)]
 struct Task {

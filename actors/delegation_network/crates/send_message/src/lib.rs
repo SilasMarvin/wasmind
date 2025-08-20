@@ -20,7 +20,7 @@ use wasmind_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
-const SEND_MESSAGE_USAGE_GUIDE: &str = r#"## send_message Tool - Communicate with Subordinate Agents
+const SEND_MESSAGE_USAGE_GUIDE: &str = r#"<tool name="send_message">Communicate with Subordinate Agents
 
 **Purpose**: Send messages to agents you've spawned to provide guidance, ask questions, or give updates.
 
@@ -46,7 +46,8 @@ const SEND_MESSAGE_USAGE_GUIDE: &str = r#"## send_message Tool - Communicate wit
 - "The client just requested we also include product images in the CSV. Can you add an 'image_url' column?"
 - "Great progress so far! For the next phase, please focus on error handling for network timeouts."
 
-**wait Parameter**: Set to `true` if you need to pause and wait for their response before continuing."#;
+**wait Parameter**: Set to `true` if you need to pause and wait for their response before continuing.
+</tool>"#;
 
 fn format_message_for_agent_from_manager(message: &str) -> String {
     format!("New message from your manager:\n{message}\n\n\nPlease respond immediatly!")

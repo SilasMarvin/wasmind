@@ -43,11 +43,18 @@ pub struct AssistantConfig {
     pub allow_empty_responses: bool,
 }
 
+/// A system message with its source scope
+#[derive(Debug, Clone)]
+pub struct PendingSystemMessage {
+    message: SystemChatMessage,
+    from_scope: String,
+}
+
 /// Pending message that accumulates user input and system messages to be submitted to the LLM when appropriate
 #[derive(Debug, Clone, Default)]
 pub struct PendingMessage {
     user_message: Option<UserChatMessage>,
-    system_messages: Vec<SystemChatMessage>,
+    system_messages: Vec<PendingSystemMessage>,
 }
 
 impl PendingMessage {
@@ -66,9 +73,12 @@ impl PendingMessage {
         self.user_message = Some(message);
     }
 
-    /// Add a system message
-    pub fn add_system_message(&mut self, message: SystemChatMessage) {
-        self.system_messages.push(message);
+    /// Add a system message with its source scope
+    pub fn add_system_message(&mut self, message: SystemChatMessage, from_scope: String) {
+        self.system_messages.push(PendingSystemMessage {
+            message,
+            from_scope,
+        });
     }
 
     /// Convert to Vec<ChatMessage> for LLM submission
@@ -78,8 +88,8 @@ impl PendingMessage {
         let mut messages = Vec::new();
 
         // Add system messages first
-        for system_message in self.system_messages.drain(..) {
-            messages.push(ChatMessage::System(system_message));
+        for pending_system in self.system_messages.drain(..) {
+            messages.push(ChatMessage::System(pending_system.message));
         }
 
         // Add user message last if present
@@ -88,6 +98,18 @@ impl PendingMessage {
         }
 
         messages
+    }
+
+    /// Check if we have a system message from the specified scope
+    pub fn has_system_message_from_scope(&self, scope: &str) -> bool {
+        self.system_messages
+            .iter()
+            .any(|msg| msg.from_scope == scope)
+    }
+
+    /// Check if we have any system messages
+    pub fn has_system_messages(&self) -> bool {
+        !self.system_messages.is_empty()
     }
 
     /// Clear all content
@@ -331,6 +353,101 @@ impl Assistant {
         });
     }
 
+    /// Check if a message with the given scope should trigger a submit based on current status
+    fn should_submit_for_message(&self, message_scope: &str, is_user_message: bool) -> bool {
+        match &self.status {
+            Status::Wait {
+                reason: WaitReason::WaitingForUserInput,
+            } => is_user_message,
+            Status::Wait {
+                reason:
+                    WaitReason::WaitingForSystemInput {
+                        required_scope,
+                        interruptible_by_user,
+                    },
+            } => {
+                if is_user_message {
+                    *interruptible_by_user
+                } else {
+                    // System message - check if it matches required scope
+                    if let Some(required) = required_scope {
+                        required == message_scope
+                    } else {
+                        true // No specific scope required, any system message triggers
+                    }
+                }
+            }
+            Status::Wait {
+                reason:
+                    WaitReason::WaitingForAgentCoordination {
+                        target_agent_scope,
+                        user_can_interrupt,
+                        ..
+                    },
+            } => {
+                if is_user_message {
+                    *user_can_interrupt
+                } else {
+                    // System message - check if it matches target scope
+                    if let Some(target) = target_agent_scope {
+                        target == message_scope
+                    } else {
+                        true // No specific scope required
+                    }
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// Check if pending messages would satisfy the given waiting status
+    /// Returns true if we have messages that would cause us to submit if we were in this status
+    fn pending_messages_satisfy_wait_status(&self, status: &Status) -> bool {
+        // Check system messages for specific wait reasons
+        match status {
+            Status::Wait {
+                reason: WaitReason::WaitingForUserInput,
+            } => self.pending_message.user_message.is_some(),
+            Status::Wait {
+                reason: WaitReason::WaitingForSystemInput { 
+                    required_scope, 
+                    interruptible_by_user 
+                },
+            } => {
+                // Check if user message can interrupt
+                if *interruptible_by_user && self.pending_message.user_message.is_some() {
+                    return true;
+                }
+                // Check system messages
+                if let Some(required) = required_scope {
+                    self.pending_message.has_system_message_from_scope(required)
+                } else {
+                    self.pending_message.has_system_messages()
+                }
+            }
+            Status::Wait {
+                reason:
+                    WaitReason::WaitingForAgentCoordination {
+                        target_agent_scope,
+                        user_can_interrupt,
+                        ..
+                    },
+            } => {
+                // Check if user message can interrupt
+                if *user_can_interrupt && self.pending_message.user_message.is_some() {
+                    return true;
+                }
+                // Check system messages
+                if let Some(target) = target_agent_scope {
+                    self.pending_message.has_system_message_from_scope(target)
+                } else {
+                    self.pending_message.has_system_messages()
+                }
+            }
+            _ => false,
+        }
+    }
+
     fn set_status(&mut self, new_status: Status, broadcast_change: bool) {
         self.status = new_status;
 
@@ -346,11 +463,6 @@ impl Assistant {
             return;
         }
 
-        let new_messages = self.pending_message.to_chat_messages();
-        if !new_messages.is_empty() {
-            self.add_chat_messages(new_messages);
-        }
-
         let request_id = format!("req_{}", wasmind_actor_utils::utils::generate_id(6));
 
         // Check if there's a queued status change
@@ -361,6 +473,33 @@ impl Assistant {
                 request_id: request_id.clone(),
             }
         };
+
+        // Check if we already have pending messages that satisfy the new status
+        // This fixes the race condition where messages arrive before status changes
+        if !matches!(status, Status::Processing { .. }) {
+            if self.pending_messages_satisfy_wait_status(&status) {
+                // We have messages that satisfy the new waiting status
+                // Don't set the wait status, continue processing instead
+                let new_messages = self.pending_message.to_chat_messages();
+                if !new_messages.is_empty() {
+                    self.add_chat_messages(new_messages);
+                }
+                
+                // Set status to Processing and continue
+                self.set_status(Status::Processing {
+                    request_id: request_id.clone(),
+                }, true);
+                
+                self.submit_and_process(request_id);
+                return;
+            }
+        }
+
+        // Now we can drain pending messages and proceed normally
+        let new_messages = self.pending_message.to_chat_messages();
+        if !new_messages.is_empty() {
+            self.add_chat_messages(new_messages);
+        }
 
         self.set_status(status.clone(), true);
 
@@ -445,14 +584,15 @@ impl Assistant {
                         },
                     )]);
 
-                    // This checks for the following scenario:
-                    // 1. We begin processing and will call the Wait tool: our state = Processing || AwaitingTools
-                    // 2. We receive a user / system message we add it to the pending messages but our state remains: Processing || AwaitingTools
-                    // 3. The wait too finishes
-                    //
-                    // Basically, we called the Wait tool but while calling it we got the messages
-                    // we were waiting for
-                    if self.pending_message.has_content() {
+                    // Check if pending messages already satisfy our current WaitingForAgentCoordination status
+                    // This handles the scenario where:
+                    // 1. We're in WaitingForAgentCoordination (set by a tool like Wait)
+                    // 2. While waiting for the tool to complete, we received messages
+                    // 3. The tool has now completed and added its result
+                    // 4. We check if those pending messages would break us out of the wait status
+                    // 
+                    // If pending messages satisfy the wait condition, submit to process them
+                    if self.pending_messages_satisfy_wait_status(&self.status) {
                         self.submit(false);
                     }
                 }
@@ -603,7 +743,7 @@ impl GeneratedActorTrait for Assistant {
                             && response.message.message.tool_calls.is_none()
                             && !self.config.allow_empty_responses
                         {
-                            self.pending_message.add_system_message(SystemChatMessage { content: "SYSTEM ERROR: It is required you respond with some text content or tool call. Review who you are and what you are doing. Acomplish your goal!".to_string() });
+                            self.pending_message.add_system_message(SystemChatMessage { content: "SYSTEM ERROR: It is required you respond with some text content or tool call. Review who you are and what you are doing. Acomplish your goal!".to_string() }, self.scope.clone());
                             self.submit(false);
                             return;
                         }
@@ -669,7 +809,7 @@ impl GeneratedActorTrait for Assistant {
                             }
                         } else {
                             if self.config.require_tool_call {
-                                self.pending_message.add_system_message(SystemChatMessage { content: "SYSTEM ERROR: It is required you respond with some kind of tool call! Review who you are and what you are doing and respond with a valid tool call".to_string() });
+                                self.pending_message.add_system_message(SystemChatMessage { content: "SYSTEM ERROR: It is required you respond with some kind of tool call! Review who you are and what you are doing and respond with a valid tool call".to_string() }, self.scope.clone());
                                 self.submit(false);
                             } else {
                                 if self.pending_message.has_content() {
@@ -775,65 +915,16 @@ impl GeneratedActorTrait for Assistant {
         {
             match add_message.message {
                 ChatMessage::System(system_chat_message) => {
-                    self.pending_message.add_system_message(system_chat_message);
-
-                    // Submit the message immediately if:
-                    // 1. We are waiting for a SystemMessage from a specific scope and the message is from that scope
-                    // 2. We are waiting for a SystemMessage from no specific scope
-                    match &self.status {
-                        Status::Wait {
-                            reason: WaitReason::WaitingForSystemInput { required_scope, .. },
-                        } => {
-                            if let Some(required_scope) = required_scope {
-                                if required_scope == &message.from_scope {
-                                    self.submit(false);
-                                }
-                            } else {
-                                self.submit(false);
-                            }
-                        }
-                        Status::Wait {
-                            reason:
-                                WaitReason::WaitingForAgentCoordination {
-                                    target_agent_scope, ..
-                                },
-                        } => {
-                            if let Some(target_scope) = target_agent_scope {
-                                if target_scope == &message.from_scope {
-                                    self.submit(false);
-                                }
-                            } else {
-                                self.submit(false);
-                            }
-                        }
-                        _ => {}
+                    self.pending_message
+                        .add_system_message(system_chat_message, message.from_scope.clone());
+                    if self.should_submit_for_message(&message.from_scope, false) {
+                        self.submit(false);
                     }
                 }
-                // Submit the message immediately if:
-                // 1. We are waiting for UserInput
-                // 2. We are waiting for SystemInput with interruptible_by_user = true
-                // 3. We are waiting for AgentCoordination with user_can_interrupt = true
                 ChatMessage::User(user_chat_message) => {
                     self.pending_message.set_user_message(user_chat_message);
-                    match self.status {
-                        Status::Wait {
-                            reason: WaitReason::WaitingForUserInput,
-                        } => self.submit(false),
-                        Status::Wait {
-                            reason:
-                                WaitReason::WaitingForSystemInput {
-                                    interruptible_by_user: true,
-                                    ..
-                                },
-                        } => self.submit(false),
-                        Status::Wait {
-                            reason:
-                                WaitReason::WaitingForAgentCoordination {
-                                    user_can_interrupt: true,
-                                    ..
-                                },
-                        } => self.submit(false),
-                        _ => (),
+                    if self.should_submit_for_message(&message.from_scope, true) {
+                        self.submit(false);
                     }
                 }
                 _ => (), // For right now we don't support adding any message besides a User or System

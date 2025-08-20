@@ -27,7 +27,9 @@ fn default_base_template() -> String {
 <{{ section_name | lower | replace(" ", "_") }}>
 {% for contribution in contributions -%}
 {{ contribution }}
+{%- if not loop.last %}
 
+{% endif -%}
 {% endfor -%}
 </{{ section_name | lower | replace(" ", "_") }}>
 

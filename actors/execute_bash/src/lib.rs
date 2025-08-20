@@ -10,7 +10,7 @@ use wasmind_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
-const EXECUTE_BASH_USAGE_GUIDE: &str = r#"## execute_bash Tool - System Commands & File Exploration
+const EXECUTE_BASH_USAGE_GUIDE: &str = r#"<tool name="execute_bash">System Commands & File Exploration
 
 **Purpose**: Execute bash commands for system tasks, builds, tests, and file exploration.
 
@@ -48,7 +48,8 @@ rg "TODO" --count
 **Output Limits**:
 - Command output is limited to prevent memory issues
 - Truncation is indicated when output exceeds limits
-- Use pipes like `| head -100` or `| grep pattern` to filter output"#;
+- Use pipes like `| head -100` or `| grep pattern` to filter output
+</tool>"#;
 
 #[derive(tools::macros::Tool)]
 #[tool(

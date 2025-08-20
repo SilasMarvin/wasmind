@@ -76,12 +76,9 @@ pub const EDIT_FILE_SCHEMA: &str = r#"{
     "required": ["path", "edits"]
 }"#;
 
-pub const FILE_TOOLS_USAGE_GUIDE: &str = r#"## File Interaction Tools
+pub const READ_FILE_USAGE_GUIDE: &str = r#"Reads files with line numbers. Supports absolute and relative paths."#;
 
-### read_file
-Reads files with line numbers. Supports absolute and relative paths.
-
-### edit_file - Search-and-Replace Editing
+pub const EDIT_FILE_USAGE_GUIDE: &str = r#"Search-and-Replace Editing
 Uses exact string matching. Must read files before editing.
 
 **Basic Example:**
