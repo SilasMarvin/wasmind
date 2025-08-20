@@ -211,7 +211,7 @@ Current state of all read and edited files. This section updates automatically a
             Ok(result) => {
                 self.update_unified_files_system_prompt();
                 let message = format!(
-                    "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the read file",
+                    "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the contents",
                     result.message
                 );
                 self.send_success_result(

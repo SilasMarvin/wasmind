@@ -20,7 +20,7 @@ fn format_string_for_error(s: &str) -> String {
 
 // Tool constants
 pub const READ_FILE_NAME: &str = "read_file";
-pub const READ_FILE_DESCRIPTION: &str = "Reads content from a file. For small files (<64KB), it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER:CONTENT. You can read a specific chunk by providing start_line and end_line.";
+pub const READ_FILE_DESCRIPTION: &str = "Reads content from a file. For small files, it reads the entire file. For large files, it returns an error with metadata, requiring you to specify a line range. All returned file content is prefixed with line numbers in the format LINE_NUMBER:CONTENT. You can read a specific chunk by providing start_line and end_line.";
 pub const READ_FILE_SCHEMA: &str = r#"{
     "type": "object",
     "properties": {
@@ -193,24 +193,6 @@ fn clean_path_components(path: &Path) -> PathBuf {
     } else {
         result
     }
-}
-
-/// Formats JSON for TUI display by replacing leading spaces with centered dots
-/// This preserves indentation structure when the TUI strips whitespace
-fn format_json_for_tui(json_string: &str) -> String {
-    json_string
-        .lines()
-        .map(|line| {
-            let trimmed = line.trim_start();
-            if trimmed.is_empty() {
-                line.to_string() // Preserve empty lines as-is
-            } else {
-                let leading_spaces = line.len() - trimmed.len();
-                format!("{}{}", "·".repeat(leading_spaces), trimmed)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 const MAX_FILE_SIZE_BYTES: u64 = 10 * 1024 * 1024; // 10MB limit
@@ -430,35 +412,94 @@ impl FileInteractionManager {
 
         match self.get_or_read_file_content(&params.path, start_line, end_line) {
             Ok(content) => {
-                let message = match (start_line, end_line) {
-                    (Some(start), Some(end)) => {
-                        format!("Read file: {} (lines {}-{})", params.path, start, end)
-                    }
-                    _ => format!("Read file: {}", params.path),
-                };
+                // Get the canonical path to look up cache info
+                let path_ref = Path::new(&params.path);
+                let canonical_path =
+                    wasm_safe_normalize_path(path_ref, &self.working_directory, true).map_err(
+                        |e| ReadFileError {
+                            error_msg: format!("Failed to normalize path: {}", e),
+                            ui_display: UIDisplayInfo {
+                                collapsed: format!("{}: Path error", params.path),
+                                expanded: Some(format!(
+                                    "File: {}\nError: Failed to normalize path: {}",
+                                    params.path, e
+                                )),
+                            },
+                        },
+                    )?;
 
-                let line_count = content.lines().count();
-                let collapsed = match (start_line, end_line) {
-                    (Some(start), Some(end)) => {
-                        format!(
-                            "{}: {} lines ({}–{})",
-                            params.path,
-                            end - start + 1,
-                            start,
-                            end
-                        )
+                // Get total lines info from cache
+                let (total_lines, actual_start, actual_end) =
+                    if let Some(entry) = self.cache.get(&canonical_path) {
+                        match &entry.content {
+                            FileContent::Full(full_content) => {
+                                let total = full_content.lines().count();
+                                (total, 1, total)
+                            }
+                            FileContent::Partial { total_lines, .. } => {
+                                // Find the actual range that was read
+                                if let (Some(req_start), Some(req_end)) = (start_line, end_line) {
+                                    // Check what was actually read
+                                    let actual_end = req_end.min(*total_lines);
+                                    (*total_lines, req_start, actual_end)
+                                } else {
+                                    (*total_lines, 1, *total_lines)
+                                }
+                            }
+                        }
+                    } else {
+                        // Fallback if not in cache (shouldn't happen)
+                        let line_count = content.lines().count();
+                        (line_count, 1, line_count)
+                    };
+
+                // Build message for LLM
+                let message = match (start_line, end_line) {
+                    (Some(req_start), Some(req_end)) => {
+                        if req_end > total_lines {
+                            // Requested more lines than exist
+                            format!(
+                                "Read file: {} (requested lines {}-{}, file has {} lines - read {})",
+                                params.path,
+                                req_start,
+                                req_end,
+                                total_lines,
+                                if actual_end == total_lines && actual_start == 1 {
+                                    "complete file".to_string()
+                                } else {
+                                    format!("lines {}-{}", actual_start, actual_end)
+                                }
+                            )
+                        } else if actual_end == total_lines && actual_start == 1 {
+                            format!(
+                                "Read file: {} (lines {}-{} of {} total - read complete file)",
+                                params.path, actual_start, actual_end, total_lines
+                            )
+                        } else {
+                            let remaining = total_lines - actual_end;
+                            format!(
+                                "Read file: {} (lines {}-{} of {} total - {} lines remaining)",
+                                params.path, actual_start, actual_end, total_lines, remaining
+                            )
+                        }
                     }
                     _ => {
-                        format!("{}: {} lines", params.path, line_count)
+                        format!(
+                            "Read file: {} ({} lines total - read complete file)",
+                            params.path, total_lines
+                        )
                     }
                 };
 
-                let expanded = format!("File: {}\n\n{}", params.path, content);
+                let expanded = format!(
+                    "File: {}\nTotal lines: {}\n\n{}",
+                    params.path, total_lines, content
+                );
 
                 Ok(ReadFileResult {
-                    message,
+                    message: message.clone(),
                     ui_display: UIDisplayInfo {
-                        collapsed,
+                        collapsed: message,
                         expanded: Some(expanded),
                     },
                 })
@@ -493,13 +534,9 @@ impl FileInteractionManager {
                 };
                 let collapsed = format!("{}: {} applied", params.path, edit_summary);
 
-                let json_content = serde_json::to_string_pretty(params)
-                    .unwrap_or_else(|_| "Failed to serialize parameters".to_string());
-                let formatted_json = format_json_for_tui(&json_content);
-
                 let expanded = format!(
-                    "File: {}\nOperation: Edit\nChanges: {} operations applied\n\nEdit Details:\n{}",
-                    params.path, edits_count, formatted_json
+                    "File: {}\nOperation: Edit\nChanges: {} operations applied\n\nDiff:\n{}",
+                    params.path, edits_count, diff_before_edit
                 );
 
                 // Include the diff in the message so LLMs can see exactly what changed

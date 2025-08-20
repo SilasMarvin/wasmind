@@ -30,8 +30,10 @@ use wasmind_actor_utils::{
 mod bindings;
 
 fn default_min_diff_size() -> u64 {
-    return 20;
+    return 200;
 }
+
+const EDIT_FILE_APPROVAL_ADDENDUM: &str = "IMPORTANT: All file edits will be reviewed by expert reviewers. After making an edit, you will receive feedback from these experts. It is strongly recommended that you implement their suggested changes unless you are certain they are not necessary. The experts are there to help ensure code quality and catch potential issues.";
 
 #[derive(Deserialize)]
 struct ApprovalConfig {
@@ -76,7 +78,7 @@ impl GeneratedActorTrait for FileInteractionWIthApprovalActor {
                 tool_type: "function".to_string(),
                 function: wasmind_actor_utils::llm_client_types::ToolFunctionDefinition {
                     name: EDIT_FILE_NAME.to_string(),
-                    description: EDIT_FILE_DESCRIPTION.to_string(),
+                    description: format!("{} {}", EDIT_FILE_DESCRIPTION, EDIT_FILE_APPROVAL_ADDENDUM),
                     parameters: serde_json::from_str(EDIT_FILE_SCHEMA).unwrap(),
                 },
             },
@@ -265,7 +267,7 @@ Current state of all read and edited files. This section updates automatically a
             Ok(result) => {
                 self.update_unified_files_system_prompt();
                 let message = format!(
-                    "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the read file",
+                    "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the contents",
                     result.message
                 );
                 self.send_success_result(
@@ -401,12 +403,26 @@ Current state of all read and edited files. This section updates automatically a
         requested_changes: Option<String>,
     ) {
         match self.manager.edit_file(params) {
-            Ok(result) => {
+            Ok(mut result) => {
                 self.update_unified_files_system_prompt();
                 let message = format!(
                     "{} -- Check the FilesReadAndEdited section in the SystemPrompt to see the updated edited file",
                     result.message
                 );
+                
+                // Update the expanded UI display to include expert review
+                if let Some(expanded) = &mut result.ui_display.expanded {
+                    let review_section = if let Some(ref requested_changes) = requested_changes {
+                        format!(
+                            "\n\n========== Expert Review ==========\n\nStatus: Changes Requested\n\nFeedback:\n{}",
+                            requested_changes
+                        )
+                    } else {
+                        "\n\n========== Expert Review ==========\n\nStatus: ✓ Approved".to_string()
+                    };
+                    expanded.push_str(&review_section);
+                }
+                
                 let message = if let Some(requested_changes) = requested_changes {
                     format!(
                         "{message}\n\nExperts have also reviewed your changes and requested you make the following changes:\n{requested_changes}"

@@ -1,8 +1,8 @@
 use wasmind_actor_utils::{
     common_messages::{
         assistant::{
-            AddMessage, AgentTaskResponse, QueueStatusChange,
-            RequestStatusUpdate, Status, WaitReason,
+            AddMessage, AgentTaskResponse, QueueStatusChange, RequestStatusUpdate, Status,
+            WaitReason,
         },
         tools::{ExecuteTool, ToolCallResult, ToolCallStatus, ToolCallStatusUpdate, UIDisplayInfo},
     },
@@ -49,7 +49,11 @@ impl tools::Tool for FlagIssueTool {
                 Ok(params) => params,
                 Err(e) => {
                     let error_msg = format!("Failed to parse flag_issue parameters: {}", e);
-                    self.send_error_result(&tool_call.tool_call.id, &tool_call.originating_request_id, error_msg);
+                    self.send_error_result(
+                        &tool_call.tool_call.id,
+                        &tool_call.originating_request_id,
+                        error_msg,
+                    );
                     return;
                 }
             };
@@ -86,12 +90,21 @@ impl tools::Tool for FlagIssueTool {
         }
 
         // Send success result
-        self.send_success_result(&tool_call.tool_call.id, &tool_call.originating_request_id, &params.issue_summary);
+        self.send_success_result(
+            &tool_call.tool_call.id,
+            &tool_call.originating_request_id,
+            &params.issue_summary,
+        );
     }
 }
 
 impl FlagIssueTool {
-    fn send_error_result(&self, tool_call_id: &str, originating_request_id: &str, error_msg: String) {
+    fn send_error_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        error_msg: String,
+    ) {
         let update = ToolCallStatusUpdate {
             id: tool_call_id.to_string(),
             originating_request_id: originating_request_id.to_string(),
@@ -100,7 +113,10 @@ impl FlagIssueTool {
                     content: error_msg.clone(),
                     ui_display_info: UIDisplayInfo {
                         collapsed: "Parameters: Invalid format".to_string(),
-                        expanded: Some(format!("Error: Failed to parse parameters\n\nDetails: {}", error_msg)),
+                        expanded: Some(format!(
+                            "Error: Failed to parse parameters\n\nDetails: {}",
+                            error_msg
+                        )),
                     },
                 }),
             },
@@ -109,7 +125,12 @@ impl FlagIssueTool {
         let _ = Self::broadcast_common_message(update);
     }
 
-    fn send_success_result(&self, tool_call_id: &str, originating_request_id: &str, issue_summary: &str) {
+    fn send_success_result(
+        &self,
+        tool_call_id: &str,
+        originating_request_id: &str,
+        issue_summary: &str,
+    ) {
         let status_update_request = RequestStatusUpdate {
             agent: self.scope.clone(),
             status: Status::Done {
@@ -126,14 +147,18 @@ impl FlagIssueTool {
         let result = ToolCallResult {
             content: format!("Agent flagged for issue: {}", issue_summary),
             ui_display_info: UIDisplayInfo {
-                collapsed: format!("Issue reported: {}", 
-                    if issue_summary.len() > 40 { 
+                collapsed: format!(
+                    "Issue reported: {}",
+                    if issue_summary.len() > 40 {
                         format!("{}...", &issue_summary[..37])
-                    } else { 
+                    } else {
                         issue_summary.to_string()
                     }
                 ),
-                expanded: Some(format!("Operation: Report problem\nAgent paused for manager review\n\nIssue: {}", issue_summary)),
+                expanded: Some(format!(
+                    "Agent paused for manager review\n\nIssue: {}",
+                    issue_summary
+                )),
             },
         };
 

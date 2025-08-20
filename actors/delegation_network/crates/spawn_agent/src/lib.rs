@@ -263,6 +263,7 @@ impl tools::Tool for SpawnAgentTool {
         }
 
         let mut spawned_agents = Vec::new();
+        let mut spawned_agent_ids = Vec::new();
 
         // Process each agent to spawn
         for agent_def in &params.agents_to_spawn {
@@ -288,7 +289,7 @@ impl tools::Tool for SpawnAgentTool {
                                 agent_def.agent_type
                             ),
                             expanded: Some(format!(
-                                "Operation: Create agent\nAgent Type: {:?}\nError: {}",
+                                "Agent Type: {:?}\nError: {}",
                                 agent_def.agent_type, e
                             )),
                         },
@@ -339,6 +340,7 @@ impl tools::Tool for SpawnAgentTool {
                 "{} ({:?}) - ID: {}",
                 agent_def.agent_role, agent_def.agent_type, agent_id
             ));
+            spawned_agent_ids.push(agent_id);
         }
 
         // If wait is true, send a status update request to make the agent wait
@@ -371,6 +373,21 @@ impl tools::Tool for SpawnAgentTool {
             spawned_agents.join(", ")
         );
 
+        // Build detailed expanded view with agent information
+        let mut expanded_content = String::from("Spawned Agents:\n");
+        expanded_content.push_str("==================\n");
+
+        for (i, agent_def) in params.agents_to_spawn.iter().enumerate() {
+            expanded_content.push_str(&format!(
+                "\n{}. {} (Type: {:?})\n   ID: {}\n   Task: {}\n",
+                i + 1,
+                agent_def.agent_role,
+                agent_def.agent_type,
+                spawned_agent_ids[i],
+                agent_def.task_description
+            ));
+        }
+
         let result = ToolCallResult {
             content: success_message.clone(),
             ui_display_info: UIDisplayInfo {
@@ -384,7 +401,7 @@ impl tools::Tool for SpawnAgentTool {
                     },
                     spawned_agents.join(", ")
                 ),
-                expanded: Some(format!("Operation: Create agents\n\n{}", success_message)),
+                expanded: Some(expanded_content),
             },
         };
 

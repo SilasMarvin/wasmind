@@ -165,7 +165,7 @@ fn create_user_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) {
         .block(block)
         .style(Style::new())
         .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
+        .wrap(Wrap { trim: false });
     let min_height = message_paragraph.line_count(area.width.saturating_sub(4)) as u16;
 
     (Box::new(message_paragraph), min_height)
@@ -184,7 +184,7 @@ fn create_system_widget(content: &str, area: Rect) -> (Box<dyn WidgetRef>, u16) 
         .block(block)
         .style(Style::new())
         .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
+        .wrap(Wrap { trim: false });
     let min_height = message_paragraph.line_count(area.width.saturating_sub(4)) as u16;
 
     (Box::new(message_paragraph), min_height)
@@ -282,7 +282,7 @@ fn create_tool_widget(
         .block(block)
         .style(Style::new())
         .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
+        .wrap(Wrap { trim: false });
     let min_height = p.line_count(area.width.saturating_sub(4)) as u16;
 
     // If we have a throbber position, create a ThrobberParagraph
@@ -327,7 +327,7 @@ fn create_assistant_widgets(
             .block(block)
             .style(Style::new())
             .alignment(Alignment::Left)
-            .wrap(Wrap { trim: true });
+            .wrap(Wrap { trim: false });
         let min_height = p.line_count(area.width.saturating_sub(4)) as u16;
         widgets.push((Box::new(p), min_height));
     }
@@ -721,7 +721,7 @@ impl AssistantInfo {
                     .padding(Padding::horizontal(1));
                 let paragraph = Paragraph::new(content)
                     .alignment(Alignment::Center)
-                    .wrap(Wrap { trim: true })
+                    .wrap(Wrap { trim: false })
                     .block(block);
                 self.cached_empty_state = Some(CachedParagraph::new(paragraph));
             }
@@ -780,7 +780,7 @@ impl AssistantInfo {
                             .block(block)
                             .style(Style::new())
                             .alignment(Alignment::Left)
-                            .wrap(Wrap { trim: true });
+                            .wrap(Wrap { trim: false });
                     self.cached_pending = Some(CachedParagraph::new(message_paragraph));
                 }
 
