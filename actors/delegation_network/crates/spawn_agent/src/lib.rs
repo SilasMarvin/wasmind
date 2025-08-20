@@ -15,57 +15,126 @@ use wasmind_actor_utils::{
 #[allow(warnings)]
 mod bindings;
 
-const SPAWN_AGENT_USAGE_GUIDE: &str = r#"## spawn_agent Tool - Create Specialized Agents
+const SPAWN_AGENT_USAGE_GUIDE: &str = r#"## spawn_agent Tool - Create and Delegate to Specialized Agents
 
-**Purpose**: Create new Manager or Worker agents with specific roles and tasks.
+**Purpose**: Create one or more new SubManager or Worker agents to delegate tasks. You can spawn multiple agents in a single call for parallel execution.
 
-**Agent Capabilities**: All spawned agents have FULL access to:
-- Command line interface and terminal operations  
-- File system operations (read, write, create, delete)
-- Network operations and web requests
-- Programming languages (Python, JavaScript, Rust, etc.)
-- System administration tasks
-- Database operations
-- API integrations
-- Essentially ANY computer operation available
+**Agent Types and Capabilities (CRITICAL DISTINCTION):**
 
-**When to Use**:
-- ✅ Need to delegate a specific task or project
-- ✅ Task requires specialized expertise (coding, research, analysis, etc.)
-- ✅ Want parallel execution of multiple tasks
-- ✅ Need a sub-manager to coordinate complex multi-step work
+**1. Worker Agents (`agent_type: "Worker"`)**
+   - These are your "hands-on" specialists.
+   - **Capabilities**: FULL access to execution tools: command line, file system, network requests, etc.
+   - **Use For**: Specific, self-contained tasks like writing code, reading a file, running a test, or fetching data.
 
-**Task Description Guidelines**:
-Be extremely specific about what you want accomplished. Include:
-- Clear objective and success criteria
-- Specific deliverables expected
-- Any constraints or requirements
-- Context about the broader project
+**2. SubManager Agents (`agent_type: "SubManager"`)**
+   - These are orchestrators, just like you, for managing complex sub-projects.
+   - **Capabilities**: They have the SAME tools as you (`spawn_agent`, `planner`). They **CANNOT** directly execute code.
+   - **Use For**: Complex, multi-step goals that require their own planning and delegation.
 
-**Examples**:
+**The `wait` Parameter for Coordination:**
 
-**Worker Agent Example**:
-```
-Role: "Python Developer"
-Task: "Create a web scraper that extracts product prices from Amazon search results for 'wireless headphones'. Save results to CSV with columns: name, price, rating, url. Handle pagination to get at least 100 products. Include error handling and respect rate limits."
-Type: "Worker"
-```
+- **`wait: true`**: Use this to run tasks **sequentially**. The system will pause you until the current task (or batch of tasks) is complete. This is essential for preventing conflicts.
+- **`wait: false` (Default)**: Use this **with extreme caution** only for tasks that are truly independent.
 
-**Manager Agent Example**: 
-```
-Role: "DevOps Lead"  
-Task: "Set up complete CI/CD pipeline for a Python Flask application. This includes: 1) GitHub Actions workflow, 2) Docker containerization, 3) AWS deployment configuration, 4) Database migration scripts, 5) Monitoring setup. Coordinate with team and delegate subtasks as needed."
-Type: "Manager"
-```
+**CRITICAL: Avoiding Race Conditions and Task Conflicts**
 
-**SubManager Agent Example**:
-```
-Role: "Frontend Team Lead"
-Task: "Develop the user interface for the e-commerce platform. Manage the implementation of: 1) Product listing pages, 2) Shopping cart functionality, 3) Checkout flow, 4) User account pages. Coordinate with the main project manager and delegate specific UI components to workers."
-Type: "SubManager"
+A race condition occurs when agents interfere with each other. This can happen if they modify the same file simultaneously or if one agent depends on another's unfinished work. Since you can spawn multiple agents in a single call, you MUST be vigilant about this.
+
+**RULE**: Only include multiple agents in a single `spawn_agent` call if their tasks are **100% independent** of each other.
+
+**ANTI-PATTERN: Incorrect Parallel Spawning (DO NOT DO THIS)**
+
+- **File Conflict Example:** Spawning two agents to work on the same file in one call. They will overwrite each other's work.
+```json
+// INCORRECT: Both agents will fight over `utils.py`
+{
+  "agents_to_spawn": [
+    {
+      "agent_role": "Refactor Specialist",
+      "task_description": "Refactor the calculate() function in utils.py",
+      "agent_type": "Worker"
+    },
+    {
+      "agent_role": "Documentation Writer",
+      "task_description": "Add docstrings to all functions in utils.py",
+      "agent_type": "Worker"
+    }
+  ]
+}
 ```
 
-**Critical**: The more detailed your task description, the better results you'll get!"#;
+- **Dependency Conflict Example:** Spawning an agent to test code that hasn't been written yet in the same call.
+```json
+// INCORRECT: The testing agent will start immediately and fail because the endpoint doesn't exist.
+{
+  "agents_to_spawn": [
+    {
+      "agent_role": "API Developer",
+      "task_description": "Create a new /users endpoint in api.py",
+      "agent_type": "Worker"
+    },
+    {
+      "agent_role": "QA Engineer",
+      "task_description": "Write integration tests for the new /users endpoint",
+      "agent_type": "Worker"
+    }
+  ]
+}
+```
+
+- **CORRECT PATTERN 1**: Sequential Execution for Dependent Tasks
+
+To handle dependent tasks, you must make separate spawn_agent calls
+
+1. **First Call**: Create the endpoint.
+```json
+{
+  "agents_to_spawn": [{
+    "agent_role": "API Developer",
+    "task_description": "Create a new /users endpoint in api.py",
+    "agent_type": "Worker"
+  }],
+  "wait": true
+}
+```
+
+2. After the first agent completes, you are woken up. Now you can spawn the next one.
+
+3. **Second Call**: Test the endpoint that now exists.
+```json
+{
+  "agents_to_spawn": [{
+    "agent_role": "QA Engineer",
+    "task_description": "Write integration tests for the now-existing /users endpoint",
+    "agent_type": "Worker"
+  }],
+  "wait": true
+}
+```
+
+**CORRECT PATTERN 2**: Parallel Execution for Independent Tasks
+
+```json
+// CORRECT: These tasks are independent and can run in parallel safely.
+{
+  "agents_to_spawn": [
+    {
+      "agent_role": "Security Analyst",
+      "task_description": "Scan the `./auth-service/` directory for security vulnerabilities.",
+      "agent_type": "Worker"
+    },
+    {
+      "agent_role": "Performance Analyst",
+      "task_description": "Analyze the `./database-service/` directory for performance bottlenecks.",
+      "agent_type": "Worker"
+    }
+  ],
+  "wait": true
+}
+```
+
+NOTE: The examples above have simplified `task_description`s It is CRITICAL you write highly detailed `task_description`s. They must clearly state everything you want the agent to acomplish. Do NOT expect it to know what you desire unless clearly stated.
+"#;
 
 #[derive(Clone, Deserialize)]
 pub struct SpawnAgentConfig {
@@ -83,7 +152,10 @@ struct AgentDefinition {
 #[derive(serde::Deserialize)]
 struct SpawnAgentsInput {
     agents_to_spawn: Vec<AgentDefinition>,
-    #[serde(default, deserialize_with = "wasmind_actor_utils::utils::deserialize_flexible_bool")]
+    #[serde(
+        default,
+        deserialize_with = "wasmind_actor_utils::utils::deserialize_flexible_bool"
+    )]
     wait: Option<bool>,
 }
 

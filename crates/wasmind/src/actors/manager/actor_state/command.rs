@@ -169,7 +169,7 @@ impl command::HostCmd for ActorState {
             (
                 new_command,
                 inner.timeout_seconds,
-                inner.max_output_bytes.unwrap_or(100_000),
+                inner.max_output_bytes.unwrap_or(10_000),
             )
         };
 

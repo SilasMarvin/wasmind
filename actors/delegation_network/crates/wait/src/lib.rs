@@ -27,32 +27,21 @@ enum AgentStatus {
 
 wasmind_actor_utils::actors::macros::generate_actor_trait!();
 
-const WAIT_USAGE_GUIDE: &str = r#"## wait Tool - Intelligent Timing Coordination
+const WAIT_USAGE_GUIDE: &str = r#"## wait Tool - Resume Waiting After an Interruption
 
-**Purpose**: Pause execution to wait for agent responses or coordinate timing between operations.
+**Purpose**: To PAUSE your execution and RESUME waiting for agent responses after you have been interrupted by an external event (like a new user message).
 
-**IMPORTANT**: You wake automatically on important events - trust the system!
+**CRITICAL: `wait` (Tool) vs. `spawn_agent(wait=true)` (Parameter)**
+- Use `spawn_agent(..., wait=true)` to **INITIATE** a waiting period when you first delegate a task.
+- Use the `wait()` tool to **RESUME** a waiting period **AFTER** you have been woken up and have finished handling the interruption.
 
-**When to Use**:
-- ✅ ONLY when waiting for agents to finish their tasks
-- ✅ Coordinating sequential operations that depend on each other
-- ✅ When you need to pause before proceeding to next phase
+**DO NOT use `wait()` right after `spawn_agent(..., wait=true)`. It is incorrect.**
 
-**When NOT to Use**:
-- ❌ Arbitrary delays or "just in case" waiting
-- ❌ Immediately after spawning agents (let them work!)
-- ❌ When no specific coordination is needed
-
-**How It Works**:
-- Sets your status to "waiting" 
-- System will wake you when relevant events occur
-- User can interrupt the wait if needed
-- You'll receive updates automatically when agents complete tasks
-
-**Examples**:
-- "Waiting for the Python developer to finish the web scraping implementation"
-- "Pausing until the database setup is complete before starting the API development"
-- "Waiting for confirmation from the DevOps team about deployment readiness"
+**Correct Workflow Example**:
+1. You need a long task completed. You call `spawn_agent(task="Run the full integration test suite", wait=true)`.
+2. While you are waiting, the **user** sends a new message: "Hey, while that's running, can you quickly check the version of Python installed?"
+3. You delegate the user's request: `spawn_agent(task="Run 'python --version' and report the output", type="Worker", wait=true)`. After it finishes, you report back to the user.
+4. Now that you've handled the user's interruption, you must go back to waiting for the original test suite to finish. You call `wait(reason="Resuming wait for the integration test suite to complete.")`.
 
 **Best Practice**: Always include a clear reason for why you're waiting so the user understands the current state."#;
 

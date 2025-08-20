@@ -177,7 +177,6 @@ enum CommandOutcome {
     Error(String),
 }
 
-
 /// Create UI display info for command execution
 fn format_command_outcome_for_ui_display(command: &str, outcome: CommandOutcome) -> UIDisplayInfo {
     let collapsed = match &outcome {
@@ -364,6 +363,9 @@ impl CommandTool {
         // Set timeout
         cmd = cmd.timeout(timeout as u32);
 
+        // Set max output bytes
+        cmd = cmd.max_output_bytes(5_000);
+
         // Execute the command
         match cmd.run() {
             Ok(output) => {
@@ -442,12 +444,9 @@ impl CommandTool {
                 } else if stdout.is_empty() {
                     stderr.clone()
                 } else {
-                    format!(
-                        "=== stdout ===\n{}\n\n=== stderr ===\n{}",
-                        stdout, stderr
-                    )
+                    format!("=== stdout ===\n{}\n\n=== stderr ===\n{}", stdout, stderr)
                 };
-                
+
                 // Add truncation notice if needed
                 if output.stdout_truncated || output.stderr_truncated {
                     result.push_str("\n\n[Output truncated - use pipes like `| head` or `| grep` to filter output]");
@@ -468,7 +467,7 @@ impl CommandTool {
                         exit_code, stdout, stderr
                     )
                 };
-                
+
                 // Add truncation notice if needed
                 if output.stdout_truncated || output.stderr_truncated {
                     error_msg.push_str("\n\n[Output truncated - use pipes like `| head` or `| grep` to filter output]");
@@ -484,7 +483,7 @@ impl CommandTool {
                         signal, stdout, stderr
                     )
                 };
-                
+
                 // Add truncation notice if needed
                 if output.stdout_truncated || output.stderr_truncated {
                     error_msg.push_str("\n\n[Output truncated - use pipes like `| head` or `| grep` to filter output]");
@@ -503,7 +502,7 @@ impl CommandTool {
                         stdout, stderr
                     )
                 };
-                
+
                 // Add truncation notice if needed
                 if output.stdout_truncated || output.stderr_truncated {
                     error_msg.push_str("\n\n[Output truncated - use pipes like `| head` or `| grep` to filter output]");

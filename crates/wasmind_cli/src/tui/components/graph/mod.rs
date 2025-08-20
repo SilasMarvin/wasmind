@@ -198,7 +198,7 @@ impl AgentNode {
     }
 
     /// Removes the node with the given scope and selects the previous node.
-    /// Returns the scope of the newly selected node.
+    /// Returns the scope of the newly selected node if the removed node was selected.
     fn remove(&mut self, scope_to_remove: &Scope) -> Option<Scope> {
         if self.scope() == scope_to_remove {
             return None;
@@ -226,10 +226,11 @@ impl AgentNode {
         if removed_node.is_selected() {
             if let Some(newly_selected_node) = self.find_mut(&new_scope_to_select) {
                 newly_selected_node.select();
+                return Some(new_scope_to_select);
             }
         }
 
-        Some(new_scope_to_select)
+        None
     }
 
     /// Recursive helper to find and remove a child node. Returns the removed node.
@@ -909,12 +910,9 @@ impl Component<TuiMessage, MessageEnvelope> for GraphAreaComponent {
                 // Handle Exit messages - when an agent exits, remove it from the graph
                 else if parse_common_message_as::<Exit>(&envelope).is_some() {
                     if let Some(root) = &mut self.component.root_node {
-                        let agent_scope = &envelope.from_scope;
                         // Remove the agent that sent the Exit message
-                        if let Some(scope) = root.remove(agent_scope) {
-                            // Center on the newly selected node after removal
+                        if let Some(scope) = root.remove(&envelope.from_scope) {
                             self.component.center_on_selected();
-                            self.component.height -= 1;
                             Some(TuiMessage::Graph(GraphTuiMessage::SelectedAgent(
                                 scope.to_string(),
                             )))

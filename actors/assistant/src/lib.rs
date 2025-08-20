@@ -582,10 +582,10 @@ impl GeneratedActorTrait for Assistant {
                 } = self.status.clone()
                 {
                     if originating_request_id == current_request_id {
-                        self.set_status(status_update_request.status.clone(), true);
                         if matches!(status_update_request.status, Status::Done { .. }) {
                             let _ = Self::broadcast_common_message(Exit);
                         }
+                        self.set_status(status_update_request.status, true);
                     }
                 }
             }
