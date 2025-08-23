@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "crates/file_interaction",
+    "crates/file_interaction_actor",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/SilasMarvin/wasmind"
+authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
+
+[workspace.dependencies]
+wasmind_actor_utils = { path = "../../crates/wasmind_actor_utils", features = ["macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

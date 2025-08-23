@@ -1,0 +1,12 @@
+[package]
+name = "code_with_experts_common"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Common types for code with experts actors"
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+wasmind_actor_utils.workspace = true
+serde.workspace = true

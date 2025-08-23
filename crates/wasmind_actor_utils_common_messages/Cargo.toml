@@ -1,0 +1,17 @@
+[package]
+name = "wasmind_actor_utils_common_messages"
+version = "0.1.0"
+
+description.workspace = true
+repository.workspace = true
+readme.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+wasmind_llm_types = { path = "../wasmind_llm_types" }

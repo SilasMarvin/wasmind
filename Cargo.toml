@@ -1,16 +1,32 @@
 [workspace]
 members = ["crates/*"]
+# It seems we can't use wildcards in the exclude array
+exclude = ["actors/execute_bash", "actors/assistant", "actors/test_spawner", "actors/delegation_network", "actors/file_interaction"]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
 license = "MIT"
 description = ""
-repository = "https://github.com/SilasMarvin/hive"
+repository = "https://github.com/SilasMarvin/wasmind"
 readme = "README.md"
 authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 
-[profile.release]
-incremental = true
-# Set this to 1 or 2 to get more useful backtraces in debugger.
-debug = 0
+[workspace.dependencies]
+tokio = { version = "1.45.0" }
+serde = { version = "1" }
+wasmtime = { version = "34", features = ["async"] }
+wasmtime-wasi = "34"
+serde_json = "1.0.140"
+serde_yaml = "0.9"
+reqwest = { version = "0.12", features = ["json"] }
+wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }
+snafu = "0.8"
+url = "2.5"
+tempfile = "3.8"
+chrono = { version = "0.4", features = ["serde"] }
+toml = "0.8.22"
+
+[profile.profiling]
+inherits = "release"
+debug = true

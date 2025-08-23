@@ -1,4 +1,12 @@
 /target
+**/target/
 log.txt
 .claude
 test-logs/
+
+# Ignore target directories for actor crates
+actors/**/target/
+actors/**/Cargo.lock
+
+# MDBook build output
+docs/book/

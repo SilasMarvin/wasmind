@@ -1,0 +1,5 @@
+package wasmind:delegation-network-coordinator@0.1.0;
+
+world delegation-network-coordinator {
+    include wasmind:actor/actor-world@0.1.0;
+}

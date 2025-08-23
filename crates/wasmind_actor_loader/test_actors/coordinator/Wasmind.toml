@@ -1,0 +1,9 @@
+actor_id = "test:coordinator"
+
+[dependencies.logger]
+source = { path = "../logger" }
+auto_spawn = true
+
+[dependencies.logger.config]
+level = "info"
+format = "json"

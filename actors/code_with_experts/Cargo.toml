@@ -1,0 +1,20 @@
+[workspace]
+members = ["crates/*"]
+exclude = []
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+description = ""
+repository = "https://github.com/SilasMarvin/wasmind"
+readme = "README.md"
+authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
+
+[workspace.dependencies]
+wasmind_actor_utils = { path = "../../crates/wasmind_actor_utils", features = ["macros"] }
+code_with_experts_common = { path = "crates/code_with_experts_common" }
+
+serde = { version = "1", features = ["derive"] }
+toml = "0.8.22"
+wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }

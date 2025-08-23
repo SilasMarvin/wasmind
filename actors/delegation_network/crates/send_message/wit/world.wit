@@ -1,0 +1,5 @@
+package wasmind:send-message@0.1.0;
+
+world send-message {
+    include wasmind:actor/actor-world@0.1.0;
+}

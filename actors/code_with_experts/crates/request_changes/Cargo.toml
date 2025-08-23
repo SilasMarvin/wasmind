@@ -1,0 +1,22 @@
+[package]
+name = "request_changes"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+repository.workspace = true
+readme.workspace = true
+authors.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasmind_actor_utils.workspace = true
+code_with_experts_common.workspace = true
+serde.workspace = true
+serde_json = "1"
+wit-bindgen-rt.workspace = true
+
+[package.metadata.component.target.dependencies]
+"wasmind:actor" = { path = "../../../../crates/wasmind_actor_bindings/wit" }

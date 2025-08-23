@@ -1,157 +1,131 @@
-## HIVE System Migration Plan
+<div align="center">
+   <picture>
+     <source media="(prefers-color-scheme: dark)" srcset="">
+     <source media="(prefers-color-scheme: light)" srcset="">
+     <img alt="Logo" src="" width="520">
+   </picture>
+</div>
 
-```
-tree src/
-src/
-├── actors
-│   ├── assistant.rs
-│   ├── context.rs
-│   ├── microphone.rs
-│   ├── mod.rs
-│   ├── tools
-│   │   ├── command.rs
-│   │   ├── edit_file.rs
-│   │   ├── file_reader.rs
-│   │   ├── mcp.rs
-│   │   ├── mod.rs
-│   │   └── planner.rs
-│   └── tui
-│       ├── app.rs
-│       ├── events.rs
-│       ├── mod.rs
-│       ├── ui.rs
-│       └── widgets.rs
-├── cli.rs
-├── config.rs
-├── input
-│   └── mod.rs
-├── key_bindings.rs
-├── main.rs
-├── prompt_preview.rs
-├── system_state.rs
-├── template.rs
-└── worker.rs
-```
+<p align="center">
+   <p align="center"><b>A modular AI agent coordination system for building massively parallel agentic systems</b></p>
+</p>
 
-
-**Overall Goal:** Migrate the existing single-agent TUI LLM chat and tool-calling system to a multi-agent system named "HIVE." This system will feature a hierarchy of "Manager Agents" that can delegate tasks to specialized "Worker Agents" or other "Manager Agents."
-
-**Core Concepts:**
-
-1.  **Agent:** The fundamental actor unit in HIVE. An agent can be either a `ManagerAgent` or a `WorkerAgent`. Each agent has a unique ID. Things like creating the unique id, etc.. are handled by the system. The LLM interats with the "system" via function calls.
-2.  **Manager Agent (Manager):**
-    *   Responsible for receiving tasks (from a user or another Manager), planning, breaking down complex tasks, creating new tasks, and delegating them to Worker Agents or other Manager Agents.
-    *   The "Main Manager" is the top-level manager the user interacts with directly.
-    *   Managers **do not** directly execute tools like `file_reader` or `command`. Their "tools" are primarily for planning, task creation, and agent spawning/management.
-3.  **Worker Agent (Worker):**
-    *   Responsible for executing a specific task assigned by a Manager.
-    *   Has a specific `role` (e.g., "Software Engineer," "Researcher") that informs its capabilities and system prompt.
-    *   Can propose a `plan` for its task to the Manager for approval if the task is complex.
-    *   Executes allowed tools (e.g., `file_reader`, `command`, `edit_file`) based on a whitelist, similar to the current system.
-4.  **Task:** A unit of work with a description, assigned agent, status (e.g., `AwaitingManager: Enum of (AwaitingPlanApproval, AwaitingMoreInformation)` `InProgress`, `Completed`, `Failed`), and potentially resulting artifacts.
-5.  **Plan:** A sequence of steps proposed by an agent (Manager or Worker) to accomplish a task. Plans from Workers require Manager approval.
-6.  **System Prompt:** Each agent receives a tailored system prompt.
-    *   **Main Manager:** "You are the HIVE Main Manager. Your primary role is to understand user requests, formulate plans, break them down into actionable tasks, and delegate these tasks to specialized Worker Agents or Sub-Manager Agents. You can create plans and manage tasks. You do not execute tools like file readers or command execution directly."
-    *   **Sub-Manager:** "You are a HIVE Manager Agent. Your role is: `{sub_manager_role}`. You receive tasks from your supervising manager. Your responsibility is to break these tasks down, create sub-tasks, and assign them to appropriate Worker Agents or other Manager Agents you spawn. You can create plans for your assigned objectives. You do not execute tools like file readers or command execution directly."
-    *   **Worker Agent:** "You are a HIVE Worker Agent. Your designated role is: `{worker_role}`. Your current task is: `{task_description}`. You can use available tools to accomplish this task. If the task is complex, you can propose a plan to your Manager for approval. Report your progress, any issues, or task completion to your Manager."
+<p align="center">
+| <a href=""><b>Documentation</b></a> | <a href="https://postgresml.org/blog"><b>Why Wasmind</b></a> | <a href="https://discord.gg/DmyJP3qJ7U"><b>FAQ</b></a> |
+</p>
 
 ---
 
-**I. Codebase Restructure & New Modules:**
+## Getting Started
 
-1.  **Create `src/actors/agent.rs`:**
-    *   Define a public enum `AgentType` or similar: `enum AgentBehavior { Manager(ManagerLogic), Worker(WorkerLogic) }`.
-    *   This module will house the core logic for both Manager and Worker agents.
-    *   First thoroughly explore the `src/worker.rs` and `src/actors/mod.rs`
+**Want to try Wasmind?** Check out [Wasmind_cli](crates/Wasmind_cli/) - a CLI application built with Wasmind that demonstrates actor-based AI development workflows (including Claude Code-style interactions).
 
-2.  **Define Agent Structures:**
-    *   **`ManagerLogic` struct:**
-        *   `id: AgentId` (unique identifier)
-        *   `role: String` (e.g., "Main Manager", "Project Lead Manager")
-    *   **`WorkerLogic` struct:**
-        *   `id: AgentId`
-        *   `role: String` (e.g., "Software Engineer")
-    *   Both agents should create their own set of actors as seen in the `src/worker.rs`. They will also receive a channel from their manager and should broadcast status change updates back.
+**Want to build with Wasmind?** Continue reading or jump to the [Developer Guide](docs/developer-guide/) to start building your own actors and systems.
 
-3.  **Actor Spawning and Management:**
-    *   Managers will spawn new Worker Agents or other Manager Agents. Each spawned agent will run in its own Tokio task.
+## What is Wasmind?
 
-**II. Manager Agent Functionality:**
+Wasmind is an **actor-based system** for building AI agent workflows. Instead of monolithic AI applications, you compose small, focused actors that each handle specific capabilities.
 
-1.  **Task Creation and Assignment (Unified Function Call):**
-    *   Managers will use a function:
-        `spawn_agent_and_assign_task(agent_role: String, task_description: String, agent_type: enum { Worker, Manager }, wait: bool) -> Result<AgentSpawnedResponse, Error>`
-    *   **Process:**
-        1.  Manager's LLM decides to delegate and formulates this function call.
-        2.  The HIVE system receives this call.
-        3.  A new unique `AgentId` and `TaskId` are generated.
-        4.  A new agent (Worker or Manager type) is instantiated with the specified `agent_role`.
-        5.  The `task_description` is encapsulated in a `Task` object, associated with the new agent, and given an initial status (e.g., `InProgress` for worker, `PendingDelegation` for new manager).
-        6.  The new agent's system prompt is constructed using its `agent_role` and `task_description` (for Workers) or just `agent_role` (for Managers, who will then be told their overall objective by the spawning Manager).
-        7.  **If `wait` is `false`:** The Manager receives an `AgentSpawnedResponse { agent_id, task_id, agent_role }` message immediately, and its LLM interaction can continue.
-        8. **If `wait` is `true`:** The Manager's LLM interaction is paused. When a spawned agent (or the user) sends a message, the Manager's LLM interaction is resumed with that context.
+**Actors are WebAssembly components** - they can do anything, but typically fall into three categories:
+- **Assistant actors** - manage LLM interactions and conversation flow
+- **Tool actors** - provide capabilities like file manipulation, code execution, and web access  
+- **Coordination actors** - enable complex multi-agent workflows and delegation
 
-2.  **Planning Tool:**
-    *   Managers can create high-level plans. This tool is similar to the existing planner but might be simpler as detailed execution is delegated.
-    *   When a sub manager or worker creates a plan, its manager must approve that plan. This does not pertain to the very first manager we spawn.
-    *   See the `planner.rs` for more info on how the planner tool works.
+**Actors communicate through structured message passing**, enabling coordination at any scale - from simple workflows to networks of thousands of coordinated agents.
 
-3.  **Task Management Tools (for internal HIVE system, callable by Manager LLM):**
-    *   `approve_plan(task_id: TaskId, plan_id: PlanId) -> PlanApprovalResponse`
-    *   `reject_plan(task_id: TaskId, plan_id: PlanId, reason: String) -> PlanRejectionResponse`
-    *   This is used by manager's to approve or reject plans.
+> **Important**: Wasmind is NOT a Claude Code alternative—it's the infrastructure that makes projects like Claude Code possible. Our `Wasmind_cli` demonstrates how to build Claude Code-style interactions using Wasmind's coordination primitives.
 
-4.  **State Monitoring and Notifications:**
-    *   Managers automatically monitor the state of tasks assigned to their child agents.
-    *   When a child agent sends a message (e.g., `TaskCompleted`, `PlanSubmittedForApproval`), we update the internal state of the task tool and prompt the manager. See how the `planner.rs` works in combination with the `system_state.rs`.
-    *   The Manager's LLM is prompted/informed when a task it's overseeing is completed or requires its attention (e.g., plan approval). This should be formatted clearly, presenting the current state of relevant tasks.
+## What You Can Build with Wasmind
 
-**III. Worker Agent Functionality:**
+Wasmind can be used for anything but is best at building massively parallel multi-agent systems.
 
-1.  **Task Execution:**
-    *   Receives a task from its Manager.
-    *   Uses its LLM, role, task description, and available tools to work towards task completion.
-2.  **Plan Proposal:**
-    *   If a task is complex, the Worker can formulate a plan (list of sub-steps, potentially involving tool calls) see `planner.rs`. When a plan is created we automatically update the status to `PendingPlanApproval` and prompt the manager to approve or reject this plan.
-    *   Waits for Manager's response (`PlanApproved` or `PlanRejected`) before proceeding with that plan.
-3.  **Tool Execution:**
-    *   Can execute tools from the existing toolset (`command.rs`, `edit_file.rs`, `file_reader.rs`, etc.).
-    *   Tool execution must follow the established whitelist logic, potentially configured per-role or per-agent instance.
-4.  **Communication with Manager:**
-    * Task status updates are sent from the sub agent to the controlling agent. See the next section.
+**Current Demos:**
+- **[Delegation Network](actors/delegation_network/)** - Hierarchical multi-agent coordination system for spawning and managing specialized AI agents (think Claude Code but manager -> sub_manager -> worker agent relations).
 
+TODO: Add demo 
 
-**IV. Communication Protocol (Agent Messages):**
+Demo's can be ran with the **[Wasmind_cli](crates/Wasmind_cli/)**
 
-There is an existing enum messaging system in the `src/actors/mod.rs` file for communication inside of an agent. 
+## Repository Structure
 
-We need to add another communication enum type for communicating outside of an individual agent: manager -> worker and worker -> manger.
+```
+/actors/           # Example actors and demos
 
-Something like:
-
-```rust
-
-enum TaskAwaitingManager {
-    AwaitingPlanApproval(Plan),
-    AwaitingMoreInformation(String)
-}
-
-enum TaskStatus {
-    Done(Result<String, String>),
-    InProgress,
-    AwaitingManager(TaskAwaitingManager)
-}
+/crates/           # Core Wasmind system libraries
+├── Wasmind/          # Main coordination library  
+├── Wasmind_cli/      # Command-line interface
+├── Wasmind_config/   # Configuration system
+├── Wasmind_actor_loader/     # Actor loading and dependency resolution
+├── Wasmind_actor_utils/      # Utilities for building Rust actors
+├── Wasmind_actor_utils_common_messages/  # Common shared message types
+├── Wasmind_actor_utils_macros/   # Macros for Rust actor development
+├── Wasmind_actor_bindings/   # WASM component definition
+└── Wasmind_llm_types/        # Common LLM API request types
 ```
 
-**V. Tool Access Control:**
+For detailed information about specific actors, see their individual READMEs.
 
-1.  **Managers:**
-    *   Allowed "tools":
-        *   `spawn_agent_and_assign_task`
-        *   `create_plan`
-        *   `approve_plan`
-        *   `reject_plan`
-    *   **Not allowed:** Direct execution tools like `file_reader`, `command`, `edit_file`.
-2.  **Workers:**
-    *   Allowed tools will be based on the existing whitelist mechanism, potentially refined by `role`.
-    *   Access to `file_reader`, `command`, `edit_file`, `mcp`, `planner` (for its own sub-planning, which then gets submitted for approval).
+## Documentation
+
+- **📚 [Wasmind Book](docs/)** - Comprehensive user and developer guides
+- **⚙️ [Configuration Guide](crates/Wasmind_config/README.md)** - Complete configuration reference
+- **🎭 [Example Actor Documentation](actors/)** - Individual actor guides and APIs
+- **💻 [CLI Documentation](crates/Wasmind_cli/README.md)** - Command-line interface guide
+
+## Contributing
+
+We welcome contributions to Wasmind! Whether you're building new actors, improving the core system, or have ideas for new features:
+
+- **🐛 Found a bug?** [Open an issue](https://github.com/SilasMarvin/Wasmind/issues)
+- **💡 Have a feature idea?** [Start a discussion](https://github.com/SilasMarvin/Wasmind/issues)
+- **🛠️ Want to contribute code?** See our [Developer Guide](docs/developer-guide/) to get started
+
+All contributions, big and small, are appreciated!
+
+## FAQ
+
+### How does Wasmind compare to MCP?
+
+MCP (Model Context Protocol) provides a standardized way for AI assistants to connect to external tools and data sources. It's designed for a client-server model where a single AI assistant connects to multiple tool servers.
+
+Wasmind is fundamentally different - it's a full actor-based coordination system that enables:
+- **Multi-agent hierarchies**: Agents can spawn and coordinate other agents, creating delegation networks (manager → sub-manager → worker patterns)
+- **Peer-to-peer coordination**: Actors communicate directly without going through a central assistant
+- **Stateful actors**: Each actor maintains its own state and lifecycle, enabling long-running workflows
+- **Massive parallelism**: Thousands of actors can work concurrently on different parts of a problem
+- **AND MORE**: ...
+
+MCP is great for "one assistant, many tools" architectures. Wasmind enables entirely new architectures like swarms of specialized agents, hierarchical delegation networks, and massively parallel problem-solving systems that would be impossible to express in MCP's client-server model.
+
+**Bonus**: MCP can actually be wrapped as a Wasmind actor! This enables using an MCP tool in Wasmind: ([TODO: MCP actor implementation](actors/mcp_client/))
+
+### Why actors?
+
+Actors provide natural isolation, parallelism, and fault tolerance. Each actor maintains its own state and communicates only through message passing, making it easy to reason about complex systems. This model scales from simple workflows to thousands of concurrent agents without changing the programming model.
+
+### Why WebAssembly component actors?
+
+WebAssembly components give us:
+- **Language independence** - write actors in Rust, Python, JavaScript, or any language that compiles to WASM
+- **Security** - sandboxed execution with capability-based security
+- **Portability** - run the same actors anywhere WASM runs
+- **Performance** - near-native execution speed with minimal overhead
+- **Composability** - link actors together using standard component model interfaces
+
+### Can I use Wasmind without the CLI?
+
+Yes! The CLI (`Wasmind_cli`) is just one example of what you can build with Wasmind. The core library (`Wasmind`) can be embedded in any Rust application. You can build web services, desktop apps, or any system that needs actor-based coordination.
+
+### What makes Wasmind good for "massively parallel" systems?
+
+Wasmind's actor model naturally supports thousands of concurrent actors with minimal overhead. The scope system enables hierarchical coordination, message passing is async by default, and WebAssembly provides lightweight isolation. See our demo with 1000+ coordinated agents: TODO.
+
+### Do I need to know Rust to use Wasmind?
+
+To use `Wasmind_cli` and existing actors, no. To build new actors, no - actors can be written in any language that compiles to WebAssembly components but we currently only have friendly SDKs for Rust. We're working on SDKs for other languages.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---

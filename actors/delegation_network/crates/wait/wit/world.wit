@@ -1,0 +1,5 @@
+package wasmind:wait@0.1.0;
+
+world wait {
+    include wasmind:actor/actor-world@0.1.0;
+}

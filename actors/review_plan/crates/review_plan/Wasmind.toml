@@ -1,0 +1,9 @@
+actor_id = "review_plan"
+display_name = "Review Plan Tool"
+description = "Tool for reviewing and providing feedback on submitted plans"
+
+[system_prompt_contributions]
+[system_prompt_contributions.review_plan_tool_usage]
+section = "Tools"
+priority = 900
+content = "Use the review_plan tool to provide feedback on the submitted plan. You must provide detailed, constructive feedback."

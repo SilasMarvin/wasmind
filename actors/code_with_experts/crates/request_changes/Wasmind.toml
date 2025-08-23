@@ -1,0 +1,9 @@
+actor_id = "request_changes"
+display_name = "Request Changes Tool"
+description = "Tool for requesting changes to proposed file edits"
+
+[system_prompt_contributions]
+[system_prompt_contributions.request_changes_tool_usage]
+section = "Tools"
+priority = 900
+content = "Use the request_changes tool when you need changes. Be very clear about what you are requesting they change."
