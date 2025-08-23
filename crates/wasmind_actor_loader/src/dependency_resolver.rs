@@ -480,9 +480,9 @@ async fn load_manifest_from_git(
         })?;
 
     // Determine manifest path based on package
-    let manifest_path = if let Some(package) = &git_source.package {
-        // Package is the full subpath to the package
-        clone_path.join(package).join("Wasmind.toml")
+    let manifest_path = if let Some(subdir) = &git_source.subdir {
+        // subdir is where we cd before building, so manifest is there
+        clone_path.join(subdir).join("Wasmind.toml")
     } else {
         // Look in root for Wasmind.toml
         clone_path.join("Wasmind.toml")
@@ -506,14 +506,8 @@ async fn load_manifest_for_source(
         ActorSource::Path(path_source) => {
             let base_path = Path::new(&path_source.path);
 
-            // Determine the actual path where Wasmind.toml should be located
-            let manifest_dir = if let Some(package) = &path_source.package {
-                // Package is the full subpath to the package
-                base_path.join(package)
-            } else {
-                // For single actors, look in the root path
-                base_path.to_path_buf()
-            };
+            // For path sources, the path now points directly to where Wasmind.toml should be
+            let manifest_dir = base_path.to_path_buf();
 
             // Check if Wasmind.toml exists in the determined directory
             let manifest_path = manifest_dir.join("Wasmind.toml");
@@ -533,11 +527,9 @@ async fn load_manifest_for_source(
 
 fn sources_match(source1: &ActorSource, source2: &ActorSource) -> bool {
     match (source1, source2) {
-        (ActorSource::Path(p1), ActorSource::Path(p2)) => {
-            p1.path == p2.path && p1.package == p2.package
-        }
+        (ActorSource::Path(p1), ActorSource::Path(p2)) => p1.path == p2.path,
         (ActorSource::Git(g1), ActorSource::Git(g2)) => {
-            g1.url == g2.url && git_refs_match(&g1.git_ref, &g2.git_ref) && g1.package == g2.package
+            g1.url == g2.url && git_refs_match(&g1.git_ref, &g2.git_ref) && g1.subdir == g2.subdir
         }
         _ => false,
     }
@@ -607,20 +599,13 @@ fn resolve_relative_source(parent_source: &ActorSource, dep_source: ActorSource)
             if dep_path_buf.is_relative() {
                 let parent_base_path = Path::new(&parent_path.path);
 
-                // Determine the actual directory where the parent's manifest is located
-                let parent_manifest_dir = if let Some(package) = &parent_path.package {
-                    // Package is the full subpath to the package
-                    parent_base_path.join(package)
-                } else {
-                    // For single actors, the manifest is in the root path
-                    parent_base_path.to_path_buf()
-                };
+                // For path sources, the path points directly to the directory containing the manifest
+                let parent_manifest_dir = parent_base_path.to_path_buf();
 
                 // Resolve the dependency path relative to where the parent's manifest actually is
                 let resolved = parent_manifest_dir.join(&dep_path.path);
                 ActorSource::Path(wasmind_config::PathSource {
                     path: resolved.to_string_lossy().into_owned(),
-                    package: dep_path.package.clone(),
                 })
             } else {
                 dep_source
@@ -641,7 +626,6 @@ mod tests {
             name: "actor_a".to_string(),
             source: ActorSource::Path(PathSource {
                 path: "test_data/simple_actor".to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -830,7 +814,6 @@ required_spawn_with = []
             name: "dependency_actor".to_string(),
             source: ActorSource::Path(wasmind_config::PathSource {
                 path: dep_actor_dir.to_string_lossy().to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,

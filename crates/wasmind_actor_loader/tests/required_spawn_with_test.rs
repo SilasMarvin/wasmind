@@ -16,7 +16,6 @@ async fn test_required_spawn_with_basic_functionality() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -59,7 +58,6 @@ async fn test_required_spawn_with_global_override() {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -73,7 +71,6 @@ async fn test_required_spawn_with_global_override() {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: true,
@@ -105,7 +102,6 @@ async fn test_required_spawn_with_actor_override() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -150,7 +146,6 @@ async fn test_required_spawn_with_empty_override() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -189,7 +184,6 @@ async fn test_required_spawn_with_precedence() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -262,8 +256,11 @@ auto_spawn = false
     let actors = vec![Actor {
         name: "package_actor_instance".to_string(),
         source: ActorSource::Path(PathSource {
-            path: workspace_path.to_str().unwrap().to_string(),
-            package: Some("crates/test_package".to_string()),
+            path: workspace_path
+                .join("crates/test_package")
+                .to_str()
+                .unwrap()
+                .to_string(),
         }),
         config: None,
         auto_spawn: false,
@@ -317,8 +314,11 @@ source = { path = "../dep_actor" }
     let actors = vec![Actor {
         name: "main_instance".to_string(),
         source: ActorSource::Path(PathSource {
-            path: workspace_path.to_str().unwrap().to_string(),
-            package: Some("crates/main_actor".to_string()),
+            path: workspace_path
+                .join("crates/main_actor")
+                .to_str()
+                .unwrap()
+                .to_string(),
         }),
         config: None,
         auto_spawn: false,

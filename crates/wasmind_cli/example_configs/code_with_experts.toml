@@ -33,7 +33,7 @@ starting_actors = ["root_assistant", "file_interaction_with_approval", "execute_
 source = { path = "/Users/silasmarvin/github/wasmind/actors/execute_bash" }
 
 [actors.file_interaction_with_approval]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/code_with_experts", package = "crates/file_interaction_with_approval" }
+source = { path = "/Users/silasmarvin/github/wasmind/actors/code_with_experts/crates/file_interaction_with_approval" }
 
 [actors.file_interaction_with_approval.config.approvers]
 python_typechecker = ["python_typechecker_assistant", "expert_file_reader"]
@@ -41,7 +41,7 @@ python_bestpractices = ["python_bestpractices_assistant", "expert_file_reader"]
 repo_architect = ["repo_architect_assistant", "expert_file_reader", "execute_bash"]
 
 [actors.expert_file_reader]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction", package = "crates/file_interaction_actor" }
+source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction/crates/file_interaction_actor" }
 
 [actors.expert_file_reader.config]
 allow_edits = false

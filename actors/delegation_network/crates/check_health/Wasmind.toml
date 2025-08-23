@@ -45,7 +45,7 @@ guidelines = '''
 '''
 
 [dependencies.flag_issue]
-source = { path = "../../", package = "crates/flag_issue" }
+source = { path = "../../crates/flag_issue" }
 
 [dependencies.report_normal] 
-source = { path = "../../", package = "crates/report_normal" }
+source = { path = "../../crates/report_normal" }

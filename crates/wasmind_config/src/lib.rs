@@ -71,14 +71,13 @@ pub enum GitRef {
 #[derive(Clone, Debug, Deserialize)]
 pub struct PathSource {
     pub path: String,
-    pub package: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Repository {
     pub url: Url,
     pub git_ref: Option<GitRef>,
-    pub package: Option<String>,
+    pub subdir: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

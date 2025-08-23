@@ -19,7 +19,6 @@ async fn test_invalid_path_error() {
         name: "nonexistent_actor".to_string(),
         source: ActorSource::Path(PathSource {
             path: "/this/path/does/not/exist".to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -49,7 +48,6 @@ async fn test_manifest_load_error() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -68,7 +66,7 @@ async fn test_git_source_requires_manifest() {
         source: ActorSource::Git(Repository {
             url: Url::parse("https://github.com/example/repo").unwrap(),
             git_ref: Some(GitRef::Branch("main".to_string())),
-            package: None,
+            subdir: None,
         }),
         config: None,
         auto_spawn: false,
@@ -100,7 +98,6 @@ async fn test_dependency_resolution_with_path_sources() {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -114,7 +111,6 @@ async fn test_dependency_resolution_with_path_sources() {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: true,
@@ -174,8 +170,7 @@ auto_spawn = true
     let actors = vec![Actor {
         name: "package_actor_instance".to_string(),
         source: ActorSource::Path(PathSource {
-            path: workspace_path.to_str().unwrap().to_string(),
-            package: Some("crates/test_package".to_string()),
+            path: package_dir.to_str().unwrap().to_string(),
         }),
         config: None,
         auto_spawn: false,
@@ -219,7 +214,6 @@ async fn test_package_manifest_not_found() {
         name: "missing_manifest_actor".to_string(),
         source: ActorSource::Path(PathSource {
             path: workspace_path.to_str().unwrap().to_string(),
-            package: Some("crates/missing_manifest_package".to_string()),
         }),
         config: None,
         auto_spawn: false,

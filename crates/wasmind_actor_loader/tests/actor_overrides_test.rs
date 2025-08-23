@@ -14,7 +14,6 @@ async fn test_actor_overrides_config_only() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -78,7 +77,6 @@ async fn test_actor_overrides_for_existing_dependency() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -146,7 +144,6 @@ async fn test_actor_overrides_all_fields() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -168,7 +165,6 @@ async fn test_actor_overrides_all_fields() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         })),
         config: Some(override_config),
         auto_spawn: Some(false), // Override to false
@@ -223,7 +219,6 @@ async fn test_actor_overrides_partial_fields() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -284,7 +279,6 @@ async fn test_user_defined_actor_separate_from_dependencies() {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -299,7 +293,6 @@ async fn test_user_defined_actor_separate_from_dependencies() {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                package: None,
             }),
             config: {
                 let mut config = toml::Table::new();
@@ -380,7 +373,6 @@ async fn test_actor_overrides_nonexistent_actor() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -431,7 +423,6 @@ async fn test_actor_and_override_conflict_error() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,

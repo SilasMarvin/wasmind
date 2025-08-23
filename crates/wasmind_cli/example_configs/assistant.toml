@@ -1,0 +1,41 @@
+# Simple Assistant Configuration
+# A basic AI assistant for getting started with Wasmind
+
+starting_actors = ["assistant"]
+
+##############################
+# TUI Config #################
+##############################
+
+[tui.dashboard.key_bindings]
+"ctrl-c" = "Exit"
+"esc" = "InterruptAgent"
+
+[tui.chat.key_bindings]
+"ctrl-a" = "Assist"
+
+##############################
+# Actors Config ##############
+##############################
+
+[actors.assistant]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
+
+[actor_overrides.assistant.config]
+model_name = "openai/gpt-5-mini"
+
+##############################
+# LiteLLM Config #############
+##############################
+
+[litellm]
+image = "ghcr.io/berriai/litellm:main-latest"
+port = 4000
+container_name = "wasmind-litellm"
+
+[[litellm.models]]
+model_name = "openai/gpt-5-mini"
+
+[litellm.models.litellm_params]
+model = "openai/gpt-5-mini"
+api_key = "os.environ/OPENAI_API_KEY"

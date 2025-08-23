@@ -75,17 +75,6 @@ pub enum Error {
         location: Location,
     },
 
-    #[snafu(display(
-        "Failed to load actor '{actor_name}'. Package '{package_name}' not found in workspace at '{workspace_path}'."
-    ))]
-    PackageNotFound {
-        actor_name: String,
-        package_name: String,
-        workspace_path: String,
-        #[snafu(implicit)]
-        location: Location,
-    },
-
     #[snafu(display("Missing required field '{field}' in Cargo.toml for actor '{actor_name}'."))]
     MissingRequiredField {
         actor_name: String,
@@ -202,9 +191,9 @@ impl ExternalDependencyCache {
                 GitRef::Rev(rev) => hasher.update(format!("rev:{rev}")),
             }
         }
-        if let Some(package) = &git_source.package {
-            hasher.update("package:");
-            hasher.update(package);
+        if let Some(subdir) = &git_source.subdir {
+            hasher.update("subdir:");
+            hasher.update(subdir);
         }
         hex::encode(hasher.finalize())
     }
@@ -415,38 +404,33 @@ impl ActorLoader {
             );
         }
 
-        // Get package name from source
-        let package_name = match &actor.source {
-            ActorSource::Path(path_source) => path_source.package.as_deref(),
-            ActorSource::Git(repository) => repository.package.as_deref(),
-        };
+        // For git sources, subdir tells us where to cd before building
+        // For path sources, the path already points to the build directory
 
         let (_build_path, wasm_path, version) = match &actor.source {
             ActorSource::Path(path_source) => {
-                // For local path dependencies, build in-place using default target directory for speed
-                info!("Building local actor in-place: {}", path_source.path);
-                let source_path = Path::new(&path_source.path);
+                // For local paths, the path points directly to the build directory
+                info!("Building local actor: {}", path_source.path);
+                let build_path = Path::new(&path_source.path);
 
-                // Verify source path exists
+                // Verify build path exists
                 ensure!(
-                    source_path.exists(),
+                    build_path.exists(),
                     InvalidPathSnafu {
                         actor_name: actor.name.clone(),
                         path: path_source.path.clone()
                     }
                 );
 
-                // No dependency setup needed for in-place builds - they use their existing workspace dependencies
-
-                // Build using default target directory (faster - reuses build artifacts)
+                // Build in the specified directory
                 let wasm_path = self
-                    .build_actor(source_path, package_name, &actor.name)
+                    .build_actor(build_path, build_path, &actor.name)
                     .await?;
 
-                // Get version from original source
-                let version = self.get_actor_version(source_path, package_name).await?;
+                // Get version from build directory
+                let version = self.get_actor_version(build_path).await?;
 
-                (source_path.to_path_buf(), wasm_path, version)
+                (build_path.to_path_buf(), wasm_path, version)
             }
             ActorSource::Git(repository) => {
                 // Use external cache to get the cloned repository
@@ -456,22 +440,22 @@ impl ActorLoader {
                     .load_external_dependency(repository)
                     .await?;
 
-                // Determine build path based on package
-                let build_path = if let Some(package) = &repository.package {
-                    // Package is the full subpath to the package
-                    cached_repo_path.join(package)
+                // Determine build path based on subdir
+                let build_path = if let Some(subdir) = &repository.subdir {
+                    // subdir is where we cd before building
+                    cached_repo_path.join(subdir)
                 } else {
                     // For single actors, use the repo root
                     cached_repo_path.clone()
                 };
 
-                // Build using the cached repository
+                // Build using the build directory, but search from repo root
                 let wasm_path = self
-                    .build_actor(&build_path, package_name, &actor.name)
+                    .build_actor(&build_path, &cached_repo_path, &actor.name)
                     .await?;
 
-                // Get version from cached copy
-                let version = self.get_actor_version(&build_path, package_name).await?;
+                // Get version from build directory
+                let version = self.get_actor_version(&build_path).await?;
 
                 (build_path, wasm_path, version)
             }
@@ -606,10 +590,6 @@ impl ActorLoader {
             ActorSource::Path(path_source) => {
                 hasher.update("path:");
                 hasher.update(&path_source.path);
-                if let Some(package) = &path_source.package {
-                    hasher.update("package:");
-                    hasher.update(package);
-                }
             }
             ActorSource::Git(repo) => {
                 hasher.update("git:");
@@ -621,9 +601,9 @@ impl ActorLoader {
                         GitRef::Rev(rev) => hasher.update(format!("rev:{rev}")),
                     }
                 }
-                if let Some(package) = &repo.package {
-                    hasher.update("package:");
-                    hasher.update(package);
+                if let Some(subdir) = &repo.subdir {
+                    hasher.update("subdir:");
+                    hasher.update(subdir);
                 }
             }
         }
@@ -632,28 +612,15 @@ impl ActorLoader {
 
     async fn build_actor(
         &self,
-        actor_path: &Path,
-        package_name: Option<&str>,
+        build_path: &Path,
+        search_root: &Path,
         actor_name: &str,
     ) -> Result<PathBuf> {
-        info!("Building actor at {:?}", actor_path);
+        info!("Building actor at {:?}", build_path);
 
-        // Determine the actual build directory
-        let build_dir = if let Some(package) = package_name {
-            // For packages, cd into the package directory
-            actor_path.join(package)
-        } else {
-            // For single actors, build in the root
-            actor_path.to_path_buf()
-        };
-
+        // Build in the specified build directory
         let mut cmd = Command::new("cargo-component");
-        cmd.current_dir(&build_dir).arg("build").arg("--release");
-
-        if package_name.is_some() {
-            info!("Building in package directory: {:?}", build_dir);
-        }
-
+        cmd.current_dir(build_path).arg("build").arg("--release");
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let output = cmd.output().await.context(CommandSnafu)?;
@@ -669,45 +636,66 @@ impl ActorLoader {
             });
         }
 
-        // Find the built wasm file
-        let target_dir = if package_name.is_some() {
-            // For packages, check if there's a workspace target directory at the actor_path root
-            let workspace_target = actor_path
+        // Get the expected WASM file name from the build directory's Cargo.toml
+        let expected_name = self.get_expected_wasm_name(build_path)?;
+
+        // Search for target directory with our WASM file, starting from build_path and moving up to search_root
+        self.find_target_with_wasm(build_path, &expected_name, search_root, actor_name)
+            .await
+    }
+
+    /// Search for target directory containing the expected WASM file
+    ///
+    /// Searches upward from `build_path` toward `search_root` for a target directory
+    /// containing the expected WASM file. Uses a "first found wins" strategy - returns
+    /// the first matching file found, preferring locations closer to the build path.
+    ///
+    /// # Search Strategy
+    /// - Starts at `build_path`
+    /// - Checks each parent directory for `target/wasm32-wasip1/release/{expected_wasm}`
+    /// - Returns immediately upon finding the first match
+    /// - Stops searching when reaching `search_root`
+    async fn find_target_with_wasm(
+        &self,
+        build_path: &Path,
+        expected_wasm: &str,
+        search_root: &Path,
+        actor_name: &str,
+    ) -> Result<PathBuf> {
+        let mut current_dir = build_path;
+
+        loop {
+            let target_dir = current_dir
                 .join("target")
                 .join("wasm32-wasip1")
                 .join("release");
 
-            if workspace_target.exists() {
-                workspace_target
-            } else {
-                // Fallback to package target directory
-                build_dir
-                    .join("target")
-                    .join("wasm32-wasip1")
-                    .join("release")
+            let wasm_path = target_dir.join(expected_wasm);
+
+            if wasm_path.exists() {
+                info!("Found WASM file at: {:?}", wasm_path);
+                return Ok(wasm_path);
             }
-        } else {
-            // For single actors, use the build directory target
-            build_dir
-                .join("target")
-                .join("wasm32-wasip1")
-                .join("release")
-        };
 
-        // Get the expected WASM file name from the package manifest
-        let expected_name = self.get_expected_wasm_name(&build_dir)?;
-        let wasm_path = target_dir.join(&expected_name);
-
-        if wasm_path.exists() {
-            Ok(wasm_path)
-        } else {
-            Err(Error::WasmNotFound {
-                actor_name: actor_name.to_string(),
-                expected_wasm: expected_name,
-                target_dir: target_dir.display().to_string(),
-                location: location!(),
-            })
+            // Move up one directory
+            if let Some(parent) = current_dir.parent() {
+                // Stop if we've reached the search root
+                if parent < search_root {
+                    break;
+                }
+                current_dir = parent;
+            } else {
+                break;
+            }
         }
+
+        // If we get here, we didn't find the WASM file
+        Err(Error::WasmNotFound {
+            actor_name: actor_name.to_string(),
+            expected_wasm: expected_wasm.to_string(),
+            target_dir: format!("searched from {build_path:?} up to {search_root:?}"),
+            location: location!(),
+        })
     }
 
     fn get_expected_wasm_name(&self, build_dir: &Path) -> Result<String> {
@@ -727,17 +715,9 @@ impl ActorLoader {
         Ok(format!("{}.wasm", package_name.replace('-', "_")))
     }
 
-    async fn get_actor_version(
-        &self,
-        actor_path: &Path,
-        package_name: Option<&str>,
-    ) -> Result<String> {
-        // Determine the manifest path
-        let manifest_path = if let Some(package) = package_name {
-            actor_path.join(package).join("Cargo.toml")
-        } else {
-            actor_path.join("Cargo.toml")
-        };
+    async fn get_actor_version(&self, build_path: &Path) -> Result<String> {
+        // Get version from the build directory's Cargo.toml
+        let manifest_path = build_path.join("Cargo.toml");
 
         let file_contents = std::fs::read_to_string(&manifest_path).context(IoSnafu {
             path: Some(manifest_path.to_path_buf()),
@@ -759,6 +739,7 @@ impl ActorLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
 
@@ -777,7 +758,7 @@ mod tests {
 
         // Should build successfully
         let result = loader
-            .build_actor(&test_actor_path, None, "buildable_simple")
+            .build_actor(&test_actor_path, &test_actor_path, "buildable_simple")
             .await;
         assert!(
             result.is_ok(),
@@ -802,7 +783,7 @@ mod tests {
 
         // Should fail to build
         let result = loader
-            .build_actor(&test_actor_path, None, "buildable_fail")
+            .build_actor(&test_actor_path, &test_actor_path, "buildable_fail")
             .await;
         assert!(
             result.is_err(),
@@ -827,7 +808,7 @@ mod tests {
             .join("test_actors")
             .join("buildable_simple");
 
-        let result = loader.get_actor_version(&test_actor_path, None).await;
+        let result = loader.get_actor_version(&test_actor_path).await;
         assert!(result.is_ok(), "Failed to get version: {:?}", result.err());
         assert_eq!(result.unwrap(), "0.1.0");
     }
@@ -837,7 +818,7 @@ mod tests {
         let loader = ActorLoader::new(None).unwrap();
         let nonexistent_path = PathBuf::from("/nonexistent/path");
 
-        let result = loader.get_actor_version(&nonexistent_path, None).await;
+        let result = loader.get_actor_version(&nonexistent_path).await;
         assert!(result.is_err());
     }
 
@@ -851,7 +832,6 @@ mod tests {
             name: "test_actor".to_string(),
             source: ActorSource::Path(wasmind_config::PathSource {
                 path: "/test/path".to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -884,7 +864,7 @@ mod tests {
 
         // Build the actor first to ensure wasm file exists
         let wasm_path = loader
-            .build_actor(&test_actor_path, None, "buildable_simple")
+            .build_actor(&test_actor_path, &test_actor_path, "buildable_simple")
             .await;
         assert!(
             wasm_path.is_ok(),
@@ -910,7 +890,6 @@ mod tests {
             name: "test".to_string(),
             source: ActorSource::Path(wasmind_config::PathSource {
                 path: "/path1".to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -921,7 +900,6 @@ mod tests {
             name: "test".to_string(),
             source: ActorSource::Path(wasmind_config::PathSource {
                 path: "/path2".to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -952,7 +930,6 @@ mod tests {
             name: "test_in_place".to_string(),
             source: ActorSource::Path(wasmind_config::PathSource {
                 path: test_actor_path.to_str().unwrap().to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -990,7 +967,6 @@ mod tests {
             name: "path_actor".to_string(),
             source: ActorSource::Path(wasmind_config::PathSource {
                 path: test_actor_path.to_str().unwrap().to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -1016,7 +992,6 @@ mod tests {
             name: "test".to_string(),
             source: ActorSource::Path(wasmind_config::PathSource {
                 path: "/some/path".to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -1028,7 +1003,7 @@ mod tests {
             source: ActorSource::Git(wasmind_config::Repository {
                 url: Url::parse("https://github.com/example/repo").unwrap(),
                 git_ref: None,
-                package: None,
+                subdir: None,
             }),
             config: None,
             auto_spawn: false,
@@ -1040,5 +1015,49 @@ mod tests {
 
         // Different source types should produce different hashes
         assert_ne!(path_hash, git_hash);
+    }
+
+    #[tokio::test]
+    async fn test_multiple_target_directories_prefers_closest() {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        // Create nested structure:
+        // root/
+        // ├── target/wasm32-wasip1/release/my_actor.wasm  (farther from build)
+        // └── deep/
+        //     ├── package/   <- build_path
+        //     └── target/wasm32-wasip1/release/my_actor.wasm  (closer to build)
+
+        let workspace_target = root.join("target/wasm32-wasip1/release");
+        let deep_target = root.join("deep/target/wasm32-wasip1/release");
+        let build_path = root.join("deep/package");
+
+        fs::create_dir_all(&workspace_target).unwrap();
+        fs::create_dir_all(&deep_target).unwrap();
+        fs::create_dir_all(&build_path).unwrap();
+
+        // Create WASM files in both locations
+        fs::write(workspace_target.join("my_actor.wasm"), b"workspace_build").unwrap();
+        fs::write(deep_target.join("my_actor.wasm"), b"package_build").unwrap();
+
+        let loader = ActorLoader::new(None).unwrap();
+        let result = loader
+            .find_target_with_wasm(&build_path, "my_actor.wasm", root, "test_actor")
+            .await;
+
+        assert!(result.is_ok(), "Should find WASM file in nested structure");
+        let wasm_path = result.unwrap();
+
+        // Verify it found the closer one (deep/target, not root/target)
+        assert!(
+            wasm_path.to_string_lossy().contains("deep/target"),
+            "Should prefer closer target directory, found: {}",
+            wasm_path.display()
+        );
+        assert!(
+            !wasm_path.to_string_lossy().contains("root/target"),
+            "Should not use farther target directory"
+        );
     }
 }

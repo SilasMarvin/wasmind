@@ -326,15 +326,11 @@ fn display_actor_info(actor: &ResolvedActor, analysis: &StartupAnalysis) {
 
     let source_str = match &actor.source {
         ActorSource::Path(path_source) => {
-            if let Some(package) = &path_source.package {
-                format!("path({}, package={})", path_source.path, package)
-            } else {
-                format!("path({})", path_source.path)
-            }
+            format!("path({})", path_source.path)
         }
         ActorSource::Git(git_source) => {
-            if let Some(package) = &git_source.package {
-                format!("git({}, package={})", git_source.url, package)
+            if let Some(subdir) = &git_source.subdir {
+                format!("git({}, subdir={})", git_source.url, subdir)
             } else {
                 format!("git({})", git_source.url)
             }

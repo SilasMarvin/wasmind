@@ -22,7 +22,7 @@ starting_actors = ["delegation_network_coordinator"]
 ##############################
 
 [actors.delegation_network_coordinator]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/delegation_network", package = "crates/delegation_network_coordinator" }
+source = { path = "/Users/silasmarvin/github/wasmind/actors/delegation_network/crates/delegation_network_coordinator" }
 
 [actor_overrides.main_manager_assistant.config]
 model_name = "qwen/qwen3-coder"

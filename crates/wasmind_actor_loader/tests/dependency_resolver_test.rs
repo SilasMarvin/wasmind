@@ -11,7 +11,6 @@ async fn test_simple_actor_resolution() {
         name: "test_actor".to_string(),
         source: ActorSource::Path(PathSource {
             path: test_actor_path.to_str().unwrap().to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -37,7 +36,6 @@ async fn test_actor_without_manifest_fails() {
         name: "no_manifest_actor".to_string(),
         source: ActorSource::Path(PathSource {
             path: "/tmp/nonexistent".to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -69,7 +67,6 @@ async fn test_dependency_resolution() {
                 .to_str()
                 .unwrap()
                 .to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -123,7 +120,6 @@ async fn test_global_configuration_override() {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -138,7 +134,6 @@ async fn test_global_configuration_override() {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                package: None,
             }),
             config: Some(logger_config),
             auto_spawn: false,
@@ -180,7 +175,6 @@ async fn test_global_source_and_auto_spawn_overrides() {
                     .to_str()
                     .unwrap()
                     .to_string(),
-                package: None,
             }),
             config: None,
             auto_spawn: false,
@@ -195,7 +189,6 @@ async fn test_global_source_and_auto_spawn_overrides() {
                     .to_str()
                     .unwrap()
                     .to_string(), // Different path
-                package: None,
             }),
             config: None,
             auto_spawn: false, // Override to false (manifest default is true)

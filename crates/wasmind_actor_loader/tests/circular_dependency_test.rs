@@ -38,7 +38,6 @@ source = { path = "../actor_a" }
         name: "main_actor".to_string(),
         source: ActorSource::Path(PathSource {
             path: actor_a_dir.to_string_lossy().to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,
@@ -119,7 +118,6 @@ source = { path = "../actor_a" }
         name: "main_actor".to_string(),
         source: ActorSource::Path(PathSource {
             path: actor_a_dir.to_string_lossy().to_string(),
-            package: None,
         }),
         config: None,
         auto_spawn: false,

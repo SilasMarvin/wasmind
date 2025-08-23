@@ -86,7 +86,7 @@ You MUST follow this procedure for every request:
 # --- Main Manager's Plan Review Tool ---
 # This tool allows the manager to have its generated plans reviewed by another specialized agent.
 [dependencies.main_manager_request_plan_review]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan", package = "crates/request_plan_review" }
+source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan/crates/request_plan_review" }
 
 [dependencies.main_manager_request_plan_review.config.reviewers]
 manager_perspective_reviewer_assistant = ["manager_perspective_reviewer_assistant", "read_file", "execute_bash"]
@@ -163,7 +163,7 @@ You MUST follow this procedure for every project assigned to you:
 
 # --- Sub Manager's Plan Review Tool ---
 [dependencies.sub_manager_request_plan_review]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan", package = "crates/request_plan_review" }
+source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan/crates/request_plan_review" }
 
 [dependencies.sub_manager_request_plan_review.config.reviewers]
 manager_perspective_reviewer_assistant = ["manager_perspective_reviewer_assistant", "read_file", "execute_bash"]
@@ -231,7 +231,7 @@ You MUST follow this procedure for every objective you receive:
 
 # --- Worker Interact with Files and Edit with Approval ---
 [dependencies.worker_file_interaction_with_approval]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/code_with_experts", package = "crates/file_interaction_with_approval" }
+source = { path = "/Users/silasmarvin/github/wasmind/actors/code_with_experts/crates/file_interaction_with_approval" }
 
 [dependencies.worker_file_interaction_with_approval.config.approvers]
 idiomatic_code_approver_advisor = ["idiomatic_code_approver_assistant", "read_file", "execute_bash"]
@@ -240,7 +240,7 @@ correctness_logic_approver = ["correctness_logic_approver_assistant", "read_file
 
 # --- Sub Manager's Plan Review Tool ---
 [dependencies.worker_request_plan_review]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan", package = "crates/request_plan_review" }
+source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan/crates/request_plan_review" }
 
 [dependencies.worker_request_plan_review.config.reviewers]
 code_reuse_advisor_assistant = ["code_reuse_advisor_assistant", "read_file", "execute_bash"]
@@ -257,7 +257,7 @@ idiomatic_code_advisor_assistant = ["idiomatic_code_advisor_assistant", "read_fi
 # The primary tool for delegation. It defines which sets of actors 
 # (toolkits) can be spawned for Sub Managers and Workers.
 [dependencies.spawn_agent]
-source = { path = "../../", package = "crates/spawn_agent" }
+source = { path = "../../crates/spawn_agent" }
 
 [dependencies.spawn_agent.config]
 sub_manager_actors = ["sub_manager_assistant", "spawn_agent", "send_message", "send_manager_message", "wait", "check_health", "complete", "sub_manager_request_plan_review"]
@@ -265,33 +265,33 @@ worker_actors = ["worker_assistant", "execute_bash", "worker_file_interaction_wi
 
 # --- Communication Tools ---
 [dependencies.send_message]
-source = { path = "../../", package = "crates/send_message" }
+source = { path = "../../crates/send_message" }
 
 [dependencies.send_manager_message]
-source = { path = "../../", package = "crates/send_manager_message" }
+source = { path = "../../crates/send_manager_message" }
 
 # --- Planning and Synchronization Tools ---
 [dependencies.planner]
-source = { path = "../../", package = "crates/planner" }
+source = { path = "../../crates/planner" }
 
 [dependencies.wait]
-source = { path = "../../", package = "crates/wait" }
+source = { path = "../../crates/wait" }
 
 # --- Health Check Tool ---
 [dependencies.check_health]
-source = { path = "../../", package = "crates/check_health" }
+source = { path = "../../crates/check_health" }
 
 [dependencies.check_health.config]
 check_interval = 60
 
 # --- File Reading Tool (does not allow writes) ---
 [dependencies.read_file]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction", package = "crates/file_interaction_actor" }
+source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction/crates/file_interaction_actor" }
 allow_edits = false
 
 # --- Completion Tool ---
 [dependencies.complete]
-source = { path = "../../", package = "crates/complete" }
+source = { path = "../../crates/complete" }
 
 # --- Execute Bash Tool ---
 [dependencies.execute_bash]

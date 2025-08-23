@@ -46,35 +46,34 @@ The `source` table supports multiple ways to locate actor code, providing flexib
 
 Loads an actor from a local filesystem path. This is ideal for local development.
 
-*   `path` (string): A relative or absolute path to the actor's directory.
-*   `package` (string, required for cargo workspaces): If the path points to a Rust workspace, this specifies the full subpath to the package directory containing the actor. Wasmind will look for the `Wasmind.toml` manifest at `{path}/{package}/`. 
+*   `path` (string): A relative or absolute path to the actor's directory (where the `Wasmind.toml` and `Cargo.toml` files are located). 
 
 ```toml
 # Simple path source (single-package project)
 [actors.local_assistant]
 source = { path = "/Users/silas/Wasmind/actors/assistant" }
 
-# Path source pointing to a Rust workspace - package field is REQUIRED
+# Path source pointing directly to an actor directory
 # Wasmind will look for the manifest at: /Users/silas/Wasmind/crates/some_utility/Wasmind.toml
 [actors.another_actor]
-source = { path = "/Users/silas/Wasmind", package = "crates/some_utility" }
+source = { path = "/Users/silas/Wasmind/crates/some_utility" }
 ```
 
-**⚠️ Important Note for Cargo Workspaces:**
+**✨ Cargo Workspaces:**
 
-When working with cargo workspaces, the `package` field is **required**, not optional. This is because Wasmind currently needs to know the exact package location to find the compiled WASM output after building. If you omit the `package` field when pointing to a workspace, you'll encounter "WASM not found" errors.
+Wasmind now works seamlessly with any project structure, including cargo workspaces. Simply point the `path` directly to the actor's directory (where the `Wasmind.toml` and `Cargo.toml` files are located).
 
 ```toml
-# ❌ This will NOT work for cargo workspaces:
+# ✅ For workspace packages, point directly to the package directory:
 [actors.workspace_actor]
 source = { path = "/path/to/workspace/crates/my_actor" }
 
-# ✅ This WILL work for cargo workspaces:
-[actors.workspace_actor] 
-source = { path = "/path/to/workspace", package = "crates/my_actor" }
+# ✅ For standalone projects, point to the project root:
+[actors.standalone_actor] 
+source = { path = "/path/to/standalone_project" }
 ```
 
-This limitation will be improved in future versions to automatically detect workspace structures.
+Wasmind will automatically search upward from the build directory to find the compiled WASM output, so it works with any workspace configuration.
 
 #### Git Source
 
@@ -82,7 +81,7 @@ Clones a remote Git repository to fetch the actor's code.
 
 *   `url` (string): The URL of the Git repository.
 *   `git_ref` (table, optional): Specifies which Git reference to check out. Can be a branch, tag, or specific revision hash. Defaults to the repository's default branch.
-*   `package` (string, required for cargo workspaces): If the repository is a Rust workspace, this specifies the full subpath to the package directory containing the actor. Similar to path sources, Wasmind will look for the manifest at `{repository_root}/{package}/` for Git sources with packages. **Important:** This field is currently required when the Git repository contains a cargo workspace, as Wasmind needs it to locate the compiled WASM output correctly.
+*   `subdir` (string, optional): If specified, Wasmind will cd into this subdirectory before building the actor. Use this when the actor is located in a subdirectory of the repository. Wasmind will look for the manifest at `{repository_root}/{subdir}/Wasmind.toml`.
 
 ```toml
 # Clones the 'main' branch of a repository (single-package)
@@ -97,9 +96,9 @@ source = { url = "https://github.com/my-org/Wasmind-execute-bash", git_ref = { t
 [actors.stable_tool]
 source = { url = "https://github.com/my-org/Wasmind-tools", git_ref = { rev = "a1b2c3d4e5f6" } }
 
-# Clones a monorepo/workspace - package field is REQUIRED
+# Clones a monorepo/workspace - subdir specifies the actor location
 [actors.specific_tool]
-source = { url = "https://github.com/my-org/Wasmind-tools", git_ref = { tag = "v1.1.0" }, package = "crates/data_parser" }
+source = { url = "https://github.com/my-org/Wasmind-tools", git_ref = { tag = "v1.1.0" }, subdir = "crates/data_parser" }
 ```
 
 ---
@@ -118,7 +117,7 @@ This manifest is created by the actor developer and is bundled with the actor's 
 
 The `delegation_network_coordinator` requires other actors to function. Its developer declares these in its `Wasmind.toml`.
 
-**Important Note on Relative Paths:** When dependencies use relative paths, they are resolved from the location of the `Wasmind.toml` file declaring them. For actors in Rust workspaces (using the `package` field), this means paths are relative to `crates/{package}/`, not the workspace root.
+**Important Note on Relative Paths:** When dependencies use relative paths, they are resolved from the location of the `Wasmind.toml` file declaring them (i.e., relative to the actor's directory).
 
 **File: `/path/to/delegation_network_coordinator/Wasmind.toml`**
 ```toml
@@ -435,35 +434,28 @@ Error: Conflicting sources for dependency 'tool' required by 'my-co:app'.
 
 ---
 
-### 3. Source Path or Package Not Found
+### 3. Source Path Not Found
 
-This is a common error when the `source` table in your configuration contains an incorrect `path` or `package` name.
+This is a common error when the `source` table in your configuration contains an incorrect `path`.
 
-**Why it happens:** Wasmind cannot locate the files it needs to build the actor.
+**Why it happens:** Wasmind cannot locate the actor directory you specified.
 
 **Example User Configuration:**
 ```toml
-# Case 1: Incorrect path
+# Incorrect path
 [actors.my_actor]
 source = { path = "./non_existent_directory" }
-
-# Case 2: Incorrect package name in a workspace
-[actors.my_tool]
-source = { path = "./my_workspace", package = "non_existent_package" }
 ```
 
-**Expected Errors:**
+**Expected Error:**
 ```
-# For Case 1
 Error: Failed to load actor 'my_actor'. Source path './non_existent_directory' not found.
-
-# For Case 2
-Error: Failed to load actor 'my_tool'. Package 'non_existent_package' not found in workspace at './my_workspace'.
 ```
 
 **How to Fix:**
-*   For path errors, verify the path is correct relative to where you are running the Wasmind application.
-*   For package errors, check the `name` field in the `[package]` table of the `Cargo.toml` for the actor you are trying to load. Ensure it matches the `package` value in your configuration.
+*   Verify the path is correct relative to where you are running the Wasmind application.
+*   Ensure the path points to the directory containing both `Wasmind.toml` and `Cargo.toml` files.
+*   For workspace packages, the path should point to the specific package directory (e.g., `./workspace/crates/my_actor`), not the workspace root.
 
 ---
 
@@ -492,11 +484,11 @@ All actors must have a Wasmind.toml file that declares their actor_id.
 actor_id = "my-namespace:my-actor"
 ```
 
-For Rust workspaces using the `package` field, ensure the `Wasmind.toml` is at the specified package path:
+For all actors, ensure the `Wasmind.toml` is in the directory specified by the path:
 ```toml
 # If your config has:
 [actors.my_workspace_actor]
-source = { path = "./my_workspace", package = "crates/my_package" }
+source = { path = "./my_workspace/crates/my_package" }
 
 # Then Wasmind.toml must be at: ./my_workspace/crates/my_package/Wasmind.toml
 ```
