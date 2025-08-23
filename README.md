@@ -18,7 +18,7 @@
 
 ## Getting Started
 
-**Want to try Wasmind?** Check out [Wasmind_cli](crates/Wasmind_cli/) - a CLI application built with Wasmind that demonstrates actor-based AI development workflows (including Claude Code-style interactions).
+**Want to try Wasmind?** Check out [wasmind_cli](crates/wasmind_cli/) - a CLI application built with Wasmind that demonstrates actor-based AI development workflows (including Claude Code-style interactions).
 
 **Want to build with Wasmind?** Continue reading or jump to the [Developer Guide](docs/developer-guide/) to start building your own actors and systems.
 
@@ -33,7 +33,7 @@ Wasmind is an **actor-based system** for building AI agent workflows. Instead of
 
 **Actors communicate through structured message passing**, enabling coordination at any scale - from simple workflows to networks of thousands of coordinated agents.
 
-> **Important**: Wasmind is NOT a Claude Code alternative—it's the infrastructure that makes projects like Claude Code possible. Our `Wasmind_cli` demonstrates how to build Claude Code-style interactions using Wasmind's coordination primitives.
+> **Important**: Wasmind is NOT a Claude Code alternative—it's the infrastructure that makes projects like Claude Code possible. Our `wasmind_cli` demonstrates how to build Claude Code-style interactions using Wasmind's coordination primitives.
 
 ## What You Can Build with Wasmind
 
@@ -44,7 +44,7 @@ Wasmind can be used for anything but is best at building massively parallel mult
 
 TODO: Add demo 
 
-Demo's can be ran with the **[Wasmind_cli](crates/Wasmind_cli/)**
+Demo's can be ran with the **[wasmind_cli](crates/wasmind_cli/)**
 
 ## Repository Structure
 
@@ -68,9 +68,9 @@ For detailed information about specific actors, see their individual READMEs.
 ## Documentation
 
 - **📚 [Wasmind Book](docs/)** - Comprehensive user and developer guides
-- **⚙️ [Configuration Guide](crates/Wasmind_config/README.md)** - Complete configuration reference
+- **⚙️ [Configuration Guide](crates/wasmind_config/README.md)** - Complete configuration reference
 - **🎭 [Example Actor Documentation](actors/)** - Individual actor guides and APIs
-- **💻 [CLI Documentation](crates/Wasmind_cli/README.md)** - Command-line interface guide
+- **💻 [CLI Documentation](crates/wasmind_cli/README.md)** - Command-line interface guide
 
 ## Contributing
 
@@ -114,7 +114,7 @@ WebAssembly components give us:
 
 ### Can I use Wasmind without the CLI?
 
-Yes! The CLI (`Wasmind_cli`) is just one example of what you can build with Wasmind. The core library (`Wasmind`) can be embedded in any Rust application. You can build web services, desktop apps, or any system that needs actor-based coordination.
+Yes! The CLI (`wasmind_cli`) is just one example of what you can build with Wasmind. The core library (`Wasmind`) can be embedded in any Rust application. You can build web services, desktop apps, or any system that needs actor-based coordination.
 
 ### What makes Wasmind good for "massively parallel" systems?
 
@@ -122,7 +122,7 @@ Wasmind's actor model naturally supports thousands of concurrent actors with min
 
 ### Do I need to know Rust to use Wasmind?
 
-To use `Wasmind_cli` and existing actors, no. To build new actors, no - actors can be written in any language that compiles to WebAssembly components but we currently only have friendly SDKs for Rust. We're working on SDKs for other languages.
+To use `wasmind_cli` and existing actors, no. To build new actors, no - actors can be written in any language that compiles to WebAssembly components but we currently only have friendly SDKs for Rust. We're working on SDKs for other languages.
 
 ## License
 
