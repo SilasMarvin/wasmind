@@ -1,6 +1,6 @@
 # Message Patterns
 
-Messages are the "language" that actors use to coordinate complex workflows. Your echo actor demonstrated basic message handling - now let's explore the sophisticated communication patterns that make multi-agent systems possible.
+Messages are the "language" that actors use to coordinate workflows. Your echo actor demonstrated basic message handling - now let's explore the communication patterns that make multi-agent systems possible.
 
 ## Building on the Echo Actor
 
@@ -8,16 +8,17 @@ Remember your echo actor's simple message handling:
 
 ```rust
 fn handle_message(&mut self, message: MessageEnvelope) {
-    if message.to_scope != self.scope {
-        return;
-    }
+    // Check if this message is relevant to our scope
+    // (You might check from_scope or message content)
     if let Some(add_message) = Self::parse_as::<AddMessage>(&message) {
-        self.handle_chat_message(add_message);
+        if add_message.agent == self.scope {
+            self.handle_chat_message(add_message);
+        }
     }
 }
 ```
 
-This was just the beginning. Real actor coordination involves multiple message types, complex routing patterns, and sophisticated workflows.
+This was just the beginning. Real actor coordination involves multiple message types and workflows built on top of simple broadcast messaging.
 
 ## Message Structure Deep Dive
 
@@ -36,7 +37,7 @@ record message-envelope {
 
 ### How Message Routing Actually Works
 
-**Key insight**: All actors receive all broadcast messages. There's no system-level filtering - actors choose which messages to process:
+**Note**: All actors receive all broadcast messages. There's no system-level filtering - actors choose which messages to process:
 
 ```rust
 fn handle_message(&mut self, message: MessageEnvelope) {
@@ -58,7 +59,7 @@ fn handle_message(&mut self, message: MessageEnvelope) {
 }
 ```
 
-This design gives actors complete flexibility in choosing what to listen to, enabling powerful coordination patterns.
+This design gives actors flexibility in choosing what to listen to, enabling various coordination patterns.
 
 ## The Message Trait (Optional Convenience)
 
@@ -246,13 +247,16 @@ Self::broadcast_common_message(tools_available)?;
 
 ### Pattern 2: Scope-Targeted Communication
 
-While all actors receive messages, you can target specific agents by checking scope:
+While all actors receive messages, you can target specific agents by including scope in the message payload:
 
 ```rust
 fn handle_message(&mut self, message: MessageEnvelope) {
-    // Only process messages targeted at our scope
-    if message.to_scope == self.scope {
-        // Handle messages meant for our agent
+    // Check message type first
+    if let Some(add_message) = Self::parse_as::<AddMessage>(&message) {
+        // Then check if the message targets our scope
+        if add_message.agent == self.scope {
+            // Handle messages meant for our agent
+        }
     }
     
     // But also listen for global announcements
@@ -327,7 +331,7 @@ fn handle_message(&mut self, message: MessageEnvelope) {
 
 ### Pattern 5: Multi-Agent Workflows
 
-Complex workflows involving multiple agents:
+Workflows involving multiple agents:
 
 ```rust
 // Step 1: Coordinator spawns a specialized agent
@@ -400,58 +404,18 @@ fn request_code_review(&self, code: String) -> Result<(), serde_json::Error> {
 2. **Make messages self-contained**: Include all needed information
 3. **Version your messages**: Consider compatibility when changing structure
 4. **Include correlation IDs**: For request-response patterns
-5. **Add metadata**: Priority, timestamps, scope targeting
 6. **Implement `Message` trait**: For convenient helper methods (optional but recommended)
-
-## Advanced Coordination Patterns
-
-### Approval Workflows
-
-```rust
-// Multi-step approval with different actors
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApprovalRequest {
-    pub action: String,
-    pub approvers: Vec<String>,  // Scopes of approval actors
-    pub request_id: String,
-}
-
-impl Message for ApprovalRequest {
-    const MESSAGE_TYPE: &str = "mycompany.approval.Request";
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApprovalResponse {
-    pub request_id: String,
-    pub approved: bool,
-    pub approver_scope: String,
-    pub reason: Option<String>,
-}
-
-impl Message for ApprovalResponse {
-    const MESSAGE_TYPE: &str = "mycompany.approval.Response";
-}
-```
-
-### Dynamic System Reconfiguration
-
-```rust
-// Actors can announce new capabilities at runtime
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapabilityUpdate {
-    pub actor_id: String,
-    pub capabilities_added: Vec<String>,
-    pub capabilities_removed: Vec<String>,
-}
-
-impl Message for CapabilityUpdate {
-    const MESSAGE_TYPE: &str = "mycompany.system.CapabilityUpdate";
-}
-```
 
 ## Message Flow Debugging
 
-Understanding message flow is crucial for debugging:
+Understanding message flow helps with debugging. You can view all messages in the system by setting the `WASMIND_LOG` environment variable:
+
+```bash
+# View all messages flowing through the system
+WASMIND_LOG=debug wasmind_cli
+```
+
+You can also add logging within your actors:
 
 ```rust
 fn handle_message(&mut self, message: MessageEnvelope) {
@@ -471,6 +435,8 @@ fn handle_message(&mut self, message: MessageEnvelope) {
 }
 ```
 
+For more debugging tips and common issues, see [Debugging](./debugging.md).
+
 ## Key Takeaways
 
 - **All actors receive all messages** - filtering is done by individual actors, not the system
@@ -479,11 +445,11 @@ fn handle_message(&mut self, message: MessageEnvelope) {
 - **Correlation IDs link workflows** - track multi-step processes with unique identifiers
 - **Scopes enable agent targeting** - send messages to specific agents while allowing global listening
 - **Custom messages enable specialized coordination** - define your own message types for unique workflows
-- **Broadcast is powerful** - one message can coordinate many actors simultaneously
+- **Broadcast is simple** - one message reaches all actors simultaneously
 
 ## Next Steps
 
-Now that you understand message patterns, you're ready to build sophisticated actors:
+Now that you understand message patterns, you're ready to build actors:
 
 ### Build Tool Actors
 Learn how to create actors that provide capabilities to AI assistants in [Tool Actors](./tool-actors.md).
@@ -492,6 +458,6 @@ Learn how to create actors that provide capabilities to AI assistants in [Tool A
 See these patterns in action in [Examples](./examples.md) with complete coordination system implementations.
 
 ### Testing Message Flows
-Learn strategies for testing complex message interactions in [Testing](./testing.md).
+Learn strategies for testing message interactions in [Testing](./testing.md).
 
-Understanding message patterns is the key to building sophisticated multi-agent systems. Messages are not just data transfer - they're the coordination language that enables emergent intelligent behavior from multiple specialized actors working together.
+Understanding message patterns is the foundation for building multi-agent systems. Messages are not just data transfer - they're the coordination language that enables actors to work together.

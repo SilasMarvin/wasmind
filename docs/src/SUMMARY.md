@@ -20,5 +20,5 @@
   - [Message Patterns](./developer-guide/message-patterns.md)
   - [Tool Actors](./developer-guide/tool-actors.md)
   - [Testing](./developer-guide/testing.md)
+  - [Debugging](./developer-guide/debugging.md)
   - [Examples](./developer-guide/examples.md)
-  - [Reference](./developer-guide/reference.md)

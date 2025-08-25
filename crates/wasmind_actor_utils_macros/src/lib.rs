@@ -184,6 +184,11 @@ pub fn tool_derive(input: TokenStream) -> TokenStream {
             }
 
             fn handle_message(&self, message: crate::bindings::exports::wasmind::actor::actor::MessageEnvelope) {
+                // Only handle messages from our scope
+                if message.from_scope != self.scope {
+                    return;
+                }
+                
                 use ::wasmind_actor_utils::messages::common_messages::Message;
                 if message.message_type == ::wasmind_actor_utils::messages::common_messages::tools::ExecuteTool::MESSAGE_TYPE {
                     if let Ok(json_string) = String::from_utf8(message.payload) {

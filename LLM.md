@@ -27,9 +27,9 @@ Wasmind is a Rust library for orchestrating LLM agents using an actor model arch
    - Common message types defined in `Wasmind_actor_utils_common_messages`
 
 3. **Scopes**: Hierarchical organization of actors
-   - Each actor operates within a scope (UUID-based)
+   - Each actor operates within a scope (6-character string)
    - Agents share a common scope for coordination
-   - Starting scope: `00000000-0000-0000-0000-000000000000`
+   - Starting scope: `000000`
 
 ## Directory Structure
 

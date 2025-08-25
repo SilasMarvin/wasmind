@@ -104,7 +104,7 @@ impl Manager {
             .actor()
             .call_constructor(&mut store, &params.scope.to_string(), &config_str)
             .await
-            .unwrap();
+            .expect("Actor constructor (new/main function) failed - check logs for detailed error message");
 
         Manager {
             actor_id: params.actor_id,
