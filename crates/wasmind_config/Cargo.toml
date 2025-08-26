@@ -2,7 +2,7 @@
 name = "wasmind_config"
 version = "0.1.0"
 
-description.workspace = true
+description = "Configuration system for Wasmind actors and runtime"
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true

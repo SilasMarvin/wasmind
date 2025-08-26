@@ -2,7 +2,7 @@
 name = "wasmind_cli"
 version = "0.1.0"
 
-description.workspace = true
+description = "Command-line interface for Wasmind AI agent coordination system"
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true

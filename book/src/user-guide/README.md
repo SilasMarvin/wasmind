@@ -11,7 +11,7 @@ In this guide, you'll learn how to:
 - **Work with built-in actors** like assistants, tools, and coordinators
 - **Run real examples** including chatbots and delegation networks
 
-If you want to **build custom actors** or extend Wasmind itself, check out the [Developer Guide](../developer-guide/README.md) instead.
+If you want to **build custom actors** or extend Wasmind itself, check out the [Developer Guide](../developer-guide/) instead.
 
 ## Prerequisites
 

@@ -2,7 +2,7 @@
 name = "wasmind_llm_types"
 version = "0.1.0"
 
-description.workspace = true
+description = "Common LLM API types and structures for AI actors"
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true

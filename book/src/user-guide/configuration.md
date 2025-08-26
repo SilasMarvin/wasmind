@@ -1,10 +1,10 @@
 # Configuration
 
-Now that you've run your first Wasmind configuration, let's learn how to customize it for your needs. This guide builds on the basic `assistant.toml` from Getting Started.
+This guide shows you how to customize Wasmind configurations for your needs. Whether you're starting fresh or building on an existing setup, you'll learn how to add actors, configure models, and create powerful multi-agent systems.
 
 ## Building on Your First Configuration
 
-Remember the simple assistant configuration you created? Let's start by adding more capabilities to it. We'll show you how to gradually build more complex setups.
+Let's start with a basic assistant and gradually add more capabilities. If you're following from Getting Started, you can enhance your existing configuration. If you're starting here, you can create these configurations from scratch.
 
 ## Adding Tool Actors
 
@@ -29,9 +29,31 @@ model_name = "openai/gpt-5-mini"
 source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/execute_bash" }
 
 ##############################
-# TUI & LiteLLM Config #######
+# TUI Config #################
 ##############################
-# ... (same as before)
+
+[tui.dashboard.key_bindings]
+"ctrl-c" = "Exit"
+"esc" = "InterruptAgent"
+
+[tui.chat.key_bindings]
+"ctrl-a" = "Assist"
+
+##############################
+# LiteLLM Config #############
+##############################
+
+[litellm]
+image = "ghcr.io/berriai/litellm:main-latest"
+port = 4000
+container_name = "wasmind-litellm"
+
+[[litellm.models]]
+model_name = "openai/gpt-5-mini"
+
+[litellm.models.litellm_params]
+model = "openai/gpt-5-mini"
+api_key = "os.environ/OPENAI_API_KEY"
 ```
 
 **What changed:**
@@ -71,7 +93,7 @@ model = "ollama/llama3.2"
 api_base = "http://localhost:11434"
 ```
 
-See [LiteLLM's supported providers](https://docs.litellm.ai/docs/providers) for all available options.
+See <a href="https://docs.litellm.ai/docs/providers" target="_blank">LiteLLM's supported providers</a> for all available options.
 
 ## Actor Sources: Local vs Remote
 
@@ -136,7 +158,7 @@ Use `[actor_overrides.*]` when:
 
 Each actor can define dependencies in its `Wasmind.toml` manifest file. These dependencies become available for you to configure via overrides.
 
-For example, the [delegation network coordinator's manifest](https://github.com/SilasMarvin/wasmind/blob/main/actors/delegation_network/crates/delegation_network_coordinator/Wasmind.toml) defines many dependencies:
+For example, the <a href="https://github.com/SilasMarvin/wasmind/blob/main/actors/delegation_network/crates/delegation_network_coordinator/Wasmind.toml" target="_blank">delegation network coordinator's manifest</a> defines many dependencies:
 
 ```toml
 # In the actor's Wasmind.toml file
@@ -167,7 +189,7 @@ model_name = "anthropic/claude-4-sonnet"
 
 **Key insight**: Actor developers define the dependency structure in their `Wasmind.toml`, and you configure those dependencies in your user configuration via `actor_overrides`.
 
-Each actor defines what configuration options it accepts. For a complete specification of actor override patterns, see the [Wasmind Configuration Documentation](../../crates/wasmind_config/README.md).
+Each actor defines what configuration options it accepts. For a complete specification of actor override patterns, see the <a href="https://github.com/SilasMarvin/wasmind/tree/main/crates/wasmind_config" target="_blank">Wasmind Configuration Documentation</a>.
 
 ## Starting Actors vs Dynamic Spawning
 
@@ -232,7 +254,7 @@ The `wasmind_cli` is just one interface to the Wasmind library. You can customiz
 "esc" = "InterruptAgent"
 ```
 
-> **Note**: For detailed TUI configuration options, see the [wasmind_cli documentation](../../crates/wasmind_cli/README.md). Remember that you can also build your own interfaces using the core Wasmind library.
+> **Note**: For detailed TUI configuration options, see the <a href="https://github.com/SilasMarvin/wasmind/tree/main/crates/wasmind_cli" target="_blank">wasmind_cli documentation</a>. Remember that you can also build your own interfaces using the core Wasmind library.
 
 ## Validation and Debugging
 
@@ -257,4 +279,4 @@ Want to know what actors you can use? The [Using Actors](./using-actors.md) guid
 - How actors work together
 
 ### Technical Reference
-Need the complete configuration specification? See the [Wasmind Configuration Documentation](../../crates/wasmind_config/README.md)
+Need the complete configuration specification? See the <a href="https://github.com/SilasMarvin/wasmind/tree/main/crates/wasmind_config" target="_blank">Wasmind Configuration Documentation</a>

@@ -2,7 +2,7 @@
 name = "wasmind_actor_utils"
 version = "0.1.0"
 
-description.workspace = true
+description = "Utilities and helpers for building Wasmind actors in Rust"
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true

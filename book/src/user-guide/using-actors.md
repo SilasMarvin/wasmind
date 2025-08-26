@@ -39,7 +39,7 @@ The `actors/` directory in the Wasmind repository contains example actors create
 
 These are **reference implementations**, not built-in system components. They demonstrate common patterns and provide starting points for your own configurations.
 
-> **Browse actors**: Check the [actors directory](https://github.com/SilasMarvin/wasmind/tree/main/actors) to see what's available and read each actor's README for capabilities and configuration options.
+> **Browse actors**: Check the <a href="https://github.com/SilasMarvin/wasmind/tree/main/actors" target="_blank">actors directory</a> to see what's available and read each actor's README for capabilities and configuration options.
 
 ## Actor Compatibility
 
@@ -122,10 +122,10 @@ Ready to see these concepts in action? The [Examples](./examples.md) guide walks
 - Building from simple to complex multi-agent systems
 
 ### Build Your Own Actors
-Want to create compatible actors? The [Developer Guide](../developer-guide/README.md) covers:
+Want to create compatible actors? The [Developer Guide](../developer-guide/) covers:
 - Message pattern design
 - Building actors that integrate well with existing ones
 - Testing actor compatibility
 
 ### Technical Deep Dive
-For the complete technical specification, see the [Wasmind Configuration Documentation](../../crates/wasmind_config/README.md).
+For the complete technical specification, see the [Wasmind Configuration Documentation](https://github.com/SilasMarvin/wasmind/tree/main/crates/wasmind_config).

@@ -2,7 +2,7 @@
 name = "wasmind_actor_loader"
 version = "0.1.0"
 
-description.workspace = true
+description = "Dynamic actor loading and dependency resolution for Wasmind"
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true

@@ -6,7 +6,7 @@ The best way to learn is by exploring complete, working examples.
 
 The Wasmind repository includes several example configurations that demonstrate different use cases and patterns. These examples show real-world setups you can use as starting points for your own configurations.
 
-**👉 [Browse Example Configurations](../../../../crates/wasmind_cli/example_configs/)**
+**👉 <a href="https://github.com/SilasMarvin/wasmind/tree/main/crates/wasmind_cli/example_configs" target="_blank">Browse Example Configurations</a>**
 
 Each example includes:
 - Complete TOML configuration files

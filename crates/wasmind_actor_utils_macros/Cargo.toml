@@ -2,7 +2,7 @@
 name = "wasmind_actor_utils_macros"
 version = "0.1.0"
 
-description.workspace = true
+description = "Procedural macros for simplifying Wasmind actor development"
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true

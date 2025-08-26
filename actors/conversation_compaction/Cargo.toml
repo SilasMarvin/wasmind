@@ -1,7 +1,12 @@
 [package]
 name = "conversation_compaction"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+license = "MIT"
+description = "Message history compaction actor for optimizing AI conversation context"
+repository = "https://github.com/SilasMarvin/wasmind"
+readme = "README.md"
+authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 
 [workspace]
 

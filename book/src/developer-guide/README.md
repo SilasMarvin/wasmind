@@ -21,7 +21,7 @@ This guide assumes you want to:
 - ✅ Build tools and capabilities for AI agents
 - ✅ Extend Wasmind with new functionality
 
-If you just want to **use existing actors** and configurations, check out the [User Guide](../user-guide/README.md) instead.
+If you just want to **use existing actors** and configurations, check out the [User Guide](../user-guide/) instead.
 
 ## Prerequisites
 

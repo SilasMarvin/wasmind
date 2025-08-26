@@ -104,7 +104,7 @@ export OPENAI_API_KEY="your-api-key-here"
 wasmind_cli -c assistant.toml
 ```
 
-> **Note**: You'll need an OpenAI API key set as the `OPENAI_API_KEY` environment variable. If you don't have one, you can modify the configuration to use other models from [LiteLLM's supported providers](https://docs.litellm.ai/docs/providers).
+> **Note**: You'll need an OpenAI API key set as the `OPENAI_API_KEY` environment variable. If you don't have one, you can modify the configuration to use other models from <a href="https://docs.litellm.ai/docs/providers" target="_blank">LiteLLM's supported providers</a>.
 
 Wasmind will:
 1. Start the LiteLLM proxy in Docker
@@ -113,11 +113,11 @@ Wasmind will:
 
 ## Understanding the TUI
 
-[Screenshot of TUI here]
+![Wasmind TUI Screenshot](wasmind-tui-screenshot.png)
 
-The Wasmind TUI provides an interactive dashboard with two main views:
+The Wasmind TUI provides an interactive dashboard with a split view:
 
-### Chat View (Default)
+### Chat View
 - **Purpose**: Interact directly with your AI assistant
 - **Usage**: Type messages and press `Ctrl+A` to send them to the assistant
 - **Key Features**: See conversation history, assistant responses, and any tool usage
@@ -176,4 +176,4 @@ Curious about the building blocks? The [Using Actors](./using-actors.md) guide e
 - Actor capabilities and limitations
 
 ### Build Your Own Actors
-Want to extend Wasmind? Check out the [Developer Guide](../developer-guide/README.md) to learn how to build custom actors and extend the system.
+Want to extend Wasmind? Check out the [Developer Guide](../developer-guide/) to learn how to build custom actors and extend the system.

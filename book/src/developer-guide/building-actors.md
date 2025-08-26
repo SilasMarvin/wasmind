@@ -265,7 +265,7 @@ Your echo actor uses basic message handling. Learn more sophisticated patterns i
 Want to create actors that provide capabilities to AI assistants? See [Tool Actors](./tool-actors.md) to learn how to build actors that extend what assistants can do.
 
 ### Add Actor Dependencies
-Learn how actors can depend on other actors using `Wasmind.toml` manifests in the [Configuration documentation](../../crates/wasmind_config/README.md#the-wasmindtoml-actor-manifest) - enabling complex multi-actor systems that spawn together.
+Learn how actors can depend on other actors using `Wasmind.toml` manifests in the [Configuration documentation](https://github.com/SilasMarvin/wasmind/tree/main/crates/wasmind_config#the-wasmindtoml-actor-manifest) - enabling complex multi-actor systems that spawn together.
 
 ### Real Examples
 Explore complete actor implementations in [Examples](./examples.md) including coordination systems and specialized tools.

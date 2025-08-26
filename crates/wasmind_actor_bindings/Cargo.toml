@@ -2,7 +2,7 @@
 name = "wasmind_actor_bindings"
 version = "0.1.0"
 
-description.workspace = true
+description = "WebAssembly component model bindings for Wasmind actors"
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true

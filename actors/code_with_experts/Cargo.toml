@@ -6,7 +6,7 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "MIT"
-description = ""
+description = "Expert code review and approval system for collaborative AI development"
 repository = "https://github.com/SilasMarvin/wasmind"
 readme = "README.md"
 authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]

@@ -27,9 +27,9 @@ cargo install --locked wasmind_cli
 
 ### 3. Install Docker
 
-The `wasmind_cli` uses [LiteLLM](https://litellm.ai/) via Docker to provide unified access to AI models:
+The `wasmind_cli` uses <a href="https://litellm.ai/" target="_blank">LiteLLM</a> via Docker to provide unified access to AI models:
 
-- **macOS/Windows**: Install [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- **macOS/Windows**: Install <a href="https://www.docker.com/products/docker-desktop/" target="_blank">Docker Desktop</a>
 - **Linux**: Install Docker Engine from your package manager
 
 > **Note**: Other frontends/binaries using the Wasmind library may have different LLM integration requirements. This Docker requirement is specific to `wasmind_cli`.
@@ -62,5 +62,5 @@ If you want to **build custom actors** or extend Wasmind:
 ## Next Steps
 
 After installation:
-- **Users**: Continue to the [User Guide](./user-guide/README.md) to run your first configuration
-- **Developers**: Continue to the [Developer Guide](./developer-guide/README.md) to build your first actor
+- **Users**: Continue to the [User Guide](./user-guide/) to run your first configuration
+- **Developers**: Continue to the [Developer Guide](./developer-guide/) to build your first actor

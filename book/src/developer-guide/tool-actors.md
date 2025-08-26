@@ -107,7 +107,7 @@ broadcast(ToolsAvailable {
 })
 ```
 
-**Note**: The tool definition format follows LiteLLM's OpenAI API compatibility standard for function calling. For more details on tool schemas and function calling, see the [LiteLLM function calling documentation](https://docs.litellm.ai/docs/completion/function_call).
+**Note**: The tool definition format follows LiteLLM's OpenAI API compatibility standard for function calling. For more details on tool schemas and function calling, see the <a href="https://docs.litellm.ai/docs/completion/function_call" target="_blank">LiteLLM function calling documentation</a>.
 
 ### 2. Message Handling
 The macro automatically:
@@ -172,7 +172,7 @@ pub struct ReadFileTool {
 }
 ```
 
-The schema is included in the tool definition sent to the LLM via LiteLLM's OpenAI-compatible function calling format. This helps the LLM understand what parameters your tool expects and their constraints. For more information on parameter schemas and function definitions, see the [LiteLLM function calling documentation](https://docs.litellm.ai/docs/completion/function_call).
+The schema is included in the tool definition sent to the LLM via LiteLLM's OpenAI-compatible function calling format. This helps the LLM understand what parameters your tool expects and their constraints. For more information on parameter schemas and function definitions, see the <a href="https://docs.litellm.ai/docs/completion/function_call" target="_blank">LiteLLM function calling documentation</a>.
 
 ## Tool Status Reporting
 

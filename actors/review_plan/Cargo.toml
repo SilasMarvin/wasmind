@@ -6,7 +6,7 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "MIT"
-description = ""
+description = "Plan review and approval system for AI agent workflows"
 repository = "https://github.com/SilasMarvin/wasmind"
 readme = "README.md"
 authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]

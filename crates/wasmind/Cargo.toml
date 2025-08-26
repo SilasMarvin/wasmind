@@ -2,7 +2,7 @@
 name = "wasmind"
 version = "0.1.0"
 
-description.workspace = true
+description = "Core actor-based coordination runtime for AI agent workflows"
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true

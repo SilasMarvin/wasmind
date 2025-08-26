@@ -6,7 +6,7 @@ This isn't just "Rust code with some macros" - you're building self-contained, p
 
 ## What Are WebAssembly Components?
 
-[WebAssembly Components](https://component-model.bytecodealliance.org/introduction.html) are a new standard for building composable, portable modules that can run anywhere. Think of them as:
+<a href="https://component-model.bytecodealliance.org/introduction.html" target="_blank">WebAssembly Components</a> are a new standard for building composable, portable modules that can run anywhere. Think of them as:
 
 - **Sandboxed by default** - Can only access capabilities explicitly granted by the host
 - **Language agnostic** - Can be built in Rust, JavaScript, Python, or any WASM-capable language

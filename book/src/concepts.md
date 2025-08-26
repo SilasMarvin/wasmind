@@ -83,7 +83,7 @@ Message Envelope {
 
 Most message `payload`s are JSON strings but messages can store anything! Actors typically have a predefined set of messages they look for. For example the `execute_bash` actor listens for `ExecuteToolCall` messages.
 
-While we provide a list of commonly used messages in [wasmind_actor_utils_common_messages](https://github.com/SilasMarvin/wasmind/tree/main/crates/wasmind_actor_utils_common_messages), it is common for actors to broadcast and listen for their own unique messages.
+While we provide a list of commonly used messages in <a href="https://github.com/SilasMarvin/wasmind/tree/main/crates/wasmind_actor_utils_common_messages" target="_blank">wasmind_actor_utils_common_messages</a>, it is common for actors to broadcast and listen for their own unique messages.
 
 ## Scopes
 
@@ -156,5 +156,5 @@ Let's trace through a concrete example with message types and scopes:
 ## Next Steps
 
 Now that you understand the core concepts, you can:
-- **Use Wasmind** → Start with the [User Guide](./user-guide/README.md)
-- **Build with Wasmind** → Jump to the [Developer Guide](./developer-guide/README.md)
+- **Use Wasmind** → Start with the [User Guide](./user-guide/)
+- **Build with Wasmind** → Jump to the [Developer Guide](./developer-guide/)

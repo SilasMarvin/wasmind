@@ -2,7 +2,7 @@
 name = "wasmind_actor_utils_common_messages"
 version = "0.1.0"
 
-description.workspace = true
+description = "Common message types shared between Wasmind actors"
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true
