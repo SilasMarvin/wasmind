@@ -9,4 +9,4 @@ actors/**/target/
 actors/**/Cargo.lock
 
 # MDBook build output
-docs/book/
+book/book/
