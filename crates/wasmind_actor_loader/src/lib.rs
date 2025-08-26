@@ -183,7 +183,7 @@ impl ExternalDependencyCache {
     fn compute_git_source_hash(&self, git_source: &wasmind_config::Repository) -> String {
         let mut hasher = Sha256::new();
         hasher.update("git:");
-        hasher.update(git_source.url.as_str());
+        hasher.update(git_source.git.as_str());
         if let Some(git_ref) = &git_source.git_ref {
             match git_ref {
                 GitRef::Branch(branch) => hasher.update(format!("branch:{branch}")),
@@ -191,9 +191,9 @@ impl ExternalDependencyCache {
                 GitRef::Rev(rev) => hasher.update(format!("rev:{rev}")),
             }
         }
-        if let Some(subdir) = &git_source.subdir {
-            hasher.update("subdir:");
-            hasher.update(subdir);
+        if let Some(sub_dir) = &git_source.sub_dir {
+            hasher.update("sub_dir:");
+            hasher.update(sub_dir);
         }
         hex::encode(hasher.finalize())
     }
@@ -204,7 +204,7 @@ impl ExternalDependencyCache {
         git_source: &wasmind_config::Repository,
         dest: &Path,
     ) -> Result<()> {
-        info!("Cloning git source {} to cache", git_source.url);
+        info!("Cloning git source {} to cache", git_source.git);
 
         let mut cmd = Command::new("git");
         cmd.arg("clone").arg("--depth").arg("1");
@@ -225,7 +225,7 @@ impl ExternalDependencyCache {
             }
         }
 
-        cmd.arg(git_source.url.as_str()).arg(dest);
+        cmd.arg(git_source.git.as_str()).arg(dest);
 
         let output = cmd.output().await.context(CommandSnafu)?;
         if !output.status.success() {
@@ -313,7 +313,7 @@ impl ActorLoader {
             .await
             .context(DependencyResolutionSnafu)?;
 
-        // Phase 2: Load all resolved actors in parallel
+        // Phase 2: Load all resolved actors
         #[cfg(feature = "progress-output")]
         println!("Loading {} actors...", resolved_actors.len());
 
@@ -404,7 +404,7 @@ impl ActorLoader {
             );
         }
 
-        // For git sources, subdir tells us where to cd before building
+        // For git sources, sub_dir tells us where to cd before building
         // For path sources, the path already points to the build directory
 
         let (_build_path, wasm_path, version) = match &actor.source {
@@ -434,16 +434,16 @@ impl ActorLoader {
             }
             ActorSource::Git(repository) => {
                 // Use external cache to get the cloned repository
-                info!("Using cached Git actor: {}", repository.url);
+                info!("Using cached Git actor: {}", repository.git);
                 let cached_repo_path = self
                     .external_cache
                     .load_external_dependency(repository)
                     .await?;
 
-                // Determine build path based on subdir
-                let build_path = if let Some(subdir) = &repository.subdir {
-                    // subdir is where we cd before building
-                    cached_repo_path.join(subdir)
+                // Determine build path based on sub_dir
+                let build_path = if let Some(sub_dir) = &repository.sub_dir {
+                    // sub_dir is where we cd before building
+                    cached_repo_path.join(sub_dir)
                 } else {
                     // For single actors, use the repo root
                     cached_repo_path.clone()
@@ -593,7 +593,7 @@ impl ActorLoader {
             }
             ActorSource::Git(repo) => {
                 hasher.update("git:");
-                hasher.update(repo.url.as_str());
+                hasher.update(repo.git.as_str());
                 if let Some(git_ref) = &repo.git_ref {
                     match git_ref {
                         GitRef::Branch(branch) => hasher.update(format!("branch:{branch}")),
@@ -601,9 +601,9 @@ impl ActorLoader {
                         GitRef::Rev(rev) => hasher.update(format!("rev:{rev}")),
                     }
                 }
-                if let Some(subdir) = &repo.subdir {
-                    hasher.update("subdir:");
-                    hasher.update(subdir);
+                if let Some(sub_dir) = &repo.sub_dir {
+                    hasher.update("sub_dir:");
+                    hasher.update(sub_dir);
                 }
             }
         }
@@ -1001,9 +1001,9 @@ mod tests {
         let git_actor = Actor {
             name: "test".to_string(),
             source: ActorSource::Git(wasmind_config::Repository {
-                url: Url::parse("https://github.com/example/repo").unwrap(),
+                git: Url::parse("https://github.com/example/repo").unwrap(),
                 git_ref: None,
-                subdir: None,
+                sub_dir: None,
             }),
             config: None,
             auto_spawn: false,

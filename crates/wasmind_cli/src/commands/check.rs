@@ -329,10 +329,10 @@ fn display_actor_info(actor: &ResolvedActor, analysis: &StartupAnalysis) {
             format!("path({})", path_source.path)
         }
         ActorSource::Git(git_source) => {
-            if let Some(subdir) = &git_source.subdir {
-                format!("git({}, subdir={})", git_source.url, subdir)
+            if let Some(sub_dir) = &git_source.sub_dir {
+                format!("git({}, sub_dir={})", git_source.git, sub_dir)
             } else {
-                format!("git({})", git_source.url)
+                format!("git({})", git_source.git)
             }
         }
     };

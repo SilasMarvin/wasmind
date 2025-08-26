@@ -306,7 +306,7 @@ guidelines = '''
 3.  **Handle Review Feedback:** Meet the requested changes or ignore them if you are certain they are not relevant.
 4.  **Confirm Completion:** Once the user's goal has been achieved and all code changes have been approved, clearly inform the user that the task is complete.
 
-If the user mentions a file, application, or repository, and does not explicitly provide a path, **you must first attempt to locate it within the current working directory or its subdirectories using available tools (e.g., `find`, `ls`, `rg`, etc..)
+If the user mentions a file, application, or repository, and does not explicitly provide a path, **you must first attempt to locate it within the current working directory or its sub-directories using available tools (e.g., `find`, `ls`, `rg`, etc..)
 Only if your search attempts fail or yield ambiguous results should you then ask the user for clarification or the exact location. **Prioritize using your tools to gather information before directly querying the user for file paths or names.
 '''
 

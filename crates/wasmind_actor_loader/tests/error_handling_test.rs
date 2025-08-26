@@ -64,9 +64,9 @@ async fn test_git_source_requires_manifest() {
     let actors = vec![Actor {
         name: "git_actor".to_string(),
         source: ActorSource::Git(Repository {
-            url: Url::parse("https://github.com/example/repo").unwrap(),
+            git: Url::parse("https://github.com/example/repo").unwrap(),
             git_ref: Some(GitRef::Branch("main".to_string())),
-            subdir: None,
+            sub_dir: None,
         }),
         config: None,
         auto_spawn: false,

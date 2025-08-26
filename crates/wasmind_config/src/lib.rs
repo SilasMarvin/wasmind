@@ -75,9 +75,9 @@ pub struct PathSource {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Repository {
-    pub url: Url,
+    pub git: Url,
     pub git_ref: Option<GitRef>,
-    pub subdir: Option<String>,
+    pub sub_dir: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -302,7 +302,7 @@ level = "info"
 format = "json"
 
 [dependencies.helper]
-source = { url = "https://github.com/test/helper", git_ref = { branch = "main" } }
+source = { git = "https://github.com/test/helper", git_ref = { branch = "main" } }
 "#;
 
         fs::write(temp_dir.path().join("Wasmind.toml"), manifest_content).unwrap();
@@ -335,7 +335,7 @@ model = "gpt-4"
 temperature = 0.7
 
 [actors.coordinator]
-source = { url = "https://github.com/test/coordinator", git_ref = { tag = "v1.0.0" } }
+source = { git = "https://github.com/test/coordinator", git_ref = { tag = "v1.0.0" } }
 
 [actors.bash_executor]
 source = { path = "./actors/bash" }

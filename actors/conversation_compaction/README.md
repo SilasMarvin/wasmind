@@ -11,7 +11,7 @@ The Conversation Compaction Actor automatically monitors token usage and compact
 
 ```toml
 [actors.file_interaction_with_approval]
-source = { url = "https://github.com/SilasMarvin/wasmind", subdir = "actors/code_with_experts/crates/file_interaction_with_approval" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/code_with_experts/crates/file_interaction_with_approval" }
 
 [actors.conversation_compaction.config]
 token_threshold = 50000  # Trigger compaction when total tokens exceed this limit

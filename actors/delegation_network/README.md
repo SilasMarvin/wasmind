@@ -78,7 +78,7 @@ To use the delegation network, configure the `delegation_network_coordinator`:
 starting_actors = ["delegation_network_coordinator"]
 
 [actors.delegation_network_coordinator]
-source = { url = "https://github.com/SilasMarvin/Wasmind", subdir = "actors/delegation_network/crates/delegation_network_coordinator" }
+source = { git = "https://github.com/SilasMarvin/Wasmind", sub_dir = "actors/delegation_network/crates/delegation_network_coordinator" }
 
 # Actor overrides configure different assistant types with specific models
 [actor_overrides.main_manager_assistant.config]

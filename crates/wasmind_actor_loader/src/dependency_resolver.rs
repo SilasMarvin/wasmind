@@ -480,9 +480,9 @@ async fn load_manifest_from_git(
         })?;
 
     // Determine manifest path based on package
-    let manifest_path = if let Some(subdir) = &git_source.subdir {
-        // subdir is where we cd before building, so manifest is there
-        clone_path.join(subdir).join("Wasmind.toml")
+    let manifest_path = if let Some(sub_dir) = &git_source.sub_dir {
+        // sub_dir is where we cd before building, so manifest is there
+        clone_path.join(sub_dir).join("Wasmind.toml")
     } else {
         // Look in root for Wasmind.toml
         clone_path.join("Wasmind.toml")
@@ -529,7 +529,7 @@ fn sources_match(source1: &ActorSource, source2: &ActorSource) -> bool {
     match (source1, source2) {
         (ActorSource::Path(p1), ActorSource::Path(p2)) => p1.path == p2.path,
         (ActorSource::Git(g1), ActorSource::Git(g2)) => {
-            g1.url == g2.url && git_refs_match(&g1.git_ref, &g2.git_ref) && g1.subdir == g2.subdir
+            g1.git == g2.git && git_refs_match(&g1.git_ref, &g2.git_ref) && g1.sub_dir == g2.sub_dir
         }
         _ => false,
     }
@@ -587,7 +587,7 @@ fn merge_config_option(
 fn source_to_string(source: &ActorSource) -> String {
     match source {
         ActorSource::Path(p) => format!("path: {}", p.path),
-        ActorSource::Git(g) => format!("git: {}", g.url),
+        ActorSource::Git(g) => format!("git: {}", g.git),
     }
 }
 

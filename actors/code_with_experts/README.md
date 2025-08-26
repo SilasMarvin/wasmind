@@ -50,7 +50,7 @@ To use Code with Experts, configure the `file_interaction_with_approval` actor:
 
 ```toml
 [actors.file_interaction_with_approval]
-source = { url = "https://github.com/SilasMarvin/wasmind", subdir = "actors/code_with_experts/crates/file_interaction_with_approval" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/code_with_experts/crates/file_interaction_with_approval" }
 
 [actors.file_interaction_with_approval.config]
 min_diff_size = 50  # Characters threshold for triggering review

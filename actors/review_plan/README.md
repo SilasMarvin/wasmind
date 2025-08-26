@@ -46,7 +46,7 @@ To use Review Plan, configure the `request_plan_review` actor:
 
 ```toml
 [actors.request_plan_review]
-source = { url = "https://github.com/SilasMarvin/wasmind", subdir = "actors/review_plan/crates/request_plan_review" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/review_plan/crates/request_plan_review" }
 
 [actors.request_plan_review.config.reviewers]
 # Define expert reviewers - each is an agent that is spawned for each request_plan_review tool call with the provided list of actors

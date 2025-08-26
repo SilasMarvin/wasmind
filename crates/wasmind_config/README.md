@@ -79,26 +79,26 @@ Wasmind will automatically search upward from the build directory to find the co
 
 Clones a remote Git repository to fetch the actor's code.
 
-*   `url` (string): The URL of the Git repository.
+*   `git` (string): The URL of the Git repository.
 *   `git_ref` (table, optional): Specifies which Git reference to check out. Can be a branch, tag, or specific revision hash. Defaults to the repository's default branch.
-*   `subdir` (string, optional): If specified, Wasmind will cd into this subdirectory before building the actor. Use this when the actor is located in a subdirectory of the repository. Wasmind will look for the manifest at `{repository_root}/{subdir}/Wasmind.toml`.
+*   `sub_dir` (string, optional): If specified, Wasmind will cd into this subdirectory before building the actor. Use this when the actor is located in a subdirectory of the repository. Wasmind will look for the manifest at `{repository_root}/{sub_dir}/Wasmind.toml`.
 
 ```toml
 # Clones the 'main' branch of a repository (single-package)
 [actors.assistant_from_git]
-source = { url = "https://github.com/my-org/Wasmind-assistant", git_ref = { branch = "main" } }
+source = { git = "https://github.com/my-org/Wasmind-assistant", git_ref = { branch = "main" } }
 
 # Uses a specific version tag (single-package)
 [actors.bash_v1]
-source = { url = "https://github.com/my-org/Wasmind-execute-bash", git_ref = { tag = "v1.0.2" } }
+source = { git = "https://github.com/my-org/Wasmind-execute-bash", git_ref = { tag = "v1.0.2" } }
 
 # Pins to an exact commit revision (single-package)
 [actors.stable_tool]
-source = { url = "https://github.com/my-org/Wasmind-tools", git_ref = { rev = "a1b2c3d4e5f6" } }
+source = { git = "https://github.com/my-org/Wasmind-tools", git_ref = { rev = "a1b2c3d4e5f6" } }
 
-# Clones a monorepo/workspace - subdir specifies the actor location
+# Clones a monorepo/workspace - sub_dir specifies the actor location
 [actors.specific_tool]
-source = { url = "https://github.com/my-org/Wasmind-tools", git_ref = { tag = "v1.1.0" }, subdir = "crates/data_parser" }
+source = { git = "https://github.com/my-org/Wasmind-tools", git_ref = { tag = "v1.1.0" }, sub_dir = "crates/data_parser" }
 ```
 
 ---

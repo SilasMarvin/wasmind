@@ -60,7 +60,7 @@ starting_actors = ["assistant"]
 [actors.assistant]
 source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
-[actor_overrides.assistant.config]
+[actors.assistant.config]
 model_name = "openai/gpt-5-mini"
 
 ##############################
@@ -84,7 +84,7 @@ Let's understand what you just created:
 
 - **`starting_actors`** - When Wasmind starts, it automatically starts with these actors: the "assistant"
 - **`[actors.assistant]`** - Defines where to find the assistant actor (fetched from GitHub)
-- **`[actor_overrides.assistant.config]`** - Configures the assistant to use GPT-5-mini
+- **`[actors.assistant.config]`** - Configures the assistant to use GPT-5-mini
 - **`[tui.*]`** - Sets up keyboard shortcuts for the terminal interface
 - **`[litellm]`** - Configures the AI model proxy that handles API calls
 
@@ -115,7 +115,7 @@ Wasmind will:
 
 [Screenshot of TUI here]
 
-The Wasmind TUI provides an interactive dashboard with three main views:
+The Wasmind TUI provides an interactive dashboard with two main views:
 
 ### Chat View (Default)
 - **Purpose**: Interact directly with your AI assistant
@@ -126,11 +126,6 @@ The Wasmind TUI provides an interactive dashboard with three main views:
 - **Purpose**: Visualize agent relationships and message flow
 - **Usage**: See how actors are connected and how messages flow between them
 - **Key Features**: Real-time message visualization, actor hierarchy
-
-### Navigation
-- Use the **tab** key to switch between views
-- Key bindings are displayed at the bottom of each screen
-- Press **Ctrl+C** to exit at any time
 
 > **Tip**: For advanced TUI configuration options like custom key bindings, see the wasmind_cli documentation.
 
