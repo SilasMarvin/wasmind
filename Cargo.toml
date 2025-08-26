@@ -15,8 +15,8 @@ authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 [workspace.dependencies]
 tokio = { version = "1.45.0" }
 serde = { version = "1" }
-wasmtime = { version = "34", features = ["async"] }
-wasmtime-wasi = "34"
+wasmtime = { version = "36.0.2", features = ["async"] }
+wasmtime-wasi = "36.0.2"
 serde_json = "1.0.140"
 serde_yaml = "0.9"
 reqwest = { version = "0.12", features = ["json"] }
@@ -25,7 +25,7 @@ snafu = "0.8"
 url = "2.5"
 tempfile = "3.8"
 chrono = { version = "0.4", features = ["serde"] }
-toml = "0.8.22"
+toml = "0.9"
 
 [profile.profiling]
 inherits = "release"

@@ -1,9 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use wasmtime_wasi::{
-    ResourceTable,
-    p2::{IoView, WasiCtx, WasiCtxBuilder, WasiView},
-};
+use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 use super::ActorId;
 use crate::{actors::MessageEnvelope, context::WasmindContext, scope::Scope};
@@ -25,15 +22,12 @@ pub struct ActorState {
     pub current_message_id: Option<String>,
 }
 
-impl IoView for ActorState {
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
-    }
-}
-
 impl WasiView for ActorState {
-    fn ctx(&mut self) -> &mut WasiCtx {
-        &mut self.ctx
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.ctx,
+            table: &mut self.table,
+        }
     }
 }
 

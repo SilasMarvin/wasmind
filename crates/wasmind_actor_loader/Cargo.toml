@@ -24,7 +24,7 @@ futures = "0.3"
 tracing = "0.1"
 sha2 = "0.10"
 hex = "0.4"
-which = "6.0"
+which = "8.0"
 chrono = { workspace = true }
 toml = { workspace = true }
 

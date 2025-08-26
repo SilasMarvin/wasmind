@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }
-toml = "0.8"
+toml = "0.9"
 
 serde.workspace = true
 serde_json.workspace = true

@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "0.8"
+toml = "0.9"
 wasmind_actor_utils = { path = "../../crates/wasmind_actor_utils", features = ["macros"] }
 wit-bindgen-rt = "0.43.0"
 

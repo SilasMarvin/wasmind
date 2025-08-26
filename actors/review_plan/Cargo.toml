@@ -16,5 +16,5 @@ wasmind_actor_utils = { path = "../../crates/wasmind_actor_utils", features = ["
 review_plan_common = { path = "crates/review_plan_common" }
 
 serde = { version = "1", features = ["derive"] }
-toml = "0.8.22"
+toml = "0.9"
 wit-bindgen-rt = { version = "0.43", features = ["bitflags"] }

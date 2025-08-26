@@ -18,12 +18,14 @@ use super::MessageEnvelope;
 pub type ActorId = String;
 
 bindgen!({
-    world: "actor-world", async: true,
+    world: "actor-world",
     with: {
         "wasmind:actor/command/cmd": CommandResource,
         "wasmind:actor/http/request": actor_state::http::HttpRequestResource,
     },
-    path: "../wasmind_actor_bindings/wit/world.wit"
+    path: "../wasmind_actor_bindings/wit/world.wit",
+    imports: { default: async },
+    exports: { default: async },
 });
 
 impl PartialEq for MessageEnvelope {

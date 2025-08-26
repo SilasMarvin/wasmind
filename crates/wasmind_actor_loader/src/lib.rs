@@ -5,8 +5,8 @@
 //! sources (local paths, Git repositories, etc.).
 
 pub mod dependency_resolver;
+pub mod utils;
 
-use sha2::{Digest, Sha256};
 use snafu::{Location, ResultExt, Snafu, ensure, location};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,6 +18,7 @@ use tokio::process::Command;
 use tracing::{info, warn};
 
 use wasmind_config::{Actor, ActorSource, GitRef};
+use crate::utils::{compute_source_hash, compute_git_source_hash};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -135,14 +136,14 @@ pub enum Error {
 type Result<T> = std::result::Result<T, Error>;
 
 /// Cache for external dependencies (git repos, etc.) to avoid duplicate fetching
-struct ExternalDependencyCache {
+pub struct ExternalDependencyCache {
     temp_dir: TempDir,
     cache: Mutex<HashMap<String, PathBuf>>,
 }
 
 impl ExternalDependencyCache {
     /// Create a new external dependency cache with a temporary directory
-    fn new(temp_dir: TempDir) -> Result<Self> {
+    pub fn new(temp_dir: TempDir) -> Result<Self> {
         Ok(Self {
             temp_dir,
             cache: Mutex::new(HashMap::new()),
@@ -154,7 +155,7 @@ impl ExternalDependencyCache {
         &self,
         git_source: &wasmind_config::Repository,
     ) -> Result<PathBuf> {
-        let cache_key = self.compute_git_source_hash(git_source);
+        let cache_key = compute_git_source_hash(git_source);
 
         // Check cache first
         {
@@ -162,9 +163,12 @@ impl ExternalDependencyCache {
             if let Some(existing_path) = cache.get(&cache_key)
                 && existing_path.exists()
             {
+                info!("Git cache HIT: Using cached repository {} at {}", git_source.git, existing_path.display());
                 return Ok(existing_path.clone());
             }
         }
+        
+        info!("Git cache MISS: Cloning repository {}", git_source.git);
 
         // Clone and cache
         let clone_path = self.temp_dir.path().join(&cache_key);
@@ -177,25 +181,6 @@ impl ExternalDependencyCache {
         }
 
         Ok(clone_path)
-    }
-
-    /// Compute a hash for the given git source to use as cache key
-    fn compute_git_source_hash(&self, git_source: &wasmind_config::Repository) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update("git:");
-        hasher.update(git_source.git.as_str());
-        if let Some(git_ref) = &git_source.git_ref {
-            match git_ref {
-                GitRef::Branch(branch) => hasher.update(format!("branch:{branch}")),
-                GitRef::Tag(tag) => hasher.update(format!("tag:{tag}")),
-                GitRef::Rev(rev) => hasher.update(format!("rev:{rev}")),
-            }
-        }
-        if let Some(sub_dir) = &git_source.sub_dir {
-            hasher.update("sub_dir:");
-            hasher.update(sub_dir);
-        }
-        hex::encode(hasher.finalize())
     }
 
     /// Clone a git source to the specified path
@@ -306,8 +291,10 @@ impl ActorLoader {
         // Phase 1: Resolve all dependencies
         #[cfg(feature = "progress-output")]
         println!("Resolving actor dependencies...");
-        let resolver =
-            dependency_resolver::DependencyResolver::with_cache(self.external_cache.clone());
+        let resolver = dependency_resolver::DependencyResolver::with_cache(
+            self.external_cache.clone(),
+            Some(self.cache_dir.clone()),
+        );
         let resolved_actors = resolver
             .resolve_all(actors, actor_overrides)
             .await
@@ -407,7 +394,7 @@ impl ActorLoader {
         // For git sources, sub_dir tells us where to cd before building
         // For path sources, the path already points to the build directory
 
-        let (_build_path, wasm_path, version) = match &actor.source {
+        let (build_path, wasm_path, version) = match &actor.source {
             ActorSource::Path(path_source) => {
                 // For local paths, the path points directly to the build directory
                 info!("Building local actor: {}", path_source.path);
@@ -481,7 +468,8 @@ impl ActorLoader {
 
         // Cache the built actor (skip in dev mode)
         if !is_dev_mode {
-            self.cache_actor(&actor, &actor_id, &version, &wasm).await?;
+            self.cache_actor(&actor, &actor_id, &version, &wasm, &build_path)
+                .await?;
         }
 
         #[cfg(feature = "progress-output")]
@@ -504,12 +492,13 @@ impl ActorLoader {
         actor_id: &str,
         required_spawn_with: &[String],
     ) -> Result<Option<LoadedActor>> {
-        let actor_hash = self.compute_actor_hash(actor);
-        let cache_path = self.cache_dir.join(&actor.name).join(&actor_hash);
+        let source_hash = compute_source_hash(&actor.source);
+        let cache_path = self.cache_dir.join(&source_hash);
         let metadata_path = cache_path.join("metadata.json");
         let wasm_path = cache_path.join("actor.wasm");
 
         if metadata_path.exists() && wasm_path.exists() {
+            info!("Cache HIT: Found cached actor '{}' at {}", actor.name, cache_path.display());
             // Read metadata
             let metadata_content = fs::read_to_string(&metadata_path).await.context(IoSnafu {
                 path: Some(metadata_path),
@@ -541,6 +530,7 @@ impl ActorLoader {
             }));
         }
 
+        info!("Cache MISS: No cached actor '{}' found at {}", actor.name, cache_path.display());
         Ok(None)
     }
 
@@ -550,9 +540,10 @@ impl ActorLoader {
         actor_id: &str,
         version: &str,
         wasm: &[u8],
+        manifest_dir: &Path,
     ) -> Result<()> {
-        let actor_hash = self.compute_actor_hash(actor);
-        let cache_path = self.cache_dir.join(&actor.name).join(&actor_hash);
+        let source_hash = compute_source_hash(&actor.source);
+        let cache_path = self.cache_dir.join(&source_hash);
 
         // Create cache directory
         fs::create_dir_all(&cache_path).await.context(IoSnafu {
@@ -570,6 +561,7 @@ impl ActorLoader {
             "actor_id": actor_id,
             "logical_name": &actor.name,
             "version": version,
+            "source_hash": &source_hash,
             "cached_at": chrono::Utc::now().to_rfc3339(),
         });
         let metadata_path = cache_path.join("metadata.json");
@@ -579,36 +571,26 @@ impl ActorLoader {
                 path: Some(metadata_path),
             })?;
 
-        info!("Cached actor {} version {}", actor.name, version);
+        // Copy Wasmind.toml to cache
+        let source_manifest_path = manifest_dir.join("Wasmind.toml");
+        if source_manifest_path.exists() {
+            let manifest_content = fs::read_to_string(&source_manifest_path)
+                .await
+                .context(IoSnafu {
+                    path: Some(source_manifest_path.clone()),
+                })?;
+            let cached_manifest_path = cache_path.join("Wasmind.toml");
+            fs::write(&cached_manifest_path, manifest_content)
+                .await
+                .context(IoSnafu {
+                    path: Some(cached_manifest_path),
+                })?;
+        }
+
+        info!("Cached actor '{}' version {} at {}", actor.name, version, cache_path.display());
         Ok(())
     }
 
-    fn compute_actor_hash(&self, actor: &Actor) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(&actor.name);
-        match &actor.source {
-            ActorSource::Path(path_source) => {
-                hasher.update("path:");
-                hasher.update(&path_source.path);
-            }
-            ActorSource::Git(repo) => {
-                hasher.update("git:");
-                hasher.update(repo.git.as_str());
-                if let Some(git_ref) = &repo.git_ref {
-                    match git_ref {
-                        GitRef::Branch(branch) => hasher.update(format!("branch:{branch}")),
-                        GitRef::Tag(tag) => hasher.update(format!("tag:{tag}")),
-                        GitRef::Rev(rev) => hasher.update(format!("rev:{rev}")),
-                    }
-                }
-                if let Some(sub_dir) = &repo.sub_dir {
-                    hasher.update("sub_dir:");
-                    hasher.update(sub_dir);
-                }
-            }
-        }
-        hex::encode(hasher.finalize())
-    }
 
     async fn build_actor(
         &self,
@@ -744,12 +726,6 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
-    async fn test_actor_loader_creation() {
-        let loader = ActorLoader::new(None);
-        assert!(loader.is_ok());
-    }
-
-    #[tokio::test]
     async fn test_build_successful_actor() {
         let loader = ActorLoader::new(None).unwrap();
         let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -838,9 +814,13 @@ mod tests {
             required_spawn_with: vec![],
         };
 
+        // Create a fake manifest directory
+        let manifest_dir = temp_dir.path().join("manifest_dir");
+        std::fs::create_dir_all(&manifest_dir).unwrap();
+        
         // Cache the actor
         loader
-            .cache_actor(&actor, "test:actor", "1.0.0", test_wasm)
+            .cache_actor(&actor, "test:actor", "1.0.0", test_wasm, &manifest_dir)
             .await
             .unwrap();
 
@@ -884,7 +864,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_actor_hash_computation() {
-        let loader = ActorLoader::new(None).unwrap();
+        let _loader = ActorLoader::new(None).unwrap();
 
         let actor1 = Actor {
             name: "test".to_string(),
@@ -906,14 +886,14 @@ mod tests {
             required_spawn_with: vec![],
         };
 
-        let hash1 = loader.compute_actor_hash(&actor1);
-        let hash2 = loader.compute_actor_hash(&actor2);
+        let hash1 = compute_source_hash(&actor1.source);
+        let hash2 = compute_source_hash(&actor2.source);
 
         // Different paths should produce different hashes
         assert_ne!(hash1, hash2);
 
         // Same actor should produce same hash
-        let hash1_again = loader.compute_actor_hash(&actor1);
+        let hash1_again = compute_source_hash(&actor1.source);
         assert_eq!(hash1, hash1_again);
     }
 
@@ -986,7 +966,7 @@ mod tests {
     async fn test_hash_differs_for_path_vs_git_sources() {
         use url::Url;
 
-        let loader = ActorLoader::new(None).unwrap();
+        let _loader = ActorLoader::new(None).unwrap();
 
         let path_actor = Actor {
             name: "test".to_string(),
@@ -1010,8 +990,8 @@ mod tests {
             required_spawn_with: vec![],
         };
 
-        let path_hash = loader.compute_actor_hash(&path_actor);
-        let git_hash = loader.compute_actor_hash(&git_actor);
+        let path_hash = compute_source_hash(&path_actor.source);
+        let git_hash = compute_source_hash(&git_actor.source);
 
         // Different source types should produce different hashes
         assert_ne!(path_hash, git_hash);
