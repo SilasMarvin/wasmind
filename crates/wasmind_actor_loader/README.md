@@ -31,6 +31,6 @@ Dynamic loading and dependency resolution system for Wasmind WASM actor componen
 
 ## Links
 
-- **📚 [Wasmind Book](../../docs/)** - Complete system documentation
+- **📚 [Wasmind Book](https://silasmarvin.github.io/wasmind/)** - Complete system documentation
 - **⚙️ [Configuration Guide](../Wasmind_config/)** - Actor configuration reference
 - **📖 [API Documentation](https://docs.rs/Wasmind_actor_loader)** - Complete API reference

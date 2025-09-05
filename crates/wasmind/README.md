@@ -12,10 +12,10 @@ The Wasmind core library handles:
 - **Scope Management**: Organizes actors into hierarchical scopes for coordination
 - **System Coordination**: Manages actor readiness, spawning, and shutdown across the entire system
 
-This is a library crate for building applications - for conceptual understanding of actors, scopes, and message passing, see the [Wasmind Book](../../docs/concepts.md).
+This is a library crate for building applications - for conceptual understanding of actors, scopes, and message passing, see the [Wasmind Book](https://silasmarvin.github.io/wasmind/concepts.html).
 
 ## Links
 
-- **📚 [Wasmind Book](../../docs/)** - Complete user and developer guides
+- **📚 [Wasmind Book](https://silasmarvin.github.io/wasmind/)** - Complete user and developer guides
 - **💻 [Wasmind_cli](../Wasmind_cli/)** - Reference implementation showing how to use this library
 - **📖 [API Documentation](https://docs.rs/Wasmind)** - Complete API reference

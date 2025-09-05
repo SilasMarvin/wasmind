@@ -72,7 +72,7 @@ wasmind_cli -c path/to/your/config.toml
 
 - Study `example_configs/` - Ready-to-run sample configurations
 - Explore `../../actors/` - Available actor implementations you can use
-- Build custom actors - see [Creating Actors Guide](../../docs/creating-actors/) (TODO: link to mdbook section)
+- Build custom actors - see [Creating Actors Guide](https://silasmarvin.github.io/wasmind/developer-guide/building-actors.html)
 - See the [Configuration Guide](../wasmind_config/) for creating custom setups
 
 ### Debugging Configurations
@@ -154,6 +154,6 @@ The example configurations show different patterns you can use, but you're free 
 
 ## Links
 
-- **📚 [Wasmind Book](../../docs/)** - Complete user guides and concepts
+- **📚 [Wasmind Book](https://silasmarvin.github.io/wasmind/)** - Complete user guides and concepts
 - **⚙️ [Configuration Guide](../wasmind_config/)** - Detailed configuration reference  
 - **🎭 [Actor Examples](../../actors/)** - Available actors and their capabilities

@@ -20,7 +20,7 @@
 
 **Want to try Wasmind?** Check out [wasmind_cli](crates/wasmind_cli/) - a CLI application built with Wasmind that demonstrates actor-based AI development workflows (including Claude Code-style interactions).
 
-**Want to build with Wasmind?** Continue reading or jump to the [Developer Guide](docs/developer-guide/) to start building your own actors and systems.
+**Want to build with Wasmind?** Continue reading or jump to the [Developer Guide](https://silasmarvin.github.io/wasmind/developer-guide/) to start building your own actors and systems.
 
 ## What is Wasmind?
 
@@ -67,7 +67,7 @@ For detailed information about specific actors, see their individual READMEs.
 
 ## Documentation
 
-- **📚 [Wasmind Book](docs/)** - Comprehensive user and developer guides
+- **📚 [Wasmind Book](https://silasmarvin.github.io/wasmind/)** - Comprehensive user and developer guides
 - **⚙️ [Configuration Guide](crates/wasmind_config/README.md)** - Complete configuration reference
 - **🎭 [Example Actor Documentation](actors/)** - Individual actor guides and APIs
 - **💻 [CLI Documentation](crates/wasmind_cli/README.md)** - Command-line interface guide
@@ -78,7 +78,7 @@ We welcome contributions to Wasmind! Whether you're building new actors, improvi
 
 - **🐛 Found a bug?** [Open an issue](https://github.com/SilasMarvin/Wasmind/issues)
 - **💡 Have a feature idea?** [Start a discussion](https://github.com/SilasMarvin/Wasmind/issues)
-- **🛠️ Want to contribute code?** See our [Developer Guide](docs/developer-guide/) to get started
+- **🛠️ Want to contribute code?** See our [Developer Guide](https://silasmarvin.github.io/wasmind/developer-guide/) to get started
 
 All contributions, big and small, are appreciated!
 

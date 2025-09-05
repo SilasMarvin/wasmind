@@ -20,7 +20,7 @@ In Wasmind, every actor is a WebAssembly component that:
 
 ## The Actor Interface Contract
 
-Every Wasmind actor must implement the `actor` interface defined in Wasmind's [world.wit](https://github.com/SilasMarvin/wasmind/blob/main/crates/wasmind_actor_bindings/wit/world.wit). Here's what that looks like:
+Every Wasmind actor must implement the `actor` interface defined in Wasmind's [world.wit](https://github.com/SilasMarvin/wasmind/blob/main/crates/wasmind_actor_bindings/wit/world.wit). WIT (WebAssembly Interface Types) is the interface definition language that specifies how components communicate - think of it as similar to Protocol Buffers or GraphQL schemas. Here's what that looks like:
 
 ```wit
 // From world.wit - the core actor interface
@@ -52,7 +52,7 @@ record message-envelope {
 }
 ```
 
-**Scope** is a 6-character string that identifies which agent an actor belongs to. This enables Wasmind's multi-agent coordination - actors in different scopes represent different agents working on different tasks.
+**Scope** is a 6-character string that identifies which agent an actor belongs to. This enables Wasmind's multi-agent coordination - actors in different scopes represent different agents working on different tasks. For example, you might have one agent (scope `agent1`) handling user questions while another agent (scope `agent2`) processes files in the background.
 
 ## Host-Provided Capabilities
 
@@ -66,7 +66,7 @@ interface messaging {
 ```
 How actors communicate with each other - no direct function calls, only message passing.
 
-Note that when called this function creates a `MessageEnevelope` with the `from-scope` as the actors scope and a random 6-character id for the message and broadcasts it to all actors.
+Note that when called this function creates a `MessageEnvelope` with the `from-scope` as the actors scope and a random 6-character id for the message and broadcasts it to all actors.
 
 ### 📝 **Logging**
 ```wit
@@ -80,49 +80,92 @@ Structured logging that integrates with the host's logging system.
 ### 🌐 **HTTP Requests**
 ```wit
 interface http {
+    record headers {
+        headers: list<tuple<string, string>>
+    }
+    
+    variant request-error {
+        network-error(string),
+        timeout,
+        invalid-url(string),
+        builder-error(string),
+    }
+    
+    record response {
+        status: u16,
+        headers: headers,
+        body: list<u8>,
+    }
+    
     resource request {
         constructor(method: string, url: string);
         header: func(key: string, value: string) -> request;
+        headers: func(headers: headers) -> request;
         body: func(body: list<u8>) -> request;
         timeout: func(seconds: u32) -> request;
         retry: func(max-attempts: u32, base-delay-ms: u64) -> request;
+        retry-on-status-codes: func(codes: list<u16>) -> request;
         send: func() -> result<response, request-error>;
     }
 }
 ```
-Full HTTP client with retry logic, timeouts, and error handling.
+Full HTTP client with retry logic, timeouts, error handling, and configurable retry status codes.
 
 ### ⚡ **Command Execution**
 ```wit
 interface command {
+    variant exit-status {
+        exited(u8),
+        signaled(u8),
+        failed-to-start(string),
+        timeout-expired,
+    }
+
+    record command-output {
+        stdout: list<u8>,
+        stderr: list<u8>,
+        status: exit-status,
+        stdout-truncated: bool,
+        stderr-truncated: bool,
+    }
+
     resource cmd {
         constructor(command: string);
         args: func(args: list<string>) -> cmd;
         current-dir: func(dir: string) -> cmd;
         timeout: func(seconds: u32) -> cmd;
+        max-output-bytes: func(bytes: u32) -> cmd;
+        env: func(key: string, value: string) -> cmd;
+        env-clear: func() -> cmd;
         run: func() -> result<command-output, string>;
     }
 }
 ```
-Execute system commands with fine-grained control over execution environment.
+Execute system commands with fine-grained control over execution environment, output limits, and environment variables.
 
 ### 🏗️ **Agent Management**
 ```wit
 interface agent {
     spawn-agent: func(actor-ids: list<string>, agent-name: string) -> result<scope, string>;
     get-parent-scope: func() -> option<scope>;
+    get-parent-scope-of: func(scope: scope) -> option<scope>;
 }
 ```
-Spawn new agents and navigate the agent hierarchy.
+Spawn new agents and navigate the agent hierarchy. Query parent relationships for any scope.
 
 ### 💻 **Host Information**
 ```wit
 interface host-info {
+    record os-info {
+        os: string,
+        arch: string,
+    }
+    
     get-host-working-directory: func() -> string;
     get-host-os-info: func() -> os-info;
 }
 ```
-Access to real host environment information.
+Access to real host environment information including OS type and architecture.
 
 ## The Complete World Definition
 
@@ -191,7 +234,7 @@ This WebAssembly component architecture enables powerful security capabilities:
 **Current Capabilities:**
 Actors currently have access to:
 - Full HTTP client functionality
-- System command execution via bash interface
+- System command execution with environment control
 - Host file system (restrictions planned)
 - Structured logging
 - Message broadcasting

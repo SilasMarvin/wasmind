@@ -12,15 +12,7 @@ use wasmind::actors::MessageEnvelope;
 
 use super::textarea::LLMTextAreaComponent;
 
-const SPLASH_TITLE: &str = r#"             ▆         ▆
-            ▐█  █   █  █▌
-            ▐█         █▌
-            ▐█ ▐█▄▁▄█▌ █▌
-               ▐█ ▀ █▌ 
-
-
-
-▗▖ ▗▖ ▗▄▖  ▗▄▄▖▗▖  ▗▖▗▄▄▄▖▗▖  ▗▖▗▄▄▄ 
+const SPLASH_TITLE: &str = r#"▗▖ ▗▖ ▗▄▖  ▗▄▄▖▗▖  ▗▖▗▄▄▄▖▗▖  ▗▖▗▄▄▄ 
 ▐▌ ▐▌▐▌ ▐▌▐▌   ▐▛▚▞▜▌  █  ▐▛▚▖▐▌▐▌  █
 ▐▌ ▐▌▐▛▀▜▌ ▝▀▚▖▐▌  ▐▌  █  ▐▌ ▝▜▌▐▌  █
 ▐▙█▟▌▐▌ ▐▌▗▄▄▞▘▐▌  ▐▌▗▄█▄▖▐▌  ▐▌▐▙▄▄▀"#;

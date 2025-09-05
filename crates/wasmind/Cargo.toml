@@ -48,7 +48,3 @@ tuirealm = { version = "3", default-features = false, features = [ "derive", "cr
 serde_yaml = "0.9"
 tempfile = "3"
 tui-textarea = "^0.7"
-
-[dev-dependencies]
-pathdiff = "0.2"
-wiremock = "0.6"
