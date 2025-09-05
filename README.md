@@ -1,5 +1,5 @@
 <div align="center">
-<pre style="background: transparent; border: none; font-family: monospace; font-size: 14px; line-height: 1.2;">
+<pre style="background: transparent !important; border: 2px solid var(--color-border-default, #d1d5db); border-radius: 12px; padding: 20px; font-family: monospace; font-size: 14px; line-height: 1.2;">
 ░██       ░██    ░███      ░██████   ░███     ░███ ░██████░███    ░██ ░███████   
 ░██       ░██   ░██░██    ░██   ░██  ░████   ░████   ░██  ░████   ░██ ░██   ░██  
 ░██  ░██  ░██  ░██  ░██  ░██         ░██░██ ░██░██   ░██  ░██░██  ░██ ░██    ░██ 
