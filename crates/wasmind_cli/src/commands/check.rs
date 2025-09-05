@@ -43,8 +43,9 @@ pub async fn show_status(config_path: Option<PathBuf>) -> TuiResult<()> {
     );
     println!();
 
-    // Use wasmind_actor_loader to resolve dependencies
-    let resolver = DependencyResolver::default();
+    // Use wasmind_actor_loader to resolve dependencies with persistent cache
+    let cache_dir = wasmind::wasmind_config::get_actors_cache_dir()?;
+    let resolver = DependencyResolver::with_persistent_cache(cache_dir)?;
     let resolved_actors = match resolver
         .resolve_all(config.actors.clone(), config.actor_overrides.clone())
         .await

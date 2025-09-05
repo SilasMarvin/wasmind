@@ -55,6 +55,7 @@ A hierarchical agent coordination system demonstrating:
 - **Rust/Cargo** - Required to build and install the CLI
 - **Docker** - Required to run the LiteLLM model proxy for AI model routing  
 - **cargo-component** - Required to build WASM actor components (`cargo install cargo-component`)
+- **wasm32-wasip1 target** - Required for building WebAssembly actors (`rustup target add wasm32-wasip1`)
 
 ### Installation
 

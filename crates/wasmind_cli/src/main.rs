@@ -99,7 +99,8 @@ async fn main() -> TuiResult<()> {
         let tui_config = crate::config::TuiConfig::from_config(&config)?.parse()?;
 
         // Load the actors
-        let actor_loader = wasmind::wasmind_actor_loader::ActorLoader::new(None)?;
+        let cache_dir = wasmind::wasmind_config::get_actors_cache_dir()?;
+        let actor_loader = wasmind::wasmind_actor_loader::ActorLoader::new(cache_dir)?;
         let loaded_actors = actor_loader
             .load_actors(config.actors, config.actor_overrides)
             .await?;

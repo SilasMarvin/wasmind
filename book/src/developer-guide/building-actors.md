@@ -16,6 +16,7 @@ Make sure you have:
 - Basic familiarity with Rust
 - Understanding of Wasmind's [core concepts](../concepts.md)
 - Read [Actors as WebAssembly Components](./webassembly-components.md) to understand the foundational architecture
+- The `wasm32-wasip1` target installed (`rustup target add wasm32-wasip1`) - this is required for building WebAssembly actors
 
 ## Project Setup
 

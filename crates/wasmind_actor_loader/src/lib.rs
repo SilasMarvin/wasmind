@@ -265,12 +265,7 @@ pub struct ActorLoader {
 }
 
 impl ActorLoader {
-    pub fn new(cache_dir: Option<PathBuf>) -> Result<Self> {
-        let cache_dir = match cache_dir {
-            Some(cache_dir) => cache_dir,
-            None => wasmind_config::get_cache_dir()?.join("actors"),
-        };
-
+    pub fn new(cache_dir: PathBuf) -> Result<Self> {
         Ok(Self {
             cache_dir,
             external_cache: Arc::new(ExternalDependencyCache::new(
@@ -295,7 +290,7 @@ impl ActorLoader {
         // Phase 1: Resolve all dependencies
         #[cfg(feature = "progress-output")]
         println!("Resolving actor dependencies...");
-        let resolver = dependency_resolver::DependencyResolver::with_cache(
+        let resolver = dependency_resolver::DependencyResolver::new(
             self.external_cache.clone(),
             Some(self.cache_dir.clone()),
         );
@@ -746,7 +741,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_successful_actor() {
-        let loader = ActorLoader::new(None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let loader = ActorLoader::new(temp_dir.path().to_path_buf()).unwrap();
         let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("test_actors")
             .join("buildable_simple");
@@ -771,7 +767,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_failing_actor() {
-        let loader = ActorLoader::new(None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let loader = ActorLoader::new(temp_dir.path().to_path_buf()).unwrap();
         let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("test_actors")
             .join("buildable_fail");
@@ -798,7 +795,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_actor_version_success() {
-        let loader = ActorLoader::new(None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let loader = ActorLoader::new(temp_dir.path().to_path_buf()).unwrap();
         let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("test_actors")
             .join("buildable_simple");
@@ -810,7 +808,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_actor_version_nonexistent() {
-        let loader = ActorLoader::new(None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let loader = ActorLoader::new(temp_dir.path().to_path_buf()).unwrap();
         let nonexistent_path = PathBuf::from("/nonexistent/path");
 
         let result = loader.get_actor_version(&nonexistent_path).await;
@@ -820,7 +819,7 @@ mod tests {
     #[tokio::test]
     async fn test_cache_and_load_actor() {
         let temp_dir = TempDir::new().unwrap();
-        let loader = ActorLoader::new(Some(temp_dir.path().to_path_buf())).unwrap();
+        let loader = ActorLoader::new(temp_dir.path().to_path_buf()).unwrap();
 
         let test_wasm = b"fake wasm content";
         let actor = Actor {
@@ -856,7 +855,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_wasm_file_discovery() {
-        let loader = ActorLoader::new(None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let loader = ActorLoader::new(temp_dir.path().to_path_buf()).unwrap();
         let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("test_actors")
             .join("buildable_simple");
@@ -883,7 +883,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_actor_hash_computation() {
-        let _loader = ActorLoader::new(None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let _loader = ActorLoader::new(temp_dir.path().to_path_buf()).unwrap();
 
         let actor1 = Actor {
             name: "test".to_string(),
@@ -919,7 +920,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_local_path_actor_builds_in_place() {
         let temp_cache_dir = TempDir::new().unwrap();
-        let loader = ActorLoader::new(Some(temp_cache_dir.path().to_path_buf())).unwrap();
+        let loader = ActorLoader::new(temp_cache_dir.path().to_path_buf()).unwrap();
 
         let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("test_actors")
@@ -955,7 +956,7 @@ mod tests {
     #[tokio::test]
     async fn test_git_vs_path_source_behavior() {
         let temp_cache_dir = TempDir::new().unwrap();
-        let loader = ActorLoader::new(Some(temp_cache_dir.path().to_path_buf())).unwrap();
+        let loader = ActorLoader::new(temp_cache_dir.path().to_path_buf()).unwrap();
 
         let test_actor_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("test_actors")
@@ -985,7 +986,8 @@ mod tests {
     async fn test_hash_differs_for_path_vs_git_sources() {
         use url::Url;
 
-        let _loader = ActorLoader::new(None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let _loader = ActorLoader::new(temp_dir.path().to_path_buf()).unwrap();
 
         let path_actor = Actor {
             name: "test".to_string(),
@@ -1040,7 +1042,8 @@ mod tests {
         fs::write(workspace_target.join("my_actor.wasm"), b"workspace_build").unwrap();
         fs::write(deep_target.join("my_actor.wasm"), b"package_build").unwrap();
 
-        let loader = ActorLoader::new(None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let loader = ActorLoader::new(temp_dir.path().to_path_buf()).unwrap();
         let result = loader
             .find_target_with_wasm(&build_path, "my_actor.wasm", root, "test_actor")
             .await;

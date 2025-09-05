@@ -7,6 +7,12 @@ async fn test_dependency_resolver_uses_cached_manifest() {
     use wasmind_actor_loader::dependency_resolver::DependencyResolver;
     use wasmind_actor_loader::utils::compute_source_hash;
 
+    // Ensure DEV_MODE is not set for this test so cache is used
+    // Note: remove_var is marked unsafe but is safe in single-threaded test context
+    unsafe {
+        std::env::remove_var("DEV_MODE");
+    }
+
     // Create a cache directory with a pre-cached manifest
     let cache_dir = TempDir::new().unwrap();
 
@@ -33,7 +39,7 @@ required_spawn_with = ["dep1", "dep2"]
     fs::write(cache_path.join("Wasmind.toml"), manifest_content).unwrap();
 
     // Create a resolver with the cache directory
-    let resolver = DependencyResolver::with_cache(
+    let resolver = DependencyResolver::new(
         std::sync::Arc::new(
             wasmind_actor_loader::ExternalDependencyCache::new(TempDir::new().unwrap()).unwrap(),
         ),

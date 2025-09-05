@@ -148,16 +148,24 @@ impl Default for DependencyResolver {
 
 impl DependencyResolver {
     /// Constructor for ActorLoader to reuse its external cache
-    pub fn with_cache(
-        external_cache: Arc<ExternalDependencyCache>,
-        cache_dir: Option<PathBuf>,
-    ) -> Self {
+    pub fn new(external_cache: Arc<ExternalDependencyCache>, cache_dir: Option<PathBuf>) -> Self {
         Self {
             resolved: HashMap::new(),
             resolution_stack: Vec::new(),
             external_cache,
             cache_dir,
         }
+    }
+
+    /// Create a resolver with persistent caching using specified cache directory
+    pub fn with_persistent_cache(cache_dir: PathBuf) -> crate::Result<Self> {
+        use crate::{ExternalDependencyCache, TempDirSnafu};
+        use snafu::ResultExt;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().context(TempDirSnafu)?;
+        let external_cache = Arc::new(ExternalDependencyCache::new(temp_dir)?);
+        Ok(Self::new(external_cache, Some(cache_dir)))
     }
 
     /// Resolve all actors and their dependencies

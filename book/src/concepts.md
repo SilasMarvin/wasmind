@@ -2,7 +2,11 @@
 
 Understanding Wasmind requires grasping four key concepts: **Actors**, **Agents**, **Messages**, and **Scopes**. These work together to create a flexible system for building multi-agent AI workflows.
 
-TODO: Diagram!
+<div align="center">
+  <img src="wasmind-diagram.png" alt="Wasmind Architecture: Orchestrator coordinating multiple agents with message passing" width="600">
+</div>
+
+*The Wasmind architecture showing how actors, agents, messages, and scopes work together. Each agent contains different types of actors that communicate through message passing.*
 
 ## Actors
 

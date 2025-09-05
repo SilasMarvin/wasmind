@@ -40,7 +40,7 @@ source = { path = "./helper" }
     fs::write(cache_path.join("Wasmind.toml"), manifest_content).unwrap();
 
     // Create a resolver with the cache directory
-    let resolver = DependencyResolver::with_cache(
+    let resolver = DependencyResolver::new(
         std::sync::Arc::new(
             wasmind_actor_loader::ExternalDependencyCache::new(TempDir::new().unwrap()).unwrap(),
         ),

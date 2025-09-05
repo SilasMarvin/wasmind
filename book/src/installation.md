@@ -15,6 +15,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Update to latest stable
 rustup update stable
 rustup default stable
+
+# Add WebAssembly target for building actors
+rustup target add wasm32-wasip1
 ```
 
 ### 2. Install the Wasmind CLI
@@ -49,6 +52,7 @@ wasmind_cli --help
 docker --version
 cargo component --version
 rustc --version  # Should be 1.70+
+rustup target list | grep wasm32-wasip1  # Should show "wasm32-wasip1 (installed)"
 ```
 
 You should see help output and version numbers for all commands.
@@ -57,7 +61,7 @@ You should see help output and version numbers for all commands.
 
 If you want to **build custom actors** or extend Wasmind:
 
-> **Note**: Follow all the steps in the "For Users" section above first - the installation requirements are the same. `cargo-component` automatically installs the necessary WebAssembly targets.
+> **Note**: Follow all the steps in the "For Users" section above first - the installation requirements are the same, including the `wasm32-wasip1` target which is required for building WebAssembly actors.
 
 ## Next Steps
 

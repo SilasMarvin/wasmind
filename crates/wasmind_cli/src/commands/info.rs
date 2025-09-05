@@ -16,6 +16,7 @@ pub fn show_info() -> TuiResult<()> {
     } else {
         println!("Config file: {} (not found)", config_file.display());
     }
+    println!("Note: Use -c <PATH> to specify a custom config file");
 
     // Show cache directory
     let cache_dir = wasmind::wasmind_config::get_cache_dir()?;
@@ -34,9 +35,11 @@ pub fn show_info() -> TuiResult<()> {
         println!("Actor cache: {} (empty)", actors_cache_dir.display());
     }
 
-    // Show log file location
+    // Show logging information
     println!();
     let log_file = wasmind::wasmind_config::get_log_file_path()?;
+    let current_log_level = std::env::var("WASMIND_LOG").unwrap_or_else(|_| "info".to_string());
+    
     if log_file.exists() {
         println!("Log file: {} (exists)", log_file.display());
         if let Ok(metadata) = std::fs::metadata(&log_file) {
@@ -45,7 +48,10 @@ pub fn show_info() -> TuiResult<()> {
     } else {
         println!("Log file: {} (not created yet)", log_file.display());
     }
+    println!("Log level: {}", current_log_level);
     println!("Note: Use --log-file <PATH> to specify a custom log location");
+    println!("      Set WASMIND_LOG environment variable to change log level");
+    println!("      Examples: WASMIND_LOG=debug, WASMIND_LOG=trace, WASMIND_LOG=warn");
 
     Ok(())
 }

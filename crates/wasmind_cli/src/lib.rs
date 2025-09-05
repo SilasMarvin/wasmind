@@ -90,8 +90,11 @@ pub fn init_logger_with_rotation<P: AsRef<std::path::Path>>(
     // This is a known issue with tracing-rolling-file - we need to keep the guard alive
     std::mem::forget(_guard);
 
-    // Create filter that excludes cranelift debug logs in debug builds
-    let env_filter = EnvFilter::from_env("WASMIND_LOG")
+    // Create filter with info as default, excluding cranelift debug logs
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(tracing::level_filters::LevelFilter::INFO.into())
+        .with_env_var("WASMIND_LOG")
+        .from_env_lossy()
         .add_directive("cranelift_codegen=info".parse().unwrap())
         .add_directive("wasmtime_cranelift=info".parse().unwrap())
         .add_directive("wasmtime=info".parse().unwrap());
