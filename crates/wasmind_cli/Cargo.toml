@@ -3,6 +3,8 @@ name = "wasmind_cli"
 version = "0.1.0"
 
 description = "Command-line interface for Wasmind AI agent coordination system"
+keywords = ["cli", "ai", "agents", "wasm", "terminal"]
+categories = ["command-line-utilities"]
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true
@@ -19,8 +21,8 @@ snafu = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
-wasmind = { path = "../wasmind" }
-wasmind_actor_utils = { path = "../wasmind_actor_utils" }
+wasmind = { version = "0.1.0", path = "../wasmind" }
+wasmind_actor_utils = { version = "0.1.0", path = "../wasmind_actor_utils" }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 
@@ -36,6 +38,7 @@ serde_json = { workspace = true }
 reqwest = { workspace = true }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
+tracing-rolling-file = { version = "0.1.3", features = ["non-blocking"] }
 futures = "0.3.31"
 libc = "0.2"
 ratatui = { version = "0.29", features = ["unstable-rendered-line-info", "unstable-widget-ref"] }

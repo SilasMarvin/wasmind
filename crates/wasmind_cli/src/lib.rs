@@ -1,4 +1,5 @@
 use snafu::{ResultExt, Snafu};
+use tracing_rolling_file::*;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub mod commands;
@@ -56,17 +57,38 @@ pub enum Error {
 pub type TuiResult<T> = Result<T, Error>;
 
 pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) -> TuiResult<()> {
+    init_logger_with_rotation(log_path, 100, 5)
+}
+
+pub fn init_logger_with_rotation<P: AsRef<std::path::Path>>(
+    log_path: P,
+    max_file_size_mb: usize,
+    max_file_count: usize,
+) -> TuiResult<()> {
     // Create parent directory if it doesn't exist
     if let Some(parent) = log_path.as_ref().parent() {
         std::fs::create_dir_all(parent).context(IoSnafu)?;
     }
 
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(log_path)
-        .expect("Unable to open log file");
+    let log_path_str = log_path.as_ref().to_string_lossy().to_string();
+
+    // Create rolling file appender with size limits
+    let rolling_condition =
+        RollingConditionBase::new().max_size((max_file_size_mb * 1024 * 1024) as u64); // Convert MB to bytes
+
+    let file_appender =
+        RollingFileAppenderBase::new(&log_path_str, rolling_condition, max_file_count).map_err(
+            |e| Error::Whatever {
+                message: format!("Failed to create rolling file appender: {}", e),
+                source: Some(Box::new(e)),
+            },
+        )?;
+
+    let (non_blocking, _guard) = file_appender.get_non_blocking_appender();
+
+    // Store the guard to prevent it from being dropped
+    // This is a known issue with tracing-rolling-file - we need to keep the guard alive
+    std::mem::forget(_guard);
 
     // Create filter that excludes cranelift debug logs in debug builds
     let env_filter = EnvFilter::from_env("WASMIND_LOG")
@@ -78,7 +100,7 @@ pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) -> TuiResul
         .with(env_filter)
         .with(
             fmt::layer()
-                .with_writer(file)
+                .with_writer(non_blocking)
                 .with_ansi(false)
                 .with_target(true)
                 .with_level(true)

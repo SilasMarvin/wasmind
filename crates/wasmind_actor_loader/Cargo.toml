@@ -18,7 +18,7 @@ snafu = { workspace = true }
 url = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-wasmind_config = { path = "../wasmind_config" }
+wasmind_config = { version = "0.1.0", path = "../wasmind_config" }
 tempfile = { workspace = true }
 futures = "0.3"
 tracing = "0.1"

@@ -5,8 +5,8 @@ use std::sync::Arc;
 use tokio::fs;
 use tracing::info;
 
-use crate::utils::compute_source_hash;
 use crate::ExternalDependencyCache;
+use crate::utils::compute_source_hash;
 use wasmind_config::{Actor, ActorManifest, ActorSource};
 
 /// Detailed information for conflicting sources error
@@ -331,17 +331,25 @@ impl DependencyResolver {
     ) -> Result<ActorManifest> {
         // Check if DEV_MODE is enabled
         let is_dev_mode = std::env::var("DEV_MODE").is_ok();
-        
+
         // Try to load from build cache first (unless in dev mode)
         if !is_dev_mode {
             if let Some(manifest) = self.check_build_cache_for_manifest(actor).await? {
-                info!("Manifest cache HIT: Found cached manifest for '{}' from {}", logical_name, source_to_string(&actor.source));
+                info!(
+                    "Manifest cache HIT: Found cached manifest for '{}' from {}",
+                    logical_name,
+                    source_to_string(&actor.source)
+                );
                 return Ok(manifest);
             }
         }
-        
+
         // Load from source if not cached
-        info!("Manifest cache MISS: Loading manifest for '{}' from source {}", logical_name, source_to_string(&actor.source));
+        info!(
+            "Manifest cache MISS: Loading manifest for '{}' from source {}",
+            logical_name,
+            source_to_string(&actor.source)
+        );
         let manifest = load_manifest_for_source(&actor.source, &self.external_cache)
             .await
             .map_err(|e| Error::ManifestLoad {
@@ -358,47 +366,51 @@ impl DependencyResolver {
 
         Ok(manifest)
     }
-    
+
     /// Check if manifest is available in the build cache
-    async fn check_build_cache_for_manifest(
-        &self,
-        actor: &Actor,
-    ) -> Result<Option<ActorManifest>> {
+    async fn check_build_cache_for_manifest(&self, actor: &Actor) -> Result<Option<ActorManifest>> {
         // Only check cache if cache_dir is configured
         let cache_dir = match &self.cache_dir {
             Some(dir) => dir,
             None => return Ok(None),
         };
-        
+
         let source_hash = compute_source_hash(&actor.source);
-        let cached_manifest_path = cache_dir
-            .join(&source_hash)
-            .join("Wasmind.toml");
-        
+        let cached_manifest_path = cache_dir.join(&source_hash).join("Wasmind.toml");
+
         if cached_manifest_path.exists() {
-            info!("Build cache HIT: Found manifest for source {} at {}", source_to_string(&actor.source), cached_manifest_path.display());
+            info!(
+                "Build cache HIT: Found manifest for source {} at {}",
+                source_to_string(&actor.source),
+                cached_manifest_path.display()
+            );
             // Load the cached manifest
-            let manifest_content = fs::read_to_string(&cached_manifest_path)
-                .await
-                .map_err(|e| Error::ManifestLoad {
+            let manifest_content =
+                fs::read_to_string(&cached_manifest_path)
+                    .await
+                    .map_err(|e| Error::ManifestLoad {
+                        logical_name: actor.name.clone(),
+                        source_path: format!("cached: {}", cached_manifest_path.display()),
+                        message: e.to_string(),
+                        location: snafu::Location::default(),
+                    })?;
+
+            let manifest: ActorManifest =
+                toml::from_str(&manifest_content).map_err(|e| Error::ManifestLoad {
                     logical_name: actor.name.clone(),
                     source_path: format!("cached: {}", cached_manifest_path.display()),
                     message: e.to_string(),
                     location: snafu::Location::default(),
                 })?;
-            
-            let manifest: ActorManifest = toml::from_str(&manifest_content)
-                .map_err(|e| Error::ManifestLoad {
-                    logical_name: actor.name.clone(),
-                    source_path: format!("cached: {}", cached_manifest_path.display()),
-                    message: e.to_string(),
-                    location: snafu::Location::default(),
-                })?;
-            
+
             return Ok(Some(manifest));
         }
-        
-        info!("Build cache MISS: No manifest found for source {} at {}", source_to_string(&actor.source), cache_dir.join(&source_hash).display());
+
+        info!(
+            "Build cache MISS: No manifest found for source {} at {}",
+            source_to_string(&actor.source),
+            cache_dir.join(&source_hash).display()
+        );
         Ok(None)
     }
 

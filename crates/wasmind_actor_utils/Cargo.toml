@@ -15,9 +15,9 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 rand = "0.9"
 
-wasmind_llm_types = { path = "../wasmind_llm_types" }
-wasmind_actor_utils_common_messages = { path = "../wasmind_actor_utils_common_messages" }
-wasmind_actor_utils_macros = { path = "../wasmind_actor_utils_macros", optional = true }
+wasmind_llm_types = { version = "0.1.0", path = "../wasmind_llm_types" }
+wasmind_actor_utils_common_messages = { version = "0.1.0", path = "../wasmind_actor_utils_common_messages" }
+wasmind_actor_utils_macros = { version = "0.1.0", path = "../wasmind_actor_utils_macros", optional = true }
 
 [features]
 default = []

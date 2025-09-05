@@ -3,6 +3,8 @@ name = "wasmind"
 version = "0.1.0"
 
 description = "Core actor-based coordination runtime for AI agent workflows"
+keywords = ["ai", "agents", "wasm", "actor-model", "coordination"]
+categories = ["development-tools", "wasm"]
 repository.workspace = true
 readme.workspace = true
 edition.workspace = true
@@ -24,10 +26,10 @@ wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 snafu = { workspace = true }
 
-wasmind_actor_loader = { path = "../wasmind_actor_loader" }
-wasmind_config = { path = "../wasmind_config" }
-wasmind_llm_types = { path = "../wasmind_llm_types" }
-wasmind_actor_utils = { path = "../wasmind_actor_utils" }
+wasmind_actor_loader = { version = "0.1.0", path = "../wasmind_actor_loader" }
+wasmind_config = { version = "0.1.0", path = "../wasmind_config" }
+wasmind_llm_types = { version = "0.1.0", path = "../wasmind_llm_types" }
+wasmind_actor_utils = { version = "0.1.0", path = "../wasmind_actor_utils" }
 
 rand = "0.9"
 throbber-widgets-tui = "0.8"

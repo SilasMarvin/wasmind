@@ -105,7 +105,7 @@ Wasmind is fundamentally different - it's a full actor-based coordination system
 
 MCP is great for "one assistant, many tools" architectures. Wasmind enables entirely new architectures like swarms of specialized agents, hierarchical delegation networks, and massively parallel problem-solving systems that would be impossible to express in MCP's client-server model.
 
-**Bonus**: MCP can actually be wrapped as a Wasmind actor! This enables using an MCP tool in Wasmind: ([TODO: MCP actor implementation](actors/mcp_client/))
+**Bonus**: MCP can actually be wrapped as a Wasmind actor!
 
 ### Why actors?
 
