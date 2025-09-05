@@ -17,8 +17,8 @@ use tokio::fs;
 use tokio::process::Command;
 use tracing::{info, warn};
 
+use crate::utils::{compute_git_source_hash, compute_source_hash};
 use wasmind_config::{Actor, ActorSource, GitRef};
-use crate::utils::{compute_source_hash, compute_git_source_hash};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -163,11 +163,15 @@ impl ExternalDependencyCache {
             if let Some(existing_path) = cache.get(&cache_key)
                 && existing_path.exists()
             {
-                info!("Git cache HIT: Using cached repository {} at {}", git_source.git, existing_path.display());
+                info!(
+                    "Git cache HIT: Using cached repository {} at {}",
+                    git_source.git,
+                    existing_path.display()
+                );
                 return Ok(existing_path.clone());
             }
         }
-        
+
         info!("Git cache MISS: Cloning repository {}", git_source.git);
 
         // Clone and cache
@@ -410,8 +414,10 @@ impl ActorLoader {
                 );
 
                 // Build in the specified directory
+                // Search backwards up to the root. This is somewhat hacky but path should really
+                // only be used for local development
                 let wasm_path = self
-                    .build_actor(build_path, build_path, &actor.name)
+                    .build_actor(build_path, Path::new("/"), &actor.name)
                     .await?;
 
                 // Get version from build directory
@@ -498,7 +504,11 @@ impl ActorLoader {
         let wasm_path = cache_path.join("actor.wasm");
 
         if metadata_path.exists() && wasm_path.exists() {
-            info!("Cache HIT: Found cached actor '{}' at {}", actor.name, cache_path.display());
+            info!(
+                "Cache HIT: Found cached actor '{}' at {}",
+                actor.name,
+                cache_path.display()
+            );
             // Read metadata
             let metadata_content = fs::read_to_string(&metadata_path).await.context(IoSnafu {
                 path: Some(metadata_path),
@@ -530,7 +540,11 @@ impl ActorLoader {
             }));
         }
 
-        info!("Cache MISS: No cached actor '{}' found at {}", actor.name, cache_path.display());
+        info!(
+            "Cache MISS: No cached actor '{}' found at {}",
+            actor.name,
+            cache_path.display()
+        );
         Ok(None)
     }
 
@@ -574,11 +588,12 @@ impl ActorLoader {
         // Copy Wasmind.toml to cache
         let source_manifest_path = manifest_dir.join("Wasmind.toml");
         if source_manifest_path.exists() {
-            let manifest_content = fs::read_to_string(&source_manifest_path)
-                .await
-                .context(IoSnafu {
-                    path: Some(source_manifest_path.clone()),
-                })?;
+            let manifest_content =
+                fs::read_to_string(&source_manifest_path)
+                    .await
+                    .context(IoSnafu {
+                        path: Some(source_manifest_path.clone()),
+                    })?;
             let cached_manifest_path = cache_path.join("Wasmind.toml");
             fs::write(&cached_manifest_path, manifest_content)
                 .await
@@ -587,10 +602,14 @@ impl ActorLoader {
                 })?;
         }
 
-        info!("Cached actor '{}' version {} at {}", actor.name, version, cache_path.display());
+        info!(
+            "Cached actor '{}' version {} at {}",
+            actor.name,
+            version,
+            cache_path.display()
+        );
         Ok(())
     }
-
 
     async fn build_actor(
         &self,
@@ -817,7 +836,7 @@ mod tests {
         // Create a fake manifest directory
         let manifest_dir = temp_dir.path().join("manifest_dir");
         std::fs::create_dir_all(&manifest_dir).unwrap();
-        
+
         // Cache the actor
         loader
             .cache_actor(&actor, "test:actor", "1.0.0", test_wasm, &manifest_dir)

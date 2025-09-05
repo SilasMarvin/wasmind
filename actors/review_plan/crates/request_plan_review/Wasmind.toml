@@ -1,5 +1,5 @@
 actor_id = "wasmind:request_plan_review"
 
 [dependencies.rpr__review_plan]
-source = { path = "../../crates/review_plan" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/review_plan/crates/review_plan" }
 

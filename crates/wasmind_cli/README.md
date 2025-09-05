@@ -27,6 +27,13 @@ The wasmind_cli provides a flexible TUI for running any wasmind actor configurat
 
 We've included sample configurations to help you get started:
 
+### 💬 **Basic Assistant** (`example_configs/assistant.toml`)
+A simple AI assistant configuration - perfect for getting started with Wasmind:
+- **Single assistant actor** - minimal setup with just one AI assistant
+- **Ready to use** - pre-configured with sensible defaults
+- **Easy to extend** - add more actors and tools as needed
+- **Great starting point** - understand the basics before moving to complex multi-agent systems
+
 ### 🔍 **Code Edit Approval Workflow** (`example_configs/code_with_experts.toml`)
 A collaborative code editing system where any code edit request triggers validation by configurable expert agents:
 - **Type checking expert** - validates Python typing standards before code changes are applied
@@ -58,6 +65,9 @@ cargo install wasmind_cli --locked
 ### Run Example Configurations
 
 ```bash
+# Basic assistant (great for getting started!)
+wasmind_cli -c example_configs/assistant.toml
+
 # Code edit approval workflow
 wasmind_cli -c example_configs/code_with_experts.toml
 

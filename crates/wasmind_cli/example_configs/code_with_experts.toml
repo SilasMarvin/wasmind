@@ -30,10 +30,10 @@ starting_actors = ["root_assistant", "file_interaction_with_approval", "execute_
 ##############################
 
 [actors.execute_bash]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/execute_bash" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/execute_bash" }
 
 [actors.file_interaction_with_approval]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/code_with_experts/crates/file_interaction_with_approval" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/code_with_experts/crates/file_interaction_with_approval" }
 
 [actors.file_interaction_with_approval.config.approvers]
 python_typechecker = ["python_typechecker_assistant", "expert_file_reader"]
@@ -41,13 +41,13 @@ python_bestpractices = ["python_bestpractices_assistant", "expert_file_reader"]
 repo_architect = ["repo_architect_assistant", "expert_file_reader", "execute_bash"]
 
 [actors.expert_file_reader]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction/crates/file_interaction_actor" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/file_interaction/crates/file_interaction_actor" }
 
 [actors.expert_file_reader.config]
 allow_edits = false
 
 [actors.conversation_compaction]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/conversation_compaction" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/conversation_compaction" }
 
 [actors.conversation_compaction.config]
 model_name = "gemini-2.5-flash"
@@ -59,7 +59,7 @@ token_threshold = 50000
 ##############################
 
 [actors.python_typechecker_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [actors.python_typechecker_assistant.config]
 model_name = "gemini-2.5-flash"
@@ -133,7 +133,7 @@ Based on your analysis, your review must culminate in a call to either the `appr
 '''
 
 [actors.python_bestpractices_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [actors.python_bestpractices_assistant.config]
 model_name = "gemini-2.5-flash"
@@ -204,7 +204,7 @@ You MUST follow this procedure for every `git diff` you receive:
 '''
 
 [actors.repo_architect_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [actors.repo_architect_assistant.config]
 model_name = "gemini-2.5-flash"
@@ -278,7 +278,7 @@ You MUST follow this procedure for every `git diff` you receive:
 ##############################
 
 [actors.root_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [actors.root_assistant.config]
 model_name = "gemini-2.5-flash"

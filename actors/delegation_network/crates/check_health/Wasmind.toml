@@ -1,7 +1,7 @@
 actor_id = "wasmind:check_health"
 
 [dependencies.check_health_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.check_health_assistant.config]
 require_tool_call = true
@@ -45,7 +45,7 @@ guidelines = '''
 '''
 
 [dependencies.flag_issue]
-source = { path = "../../crates/flag_issue" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/flag_issue" }
 
 [dependencies.report_normal] 
-source = { path = "../../crates/report_normal" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/report_normal" }

@@ -1,7 +1,7 @@
 actor_id = "wasmind_code_with_experts:file_interaction_with_approval"
 
 [dependencies.hcwe_approve]
-source = { path = "../../crates/approve" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/code_with_experts/crates/approve" }
 
 [dependencies.hcwe_request_changes]
-source = { path = "../../crates/request_changes" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/code_with_experts/crates/request_changes" }

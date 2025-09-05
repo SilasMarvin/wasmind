@@ -31,7 +31,7 @@ required_spawn_with = [
 # --- Main Manager Assistant Actor ---
 # This is the core LLM-powered brain of the Main Manager.
 [dependencies.main_manager_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.main_manager_assistant.config.system_prompt.defaults]
 identity = '''
@@ -86,7 +86,7 @@ You MUST follow this procedure for every request:
 # --- Main Manager's Plan Review Tool ---
 # This tool allows the manager to have its generated plans reviewed by another specialized agent.
 [dependencies.main_manager_request_plan_review]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan/crates/request_plan_review" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/review_plan/crates/request_plan_review" }
 
 [dependencies.main_manager_request_plan_review.config.reviewers]
 manager_perspective_reviewer_assistant = ["manager_perspective_reviewer_assistant", "read_file", "execute_bash"]
@@ -101,7 +101,7 @@ strategic_plan_advisor_assistant = ["strategic_plan_advisor_assistant", "read_fi
 # ===================================================================
 
 [dependencies.sub_manager_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.sub_manager_assistant.config]
 require_tool_call = true
@@ -163,7 +163,7 @@ You MUST follow this procedure for every project assigned to you:
 
 # --- Sub Manager's Plan Review Tool ---
 [dependencies.sub_manager_request_plan_review]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan/crates/request_plan_review" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/review_plan/crates/request_plan_review" }
 
 [dependencies.sub_manager_request_plan_review.config.reviewers]
 manager_perspective_reviewer_assistant = ["manager_perspective_reviewer_assistant", "read_file", "execute_bash"]
@@ -180,7 +180,7 @@ strategic_plan_advisor_assistant = ["strategic_plan_advisor_assistant", "read_fi
 # --- Worker Assistant Actor ---
 # The core LLM-powered brain of the Worker agent.
 [dependencies.worker_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.worker_assistant.config]
 require_tool_call = true
@@ -231,7 +231,7 @@ You MUST follow this procedure for every objective you receive:
 
 # --- Worker Interact with Files and Edit with Approval ---
 [dependencies.worker_file_interaction_with_approval]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/code_with_experts/crates/file_interaction_with_approval" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/code_with_experts/crates/file_interaction_with_approval" }
 
 [dependencies.worker_file_interaction_with_approval.config.approvers]
 idiomatic_code_approver_advisor = ["idiomatic_code_approver_assistant", "read_file", "execute_bash"]
@@ -240,7 +240,7 @@ correctness_logic_approver = ["correctness_logic_approver_assistant", "read_file
 
 # --- Sub Manager's Plan Review Tool ---
 [dependencies.worker_request_plan_review]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/review_plan/crates/request_plan_review" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/review_plan/crates/request_plan_review" }
 
 [dependencies.worker_request_plan_review.config.reviewers]
 code_reuse_advisor_assistant = ["code_reuse_advisor_assistant", "read_file", "execute_bash"]
@@ -257,7 +257,7 @@ idiomatic_code_advisor_assistant = ["idiomatic_code_advisor_assistant", "read_fi
 # The primary tool for delegation. It defines which sets of actors 
 # (toolkits) can be spawned for Sub Managers and Workers.
 [dependencies.spawn_agent]
-source = { path = "../../crates/spawn_agent" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/spawn_agent" }
 
 [dependencies.spawn_agent.config]
 sub_manager_actors = ["sub_manager_assistant", "spawn_agent", "send_message", "send_manager_message", "wait", "check_health", "complete", "sub_manager_request_plan_review"]
@@ -265,37 +265,37 @@ worker_actors = ["worker_assistant", "execute_bash", "worker_file_interaction_wi
 
 # --- Communication Tools ---
 [dependencies.send_message]
-source = { path = "../../crates/send_message" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/send_message" }
 
 [dependencies.send_manager_message]
-source = { path = "../../crates/send_manager_message" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/send_manager_message" }
 
 # --- Planning and Synchronization Tools ---
 [dependencies.planner]
-source = { path = "../../crates/planner" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/planner" }
 
 [dependencies.wait]
-source = { path = "../../crates/wait" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/wait" }
 
 # --- Health Check Tool ---
 [dependencies.check_health]
-source = { path = "../../crates/check_health" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/check_health" }
 
 [dependencies.check_health.config]
 check_interval = 60
 
 # --- File Reading Tool (does not allow writes) ---
 [dependencies.read_file]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/file_interaction/crates/file_interaction_actor" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/file_interaction/crates/file_interaction_actor" }
 allow_edits = false
 
 # --- Completion Tool ---
 [dependencies.complete]
-source = { path = "../../crates/complete" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/complete" }
 
 # --- Execute Bash Tool ---
 [dependencies.execute_bash]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/execute_bash" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/execute_bash" }
 
 # ===================================================================
 # ==                5. UTILITY & SUPPORT ACTORS                  ==
@@ -306,7 +306,7 @@ source = { path = "/Users/silasmarvin/github/wasmind/actors/execute_bash" }
 # --- Conversation Compaction Actor ---
 # A background service to manage and compact long conversation histories.
 [dependencies.conversation_compaction]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/conversation_compaction" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/conversation_compaction" }
 auto_spawn = true
 
 # ===================================================================
@@ -324,7 +324,7 @@ auto_spawn = true
 #            delegation rules (the "Prime Directive").
 # -------------------------------------------------------------------
 [dependencies.manager_perspective_reviewer_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.manager_perspective_reviewer_assistant.config]
 require_tool_call = true
@@ -370,7 +370,7 @@ Plan adheres to all Wasmind architectural principles.
 #            focusing on logic, efficiency, and completeness.
 # -------------------------------------------------------------------
 [dependencies.strategic_plan_advisor_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.strategic_plan_advisor_assistant.config]
 require_tool_call = true
@@ -416,7 +416,7 @@ No strategic flaws or inefficiencies identified.
 #            existing functionality.
 # -------------------------------------------------------------------
 [dependencies.code_reuse_advisor_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.code_reuse_advisor_assistant.config]
 require_tool_call = true
@@ -461,7 +461,7 @@ No clear evidence of code duplication found.
 #            specific coding conventions and architectural patterns.
 # -------------------------------------------------------------------
 [dependencies.idiomatic_code_advisor_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.idiomatic_code_advisor_assistant.config]
 require_tool_call = true
@@ -515,7 +515,7 @@ Plan appears consistent with observed coding conventions.
 #      unique style, conventions, and architectural patterns.
 # -------------------------------------------------------------------
 [dependencies.idiomatic_code_approver_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.idiomatic_code_approver_assistant.config.system_prompt.defaults]
 identity = '''
@@ -557,7 +557,7 @@ You MUST conclude your work by calling either the `approve` or `request_changes`
 #      does not reinvent existing functionality.
 # -------------------------------------------------------------------
 [dependencies.redundancy_approver_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.redundancy_approver_assistant.config.system_prompt.defaults]
 identity = '''
@@ -595,7 +595,7 @@ You MUST conclude your work by calling either the `approve` or `request_changes`
 #      correctly implements the task's logic and is free of bugs.
 # -------------------------------------------------------------------
 [dependencies.correctness_logic_approver_assistant]
-source = { path = "/Users/silasmarvin/github/wasmind/actors/assistant" }
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
 
 [dependencies.correctness_logic_approver_assistant.config.system_prompt.defaults]
 identity = '''
