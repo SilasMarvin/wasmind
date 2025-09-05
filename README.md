@@ -11,8 +11,12 @@
 </p>
 
 <p align="center">
-| <a href=""><b>Documentation</b></a> | <a href="https://postgresml.org/blog"><b>Why Wasmind</b></a> | <a href="https://discord.gg/DmyJP3qJ7U"><b>FAQ</b></a> |
+| <a href="https://silasmarvin.github.io/wasmind/"><b>Documentation</b></a> | <a href="#what-is-wasmind"><b>Why Wasmind</b></a> | <a href="#faq"><b>FAQ</b></a> |
 </p>
+
+<div align="center">
+  <img src="wasmind-diagram.png" alt="Wasmind Architecture: Orchestrator coordinating multiple agents with message passing" width="600">
+</div>
 
 ---
 
