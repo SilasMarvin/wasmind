@@ -17,6 +17,8 @@ Wasmind is an **actor-based system** for building AI agent workflows. Instead of
   <img src="wasmind-diagram.png" alt="Wasmind Architecture: Orchestrator coordinating multiple agents with message passing" width="600">
 </div>
 
+*A simplified architecture diagram showing the Wasmind orchestrator coordinating multiple agents through message passing. Each agent contains different types of actors (Assistant, Tool, etc.) that handle specific capabilities.*
+
 ## Why Choose Wasmind?
 
 ### 🏗️ **Modular by Design**
