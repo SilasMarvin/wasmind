@@ -14,10 +14,6 @@
 | <a href="https://silasmarvin.github.io/wasmind/"><b>Documentation</b></a> | <a href="#what-is-wasmind"><b>Why Wasmind</b></a> | <a href="#faq"><b>FAQ</b></a> |
 </p>
 
-<div align="center">
-  <img src="wasmind-diagram.png" alt="Wasmind Architecture: Orchestrator coordinating multiple agents with message passing" width="600">
-</div>
-
 ---
 
 ## Getting Started
@@ -38,6 +34,10 @@ Wasmind is an **actor-based system** for building AI agent workflows. Instead of
 **Actors communicate through structured message passing**, enabling coordination at any scale - from simple workflows to networks of thousands of coordinated agents.
 
 > **Important**: Wasmind is NOT a Claude Code alternative—it's the infrastructure that makes projects like Claude Code possible. Our `wasmind_cli` demonstrates how to build Claude Code-style interactions using Wasmind's coordination primitives.
+
+<div align="center">
+  <img width="1053" height="751" alt="wasmind-diagram" src="https://github.com/user-attachments/assets/e9792ef0-9241-4e20-8278-752ea37ca1da" />
+</div>
 
 ## What You Can Build with Wasmind
 
