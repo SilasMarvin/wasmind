@@ -1,4 +1,6 @@
-use crate::{TuiResult, utils};
+use snafu::ResultExt;
+
+use crate::{IoSnafu, TuiResult, utils};
 
 pub fn clean_cache() -> TuiResult<()> {
     let actors_cache_dir = wasmind::wasmind_config::get_actors_cache_dir()?;
@@ -11,7 +13,7 @@ pub fn clean_cache() -> TuiResult<()> {
     println!("Cleaning actor cache at {}...", actors_cache_dir.display());
 
     // Remove the entire actors cache directory
-    utils::remove_actors_cache(&actors_cache_dir)?;
+    utils::remove_actors_cache(&actors_cache_dir).context(IoSnafu)?;
 
     println!("✓ Actor cache cleaned successfully");
     Ok(())

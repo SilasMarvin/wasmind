@@ -1,4 +1,6 @@
-use crate::{TuiResult, utils};
+use snafu::ResultExt;
+
+use crate::{IoSnafu, TuiResult, utils};
 
 pub fn show_info() -> TuiResult<()> {
     println!("Wasmind Configuration and Cache Information");
@@ -20,7 +22,7 @@ pub fn show_info() -> TuiResult<()> {
     println!("\nCache directory: {}", cache_dir.display());
 
     let actors_cache_dir = wasmind::wasmind_config::get_actors_cache_dir()?;
-    let cached_count = utils::count_cached_actors(&actors_cache_dir)?;
+    let cached_count = utils::count_cached_actors(&actors_cache_dir).context(IoSnafu)?;
 
     if cached_count > 0 {
         println!(

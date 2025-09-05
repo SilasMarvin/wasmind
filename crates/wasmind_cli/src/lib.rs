@@ -1,4 +1,4 @@
-use snafu::Snafu;
+use snafu::{ResultExt, Snafu};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 pub mod commands;
@@ -39,7 +39,7 @@ pub enum Error {
         source: litellm_manager::LiteLLMError,
     },
 
-    #[snafu(transparent)]
+    #[snafu(display("IO error: {}", source))]
     Io {
         #[snafu(source)]
         source: std::io::Error,
@@ -55,10 +55,10 @@ pub enum Error {
 
 pub type TuiResult<T> = Result<T, Error>;
 
-pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
+pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) -> TuiResult<()> {
     // Create parent directory if it doesn't exist
     if let Some(parent) = log_path.as_ref().parent() {
-        let _ = std::fs::create_dir_all(parent);
+        std::fs::create_dir_all(parent).context(IoSnafu)?;
     }
 
     let file = std::fs::OpenOptions::new()
@@ -87,4 +87,6 @@ pub fn init_logger_with_path<P: AsRef<std::path::Path>>(log_path: P) {
                 .compact(),
         )
         .init();
+
+    Ok(())
 }

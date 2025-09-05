@@ -22,7 +22,7 @@ async fn main() -> TuiResult<()> {
     } else {
         wasmind::wasmind_config::get_log_file_path()?
     };
-    init_logger_with_path(log_file);
+    init_logger_with_path(log_file)?;
 
     // Handle info, clean, and status commands before loading configuration
     match &cli.command {

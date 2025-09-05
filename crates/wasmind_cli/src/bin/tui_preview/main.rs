@@ -23,7 +23,7 @@ enum Scenario {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_logger_with_path("log.txt");
+    init_logger_with_path("log.txt").unwrap();
 
     let args = Args::parse();
 
