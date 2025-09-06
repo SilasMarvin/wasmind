@@ -50,7 +50,7 @@ Wasmind can be used for anything but is best at building massively parallel mult
 **Current Demos:**
 - **[Delegation Network](actors/delegation_network/)** - Hierarchical multi-agent coordination system for spawning and managing specialized AI agents (think Claude Code but manager -> sub_manager -> worker agent relations).
 
-TODO: Add demo 
+https://github.com/user-attachments/assets/9a9bc96f-fa0e-4823-b3d7-d48aaf7a3719
 
 Demo's can be ran with the **[wasmind_cli](crates/wasmind_cli/)**
 
