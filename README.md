@@ -52,6 +52,8 @@ Wasmind can be used for anything but is best at building massively parallel mult
 
 https://github.com/user-attachments/assets/9a9bc96f-fa0e-4823-b3d7-d48aaf7a3719
 
+*This is a demo of the Delegation Network in action. Note that the prompts used are not very refined and the system could be massively improved. This is only a demo to show examples of what can be built with Wasmind.*
+
 Demo's can be ran with the **[wasmind_cli](crates/wasmind_cli/)**
 
 ## Documentation
