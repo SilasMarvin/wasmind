@@ -109,7 +109,7 @@ Yes! The CLI (`wasmind_cli`) is just one example of what you can build with Wasm
 
 ### What makes Wasmind good for "massively parallel" systems?
 
-Wasmind's actor model naturally supports thousands of concurrent actors with minimal overhead. The scope system enables hierarchical coordination, message passing is async by default, and WebAssembly provides lightweight isolation. See our demo with 1000+ coordinated agents: TODO.
+Wasmind's actor model naturally supports thousands of concurrent actors with minimal overhead. The scope system enables hierarchical coordination, message passing is async by default, and WebAssembly provides lightweight isolation.
 
 ### Do I need to know Rust to use Wasmind?
 
