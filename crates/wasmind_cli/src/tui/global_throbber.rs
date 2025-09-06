@@ -1,4 +1,5 @@
-use std::sync::{LazyLock, Mutex};
+use parking_lot::Mutex;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use throbber_widgets_tui::ThrobberState;
 
@@ -26,13 +27,13 @@ static GLOBAL_THROBBER: LazyLock<Mutex<GlobalThrobberData>> =
 
 /// Get a clone of the current global throbber state
 pub fn get_current_state() -> ThrobberState {
-    GLOBAL_THROBBER.lock().unwrap().state.clone()
+    GLOBAL_THROBBER.lock().state.clone()
 }
 
 /// Tick the global throbber state if enough time has elapsed
 /// This should only be called from the dashboard's Event::Tick handler
 pub fn tick() {
-    let mut data = GLOBAL_THROBBER.lock().unwrap();
+    let mut data = GLOBAL_THROBBER.lock();
     if data.last_update.elapsed() >= MIN_THROBBER_UPDATE_GAP {
         data.state.calc_next();
         data.last_update = Instant::now();

@@ -7,11 +7,12 @@
 pub mod dependency_resolver;
 pub mod utils;
 
+use parking_lot::Mutex;
 use snafu::{Location, ResultExt, Snafu, ensure, location};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::fs;
 use tokio::process::Command;
@@ -32,7 +33,8 @@ pub enum Error {
 
     #[snafu(display("Failed to deserialize TOML content: {text}"))]
     Toml {
-        source: toml::de::Error,
+        #[snafu(source(from(toml::de::Error, Box::new)))]
+        source: Box<toml::de::Error>,
         text: String,
         #[snafu(implicit)]
         location: Location,
@@ -143,11 +145,11 @@ pub struct ExternalDependencyCache {
 
 impl ExternalDependencyCache {
     /// Create a new external dependency cache with a temporary directory
-    pub fn new(temp_dir: TempDir) -> Result<Self> {
-        Ok(Self {
+    pub fn new(temp_dir: TempDir) -> Self {
+        Self {
             temp_dir,
             cache: Mutex::new(HashMap::new()),
-        })
+        }
     }
 
     /// Load external dependency (git repository) and return the path to the cloned repo
@@ -159,7 +161,7 @@ impl ExternalDependencyCache {
 
         // Check cache first
         {
-            let cache = self.cache.lock().unwrap();
+            let cache = self.cache.lock();
             if let Some(existing_path) = cache.get(&cache_key)
                 && existing_path.exists()
             {
@@ -180,7 +182,7 @@ impl ExternalDependencyCache {
 
         // Update cache
         {
-            let mut cache = self.cache.lock().unwrap();
+            let mut cache = self.cache.lock();
             cache.insert(cache_key, clone_path.clone());
         }
 
@@ -270,7 +272,7 @@ impl ActorLoader {
             cache_dir,
             external_cache: Arc::new(ExternalDependencyCache::new(
                 TempDir::new().context(TempDirSnafu)?,
-            )?),
+            )),
         })
     }
 
@@ -355,6 +357,26 @@ impl ActorLoader {
                     "Please install cargo-component with: cargo install cargo-component".to_string(),
                 location: location!(),
             });
+        }
+
+        // Check for wasm32-wasip1 target
+        if which::which("rustup").is_ok() {
+            let mut cmd = Command::new("rustup");
+            cmd.arg("target").arg("list").arg("--installed");
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+            let output = cmd.output().await.context(CommandSnafu)?;
+
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if !stdout.contains("wasm32-wasip1") {
+                    return Err(Error::MissingDependency {
+                        dependency: "wasm32-wasip1 target",
+                        install_message: "Please install the wasm32-wasip1 target with: rustup target add wasm32-wasip1".to_string(),
+                        location: location!(),
+                    });
+                }
+            }
         }
 
         Ok(())

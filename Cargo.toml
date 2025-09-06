@@ -26,6 +26,7 @@ url = "2.5"
 tempfile = "3.8"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "0.9"
+parking_lot = "0.12"
 
 [profile.profiling]
 inherits = "release"

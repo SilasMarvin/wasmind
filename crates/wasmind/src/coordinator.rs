@@ -111,7 +111,7 @@ impl WasmindCoordinator {
             .or_default()
             .insert(msg.from_actor_id.clone());
 
-        if let Some(expected_actors) = self.context.scope_tracking.lock().unwrap().get(&scope) {
+        if let Some(expected_actors) = self.context.scope_tracking.lock().get(&scope) {
             let ready_count = self.ready_actors.get(&scope).map(|s| s.len()).unwrap_or(0);
             let expected_count = expected_actors.len();
 

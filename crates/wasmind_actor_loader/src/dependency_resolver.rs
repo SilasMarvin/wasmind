@@ -133,10 +133,7 @@ impl Default for DependencyResolver {
     fn default() -> Self {
         let temp_dir =
             tempfile::TempDir::new().expect("Failed to create temporary directory for actor cache");
-        let external_cache = Arc::new(
-            ExternalDependencyCache::new(temp_dir)
-                .expect("Failed to create external dependency cache"),
-        );
+        let external_cache = Arc::new(ExternalDependencyCache::new(temp_dir));
         Self {
             resolved: HashMap::new(),
             resolution_stack: Vec::new(),
@@ -164,7 +161,7 @@ impl DependencyResolver {
         use tempfile::TempDir;
 
         let temp_dir = TempDir::new().context(TempDirSnafu)?;
-        let external_cache = Arc::new(ExternalDependencyCache::new(temp_dir)?);
+        let external_cache = Arc::new(ExternalDependencyCache::new(temp_dir));
         Ok(Self::new(external_cache, Some(cache_dir)))
     }
 

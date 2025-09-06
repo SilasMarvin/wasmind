@@ -1,6 +1,7 @@
 use crate::actors::ActorExecutor;
+use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use wasmind_actor_utils::STARTING_SCOPE;
 use wasmind_actor_utils::common_messages::actors::AgentSpawned;
@@ -133,7 +134,7 @@ impl WasmindContext {
         // NOTE: It is important we store the relationship between the child and parent scope
         // before we spawn the children as the children may utilize this info in their new function
         {
-            let mut parents = self.scope_parents.lock().unwrap();
+            let mut parents = self.scope_parents.lock();
             parents.insert(scope.clone(), parent_scope.clone());
         }
 
@@ -164,7 +165,7 @@ impl WasmindContext {
         }
 
         {
-            let mut tracking = self.scope_tracking.lock().unwrap();
+            let mut tracking = self.scope_tracking.lock();
             tracking.insert(scope.clone(), actors_spawned);
         }
 
@@ -211,7 +212,7 @@ impl WasmindContext {
     /// Get the parent scope for a given scope
     /// Returns None if the scope has no parent (root scope)
     pub fn get_parent_scope(&self, scope: Scope) -> Option<Scope> {
-        let parents = self.scope_parents.lock().unwrap();
+        let parents = self.scope_parents.lock();
         parents.get(&scope).cloned().flatten()
     }
 }

@@ -25,6 +25,7 @@ reqwest = { workspace = true }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 snafu = { workspace = true }
+parking_lot = { workspace = true }
 
 wasmind_actor_loader = { version = "0.1.0", path = "../wasmind_actor_loader" }
 wasmind_config = { version = "0.1.0", path = "../wasmind_config" }

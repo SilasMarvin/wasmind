@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, BufReader};
@@ -42,7 +43,7 @@ impl command::HostCmd for ActorState {
         value: String,
     ) -> wasmtime::component::Resource<CommandResource> {
         let cmd = self.table.get(&self_).unwrap();
-        let mut inner = cmd.inner.lock().unwrap();
+        let mut inner = cmd.inner.lock();
         inner.command.env(key, value);
         drop(inner);
 
@@ -54,7 +55,7 @@ impl command::HostCmd for ActorState {
 
     async fn env_clear(&mut self, self_: Resource<CommandResource>) -> Resource<CommandResource> {
         let cmd = self.table.get(&self_).unwrap();
-        let mut inner = cmd.inner.lock().unwrap();
+        let mut inner = cmd.inner.lock();
         inner.command.env_clear();
         drop(inner);
 
@@ -70,7 +71,7 @@ impl command::HostCmd for ActorState {
         args: Vec<String>,
     ) -> Resource<CommandResource> {
         let cmd = self.table.get(&self_).unwrap();
-        let mut inner = cmd.inner.lock().unwrap();
+        let mut inner = cmd.inner.lock();
         inner.command.args(args);
         drop(inner);
 
@@ -86,7 +87,7 @@ impl command::HostCmd for ActorState {
         dir: String,
     ) -> Resource<CommandResource> {
         let cmd = self.table.get(&self_).unwrap();
-        let mut inner = cmd.inner.lock().unwrap();
+        let mut inner = cmd.inner.lock();
         inner.command.current_dir(dir);
         drop(inner);
 
@@ -102,7 +103,7 @@ impl command::HostCmd for ActorState {
         seconds: u32,
     ) -> Resource<CommandResource> {
         let cmd = self.table.get(&self_).unwrap();
-        let mut inner = cmd.inner.lock().unwrap();
+        let mut inner = cmd.inner.lock();
         inner.timeout_seconds = Some(seconds);
         drop(inner);
 
@@ -118,7 +119,7 @@ impl command::HostCmd for ActorState {
         bytes: u32,
     ) -> Resource<CommandResource> {
         let cmd = self.table.get(&self_).unwrap();
-        let mut inner = cmd.inner.lock().unwrap();
+        let mut inner = cmd.inner.lock();
         inner.max_output_bytes = Some(bytes);
         drop(inner);
 
@@ -135,7 +136,7 @@ impl command::HostCmd for ActorState {
         let cmd_resource = self.table.get(&self_).map_err(|e| e.to_string())?;
 
         let (mut new_command, timeout_seconds, max_output_bytes) = {
-            let inner = cmd_resource.inner.lock().unwrap();
+            let inner = cmd_resource.inner.lock();
 
             let program = inner.command.as_std().get_program();
             let mut new_command = Command::new(program);

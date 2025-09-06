@@ -79,7 +79,7 @@ pub fn init_logger_with_rotation<P: AsRef<std::path::Path>>(
     let file_appender =
         RollingFileAppenderBase::new(&log_path_str, rolling_condition, max_file_count).map_err(
             |e| Error::Whatever {
-                message: format!("Failed to create rolling file appender: {}", e),
+                message: format!("Failed to create rolling file appender: {e:?}"),
                 source: Some(Box::new(e)),
             },
         )?;
@@ -88,6 +88,7 @@ pub fn init_logger_with_rotation<P: AsRef<std::path::Path>>(
 
     // Store the guard to prevent it from being dropped
     // This is a known issue with tracing-rolling-file - we need to keep the guard alive
+    // Maybe we should return the guard instead?
     std::mem::forget(_guard);
 
     // Create filter with info as default, excluding cranelift debug logs

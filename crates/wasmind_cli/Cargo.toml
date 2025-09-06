@@ -37,6 +37,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
 tracing = "0.1.41"
+parking_lot = { workspace = true }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
 tracing-rolling-file = { version = "0.1.3", features = ["non-blocking"] }
 futures = "0.3.31"

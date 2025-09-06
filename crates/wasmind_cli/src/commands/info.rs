@@ -48,7 +48,7 @@ pub fn show_info() -> TuiResult<()> {
     } else {
         println!("Log file: {} (not created yet)", log_file.display());
     }
-    println!("Log level: {}", current_log_level);
+    println!("Log level: {current_log_level}");
     println!("Note: Use --log-file <PATH> to specify a custom log location");
     println!("      Set WASMIND_LOG environment variable to change log level");
     println!("      Examples: WASMIND_LOG=debug, WASMIND_LOG=trace, WASMIND_LOG=warn");

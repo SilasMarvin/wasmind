@@ -188,6 +188,7 @@ impl AgentNode {
     }
 
     /// Inserts a new node under the given parent. Returns `true` on success.
+    #[allow(clippy::result_large_err)]
     fn insert(&mut self, parent_scope: &Scope, node: AgentNode) -> Result<(), AgentNode> {
         if let Some(parent_node) = self.find_mut(parent_scope) {
             parent_node.spawned_agents.push(node);

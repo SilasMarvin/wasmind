@@ -52,6 +52,9 @@ async fn main() -> TuiResult<()> {
         }
     }
 
+    println!("Starting Wasmind");
+    println!("It may take a few moments to load actors the first time\n");
+
     // Load configuration
     let config = if let Some(config_path) = cli.config {
         wasmind::wasmind_config::load_from_path(config_path)?

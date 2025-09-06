@@ -40,9 +40,9 @@ required_spawn_with = ["dep1", "dep2"]
 
     // Create a resolver with the cache directory
     let resolver = DependencyResolver::new(
-        std::sync::Arc::new(
-            wasmind_actor_loader::ExternalDependencyCache::new(TempDir::new().unwrap()).unwrap(),
-        ),
+        std::sync::Arc::new(wasmind_actor_loader::ExternalDependencyCache::new(
+            TempDir::new().unwrap(),
+        )),
         Some(cache_dir.path().to_path_buf()),
     );
 

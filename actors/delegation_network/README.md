@@ -4,6 +4,8 @@
 
 The Delegation Network is a collection of actors that enables multi-agent workflows where AI agents can spawn subordinates, delegate tasks, coordinate work, and manage complex projects autonomously.
 
+**IMPORTANT**: This is not a production-ready system. This is an example of the kind of systems that can be built with Wasmind.
+
 ## Overview
 
 The delegation network coordinates multiple AI agents working together on complex tasks. Instead of having a single agent try to handle everything, it enables:
@@ -188,12 +190,12 @@ The delegation network uses several specific assistant actor statuses to coordin
 - The manager assistant resumes working when the subordinate provides a response
 
 **Subordinate-to-Manager Escalation:**
-- When using `send_manager_message` with `wait: true`, the subordinate assistant's status changes to `WaitingForSystemInput`
+- When using `send_manager_message` with `wait: true`, the subordinate assistant's status changes to `WaitingForAgentCoordination`
 - The subordinate assistant stays paused until their manager provides guidance
 - This prevents assistants from getting stuck on blockers or making incorrect assumptions
 
 **Coordination Between Operations:**
-- The `wait` tool changes an assistant's status to `WaitingForSystemInput` between operations
+- The `wait` tool changes an assistant's status to `WaitingForAgentCoordination` between operations
 - Assistants resume working when relevant events occur (task completions, messages, etc.)
 - No need for arbitrary timeouts or polling
 
@@ -201,7 +203,6 @@ The delegation network uses several specific assistant actor statuses to coordin
 
 **Always Available**: Users can interrupt any assistant at any time, regardless of what the assistant is currently doing:
 - Assistants with `WaitingForAgentCoordination` status can be interrupted to provide new direction
-- Assistants with `WaitingForSystemInput` status can receive user input instead of waiting for managers
 - Even assistants with `Processing` status can be interrupted to change course
 
 **Interrupting Delegation Chains**: When users interrupt assistants in the middle of delegation workflows:
@@ -213,7 +214,7 @@ The delegation network uses several specific assistant actor statuses to coordin
 
 **Worker Escalation Flow:**
 1. **Worker assistant** encounters a blocker and uses `send_manager_message` with `wait: true`
-2. **Worker assistant** status changes to `WaitingForSystemInput` (paused)
+2. **Worker assistant** status changes to `WaitingForAgentCoordination` (paused)
 3. **SubManager assistant** receives escalation and provides guidance
 4. **Worker assistant** status changes back to `Processing` and continues work
 
