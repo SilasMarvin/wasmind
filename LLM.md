@@ -5,97 +5,145 @@ This document provides context for LLMs working on the Wasmind codebase.
 
 ## Overview
 Wasmind is a Rust library for orchestrating LLM agents using an actor model architecture. In this system:
-- **Core Library** (`/crates/Wasmind`): Actor orchestration engine and platform
-- **CLI Binary** (`/crates/Wasmind_cli`): Reference implementation and development interface
-- **Example Actors** (`/actors/`): Sample WASM components demonstrating various capabilities
-- **Actors** are WebAssembly (WASM) plugins that handle messages and execute specific tasks
+- **Core Library** (`/crates/wasmind`): Actor orchestration engine and platform
+- **CLI Binary** (`/crates/wasmind_cli`): Reference implementation and full-featured TUI
+- **Example Actors** (`/actors/`): Production-ready WASM components demonstrating various capabilities
+- **Actors** are WebAssembly (WASM) components that handle messages and execute specific tasks
 - **Agents** are groups of actors working together under a shared scope
-- Each actor runs in isolation and communicates via message passing
+- Each actor runs in isolation and communicates via message passing through a central coordinator
 
 ## Architecture
 
 ### Core Components
 
-1. **Actor System**: Based on WASM Component Model (WIT interface)
+1. **WasmindCoordinator**: Central orchestration system (`coordinator.rs`)
+   - Monitors actor lifecycle and system health
+   - Handles actor spawning and agent coordination
+   - Broadcasts system-wide messages and manages replayable messages
+   - Coordinates graceful system shutdown
+
+2. **WasmindContext**: System state management (`context.rs`)
+   - Maintains actor registry and scope tracking
+   - Provides message broadcasting infrastructure
+   - Manages actor spawning and agent relationships
+
+3. **Actor System**: Based on WASM Component Model (WIT interface)
    - Actors implement the `actor` interface defined in `world.wit`
    - Each actor has lifecycle methods: constructor, handle-message, destructor
    - Actors communicate through message envelopes containing type, sender ID, scope, and payload
 
-2. **Message Passing**: Broadcast-based communication
+4. **Message Passing**: Broadcast-based communication with coordination
    - All actors receive all messages via tokio broadcast channels
    - Actors filter messages based on scope and message type
-   - Common message types defined in `Wasmind_actor_utils_common_messages`
+   - Central coordinator manages system-level messages (`ActorReady`, `AllActorsReady`, `Exit`)
+   - Common message types defined in `wasmind_actor_utils_common_messages`
 
-3. **Scopes**: Hierarchical organization of actors
+5. **Scopes**: Hierarchical organization of actors
    - Each actor operates within a scope (6-character string)
    - Agents share a common scope for coordination
    - Starting scope: `000000`
+   - Coordinator tracks expected actors per scope for readiness coordination
 
 ## Directory Structure
 
-### `/crates/Wasmind` - Core Library
+### `/crates/wasmind` - Core Library
 The main orchestration library providing:
-- `Wasmind.rs`: Main entry point with `start_Wasmind()` function
+- `lib.rs`: Main entry point and core error types
+- `coordinator.rs`: Central system coordination and lifecycle management
+- `context.rs`: System state management and actor registry
 - `actors/`: Actor execution traits and manager implementation
   - `manager/`: WASM component instantiation and message routing
-  - `agent.rs`: Agent-level abstractions (currently in transition)
-- `scope.rs`: Scope management
+  - Actor state management for messaging, HTTP, logging, and agent capabilities
+- `scope.rs`: Scope management and hierarchical organization
+- `utils.rs`: Utility functions for ID generation and system operations
 
-### `/actors` - Example Actor Implementations
-Sample WASM actors demonstrating Wasmind's capabilities:
+### `/actors` - Production Actor Implementations
+Production-ready WASM actors demonstrating Wasmind's capabilities:
 
-**Basic Examples:**
-- `assistant/`: LLM chat interface with tool calling
-- `execute_bash/`: System command execution with bash capabilities
+**Core Examples:**
+- `assistant/`: LLM chat interface with comprehensive tool calling
+- `execute_bash/`: System command execution with full bash capabilities
+- `conversation_compaction/`: Conversation history management and compression
 
-**Delegation Network Example:**
-- `/actors/delegation_network/`: Hierarchical agent coordination system
-- Demonstrates: Manager → SubManager → Worker patterns
-- Tools: `spawn_agent`, `send_message`, `send_manager_message`, `planner`, `wait`, `complete`
+**File Interaction:**
+- `file_interaction/`: Complete file management system with read/write capabilities
 
-**Note**: These are examples of what's possible with Wasmind. The platform supports many different actor architectures and use cases.
+**Advanced Multi-Agent Systems:**
+- `delegation_network/`: Hierarchical agent coordination system
+  - Tools: `spawn_agent`, `send_message`, `send_manager_message`, `planner`, `wait`, `complete`
+  - `delegation_network_coordinator`, `check_health`, `flag_issue`, `report_normal`
+  - Demonstrates: Manager → SubManager → Worker patterns with health monitoring
 
-### `/crates/Wasmind_actor_*` - Actor Support Libraries
-- `Wasmind_actor_bindings/`: WIT bindings and interface definitions
-- `Wasmind_actor_loader/`: Dynamic WASM actor loading
-- `Wasmind_actor_utils/`: Common utilities, message types, and macros
-- `Wasmind_actor_utils_macros/`: Procedural macros for actor generation
+- `code_with_experts/`: Collaborative code editing with expert validation
+  - `file_interaction_with_approval`: File operations requiring expert approval
+  - `approve`: Expert approval workflow management
+  - `request_changes`: Change request and validation system
+  - Multi-expert validation before code changes are applied
 
-### `/crates/Wasmind_cli` - Reference Implementation
-Command-line interface and terminal application demonstrating Wasmind usage:
-- `main.rs`: Entry point that loads and starts actors
-- `default_config.toml`: Configuration for example actor setup
-- Serves as development interface and example of what's possible with Wasmind
+- `review_plan/`: Plan review and approval workflows
+  - `review_plan`: Plan analysis and feedback system
+  - `request_plan_review`: Review coordination and management
+
+**Note**: These are production-ready actors that showcase real-world multi-agent coordination patterns.
+
+### `/crates/wasmind_actor_*` - Actor Support Libraries
+- `wasmind_actor_bindings/`: WIT bindings and interface definitions
+- `wasmind_actor_loader/`: Dynamic WASM actor loading with caching system
+- `wasmind_actor_utils/`: Common utilities, message types, and macros
+- `wasmind_actor_utils_macros/`: Procedural macros for actor generation
+- `wasmind_actor_utils_common_messages/`: Standardized message types for actor communication
+
+### `/crates/wasmind_cli` - Production TUI Application
+Full-featured terminal user interface for Wasmind:
+- **Interactive TUI**: Complete terminal interface with multiple views
+  - `tui/components/chat.rs`: Real-time chat interface with agents
+  - `tui/components/dashboard.rs`: System overview and controls
+  - `tui/components/graph/`: Real-time agent relationship visualization
+  - `tui/components/chat_history.rs`: Conversation history management
+- **Example Configurations**: Production-ready setups
+  - `example_configs/assistant.toml`: Simple AI assistant
+  - `example_configs/code_with_experts.toml`: Expert code validation workflow
+  - `example_configs/delegation_network.toml`: Hierarchical agent coordination
+- **Commands**: `info`, `clean`, `check` for system management and debugging
+- **Configuration Management**: Flexible TOML-based actor configuration with LiteLLM integration
 
 ### Other Components
-- `Wasmind_config/`: Configuration management
-- `Wasmind_llm_client/`: LLM client abstractions
+- `wasmind_config/`: Comprehensive configuration management with TOML parsing
+- `wasmind_llm_types/`: LLM type definitions and abstractions for model integration
 
 ## Actor Capabilities
 Actors can import various capabilities through WIT interfaces:
-- **messaging**: ✅ Broadcast messages to other actors
-- **command**: ✅ Execute system commands with full bash capabilities
-- **http**: ✅ HTTP client with automatic retry and exponential backoff
-- **agent**: ✅ Spawn and manage hierarchical agent relationships
-- **logger**: ✅ Structured logging across the system
+- **messaging**: ✅ Broadcast messages to other actors with scope-based filtering
+- **command**: ✅ Execute system commands with full bash capabilities and output capture
+- **http**: ✅ HTTP client with automatic retry, exponential backoff, and comprehensive error handling
+- **agent**: ✅ Spawn and manage hierarchical agent relationships with health monitoring
+- **logger**: ✅ Structured logging with correlation IDs and distributed tracing support
+- **host-info**: ✅ Access to host system information and capabilities
 
 ## Current Implementation Status
-Wasmind is an active development project building a flexible platform for LLM agent systems:
-- ✅ WASM-based actor system with message passing
-- ✅ HTTP client with automatic retry and exponential backoff
-- ✅ Command execution capabilities
-- ✅ Agent spawning and hierarchical relationships
-- ✅ Tool system for actor capabilities
-- 🚧 Growing ecosystem of example actors
+Wasmind is a production-ready platform for building massively parallel AI agent systems:
+- ✅ Full WASM-based actor system with coordinated message passing
+- ✅ Complete TUI application with chat, dashboard, and graph visualization
+- ✅ Production-ready actor examples with real-world coordination patterns
+- ✅ LiteLLM integration for model routing and provider flexibility
+- ✅ Comprehensive configuration management with TOML support
+- ✅ Actor caching system for performance optimization
+- ✅ Health monitoring and system coordination
+- ✅ Multi-agent workflows: delegation networks, expert validation, approval systems
+- ✅ Debugging and troubleshooting tools with structured logging
 
-**Development Note**: Active codebase focused on building the core platform. APIs may evolve as development continues.
+**Production Note**: Wasmind is complete and production-ready, demonstrated by the comprehensive CLI application and actor ecosystem.
 
 ## Key Concepts
-1. **Actor Lifecycle**: Actors are instantiated with a scope, handle messages, and clean up on destruction
-2. **Message Envelopes**: Standardized message format with metadata for routing
-3. **Tool System**: Actors can expose tools/capabilities that LLMs can call
-4. **WASM Isolation**: Each actor runs in its own WASM sandbox for security and stability
-5. **Platform Flexibility**: Supports many different actor architectures and coordination patterns
+1. **Actor Lifecycle**: Actors are instantiated with a scope, send ActorReady signals, handle messages, and coordinate graceful shutdown
+2. **Message Envelopes**: Standardized message format with correlation IDs, scope information, and metadata for distributed tracing
+3. **Coordinator Pattern**: Central WasmindCoordinator manages system lifecycle, health monitoring, and message replay
+4. **Tool System**: Actors expose tools/capabilities that LLMs can call, with automatic serialization and error handling
+5. **WASM Isolation**: Each actor runs in its own WASM sandbox with capability-based security
+6. **Configuration-Driven**: Complete systems built through TOML configuration without code changes
+7. **LiteLLM Integration**: Model-agnostic LLM access through standardized proxy configuration
+8. **Scope-Based Organization**: Hierarchical agent coordination with automatic scope management
+9. **Production TUI**: Full terminal interface with real-time visualization and interaction capabilities
 
 ## Development Context
 
@@ -107,6 +155,8 @@ To build WASM actor components:
 
 **Important**: The `cargo component build` command must be run from within the actor's directory, NOT from the project root. Each actor is built as a separate WASM component.
 
+**Actor Caching**: Wasmind automatically caches compiled actors for performance. Use `wasmind_cli clean` to clear the cache if needed.
+
 Example:
 ```bash
 cd actors/assistant
@@ -115,6 +165,35 @@ cargo component build
 
 This will generate the WASM component in `target/wasm32-wasip1/debug/` directory.
 
+### Running Example Configurations
+Wasmind includes production-ready example configurations:
+
+```bash
+# Simple AI assistant
+wasmind_cli -c example_configs/assistant.toml
+
+# Code editing with expert validation
+wasmind_cli -c example_configs/code_with_experts.toml
+
+# Hierarchical delegation network
+wasmind_cli -c example_configs/delegation_network.toml
+```
+
+### Configuration Debugging
+```bash
+# Validate configuration files
+wasmind_cli check -c path/to/config.toml
+
+# Debug message flow
+WASMIND_LOG=debug wasmind_cli -c config.toml
+
+# System information
+wasmind_cli info
+
+# Clear actor cache
+wasmind_cli clean
+```
+
 ### Adding New Actors
 **Actor Structure:**
 - Each actor: `Cargo.toml`, `Wasmind.toml`, `wit/world.wit`, `src/lib.rs`
@@ -122,14 +201,35 @@ This will generate the WASM component in `target/wasm32-wasip1/debug/` directory
 - Bindings: Auto-generated in `src/bindings.rs`
 
 **Integration:**
-- Add to application configuration as needed
-- Tools defined using `#[derive(tools::macros::Tool)]`
-- Message types in `Wasmind_actor_utils_common_messages`
+- Add to application configuration (TOML files in `example_configs/`)
+- Tools defined using `#[derive(wasmind_actor_utils::tools::macros::Tool)]`
+- Message types in `wasmind_actor_utils_common_messages`
+- Actor capabilities defined in `Wasmind.toml` configuration
+
+**Configuration Integration:**
+```toml
+[actors.my_actor]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/my_actor" }
+
+[actors.my_actor.config]
+model_name = "openai/gpt-4"
+custom_param = "value"
+```
 
 ### Platform Focus
-**Current Examples**: Delegation network demonstrates hierarchical coordination patterns
-**Future Potential**: Many more actor types and coordination patterns possible
-**Core Goal**: Building flexible actor orchestration capabilities
+**Production Examples**: 
+- **Delegation networks**: Hierarchical manager/worker patterns with health monitoring
+- **Expert validation workflows**: Multi-agent code review and approval systems
+- **Interactive assistants**: Full-featured AI assistants with tool access
+- **File management**: Comprehensive file operations with approval workflows
+
+**Architecture Patterns**:
+- Single assistant setups for simple use cases
+- Multi-agent validation and approval systems
+- Hierarchical delegation with manager/sub-manager/worker relationships
+- Real-time collaboration between specialized agents
+
+**Core Achievement**: Production-ready actor orchestration platform with proven scalability
 
 ## Writing Good Comments
 
