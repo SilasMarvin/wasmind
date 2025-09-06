@@ -16,8 +16,6 @@
 | <a href="https://silasmarvin.github.io/wasmind/"><b>Documentation</b></a> | <a href="#what-is-wasmind"><b>Why Wasmind</b></a> | <a href="#faq"><b>FAQ</b></a> |
 </p>
 
----
-
 <img src="./demo.gif" />
 
 *This is a short demo of the wasmind_cli -- a cli application built with Wasmind. Note that the prompts used are not very refined. This is just an example to show what can be built with Wasmind.*
