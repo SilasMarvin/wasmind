@@ -6,9 +6,6 @@ The Assistant Actor is a conversational AI agent that manages chat interactions,
 
 This is just one version of an Assistant that can be used within Wasmind with sane defaults and reasonable interoperability. In reality, anyone can create their own assistant with their own state management and messages.
 
-## Actor ID
-`wasmind:assistant`
-
 ## Quick Reference
 
 **Key Concepts:**

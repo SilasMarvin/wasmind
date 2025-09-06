@@ -4,9 +4,6 @@
 
 This tool actor provides AI agents with the ability to execute bash commands in a controlled, stateless environment. Each command runs in a fresh bash shell with support for all standard shell features including pipes, redirections, and command chaining.
 
-## Actor ID
-`execute_bash`
-
 ## Tools Provided
 
 This actor exposes the following tool to AI agents:

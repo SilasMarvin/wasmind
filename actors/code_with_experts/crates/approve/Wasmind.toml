@@ -1,4 +1,4 @@
-actor_id = "approve"
+actor_id = "wasmind_code_with_experts:approve"
 display_name = "Approve Tool"
 description = "Tool for approving proposed file changes"
 

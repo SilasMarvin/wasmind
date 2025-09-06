@@ -4,9 +4,6 @@
 
 This tool actor enables health analyzer agents to flag problematic behavior in monitored agents. When issues are detected, it interrupts the problematic agent and escalates the issue to their manager for intervention.
 
-## Actor ID
-`flag_issue`
-
 ## Tools Provided
 
 This actor exposes the following tool to AI agents:

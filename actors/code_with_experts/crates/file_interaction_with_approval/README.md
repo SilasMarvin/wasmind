@@ -4,9 +4,6 @@
 
 This actor provides `edit_file` and `read_file` tools with an approval workflow. When edits exceed a configurable size threshold, it automatically spawns expert agents to review changes before applying them.
 
-## Actor ID
-`wasmind_code_with_experts:file_interaction_with_approval`
-
 ## Tools Provided
 
 ### `read_file`

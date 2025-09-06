@@ -4,9 +4,6 @@
 
 This tool actor enables AI agents to create specialized subordinate agents with specific roles and tasks. It supports creating Worker agents for direct task execution, Manager agents for coordination and delegation, and SubManager agents for mid-level project management.
 
-## Actor ID
-`spawn_agent`
-
 ## Tools Provided
 
 This actor exposes the following tool to AI agents:

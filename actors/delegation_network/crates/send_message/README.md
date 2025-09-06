@@ -4,9 +4,6 @@
 
 This tool actor enables AI agents to send messages to subordinate agents they have spawned or are managing. It provides a controlled communication channel for providing guidance, asking for updates, and coordinating work between agents in a delegation hierarchy.
 
-## Actor ID
-`send_message`
-
 ## Tools Provided
 
 This actor exposes the following tool to AI agents:

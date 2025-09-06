@@ -4,9 +4,6 @@
 
 This infrastructure actor monitors and coordinates the delegation network by tracking active agents, their relationships, and preventing invalid operations. It ensures the integrity of the agent hierarchy and provides intelligent guardrails for manager agents. Unlike tool actors, this actor provides coordination and monitoring services rather than exposing tools to AI agents.
 
-## Actor ID
-`delegation_network_coordinator`
-
 ## When You Might Want This Actor
 
 Include this actor in your Wasmind configuration when you need:

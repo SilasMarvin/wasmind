@@ -4,9 +4,6 @@
 
 This tool actor enables AI agents to create structured plans for complex multi-step tasks and systematically track progress. It provides a formal planning framework that helps agents break down large objectives into manageable components with clear status tracking.
 
-## Actor ID
-`planner`
-
 ## Tools Provided
 
 This actor exposes the following tool to AI agents:

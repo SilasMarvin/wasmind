@@ -4,9 +4,6 @@
 
 This tool actor enables AI agents to send messages upward to their direct manager when they need guidance, are blocked, or have critical updates. It provides a structured escalation path for subordinate agents to communicate with their managers in the delegation hierarchy.
 
-## Actor ID
-`send_manager_message`
-
 ## Tools Provided
 
 This actor exposes the following tool to AI agents:

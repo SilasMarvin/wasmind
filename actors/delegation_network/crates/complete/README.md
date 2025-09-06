@@ -4,9 +4,6 @@
 
 This tool actor enables AI agents to formally signal the completion of their assigned tasks. It provides a structured way for agents to report their results, update their status, and notify parent agents in the delegation hierarchy about task outcomes.
 
-## Actor ID
-`complete`
-
 ## Tools Provided
 
 This actor exposes the following tool to AI agents:

@@ -4,9 +4,6 @@
 
 This infrastructure actor monitors AI agent conversations and periodically spawns health analyzer agents to assess agent performance, detect issues, and ensure agents are making appropriate progress on their tasks. It provides automated oversight and quality control for delegation networks. Unlike tool actors, this actor provides monitoring services rather than exposing tools to AI agents.
 
-## Actor ID
-`check_health`
-
 ## When You Might Want This Actor
 
 Include this actor in your Wasmind configuration when you need:

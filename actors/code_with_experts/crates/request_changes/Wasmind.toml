@@ -1,4 +1,4 @@
-actor_id = "request_changes"
+actor_id = "wasmind_code_with_experts:request_changes"
 display_name = "Request Changes Tool"
 description = "Tool for requesting changes to proposed file edits"
 

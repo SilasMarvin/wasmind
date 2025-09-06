@@ -4,9 +4,6 @@
 
 This actor provides the `review_plan` tool used by expert reviewers to provide detailed feedback on submitted task plans. It is automatically spawned as a dependency when plan review is requested and is not intended for standalone use.
 
-## Actor ID
-`rpr__review_plan`
-
 ## Tools Provided
 
 ### `review_plan`

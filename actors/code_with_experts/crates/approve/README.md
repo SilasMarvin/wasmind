@@ -4,9 +4,6 @@
 
 This actor provides the `approve` tool used by expert reviewers to approve proposed file changes. It is automatically spawned as a dependency when expert review is triggered and is not intended for standalone use.
 
-## Actor ID
-`hcwe_approve`
-
 ## Tools Provided
 
 ### `approve`

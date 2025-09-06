@@ -4,9 +4,6 @@
 
 This actor provides the `request_changes` tool used by expert reviewers to request modifications to proposed file changes. It is automatically spawned as a dependency when expert review is triggered and is not intended for standalone use.
 
-## Actor ID
-`hcwe_request_changes`
-
 ## Tools Provided
 
 ### `request_changes`

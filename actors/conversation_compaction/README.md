@@ -4,9 +4,6 @@
 
 The Conversation Compaction Actor automatically monitors token usage and compacts conversation history when it exceeds configured thresholds, preventing context overflow while preserving essential task state through LLM-powered summarization.
 
-## Actor ID
-`wasmind:conversation_compaction`
-
 ## Configuration
 
 ```toml

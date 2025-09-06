@@ -39,7 +39,7 @@ pub fn show_info() -> TuiResult<()> {
     println!();
     let log_file = wasmind::wasmind_config::get_log_file_path()?;
     let current_log_level = std::env::var("WASMIND_LOG").unwrap_or_else(|_| "info".to_string());
-    
+
     if log_file.exists() {
         println!("Log file: {} (exists)", log_file.display());
         if let Ok(metadata) = std::fs::metadata(&log_file) {

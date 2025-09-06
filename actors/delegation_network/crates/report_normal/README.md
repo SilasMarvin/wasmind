@@ -4,9 +4,6 @@
 
 This tool actor enables health analyzer agents to report that a monitored agent is healthy and making normal progress. It provides a clean exit path for health check agents when no issues are detected.
 
-## Actor ID
-`report_normal`
-
 ## Tools Provided
 
 This actor exposes the following tool to AI agents:

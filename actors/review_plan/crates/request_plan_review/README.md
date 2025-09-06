@@ -4,9 +4,6 @@
 
 This actor provides the `request_plan_review` tool that enables AI agents to submit their task plans for expert review before beginning execution. It spawns configured expert agents to provide feedback and consolidates their responses.
 
-## Actor ID
-`wasmind:request_plan_review`
-
 ## Tools Provided
 
 ### `request_plan_review`

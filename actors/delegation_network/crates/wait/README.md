@@ -4,9 +4,6 @@
 
 This tool actor enables AI agents to pause execution and wait for responses from other agents or system events. It provides intelligent timing coordination for multi-agent workflows where sequential operations or synchronization is required.
 
-## Actor ID
-`wait`
-
 ## Tools Provided
 
 This actor exposes the following tool to AI agents:

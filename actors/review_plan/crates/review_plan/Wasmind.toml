@@ -1,4 +1,4 @@
-actor_id = "review_plan"
+actor_id = "wasmind:review_plan"
 display_name = "Review Plan Tool"
 description = "Tool for reviewing and providing feedback on submitted plans"
 
