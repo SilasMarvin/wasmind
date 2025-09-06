@@ -4,8 +4,8 @@ Procedural macros for building Rust actors in the Wasmind actor system. This cra
 
 [![docs.rs](https://docs.rs/wasmind_actor_utils_macros/badge.svg)](https://docs.rs/wasmind_actor_utils_macros)
 
-These macros are re-exported through [`Wasmind_actor_utils`](../Wasmind_actor_utils/) for convenient access when building actors.
+These macros are re-exported through [`wasmind_actor_utils`](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_actor_utils/) for convenient access when building actors.
 
 ## Links
 
-- **[Wasmind_actor_utils](../Wasmind_actor_utils/)** - Main utilities crate for Rust actor development
+- **[wasmind_actor_utils](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_actor_utils/)** - Main utilities crate for Rust actor development

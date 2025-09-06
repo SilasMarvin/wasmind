@@ -8,17 +8,17 @@ No Rust is exported from this crate! It is designed to be included as a componen
 
 ```
 [package.metadata.component.target.dependencies]
-"Wasmind:actor" = "0.1" 
+"wasmind:actor" = "0.1" 
 ```
 
 You can then import these interfaces in your WIT definition. E.G:
 
 ```
 world your-world {
-  import Wasmind:actor/host-info@0.1.0;
-  import Wasmind:actor/messaging@0.1.0;
-  import Wasmind:actor/http@0.1.0;
-  import Wasmind:actor/logger@0.1.0;
+  import wasmind:actor/host-info@0.1.0;
+  import wasmind:actor/messaging@0.1.0;
+  import wasmind:actor/http@0.1.0;
+  import wasmind:actor/logger@0.1.0;
 
   ... your exports
 }
@@ -34,5 +34,5 @@ The WIT definitions specify how actors:
 
 ## Links
 
-- **🔧 [Actor Development Utils](../Wasmind_actor_utils/)** - High-level abstractions for building actors
-- **🎭 [Example Actors](../../actors/)** - Reference implementations using these bindings
+- **🔧 [Actor Development Utils](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_actor_utils/)** - High-level abstractions for building actors
+- **🎭 [Example Actors](https://github.com/silasmarvin/wasmind/tree/main/actors/)** - Reference implementations using these bindings

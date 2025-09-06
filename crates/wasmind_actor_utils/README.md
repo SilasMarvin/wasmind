@@ -9,5 +9,5 @@ It is not required to use the traits, macros, etc... in this crate to build acto
 ## Links
 
 - **📚 [Actor Development Guide](https://silasmarvin.github.io/wasmind/developer-guide/building-actors.html)** - Complete tutorial for building actors
-- **🎭 [Example Actors](../../actors/)** - Reference implementations using these utilities
-- **📖 [API Documentation](https://docs.rs/Wasmind_actor_utils)** - Complete API reference
+- **🎭 [Example Actors](https://github.com/silasmarvin/wasmind/tree/main/actors/)** - Reference implementations using these utilities
+- **📖 [API Documentation](https://docs.rs/wasmind_actor_utils)** - Complete API reference

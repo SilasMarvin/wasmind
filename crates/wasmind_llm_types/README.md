@@ -10,5 +10,5 @@ These types are used throughout the Wasmind actor ecosystem for consistent LLM i
 
 ## Links
 
-- **[Wasmind_actor_utils_common_messages](../Wasmind_actor_utils_common_messages/)** - Common message types that use these LLM types
+- **[wasmind_actor_utils_common_messages](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_actor_utils_common_messages/)** - Common message types that use these LLM types
 - **[LiteLLM](https://www.litellm.ai/)** - Source of many of these type definitions

@@ -16,6 +16,6 @@ This is a library crate for building applications - for conceptual understanding
 
 ## Links
 
-- **📚 [Wasmind Book](https://silasmarvin.github.io/wasmind/)** - Complete user and developer guides
-- **💻 [Wasmind_cli](../Wasmind_cli/)** - Reference implementation showing how to use this library
-- **📖 [API Documentation](https://docs.rs/Wasmind)** - Complete API reference
+- **📚 [wasmind Book](https://silasmarvin.github.io/wasmind/)** - Complete user and developer guides
+- **💻 [wasmind_cli](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_cli/)** - Reference implementation showing how to use this library
+- **📖 [API Documentation](https://docs.rs/wasmind)** - Complete API reference

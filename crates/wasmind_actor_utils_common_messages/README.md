@@ -6,7 +6,7 @@ Common message types for inter-actor communication in the Wasmind actor system. 
 
 ## Important Notes
 
-**If you're building a Rust actor, use [`Wasmind_actor_utils`](../Wasmind_actor_utils/) instead of this crate directly.** This crate is re-exported from `Wasmind_actor_utils` for convenience.
+**If you're building a Rust actor, use [`wasmind_actor_utils`](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_actor_utils/) instead of this crate directly.** This crate is re-exported from `wasmind_actor_utils` for convenience.
 
 **This is not the "end all be all" of messages in Wasmind.** Wasmind can pass any message type that can be represented as `Vec<u8>` bytes - this includes images, binary data, custom formats, literally anything. These common messages are just JSON-serialized text messages that provide convenient, standardized communication patterns for actors.
 
@@ -19,5 +19,5 @@ Common message types for inter-actor communication in the Wasmind actor system. 
 
 ## Links
 
-- **[Wasmind_actor_utils](../Wasmind_actor_utils/)** - Main utilities crate for Rust actor development
-- **[Wasmind_llm_types](../Wasmind_llm_types/)** - LLM type definitions used by these messages
+- **[wasmind_actor_utils](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_actor_utils/)** - Main utilities crate for Rust actor development
+- **[wasmind_llm_types](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_llm_types/)** - LLM type definitions used by these messages

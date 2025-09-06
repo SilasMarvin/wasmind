@@ -84,9 +84,9 @@ wasmind_cli -c path/to/your/config.toml
 ### Create Your Own Actor Configurations
 
 - Study `example_configs/` - Ready-to-run sample configurations
-- Explore `../../actors/` - Available actor implementations you can use
+- Explore the [actors directory](https://github.com/silasmarvin/wasmind/tree/main/actors/) - Available actor implementations you can use
 - Build custom actors - see [Creating Actors Guide](https://silasmarvin.github.io/wasmind/developer-guide/building-actors.html)
-- See the [Configuration Guide](../wasmind_config/) for creating custom setups
+- See the [Configuration Guide](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_config/) for creating custom setups
 
 ### Debugging Configurations
 
@@ -133,7 +133,7 @@ wasmind_cli info
 # Clean the actor cache (removes compiled WASM components)
 # Actors are compiled and cached on first use for faster subsequent loads
 wasmind_cli clean     
-# See [wasmind_actor_loader](../wasmind_actor_loader/) for details on caching
+# See [wasmind_actor_loader](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_actor_loader/) for details on caching
 
 # Validate and debug configuration files
 wasmind_cli check -c example_configs/code_with_experts.toml
@@ -163,10 +163,10 @@ The CLI uses TOML configuration files to define your actor setup. Configurations
 - Actor-specific overrides
 - LLM provider configuration via LiteLLM
 
-The example configurations show different patterns you can use, but you're free to create any actor configuration that suits your needs. See the [Configuration Guide](../wasmind_config/) for detailed reference.
+The example configurations show different patterns you can use, but you're free to create any actor configuration that suits your needs. See the [Configuration Guide](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_config/) for detailed reference.
 
 ## Links
 
-- **📚 [Wasmind Book](https://silasmarvin.github.io/wasmind/)** - Complete user guides and concepts
-- **⚙️ [Configuration Guide](../wasmind_config/)** - Detailed configuration reference  
-- **🎭 [Actor Examples](../../actors/)** - Available actors and their capabilities
+- **📚 [wasmind Book](https://silasmarvin.github.io/wasmind/)** - Complete user guides and concepts
+- **⚙️ [Configuration Guide](https://github.com/silasmarvin/wasmind/tree/main/crates/wasmind_config/)** - Detailed configuration reference  
+- **🎭 [Actor Examples](https://github.com/silasmarvin/wasmind/tree/main/actors/)** - Available actors and their capabilities
