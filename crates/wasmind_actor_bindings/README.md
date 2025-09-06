@@ -2,6 +2,8 @@
 
 WebAssembly Interface Type (WIT) definitions for Wasmind actor communication. This crate contains the interface specifications that define how actors interact with the Wasmind system and each other.
 
+[![docs.rs](https://docs.rs/wasmind_actor_bindings/badge.svg)](https://docs.rs/wasmind_actor_bindings)
+
 No Rust is exported from this crate! It is designed to be included as a component dependency. Add the following lines to your Cargo.toml:
 
 ```

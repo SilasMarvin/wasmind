@@ -2,6 +2,8 @@
 
 Utilities and types for building Rust based Wasmind actors. This crate provides the building blocks that actor developers need: message types, tool abstractions, and development macros.
 
+[![docs.rs](https://docs.rs/wasmind_actor_utils/badge.svg)](https://docs.rs/wasmind_actor_utils)
+
 It is not required to use the traits, macros, etc... in this crate to build actors. This are simply utilites that simplify actor development.
 
 ## Links

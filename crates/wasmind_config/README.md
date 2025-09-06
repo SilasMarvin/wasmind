@@ -1,4 +1,10 @@
-# Wasmind Configuration Specification
+# Wasmind Configuration
+
+Configuration system for Wasmind actors and runtime.
+
+[![docs.rs](https://docs.rs/wasmind_config/badge.svg)](https://docs.rs/wasmind_config)
+
+## Configuration Specification
 
 Wasmind uses [TOML](https://toml.io/) for configuration files. Throughout this documentation, we use TOML's dotted key notation (e.g., `[table.subtable]`) for clarity and consistency, though the inline table syntax is equally valid.
 

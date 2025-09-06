@@ -10,6 +10,8 @@ license = "MIT"
 description = "A modular AI agent coordination system for building massively parallel agentic systems"
 repository = "https://github.com/SilasMarvin/wasmind"
 readme = "README.md"
+homepage = "https://github.com/SilasMarvin/wasmind"
+documentation = "https://docs.rs/wasmind"
 authors = ["Silas Marvin <silas.marvin@dmarvin.net>"]
 
 [workspace.dependencies]

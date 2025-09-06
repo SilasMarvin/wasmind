@@ -2,7 +2,7 @@
 
 The main orchestration library for Wasmind's actor-based system. This crate provides the runtime and coordination primitives for loading and managing WebAssembly actor components.
 
-[![docs.rs](https://docs.rs/Wasmind/badge.svg)](https://docs.rs/Wasmind)
+[![docs.rs](https://docs.rs/wasmind/badge.svg)](https://docs.rs/wasmind)
 
 ## What This Crate Does
 

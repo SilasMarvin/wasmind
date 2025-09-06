@@ -4,7 +4,7 @@ Type definitions and utilities for Large Language Model integration in Wasmind a
 
 The types are designed to be used with [LiteLLM](https://www.litellm.ai/).
 
-[![docs.rs](https://docs.rs/Wasmind_llm_types/badge.svg)](https://docs.rs/Wasmind_llm_types)
+[![docs.rs](https://docs.rs/wasmind_llm_types/badge.svg)](https://docs.rs/wasmind_llm_types)
 
 These types are used throughout the Wasmind actor ecosystem for consistent LLM integration.
 

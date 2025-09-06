@@ -2,7 +2,7 @@
 
 Common message types for inter-actor communication in the Wasmind actor system. This crate provides a collection of standardized message types that make building actors easier.
 
-[![docs.rs](https://docs.rs/Wasmind_actor_utils_common_messages/badge.svg)](https://docs.rs/Wasmind_actor_utils_common_messages)
+[![docs.rs](https://docs.rs/wasmind_actor_utils_common_messages/badge.svg)](https://docs.rs/wasmind_actor_utils_common_messages)
 
 ## Important Notes
 

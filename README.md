@@ -20,6 +20,8 @@
 
 *This is a short demo of the wasmind_cli -- a cli application built with Wasmind. Note that the prompts used are not very refined. This is just an example to show what can be built with Wasmind.*
 
+**NOTE:** Wasmind is an early stage expirmental framework. Please report any bugs or issues you find.
+
 ## Getting Started
 
 **Want to try Wasmind?** Check out [wasmind_cli](crates/wasmind_cli/) - a CLI application built with Wasmind that demonstrates actor-based AI development workflows (including Claude Code-style interactions).

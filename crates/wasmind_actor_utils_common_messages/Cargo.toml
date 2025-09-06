@@ -4,9 +4,12 @@ version = "0.1.0"
 
 description = "Common message types shared between Wasmind actors"
 repository.workspace = true
-readme.workspace = true
+readme = "README.md"
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/wasmind_actor_utils_common_messages"
 
 [lib]
 

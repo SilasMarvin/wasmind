@@ -6,9 +6,11 @@ description = "Command-line interface for Wasmind AI agent coordination system"
 keywords = ["cli", "ai", "agents", "wasm", "terminal"]
 categories = ["command-line-utilities"]
 repository.workspace = true
-readme.workspace = true
+readme = "README.md"
 edition.workspace = true
 license.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/wasmind_cli"
 
 default-run = "wasmind_cli"
 

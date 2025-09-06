@@ -6,9 +6,11 @@ description = "Core actor-based coordination runtime for AI agent workflows"
 keywords = ["ai", "agents", "wasm", "actor-model", "coordination"]
 categories = ["development-tools", "wasm"]
 repository.workspace = true
-readme.workspace = true
+readme = "README.md"
 edition.workspace = true
 license.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/wasmind"
 
 [lib]
 name = "wasmind"

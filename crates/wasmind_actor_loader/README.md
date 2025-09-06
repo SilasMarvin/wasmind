@@ -2,7 +2,7 @@
 
 Dynamic loading and dependency resolution system for Wasmind WASM actor components. This crate handles downloading, building, caching, and loading actors from various sources (local paths, Git repositories, etc.).
 
-[![docs.rs](https://docs.rs/Wasmind_actor_loader/badge.svg)](https://docs.rs/Wasmind_actor_loader)
+[![docs.rs](https://docs.rs/wasmind_actor_loader/badge.svg)](https://docs.rs/wasmind_actor_loader)
 
 ## What This Crate Does
 

@@ -2,6 +2,8 @@
 
 **A command-line interface and terminal application for the Wasmind library**
 
+[![docs.rs](https://docs.rs/wasmind_cli/badge.svg)](https://docs.rs/wasmind_cli)
+
 This CLI provides an interactive terminal user interface for running and managing Wasmind actor configurations. It serves as a general-purpose interface to wasmind's actor-based AI coordination capabilities, allowing you to run any actor setup through an intuitive TUI.
 
 > **Note**: This is a reference implementation showing how to build user interfaces with wasmind. You can run any wasmind actor configuration - we've included some sample configurations to get you started.
