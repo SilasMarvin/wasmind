@@ -20,7 +20,7 @@
 
 <img src="./demo.gif" />
 
-*This is a demo of the Delegation Network in action. Note that the prompts used are not very refined and the system could be massively improved. This is only a demo to show examples of what can be built with Wasmind.*
+*This is a short demo of the wasmind_cli -- a cli application built with Wasmind. Note that the prompts used are not very refined and the system could be massively improved. This is just an example to show what can be built with Wasmind*
 
 ## Getting Started
 
