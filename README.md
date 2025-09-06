@@ -1,12 +1,12 @@
 <div align="center">
-<pre>
-██     ██  █████  ███████ ███    ███ ██ ███    ██ ██████  
-██     ██ ██   ██ ██      ████  ████ ██ ████   ██ ██   ██ 
-██  █  ██ ███████ ███████ ██ ████ ██ ██ ██ ██  ██ ██   ██ 
-██ ███ ██ ██   ██      ██ ██  ██  ██ ██ ██  ██ ██ ██   ██ 
-███ ███  ██   ██ ███████ ██      ██ ██ ██   ████ ██████ 
-</pre>
+   <picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/8b3c11b5-41bd-4857-89fe-7b30492c2997">
+  <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/85ed809c-f21c-4759-a86b-9f78d4d62243">
+  <img alt="Logo" src="" width="650em">
+   </picture>
 </div>
+
+---
 
 <p align="center">
    <p align="center"><b>A modular AI agent coordination system for building massively parallel agentic systems</b></p>
