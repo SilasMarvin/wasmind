@@ -51,10 +51,17 @@ serde_json = "1"
 wasmind_actor_utils = { git = "https://github.com/SilasMarvin/wasmind", features = ["macros"] }
 
 [package.metadata.component.target.dependencies]
-"wasmind:actor" = { git = "https://github.com/SilasMarvin/wasmind" }
+"wasmind:actor" = { path = "../wasmind/crates/wasmind_actor_bindings/wit" }
 ```
 
 > **💡 Note**: As covered in [WebAssembly Components](./webassembly-components.md), these macros are conveniences that handle the component plumbing for you.
+>
+> **⚠️ Path Dependency Setup**: Currently, you'll need to copy the WIT interface locally:
+> 1. Download the WIT file from `https://github.com/SilasMarvin/wasmind/blob/main/crates/wasmind_actor_bindings/wit/world.wit`
+> 2. Save it as `world.wit` in your actor project directory
+> 3. Update the path dependency: `"wasmind:actor" = { path = "world.wit" }`
+>
+> We're discussing better distribution methods for WIT interfaces in future Wasmind releases.
 
 ### Create the Actor Manifest
 

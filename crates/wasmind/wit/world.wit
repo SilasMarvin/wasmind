@@ -1,0 +1,209 @@
+// IMPORTANT: This file is a copy of ../wasmind_actor_bindings/wit/world.wit
+// It must be kept in sync manually when the original is updated.
+// This copy exists so the wasmind crate can be published to crates.io without
+// relative path dependencies.
+
+// The top-level package for the Wasmind Actor Plugin System.
+package wasmind:actor@0.1.0;
+
+// =================================================================
+// INTERFACE 1: Core Actor Model
+// This interface defines the essential types and behaviors required
+// to create a stateful, message-driven actors.
+// =================================================================
+interface actor {
+    /// A scope identifier - a 6-character alphanumeric string used to identify agent contexts
+    type scope = string;
+
+    /// An envelope that wraps every message passed between actors.
+    /// It provides context about the message's origin.
+    record message-envelope {
+        /// Correlation ID for tracing related operations (format: "parent:child")
+        id: string,
+        /// The unique identifier of the message type
+        message-type: string,
+        /// The unique identifier of the actor that sent the message.
+        from-actor-id: string,
+        /// The scope in which the sending actor was operating.
+        from-scope: scope,
+        /// The raw, serialized message data. The format (e.g., JSON)
+        /// is determined by the sending actor's implementation.
+        payload: list<u8>,
+    }
+
+    /// Represents a stateful actor instance. Actor authors must provide
+    /// an implementation for this resource.
+    resource actor {
+        /// Called by the host once when the actor is first instantiated.
+        /// Use this to initialize the actor's state.
+        /// @param scope - The execution scope provided by the host.
+        /// @param config - The configuration string (TOML format) for this actor.
+        constructor(scope: scope, config: string);
+
+        /// The primary entry point for processing incoming messages. This
+        /// function is called by the host whenever another actor broadcasts
+        /// a message to the system.
+        /// @param message - The incoming message envelope, containing the
+        /// payload and sender's context.
+        handle-message: func(message: message-envelope);
+
+        /// Called by the host when the actor instance is being shut down.
+        /// Use this for cleanup tasks like persisting state.
+        destructor: func();
+    }
+}
+
+// =================================================================
+// CAPABILITY INTERFACES
+// Each interface represents a distinct capability that can be 
+// optionally provided to actors
+// =================================================================
+
+interface messaging {
+    /// Broadcasts a message to all other actors in the system
+    broadcast: func(message-type: string, payload: list<u8>);
+}
+
+interface command {
+    variant exit-status {
+        exited(u8),
+        signaled(u8),
+        failed-to-start(string),
+        timeout-expired,
+    }
+
+    record command-output {
+        stdout: list<u8>,
+        stderr: list<u8>,
+        status: exit-status,
+        stdout-truncated: bool,
+        stderr-truncated: bool,
+    }
+
+    resource cmd {
+        constructor(command: string);
+        args: func(args: list<string>) -> cmd;
+        current-dir: func(dir: string) -> cmd;
+        timeout: func(seconds: u32) -> cmd;
+        max-output-bytes: func(bytes: u32) -> cmd;
+        env: func(key: string, value: string) -> cmd;
+        env-clear: func() -> cmd;
+        run: func() -> result<command-output, string>;
+    }
+}
+
+interface logger {
+    /// Log levels for structured logging
+    enum log-level {
+        debug,
+        info,
+        warn,
+        error,
+    }
+    
+    /// Log a message at the specified level
+    log: func(level: log-level, message: string);
+}
+
+interface http {
+    /// Headers as a list of key-value pairs
+    record headers {
+        headers: list<tuple<string, string>>
+    }
+    
+    /// Possible errors that can occur during HTTP operations
+    variant request-error {
+        network-error(string),
+        timeout,
+        invalid-url(string),
+        builder-error(string),
+    }
+    
+    /// HTTP response containing status, headers, and body
+    record response {
+        status: u16,
+        headers: headers,
+        body: list<u8>,
+    }
+    
+    /// HTTP request builder following a builder pattern similar to reqwest
+    resource request {
+        /// Create a new HTTP request with the given method and URL
+        /// Common methods: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
+        constructor(method: string, url: string);
+        
+        /// Add a single header to the request
+        header: func(key: string, value: string) -> request;
+        
+        /// Add multiple headers to the request
+        headers: func(headers: headers) -> request;
+        
+        /// Set the request body
+        body: func(body: list<u8>) -> request;
+        
+        /// Set request timeout in seconds
+        timeout: func(seconds: u32) -> request;
+        
+        /// Configure automatic retry with exponential backoff
+        /// max-attempts: Total number of attempts (including initial request)
+        /// base-delay-ms: Base delay in milliseconds for exponential backoff
+        retry: func(max-attempts: u32, base-delay-ms: u64) -> request;
+        
+        /// Configure which HTTP status codes should trigger retries
+        /// Only has effect when combined with retry() configuration
+        /// codes: List of HTTP status codes that should be retried (e.g., [429, 500, 502, 503, 504])
+        retry-on-status-codes: func(codes: list<u16>) -> request;
+        
+        /// Execute the request and return the response
+        send: func() -> result<response, request-error>;
+    }
+}
+
+interface agent {
+    use actor.{scope};
+    
+    /// Spawn a new agent with the specified actors
+    /// Returns the scope ID of the newly created agent
+    spawn-agent: func(actor-ids: list<string>, agent-name: string) -> result<scope, string>;
+    
+    /// Get the parent scope of the current actor
+    /// Returns None if this is a root agent, Some(scope_id) if it has a parent
+    get-parent-scope: func() -> option<scope>;
+    
+    /// Get the parent scope of the specified scope
+    /// Returns None if the scope has no parent or if the scope is invalid
+    get-parent-scope-of: func(scope: scope) -> option<scope>;
+}
+
+interface host-info {
+    /// Operating system information from the host
+    record os-info {
+        os: string,
+        arch: string,
+    }
+    
+    /// Get the actual working directory from the host system
+    /// This returns the real host working directory, not the WASM guest working directory
+    get-host-working-directory: func() -> string;
+    
+    /// Get the actual operating system information from the host
+    /// This returns the real host OS info, not "wasm32"
+    get-host-os-info: func() -> os-info;
+}
+
+// =================================================================
+// WORLD: Definition
+// This world assembles the required imports and exports to define
+// a complete, runnable Wasmind Actor.
+// =================================================================
+world actor-world {
+    import messaging;
+    import command;
+    import http;
+    import logger;
+    import agent;
+    import host-info;
+
+    // An actor must provide an implementation of the `actor` resource.
+    export actor;
+}

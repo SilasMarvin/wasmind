@@ -23,7 +23,7 @@ bindgen!({
         "wasmind:actor/command/cmd": CommandResource,
         "wasmind:actor/http/request": actor_state::http::HttpRequestResource,
     },
-    path: "../wasmind_actor_bindings/wit/world.wit",
+    path: "wit/world.wit",
     imports: { default: async },
     exports: { default: async },
 });
