@@ -49,7 +49,12 @@ This actor is essential for AI agents that need to interact with the underlying 
 
 ## Configuration
 
-No configuration required. The actor is ready to use once included in your actor list.
+No configuration required. Include this actor to provide the execute_bash tool:
+
+```toml
+[actors.execute_bash]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/execute_bash" }
+```
 
 ## How It Works
 

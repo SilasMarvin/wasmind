@@ -40,7 +40,12 @@ This actor is essential for delegation networks to maintain structural integrity
 
 ## Configuration
 
-No configuration required. The actor automatically coordinates any delegation network it's part of.
+No configuration required. Include this actor to coordinate delegation networks:
+
+```toml
+[actors.delegation_network_coordinator]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/delegation_network_coordinator" }
+```
 
 ## How It Works
 

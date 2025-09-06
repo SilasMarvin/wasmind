@@ -17,7 +17,14 @@ This actor provides the `request_changes` tool used by expert reviewers to reque
 
 ## Configuration
 
-This actor requires no configuration. It is automatically spawned as a dependency by the `file_interaction_with_approval` actor.
+No configuration required. Include this actor to provide the request_changes tool:
+
+```toml
+[actors.request_changes]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/code_with_experts/crates/request_changes" }
+```
+
+Note: This actor is typically automatically spawned as a dependency by the `file_interaction_with_approval` actor.
 
 ---
 

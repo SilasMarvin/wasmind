@@ -52,7 +52,14 @@ This actor is essential for AI agents that need to interact with codebases, mana
 
 ## Configuration
 
-This actor requires no configuration. It is ready to use once included in your actor list.
+```toml
+[actors.file_interaction_actor]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/file_interaction/crates/file_interaction_actor" }
+
+# Optional configuration
+[actors.file_interaction_actor.config]
+allow_edits = true  # Default: true. Set to false for read-only mode
+```
 
 ## Messages Listened For
 

@@ -42,31 +42,64 @@ The Assistant Actor serves as the primary interface for LLM-based interactions, 
 ## Configuration
 
 ```toml
-[assistant]
+[actors.assistant]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/assistant" }
+
+# Most configuration has sensible defaults - typically only model_name needs to be specified
+[actors.assistant.config]
 model_name = "gpt-4"
 base_url = "http://localhost:4000"  # Optional, can be provided via LiteLLM
+```
 
-[assistant.system_prompt]
-base_template = """
-You are a helpful AI assistant.
+### Advanced System Prompt Configuration
 
-{% for section_name, contributions in sections -%}
-## {{ section_name | title }}
+The primary customization point is the system prompt, which can be structured using sections to create specialized assistant behaviors:
 
-{% for contribution in contributions -%}
-{{ contribution }}
+```toml
+[actors.assistant.config.system_prompt.defaults]
+# Define the assistant's core identity
+identity = """
+You are a specialized AI assistant with specific expertise in software development.
+Your role is to help users with coding tasks and technical problem-solving.
+"""
 
-{% endfor -%}
-{% endfor -%}
-""" # Optional, can be written to by actors
+# Provide contextual information about the assistant's capabilities
+context = """
+You have access to file reading and editing tools, as well as command execution capabilities.
+You operate within the user's development environment and can interact with their codebase directly.
+"""
 
-# Override specific contribution templates
-[assistant.system_prompt.overrides]
+# Specify behavioral guidelines and best practices
+guidelines = """
+Always follow these principles:
+1. Write clean, well-documented code
+2. Test changes before considering them complete
+3. Explain your reasoning for technical decisions
+4. Ask for clarification when requirements are unclear
+"""
+
+# Additional sections as needed
+capabilities = """
+Available tools: file_interaction, execute_bash, code_analysis
+"""
+
+# Override specific contribution templates from other actors
+[actors.assistant.config.system_prompt.overrides]
 "file_reader.open_files" = "Currently open: {{ data.files | length }} files"
 
-# Exclude unwanted contributions
+# Exclude unwanted contributions from other actors
 exclude = ["debug.verbose_info"]
 ```
+
+### Real-World Example
+
+For a comprehensive example of specialized assistant configurations, see the [delegation_network_coordinator's Wasmind.toml](../delegation_network/crates/delegation_network_coordinator/Wasmind.toml), which configures three different assistant types:
+
+- **Main Manager Assistant**: Configured for high-level task orchestration and delegation
+- **SubManager Assistant**: Specialized for technical architecture and team coordination  
+- **Worker Assistant**: Focused on autonomous task execution
+
+Each uses the `system_prompt.defaults` structure to define distinct behaviors, identities, and operational guidelines suited to their specific roles within the agent hierarchy.
 
 ## Tools Provided
 

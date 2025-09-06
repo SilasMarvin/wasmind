@@ -21,6 +21,9 @@ This actor provides the `request_plan_review` tool that enables AI agents to sub
 Requires configuration to specify expert reviewers:
 
 ```toml
+[actors.request_plan_review]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/review_plan/crates/request_plan_review" }
+
 [actors.request_plan_review.config.reviewers]
 expert_name = ["assistant", "read_file", "execute_bash", ...]
 ```

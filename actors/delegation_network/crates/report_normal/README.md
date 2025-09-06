@@ -43,7 +43,12 @@ This actor is typically used in conjunction with the check_health actor system t
 
 ## Configuration
 
-No configuration required. The actor is ready to use once included in your actor list.
+```toml
+[actors.report_normal]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/report_normal" }
+```
+
+No configuration required. The actor is ready to use once included in your actor list. These actors are typically spawned by the delegation_network_coordinator.
 
 ## How It Works
 

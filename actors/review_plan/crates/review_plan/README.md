@@ -17,7 +17,14 @@ This actor provides the `review_plan` tool used by expert reviewers to provide d
 
 ## Configuration
 
-This actor requires no configuration. It is automatically spawned as a dependency by the `request_plan_review` actor.
+No configuration required. Include this actor to provide the review_plan tool:
+
+```toml
+[actors.review_plan]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/review_plan/crates/review_plan" }
+```
+
+Note: This actor is typically automatically spawned as a dependency by the `request_plan_review` actor.
 
 ---
 

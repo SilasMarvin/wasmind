@@ -48,7 +48,12 @@ This actor is ideal for AI agents managing complex projects that benefit from st
 
 ## Configuration
 
-No configuration required. The actor is ready to use once included in your actor list.
+```toml
+[actors.planner]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/planner" }
+```
+
+No configuration required. The actor is ready to use once included in your actor list. These actors are typically spawned by the delegation_network_coordinator.
 
 ## How It Works
 

@@ -16,7 +16,14 @@ This actor provides the `approve` tool used by expert reviewers to approve propo
 
 ## Configuration
 
-This actor requires no configuration. It is automatically spawned as a dependency by the `file_interaction_with_approval` actor.
+No configuration required. Include this actor to provide the approve tool:
+
+```toml
+[actors.approve]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/code_with_experts/crates/approve" }
+```
+
+Note: This actor is typically automatically spawned as a dependency by the `file_interaction_with_approval` actor.
 
 ---
 

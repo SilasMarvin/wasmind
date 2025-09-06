@@ -46,7 +46,12 @@ This actor is essential for delegation networks where agents need to formally co
 
 ## Configuration
 
-No configuration required. The actor is ready to use once included in your agent list.
+```toml
+[actors.complete]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/complete" }
+```
+
+No configuration required. The actor is ready to use once included in your agent list. These actors are typically spawned by the delegation_network_coordinator.
 
 ## How It Works
 

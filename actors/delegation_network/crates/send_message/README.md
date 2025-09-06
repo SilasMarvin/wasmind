@@ -48,7 +48,12 @@ This actor is essential for building effective delegation networks where manager
 
 ## Configuration
 
-No configuration required. The actor is ready to use once included in your actor list.
+```toml
+[actors.send_message]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/send_message" }
+```
+
+No configuration required. The actor is ready to use once included in your actor list. These actors are typically spawned by the delegation_network_coordinator.
 
 ## How It Works
 

@@ -72,8 +72,25 @@ async fn main() -> TuiResult<()> {
         whatever!("No LiteLLM models configured - LiteLLM section is required");
     }
 
+    // Error if no starting actors are configured
+    if config.starting_actors.is_empty() && !config.actors.iter().any(|actor| actor.auto_spawn) {
+        whatever!(
+            "No starting actors and no auto spawning actors configured - at least one starting actor or auto spawning actor is required"
+        );
+    }
+
+    // Load terminal interface configuration
+    let tui_config = crate::config::TuiConfig::from_config(&config)?.parse()?;
+
+    // Load the actors
+    let cache_dir = wasmind::wasmind_config::get_actors_cache_dir()?;
+    let actor_loader = wasmind::wasmind_actor_loader::ActorLoader::new(cache_dir)?;
+    let loaded_actors = actor_loader
+        .load_actors(config.actors, config.actor_overrides)
+        .await?;
+
     // Create LiteLLM manager first so it's available for the entire scope
-    println!("Starting LiteLLM...");
+    println!("\nStarting LiteLLM...");
     tracing::info!("Starting LiteLLM manager...");
     let mut litellm_manager = litellm_manager::LiteLLMManager::new(litellm_config.clone());
 
@@ -86,24 +103,6 @@ async fn main() -> TuiResult<()> {
             litellm_config.get_base_url()
         );
         tracing::info!("Available models: {:?}", litellm_config.list_model_names());
-
-        // Error if no starting actors are configured
-        if config.starting_actors.is_empty() && !config.actors.iter().any(|actor| actor.auto_spawn)
-        {
-            whatever!(
-                "No starting actors and no auto spawning actors configured - at least one starting actor or auto spawning actor is required"
-            );
-        }
-
-        // Load terminal interface configuration
-        let tui_config = crate::config::TuiConfig::from_config(&config)?.parse()?;
-
-        // Load the actors
-        let cache_dir = wasmind::wasmind_config::get_actors_cache_dir()?;
-        let actor_loader = wasmind::wasmind_actor_loader::ActorLoader::new(cache_dir)?;
-        let loaded_actors = actor_loader
-            .load_actors(config.actors, config.actor_overrides)
-            .await?;
 
         // Create the context
         let context = Arc::new(wasmind::context::WasmindContext::new(loaded_actors));

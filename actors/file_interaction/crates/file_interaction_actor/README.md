@@ -26,7 +26,20 @@ This is the WASM actor component that provides `read_file` and `edit_file` tools
 
 ## Configuration
 
-This actor requires no configuration. It is ready to use once included in your actor list.
+```toml
+[actors.file_interaction_actor]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/file_interaction/crates/file_interaction_actor" }
+
+# Optional configuration
+[actors.file_interaction_actor.config]
+allow_edits = true  # Default: true. Set to false for read-only mode
+```
+
+### Configuration Options
+
+- **`allow_edits`** (default: true): Controls which tools are available to AI agents
+  - When `true`: Provides both `read_file` and `edit_file` tools
+  - When `false`: Provides only `read_file` tool (read-only mode)
 
 ---
 

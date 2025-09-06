@@ -45,7 +45,12 @@ This actor is essential for building coordinated multi-agent systems where timin
 
 ## Configuration
 
-No configuration required. The actor is ready to use once included in your actor list.
+```toml
+[actors.wait]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/wait" }
+```
+
+No configuration required. The actor is ready to use once included in your actor list. These actors are typically spawned by the delegation_network_coordinator.
 
 ## How It Works
 

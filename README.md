@@ -45,7 +45,7 @@ Wasmind is an **actor-based system** for building AI agent workflows. Instead of
 
 ## What You Can Build with Wasmind
 
-Wasmind can be used for anything but is best at building massively parallel multi-agent systems.
+Wasmind can be used for anything but is best at building massively parallel multi-agent systems. **Start with individual actors, compose them through configuration, scale to thousands - all without writing code.**
 
 **Current Demos:**
 - **[Delegation Network](actors/delegation_network/)** - Hierarchical multi-agent coordination system for spawning and managing specialized AI agents (think Claude Code but manager -> sub_manager -> worker agent relations).
@@ -53,25 +53,6 @@ Wasmind can be used for anything but is best at building massively parallel mult
 TODO: Add demo 
 
 Demo's can be ran with the **[wasmind_cli](crates/wasmind_cli/)**
-
-## Repository Structure
-
-```
-/actors/           # Example actors and demos
-
-/crates/           # Core Wasmind system libraries
-├── Wasmind/          # Main coordination library  
-├── Wasmind_cli/      # Command-line interface
-├── Wasmind_config/   # Configuration system
-├── Wasmind_actor_loader/     # Actor loading and dependency resolution
-├── Wasmind_actor_utils/      # Utilities for building Rust actors
-├── Wasmind_actor_utils_common_messages/  # Common shared message types
-├── Wasmind_actor_utils_macros/   # Macros for Rust actor development
-├── Wasmind_actor_bindings/   # WASM component definition
-└── Wasmind_llm_types/        # Common LLM API request types
-```
-
-For detailed information about specific actors, see their individual READMEs.
 
 ## Documentation
 
@@ -131,6 +112,10 @@ Wasmind's actor model naturally supports thousands of concurrent actors with min
 ### Do I need to know Rust to use Wasmind?
 
 To use `wasmind_cli` and existing actors, no. To build new actors, no - actors can be written in any language that compiles to WebAssembly components but we currently only have friendly SDKs for Rust. We're working on SDKs for other languages.
+
+### How is Wasmind 'no-code' for users?
+
+Once actors are built, users create powerful AI systems purely through TOML configuration files. Want a coding assistant? Configure an assistant actor with bash and file tools. Need a review system? Add approval actors. Scale to hundreds of agents? Just update the config. No programming required - just describe what actors you want and how they connect.
 
 ## License
 

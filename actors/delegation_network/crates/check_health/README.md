@@ -39,7 +39,10 @@ This actor primarily spawns analyzer agents rather than broadcasting messages di
 Requires configuration to set the health check interval:
 
 ```toml
-[check_health]
+[actors.check_health]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/check_health" }
+
+[actors.check_health.config]
 check_interval = 300  # Check every 5 minutes (in seconds)
 ```
 

@@ -53,7 +53,10 @@ This actor is essential for building sophisticated delegation networks where age
 Requires configuration to specify which actors should be used for different agent types:
 
 ```toml
-[spawn_agent]
+[actors.spawn_agent]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/spawn_agent" }
+
+[actors.spawn_agent.config]
 worker_actors = ["assistant", "execute_bash", "file_interaction"]
 sub_manager_actors = ["assistant", "execute_bash", "file_interaction", "spawn_agent", "send_message"]
 ```

@@ -29,6 +29,9 @@ This actor provides `edit_file` and `read_file` tools with an approval workflow.
 Requires configuration to specify approval workflow:
 
 ```toml
+[actors.file_interaction_with_approval]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/code_with_experts/crates/file_interaction_with_approval" }
+
 [actors.file_interaction_with_approval.config]
 min_diff_size = 50  # Character threshold for triggering review
 

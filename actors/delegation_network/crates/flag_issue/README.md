@@ -46,7 +46,12 @@ This actor is essential for health monitoring systems that need to detect and es
 
 ## Configuration
 
-No configuration required. The actor is ready to use once included in your actor list.
+```toml
+[actors.flag_issue]
+source = { git = "https://github.com/SilasMarvin/wasmind", sub_dir = "actors/delegation_network/crates/flag_issue" }
+```
+
+No configuration required. The actor is ready to use once included in your actor list. These actors are typically spawned by the delegation_network_coordinator.
 
 ## How It Works
 
