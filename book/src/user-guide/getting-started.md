@@ -11,9 +11,12 @@ First, let's make sure everything is installed correctly:
 wasmind_cli --version
 docker --version
 cargo component --version
+
+# Verify WASI target is installed (required for building actors)
+rustup target list | grep wasm32-wasip1
 ```
 
-You should see version numbers for all three commands. If any command fails, go back to the [Installation](../installation.md) guide.
+You should see version numbers for all three commands and `wasm32-wasip1 (installed)` in the target list. If any command fails or the WASI target shows as not installed, go back to the [Installation](../installation.md) guide.
 
 ## Understanding the CLI
 
