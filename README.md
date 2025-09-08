@@ -9,7 +9,7 @@
 ---
 
 <p align="center">
-   <p align="center"><b>A modular AI agent coordination system for building massively parallel agentic systems</b></p>
+   <p align="center"><b>A modular framework for building massively parallel agentic systems</b></p>
 </p>
 
 <p align="center">
